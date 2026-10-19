@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.304',
+    date: '2026-10-20',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '대화 기록 정리를 한 세션에서, 연동이 다시 붙은 뒤 Claude 의 답이 화면에 안 오던 것: 덜어 낸 줄 수(lineBase)를 기억해 다시 읽을 때 줄 번호를 서버와 맞춤. 이미 이렇게 된 세션은 파일 끝까지 읽은 뒤 서버 줄 수에 맞춰 다음 답부터 다시 옴', refs: ['REQ-F-793'] },
+    ],
+  },
+  {
     version: '1.303',
+    commit: '6947abe',
     date: '2026-10-20',
     changes: [
       { kind: 'fixed', scope: ['server'], text: '웹 검색을 한 답처럼 ```choices 블록 뒤에 Sources 목록이 붙어도 선택지 버튼이 나옴. 출처 목록은 답 글 끝에 남음', refs: ['REQ-F-579'] },

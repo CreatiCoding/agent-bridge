@@ -302,7 +302,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, autoPush: s.autoPush, autoAllow: !!s.autoAllow, conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, autoPush: s.autoPush, autoAllow: !!s.autoAllow, conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -1211,7 +1211,7 @@ async function onHook(sid, ev) {
  */
 function switchConversation(sid, s, ev) {
   const fresh = ev.source === 'clear' || ev.source === 'compact'
-  Object.assign(s, { conv: ev.session_id, transcript: ev.transcript_path || null, offset: 0, lineNo: 0, skip: 0 })
+  Object.assign(s, { conv: ev.session_id, transcript: ev.transcript_path || null, offset: 0, lineNo: 0, skip: 0, lineBase: 0 })
   saveSessions()
   log('info', 'session', `대화가 바뀜 (${ev.source ?? '?'}) → ${ev.session_id.slice(0, 8)}`, sid)
   // A resumed conversation that got a new id starts with a copy of the old lines: synced, but not shown twice.
@@ -1672,7 +1672,7 @@ function tail(sid, s) {
   } catch {
     return
   }
-  if (stat.size < (s.offset ?? 0)) Object.assign(s, { offset: 0, lineNo: 0 })
+  if (stat.size < (s.offset ?? 0)) Object.assign(s, { offset: 0, lineNo: s.lineBase ?? 0 })
   s.offset ??= 0
   s.lineNo ??= 0
   s.skip ??= 0
@@ -1681,6 +1681,7 @@ function tail(sid, s) {
   if (s.offset === 0 || !s.cache) s.cache = emptyCache()
   const fd = fs.openSync(file, 'r')
   try {
+    const start = s.offset
     const buf = Buffer.alloc(Math.min(stat.size - s.offset, 8 * 1024 * 1024))
     const n = fs.readSync(fd, buf, 0, buf.length, s.offset)
     const end = buf.lastIndexOf(0x0a, n - 1)
@@ -1714,6 +1715,15 @@ function tail(sid, s) {
       s.lineNo++
     }
     flush()
+    // Read to the end and still short of what the server has: lines were taken out of the file with nothing kept to
+    // say how many (대화 기록 정리 by an agent before 1.304, a trimmed copy from another Mac). The server has every
+    // line here, so numbering goes on from its count; otherwise every new line, the answers too, is skipped as sent.
+    if (s.lineNo < s.skip && n === stat.size - start) {
+      log('warn', 'tail', `대화 파일이 서버보다 ${s.skip - s.lineNo}줄 짧아 줄 번호를 서버에 맞춤`, sid)
+      s.lineBase = (s.lineBase ?? 0) + s.skip - s.lineNo
+      s.lineNo = s.skip
+      saveSessions()
+    }
     s.activityAt = Date.now()
   } finally {
     fs.closeSync(fd)
@@ -1740,9 +1750,12 @@ function findTranscript(conv, before) {
   return null
 }
 
-/** Re-read the transcript from the start, sending only the lines the server does not have yet. */
+/**
+ * Re-read the transcript from the start, sending only the lines the server does not have yet. The file's first line
+ * is line lineBase: what 대화 기록 정리 took out of it still counts.
+ */
 function rewind(s, serverLines) {
-  Object.assign(s, { offset: 0, lineNo: 0, skip: serverLines })
+  Object.assign(s, { offset: 0, lineNo: s.lineBase ?? 0, skip: serverLines })
 }
 
 // ---------- working folder ----------
@@ -2181,7 +2194,7 @@ const commands = {
       }
       const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
       // Where the copy ends is where reading resumes, set before claude can append to the file.
-      Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skip: 0 })
+      Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skip: 0, lineBase: 0 })
       // In the map before claude starts, so its first hooks are not dropped.
       resetRuntime(s)
       sessions.set(sid, s)
@@ -2493,7 +2506,10 @@ const commands = {
         fs.writeFileSync(`${file}.trim`, kept)
         fs.renameSync(file, backup)
         fs.renameSync(`${file}.trim`, file)
-        // Read on from the new end: the lines kept were all sent already.
+        // Read on from the new end: the lines kept were all sent already. Numbering goes on where it was (the server
+        // counts every line it was sent), so the file's first line is now line lineBase, kept for a later rewind.
+        s.lineBase = s.lineNo - (kept.match(/\n/g)?.length ?? 0)
+        saveSessions()
         s.offset = fs.statSync(file).size
         s.size = s.offset
         const before = Buffer.byteLength(text)
