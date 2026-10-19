@@ -122,7 +122,7 @@ describe('Apple로 로그인 against the server', () => {
     const t = token({ nonce: again.hash })
     const ok = await signIn(again.jar, { token: t })
     assert.equal(ok.status, 302)
-    const jar = ok.headers.getSetCookie().map((c) => c.split(';')[0]).filter((c) => c.startsWith('cb=')).join('; ')
+    const jar = ok.headers.getSetCookie().map((c) => c.split(';')[0]).filter((c) => c.startsWith('__Host-cb=')).join('; ')
     assert.ok(jar)
     const me = await (await fetch(`${srv.origin}/api/me`, { headers: { cookie: jar } })).json()
     assert.deepEqual([me.user.login, me.user.name, me.user.apple, me.admin], [login, '홍길동', true, false])

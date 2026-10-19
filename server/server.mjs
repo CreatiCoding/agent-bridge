@@ -3534,11 +3534,55 @@ const json = (res, status, obj, headers = {}) => {
 
 const originOf = (req) => ORIGIN || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`
 const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(/;\s*/).filter(Boolean).map((c) => [c.slice(0, c.indexOf('=')), c.slice(c.indexOf('=') + 1)]))
+/** Every value a cookie name has in the request: a cookie planted for a parent domain comes along with ours. */
+const cookieAll = (req, name) => (req.headers.cookie || '').split(/;\s*/).filter((c) => c.slice(0, c.indexOf('=')) === name).map((c) => c.slice(c.indexOf('=') + 1))
+/** A page that may hold Secure cookies: https, or this machine (browsers count http://localhost as secure). */
+const secureSite = (req) => {
+  const u = new URL(originOf(req))
+  return u.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)
+}
+// Sign-in cookies are `__Host-` (REQ-S-080): Secure, Path=/, no Domain, so a page of another subdomain (the preview
+// origins lp*.<site>) cannot plant one and sign a visitor in as someone else. Plain http elsewhere keeps the bare
+// name: it cannot hold a Secure cookie at all.
+const cname = (req, base) => (secureSite(req) ? `__Host-${base}` : base)
 const cookie = (req, name, value, maxAge) =>
-  `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${originOf(req).startsWith('https:') ? '; Secure' : ''}`
+  `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${name.startsWith('__Host-') || originOf(req).startsWith('https:') ? '; Secure' : ''}`
+/** Until then a sign-in still carried by the old `cb` is moved to `__Host-cb` instead of being signed out (REQ-S-080). */
+const LEGACY_CB_UNTIL = Date.parse('2026-11-02T00:00:00Z')
+/** Set-Cookie lines that drop the old `cb` the request carries: ours (host only) and any planted for this host or a parent domain. */
+function legacyCbClears(req) {
+  if (!secureSite(req) || !cookieAll(req, 'cb').length) return []
+  const host = new URL(originOf(req)).hostname
+  const parts = host.split('.')
+  const domains = /^[\d.]+$|^\[|^localhost$/.test(host) ? [] : parts.slice(0, -1).map((_, i) => parts.slice(i).join('.'))
+  const base = 'cb=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure'
+  return [base, ...domains.map((d) => `${base}; Domain=${d}`)]
+}
+/** The sign-in token of a request; a moved one (migrateLegacyCb) counts in the same request. */
+const sessionToken = (req) => req.movedCb ?? cookies(req)[cname(req, 'cb')]
+
+/**
+ * The move from `cb` to `__Host-cb` (REQ-S-080), until LEGACY_CB_UNTIL. Only when there is no `__Host-cb`: one that
+ * is there always wins, and the old name is dropped. Only one `cb` that is a live sign-in is moved: two (ours and one
+ * planted for a parent domain) cannot be told apart, so neither counts.
+ */
+function migrateLegacyCb(req, res) {
+  if (!secureSite(req)) return
+  const old = cookieAll(req, 'cb')
+  if (!old.length) return
+  const clears = legacyCbClears(req)
+  if (!cookies(req)['__Host-cb'] && Date.now() < LEGACY_CB_UNTIL && old.length === 1) {
+    const login = logins[sha256(old[0])]
+    if (login && login.exp > Date.now()) {
+      req.movedCb = old[0]
+      return res.setHeader('Set-Cookie', [cookie(req, '__Host-cb', old[0], Math.max(1, Math.floor((login.exp - Date.now()) / 1000))), ...clears])
+    }
+  }
+  res.setHeader('Set-Cookie', clears)
+}
 
 function whoami(req) {
-  const token = cookies(req).cb
+  const token = sessionToken(req)
   const login = token && logins[sha256(token)]
   if (!login || login.exp < Date.now()) return null
   // Known by its uid, never by a name: it is no GitHub account and no allow-list speaks for it (REQ-S-068).
@@ -3555,7 +3599,7 @@ function signIn(req, res, uid, next, more = []) {
   const token = crypto.randomBytes(32).toString('base64url')
   logins[sha256(token)] = { uid, exp: Date.now() + LOGIN_DAYS * 86_400_000 }
   touchGlobals()
-  res.writeHead(302, { Location: next, 'Set-Cookie': [cookie(req, 'cb', token, LOGIN_DAYS * 86_400), cookie(req, 'cb_state', '', 0), ...more] }).end()
+  res.writeHead(302, { Location: next, 'Set-Cookie': [cookie(req, cname(req, 'cb'), token, LOGIN_DAYS * 86_400), cookie(req, cname(req, 'cb_state'), '', 0), ...more, ...legacyCbClears(req)] }).end()
 }
 /** Sign-ins past their end go every hour (REQ-S-074): a hash no one can use is no reason to keep whose it was. */
 function dropExpiredLogins() {
@@ -3661,12 +3705,12 @@ async function appleAuth(req, res, url) {
   if (!sameSite(req)) return res.writeHead(403).end()
   if (url.pathname === '/api/auth/apple/nonce') {
     const raw = crypto.randomBytes(24).toString('base64url')
-    return json(res, 200, { nonce: sha256hex(raw) }, { 'Set-Cookie': cookie(req, 'cb_apple', raw, 600) })
+    return json(res, 200, { nonce: sha256hex(raw) }, { 'Set-Cookie': cookie(req, cname(req, 'cb_apple'), raw, 600) })
   }
-  const clear = cookie(req, 'cb_apple', '', 0)
+  const clear = cookie(req, cname(req, 'cb_apple'), '', 0)
   const html = (status, title, text) => res.writeHead(status, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': clear }).end(page(title, text))
   const f = Object.fromEntries(new URLSearchParams(await rawBody(req, 16 * 1024)))
-  const raw = cookies(req).cb_apple || ''
+  const raw = cookies(req)[cname(req, 'cb_apple')] || ''
   const now = Date.now()
   for (const [k, exp] of appleUsed) if (exp < now) appleUsed.delete(k)
   let claims
@@ -3711,11 +3755,11 @@ async function auth(req, res, url) {
     const state = crypto.randomBytes(16).toString('hex')
     const to = new URL('https://github.com/login/oauth/authorize')
     to.search = new URLSearchParams({ client_id: GITHUB_CLIENT_ID, redirect_uri: `${originOf(req)}/api/auth/github/callback`, state, allow_signup: 'false' })
-    return res.writeHead(302, { Location: to.href, 'Set-Cookie': cookie(req, 'cb_state', `${state}.${encodeURIComponent(safeNext(url.searchParams.get('next')))}`, 600) }).end()
+    return res.writeHead(302, { Location: to.href, 'Set-Cookie': cookie(req, cname(req, 'cb_state'), `${state}.${encodeURIComponent(safeNext(url.searchParams.get('next')))}`, 600) }).end()
   }
   if (url.pathname === '/api/auth/github/callback') {
-    const [state, next] = (cookies(req).cb_state || '').split('.')
-    const html = (status, title, text) => res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': cookie(req, 'cb_state', '', 0) }).end(page(title, text))
+    const [state, next] = (cookies(req)[cname(req, 'cb_state')] || '').split('.')
+    const html = (status, title, text) => res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': cookie(req, cname(req, 'cb_state'), '', 0) }).end(page(title, text))
     if (!state || state !== url.searchParams.get('state')) return html(400, '로그인을 다시 시도해 주세요', '로그인 요청이 만료됐거나 맞지 않습니다.')
     const tok = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -3741,7 +3785,7 @@ async function auth(req, res, url) {
       const who = `GitHub 계정 <b>${gh.login.replace(/[<>&]/g, '')}</b>`
       return a.status === 'denied'
         ? html(403, '허용되지 않은 계정입니다', `${who} 은 이 서버를 쓸 수 없습니다.`)
-        : res.writeHead(403, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': cookie(req, 'cb_state', '', 0) }).end(pendingPage({ login: gh.login, demo: demoOn }))
+        : res.writeHead(403, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': cookie(req, cname(req, 'cb_state'), '', 0) }).end(pendingPage({ login: gh.login, demo: demoOn }))
     }
     const uid = `gh${gh.id}`
     claimLogin(pins, uid, gh.login)
@@ -3799,9 +3843,9 @@ async function auth(req, res, url) {
   }
   if (url.pathname === '/api/auth/logout' && req.method === 'POST') {
     if (req.headers.origin && req.headers.origin !== originOf(req)) throw new Refuse(403, '다른 출처의 요청입니다')
-    delete logins[sha256(cookies(req).cb || '')]
+    delete logins[sha256(sessionToken(req) || '')]
     touchGlobals()
-    return json(res, 200, { ok: true }, { 'Set-Cookie': cookie(req, 'cb', '', 0) })
+    return json(res, 200, { ok: true }, { 'Set-Cookie': [cookie(req, cname(req, 'cb'), '', 0), ...legacyCbClears(req)] })
   }
   res.writeHead(404).end()
 }
@@ -3858,7 +3902,7 @@ async function api(req, res, url, uid) {
       return json(res, 200, { ok: true, demo: true })
     }
     await deleteAccount(uid)
-    return json(res, 200, { ok: true }, { 'Set-Cookie': cookie(req, 'cb', '', 0) })
+    return json(res, 200, { ok: true }, { 'Set-Cookie': [cookie(req, cname(req, 'cb'), '', 0), ...legacyCbClears(req)] })
   }
   if (get && p === '/api/me') return json(res, 200, { user: users[uid], admin: isAdmin(uid), ...(isDemoUid(uid) ? { demo: true } : appBuild ? { appBuild } : {}), version: VERSION, origin: originOf(req), source: SOURCE_URL, icons: cleanIcons(prefsOf(uid).icons), voice: cleanVoice(prefsOf(uid).voice) })
 
@@ -3894,11 +3938,11 @@ async function api(req, res, url, uid) {
     touchGlobals()
     // A sign-in that has less than 7 days left is extended to 30 again: a bridge tab (the agent's background
     // browser of 헤드리스 연동 모드 above all) has nobody to sign it in when it runs out.
-    const token = cookies(req).cb
+    const token = sessionToken(req)
     const login = token && logins[sha256(token)]
     const renew = login && login.exp - Date.now() < 7 * 86_400_000
     if (renew) login.exp = Date.now() + LOGIN_DAYS * 86_400_000
-    return json(res, 200, { ok: true, conn: hosts[b.hostId].conn }, renew ? { 'Set-Cookie': cookie(req, 'cb', token, LOGIN_DAYS * 86_400) } : {})
+    return json(res, 200, { ok: true, conn: hosts[b.hostId].conn }, renew ? { 'Set-Cookie': cookie(req, cname(req, 'cb'), token, LOGIN_DAYS * 86_400) } : {})
   }
   if (get && p === '/api/bridge/stream') {
     const hostId = url.searchParams.get('hostId')
@@ -5222,6 +5266,7 @@ const server = http.createServer(async (req, res) => {
     // Open to anyone, for deploy checks and the handover: only what says a server is up and which one (REQ-S-079).
     // How it runs (BRIDGE_ORIGIN given, root, agent signed) is for the operator, in /api/admin/overview.
     if (p === '/api/health') return json(res, 200, { ok: true, version: VERSION, instance: handover.id })
+    migrateLegacyCb(req, res)
     if (p.startsWith('/api/auth/')) return await auth(req, res, url)
     if (p.startsWith('/api/')) {
       // Changes must come from this site's own pages as JSON: a form on another site can do neither.

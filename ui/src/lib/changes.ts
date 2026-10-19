@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.298',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '로그인 쿠키를 __Host-cb(·__Host-cb_state·__Host-cb_apple)로: 미리보기 출처 같은 다른 하위 도메인이 쿠키를 심어 다른 계정으로 로그인시킬 수 없게. 옛 cb 로그인은 2026-11-02 까지 로그아웃 없이 새 이름으로 옮기고, __Host-cb 가 있으면 옛 cb 는 무시하고 지움', refs: ['REQ-S-080'] },
+    ],
+  },
+  {
     version: '1.297',
+    commit: 'dc3c647',
     date: '2026-10-19',
     changes: [
       { kind: 'security', scope: ['server'], text: '스킬 저장소의 marketplace.json 경로(pluginRoot·source·name)가 GitHub API 주소에 그대로 붙어 서버 토큰을 다른 저장소에 쓸 수 있던 것: 평범한 경로 조각만 받고, 주소가 그 저장소 밖이면 그 스킬을 건너뜀', refs: ['REQ-S-076', 'REQ-F-792'] },
