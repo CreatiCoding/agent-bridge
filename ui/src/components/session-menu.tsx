@@ -4,6 +4,7 @@ import { del, errorText, get, post } from '../lib/api'
 import { go } from '../lib/router'
 import { hostIcon, KINDS, titleOf } from '../lib/sessions'
 import { getStore } from '../lib/store'
+import { tokens } from '../lib/format'
 import type { Session } from '../lib/types'
 import { chooseDialog, confirmDialog, type MenuEntry, promptDialog, toast } from '../kit/overlay'
 import { Icon, type IconName } from '../kit'
@@ -298,6 +299,14 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
     // The session page puts its own near the top (it knows whether a list is already there); a row's menu, the only
     // way to it on a phone's list, asks as a first 정리.
     ...(opts.noTodos ? [] : [{ label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked(s), onSelect: () => void askTodos(s) }]),
+    // The same /compact as the big-context banner (REQ-F-776), at any size: the server takes it only while it rests.
+    {
+      label: '지금 압축',
+      icon: 'sparkle',
+      hint: !alive ? undefined : s.state.phase !== 'idle' ? '쉬고 있을 때만' : s.state.cache?.ctx ? `컨텍스트 ${tokens(s.state.cache.ctx)} · 이 세션에서 그대로` : '대화를 요약해 이 세션에서 그대로',
+      disabled: !alive || s.state.phase !== 'idle',
+      onSelect: () => act(() => command(s, 'compact')),
+    },
     {
       label: '복제',
       icon: 'fork',

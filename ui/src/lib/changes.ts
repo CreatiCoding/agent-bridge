@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.300',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: '세션 메뉴(목록 길게 누르기·⋯)에 "지금 압축": 컨텍스트 크기와 상관없이 쉬는 세션의 대화를 요약해 그 세션에서 그대로 이어감. 폰에서도 원할 때 대화를 정리할 수 있게', refs: ['REQ-F-776'] },
+    ],
+  },
+  {
     version: '1.299',
+    commit: 'df52c8c',
     date: '2026-10-19',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: '세션 목록에서 길게 누르거나 오른쪽 클릭한 메뉴에도 "할 일 정리". 폰에서 목록 메뉴로는 찾을 수 없었음', refs: ['REQ-F-778'] },

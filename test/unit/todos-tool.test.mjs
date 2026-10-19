@@ -48,6 +48,14 @@ test('a row\'s menu on the list asks for the list too, and the session page show
   assert.equal(page.match(/label: '할 일 정리'/g).length, 1)
 })
 
+test('the session menu compacts a resting session, as the big-context banner does (AC-1417)', () => {
+  const menu = fs.readFileSync(new URL('../../ui/src/components/session-menu.tsx', import.meta.url), 'utf8')
+  const item = menu.match(/label: '지금 압축',[\s\S]*?onSelect: \(\) => act\(\(\) => command\(s, 'compact'\)\),/)
+  assert.ok(item, 'the item sends the compact command')
+  assert.match(item[0], /disabled: !alive \|\| s\.state\.phase !== 'idle'/)
+  assert.match(item[0], /'쉬고 있을 때만'/)
+})
+
 test('"다시 정리" with a list asks to recheck it against the real state, other sessions included (AC-1367)', () => {
   const src = fs.readFileSync(new URL('../../ui/src/components/session-extras.tsx', import.meta.url), 'utf8')
   const reask = src.match(/export const TODO_REASK = `\$\{TODO_ASK\} (\\`|[^`])*`/)
