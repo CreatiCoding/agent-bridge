@@ -210,6 +210,7 @@ describe('demo on', () => {
       ['POST', '/api/reports', { text: 'x' }],
       ['GET', '/api/reports'],
       ['GET', '/api/skills'],
+      ['POST', '/api/prefs/skills', { repo: 'demo/x' }],
       ['GET', '/api/stream'],
       ['POST', `/api/hosts/${DEMO_HOST}/sudo`, { password: 'x' }],
       ['POST', `/api/hosts/${DEMO_HOST}/delegate`, { on: true }],

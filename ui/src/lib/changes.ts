@@ -26,7 +26,19 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.295',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'changed', scope: ['server', 'ui'], text: '스킬 저장소를 사람마다: 설정 → 더 보기 → 스킬 저장소에 내 GitHub 저장소(owner/repo)를 넣으면 /skills 가 그걸 읽음. SKILLS_REPO 는 설정하지 않은 사람의 기본값', refs: ['REQ-F-792', 'IF-247'] },
+      { kind: 'security', scope: ['server'], text: '스킬 저장소는 owner 가 내 GitHub 로그인과 같을 때만 저장(아니면 400). Apple·데모 계정은 못 정함. 남의 저장소 목록은 보이지 않음', refs: ['REQ-F-792'] },
+      { kind: 'security', scope: ['server'], text: '로그인 없이 열리는 /skills/version 은 코드 해시만. 저장소 이름·커밋·개수는 로그인한 사람의 자기 저장소일 때만', refs: ['REQ-F-290'] },
+      { kind: 'changed', scope: ['server'], text: '/skills/install.sh?repo=owner/repo 로 저장소마다. 누군가 정한 저장소가 아니면 404. 설치 명령도 그 주소로', refs: ['REQ-F-792'] },
+      { kind: 'removed', scope: ['ui', 'server'], text: '운영 탭의 스킬 저장소 칸과 /api/admin/skills. 예전 서버 하나의 값은 시작할 때 그 저장소 주인 계정의 설정으로 옮김', refs: ['IF-246'] },
+    ],
+  },
+  {
     version: '1.294',
+    commit: 'fe5168e',
     date: '2026-10-19',
     changes: [
       { kind: 'changed', scope: ['server'], text: '리포를 CreatiCoding/agent-bridge 로 옮기고 소스 코드 링크를 새 주소로. 1.293 이전 커밋 해시는 비공개로 보관한 옛 리포에만 있음', refs: ['REQ-F-791'] },

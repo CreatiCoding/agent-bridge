@@ -352,6 +352,79 @@ function Versions() {
   )
 }
 
+interface SkillsRepo {
+  /** The person's own; empty when none is set. */
+  repo: string
+  /** None of one's own, and the server's SKILLS_REPO is read instead. */
+  fallback: boolean
+  /** The GitHub login the repo's owner must match; null for Apple and demo accounts. */
+  login: string | null
+  auth: 'app' | 'token' | null
+  on: boolean
+}
+
+/** 스킬 저장소 (REQ-F-792): the person's own GitHub repo /skills reads, `owner/repo` with owner = their login. */
+function SkillsRepoBox() {
+  const [v, setV] = useState<SkillsRepo | null | undefined>(undefined)
+  const [repo, setRepo] = useState('')
+  const [busy, setBusy] = useState(false)
+  const load = () => get<SkillsRepo>('/api/prefs/skills').then((x) => (setV(x), setRepo(x.repo)), () => setV(null))
+  useEffect(() => void load(), [])
+  if (v === undefined) return null
+  if (!v) return <LoadError what="스킬 저장소를" onRetry={() => void load()} />
+  const t = repo.trim()
+  const shape = !t || /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(t)
+  const mine = !t || !v.login || t.split('/')[0].toLowerCase() === v.login.toLowerCase()
+  const save = async (next: string) => {
+    setBusy(true)
+    try {
+      const r = await post<SkillsRepo>('/api/prefs/skills', { repo: next })
+      setV(r)
+      setRepo(r.repo)
+      toast(r.repo ? (r.on ? '저장했어요' : '저장했어요 · 서버에 읽을 권한이 없어 아직 꺼져 있어요') : '비웠어요')
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setBusy(false)
+  }
+  const status = !shape
+    ? 'owner/repo 형식으로 적어 주세요'
+    : !mine
+      ? `내 GitHub 계정(${v.login})의 저장소만 넣을 수 있어요`
+      : v.on
+        ? v.fallback
+          ? '서버 기본 저장소를 읽고 있어요'
+          : `켜짐 · ${v.auth === 'app' ? 'GitHub App' : '토큰'}으로 읽어요`
+        : v.repo
+          ? '꺼짐 · 서버에 읽을 권한이 없어요'
+          : '꺼짐'
+  return (
+    <section className="card-box stack">
+      <CardHead title="스킬 저장소" help="/skills 가 읽는 내 GitHub 저장소(owner/repo)예요. 내 GitHub 계정의 저장소만 넣을 수 있고, 나에게만 보여요." />
+      {v.login ? (
+        <>
+          <div className="hstack" style={{ gap: 6 }}>
+            <input className="input mono grow" aria-label="스킬 저장소" placeholder={`${v.login}/skills`} autoComplete="off" spellCheck={false} value={repo} disabled={busy} onChange={(e) => setRepo(e.target.value)} />
+            <Button size="sm" busy={busy} disabled={!shape || !mine || t === v.repo} onClick={() => void save(t)}>
+              저장
+            </Button>
+            {v.repo ? (
+              <Button size="sm" disabled={busy} onClick={() => void save('')}>
+                비우기
+              </Button>
+            ) : null}
+          </div>
+          <span className="muted" style={{ fontSize: 'var(--fs-small)' }} role="status">
+            {status}
+          </span>
+        </>
+      ) : (
+        <span className="muted">GitHub 로 로그인한 계정만 정할 수 있어요.</span>
+      )}
+    </section>
+  )
+}
+
 /**
  * 계정 삭제 (REQ-F-770): what goes and what stays is said first, and the login name must be typed to go on. The
  * demo account is only put back to where it starts.
@@ -691,6 +764,8 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             </nav>
           </section>
           ) : null}
+          {/* The demo account has no GitHub login, and the demo refuses this call. */}
+          {tab === 'more' && me && !me.demo ? <SkillsRepoBox /> : null}
           {tab === 'more' ? <DeleteAccount me={me} /> : null}
         </div>
         )}

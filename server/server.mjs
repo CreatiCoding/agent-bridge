@@ -49,9 +49,10 @@ const DEV_LOGIN = process.env.BRIDGE_DEV_LOGIN === '1'
 /** GitHub logins that may see every user's hosts, their status and their logs (never conversations). */
 const ADMINS = (process.env.BRIDGE_ADMIN_LOGINS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 /**
- * /skills: the skill marketplace repo, read as a GitHub App installed on it (SKILLS_GITHUB_APP_ID + _KEY, nothing
- * expires) or with a read-only token. The repo is SKILLS_REPO when set, else what an operator saved in the 운영 tab
- * (REQ-F-792); with no repo or no credentials the page says it is off, and nothing is logged.
+ * /skills: a skill marketplace repo, read as a GitHub App installed on it (SKILLS_GITHUB_APP_ID + _KEY, nothing
+ * expires) or with a read-only token. Each person sets their own repo in 설정 (REQ-F-792, prefs `skillsRepo`), one
+ * they own; SKILLS_REPO is the default for everyone who set none. With no repo or no credentials the page says it is
+ * off, and nothing is logged.
  */
 const SKILLS_REPO_ENV = (process.env.SKILLS_REPO || '').trim()
 const SKILLS_REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/
@@ -149,11 +150,16 @@ const readJson = (p, fallback) => {
     return fallback
   }
 }
+/** The one server-wide repo of 1.294 and before, saved in the 운영 tab: moved to its owner's prefs at start (1.295). */
 const SKILLS_FILE = path.join(DATA, 'skills-repo.json')
-let skillsRepo = SKILLS_REPO_ENV || (SKILLS_REPO_RE.test(readJson(SKILLS_FILE, {}).repo ?? '') ? readJson(SKILLS_FILE, {}).repo : '')
-const makeSkills = () => (skillsRepo && (SKILLS_APP || SKILLS_TOKEN) ? createSkills({ token: SKILLS_TOKEN, app: SKILLS_APP, repo: skillsRepo, api: process.env.SKILLS_GITHUB_API || undefined, log }) : null)
-let skills = makeSkills()
-const skillsView = () => ({ repo: skillsRepo, env: !!SKILLS_REPO_ENV, auth: SKILLS_APP ? 'app' : SKILLS_TOKEN ? 'token' : null, on: !!skills })
+/** owner/repo (lowercased) -> its reader, made on first use and kept: each keeps its own copy of the repo. */
+const skillsByRepo = new Map()
+const skillsFor = (repo) => {
+  if (!repo || !(SKILLS_APP || SKILLS_TOKEN)) return null
+  const k = repo.toLowerCase()
+  if (!skillsByRepo.has(k)) skillsByRepo.set(k, createSkills({ token: SKILLS_TOKEN, app: SKILLS_APP, repo, api: process.env.SKILLS_GITHUB_API || undefined, log }))
+  return skillsByRepo.get(k)
+}
 const writeJson = (p, v) => {
   if (frozen) return
   fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 })
@@ -408,6 +414,14 @@ function prefsOf(uid) {
   return prefsCache.get(uid)
 }
 const savePrefs = (uid) => (writeJson(prefsFile(uid), prefsOf(uid)), broadcastState(uid))
+/** The GitHub login of a person signed in with GitHub; null for Apple and demo accounts, which have none. */
+const githubLoginOf = (uid) => (!isDemoUid(uid) && users[uid] && !users[uid].apple && !isAppleLogin(users[uid].login) ? users[uid].login : null)
+/** 스킬 저장소 (REQ-F-792): the person's own, else SKILLS_REPO, else none. */
+const skillsRepoOf = (uid) => (typeof prefsOf(uid).skillsRepo === 'string' && prefsOf(uid).skillsRepo) || SKILLS_REPO_ENV
+const skillsView = (uid) => {
+  const own = typeof prefsOf(uid).skillsRepo === 'string' ? prefsOf(uid).skillsRepo : ''
+  return { repo: own, fallback: !own && !!SKILLS_REPO_ENV, login: githubLoginOf(uid), auth: SKILLS_APP ? 'app' : SKILLS_TOKEN ? 'token' : null, on: !!skillsFor(skillsRepoOf(uid)) }
+}
 const SPLITS_MAX = 20
 /** 분할 조합 (REQ-F-790): [{id, name, ids: [sid, sid(, sid)]}]. */
 const splitsOf = (uid) => (Array.isArray(prefsOf(uid).splits) ? prefsOf(uid).splits : []).filter((x) => x && typeof x.id === 'string' && typeof x.name === 'string' && Array.isArray(x.ids))
@@ -3829,7 +3843,9 @@ async function api(req, res, url, uid) {
   // ----- skills -----
   const sk = /^\/api\/skills(?:\/([a-z0-9-]+))?$/.exec(p)
   if (get && sk) {
-    if (!skills) throw new Refuse(503, '스킬 저장소가 설정되지 않았습니다 (SKILLS_GITHUB_APP_ID·SKILLS_GITHUB_APP_KEY 또는 SKILLS_GITHUB_TOKEN)')
+    if (!(SKILLS_APP || SKILLS_TOKEN)) throw new Refuse(503, '스킬 저장소가 설정되지 않았습니다 (SKILLS_GITHUB_APP_ID·SKILLS_GITHUB_APP_KEY 또는 SKILLS_GITHUB_TOKEN)')
+    const skills = skillsFor(skillsRepoOf(uid))
+    if (!skills) throw new Refuse(503, '스킬 저장소가 없어요. 설정 → 더 보기 → 스킬 저장소에 내 GitHub 저장소(owner/repo)를 넣어 주세요')
     const c = await skills.current()
     const base = { repo: c.repo, market: c.market, sha: c.sha, date: c.date, check: c.check, origin: originOf(req) }
     if (!sk[1]) return json(res, 200, { ...base, skills: c.skills.map(({ body, ...s }) => s) })
@@ -4036,6 +4052,23 @@ async function api(req, res, url, uid) {
     prefsOf(uid).launch = v
     savePrefs(uid)
     return json(res, 200, { ok: true, note: '저장했어요. 다음에 띄우는 새 세션과 복제부터 적용돼요.', ...v })
+  }
+  // 스킬 저장소 (REQ-F-792): the repo this person's /skills reads. Only one the person owns on GitHub, so this server's
+  // App or token never reads someone else's repo for them; Apple and demo accounts have no GitHub login and cannot.
+  if (p === '/api/prefs/skills') {
+    if (post) {
+      const b = await body(req, 4096)
+      const repo = typeof b.repo === 'string' ? b.repo.trim() : null
+      if (repo === null) throw new Refuse(400, 'repo 가 필요해요')
+      const gh = githubLoginOf(uid)
+      if (!gh) throw new Refuse(400, 'GitHub 로 로그인한 계정만 스킬 저장소를 정할 수 있어요')
+      if (repo && !SKILLS_REPO_RE.test(repo)) throw new Refuse(400, 'owner/repo 형식으로 적어 주세요')
+      if (repo && repo.split('/')[0].toLowerCase() !== gh.toLowerCase()) throw new Refuse(400, `내 GitHub 계정(${gh})의 저장소만 넣을 수 있어요`)
+      if (repo) prefsOf(uid).skillsRepo = repo
+      else delete prefsOf(uid).skillsRepo
+      savePrefs(uid)
+    } else if (!get) throw new Refuse(405, '지원하지 않는 요청입니다')
+    return json(res, 200, skillsView(uid))
   }
   if (p === '/api/prefs/voice') {
     if (get) return json(res, 200, cleanVoice(prefsOf(uid).voice))
@@ -4342,20 +4375,6 @@ async function api(req, res, url, uid) {
       if (b.refresh === true) await refreshModels('운영자')
     }
     return json(res, 200, modelsView())
-  }
-  // 스킬 저장소 (REQ-F-792): which repo /skills reads. SKILLS_REPO, when set, wins and cannot be changed here.
-  if (p === '/api/admin/skills') {
-    if (!isAdmin(uid)) throw new Refuse(403, '운영자만 볼 수 있습니다')
-    if (post) {
-      const b = await body(req, 4096)
-      const repo = typeof b.repo === 'string' ? b.repo.trim() : null
-      if (repo === null) throw new Refuse(400, 'repo 가 필요해요')
-      if (SKILLS_REPO_ENV) throw new Refuse(409, '환경 변수 SKILLS_REPO 가 정해져 있어 여기서 바꿀 수 없어요')
-      if (repo && !SKILLS_REPO_RE.test(repo)) throw new Refuse(400, 'owner/repo 형식으로 적어 주세요')
-      writeJson(SKILLS_FILE, { repo })
-      if (repo !== skillsRepo) (skillsRepo = repo), (skills = makeSkills())
-    } else if (!get) throw new Refuse(405, '지원하지 않는 요청이에요')
-    return json(res, 200, skillsView())
   }
   if (get && p === '/api/admin/overview') {
     if (!isAdmin(uid)) throw new Refuse(403, '운영자만 볼 수 있습니다')
@@ -5142,6 +5161,20 @@ for (const uid of fs.existsSync(path.join(DATA, 'u')) ? fs.readdirSync(path.join
 for (const id of Object.keys(hosts)) if (isDemoHost(id) || hosts[id].uid === 'demo') delete hosts[id]
 for (const uid of Object.keys(users)) if (isDemoUid(uid) || uid === 'demo') delete users[uid]
 if (demoOn) log('공개 데모 켜짐: 데모로 둘러보기(BRIDGE_DEMO=1)')
+// The server-wide skills repo of 1.294 goes to the person whose GitHub login owns it (REQ-F-792), unless they set
+// one of their own already; the file is then renamed so this happens once. With no such person it stays for later.
+{
+  const old = readJson(SKILLS_FILE, null)?.repo
+  if (typeof old === 'string' && SKILLS_REPO_RE.test(old)) {
+    const owner = old.split('/')[0].toLowerCase()
+    const uid = Object.keys(users).find((u) => githubLoginOf(u)?.toLowerCase() === owner)
+    if (uid) {
+      if (!prefsOf(uid).skillsRepo) (prefsOf(uid).skillsRepo = old), writeJson(prefsFile(uid), prefsOf(uid))
+      fs.renameSync(SKILLS_FILE, `${SKILLS_FILE}.migrated`)
+      log(`skills: 서버 하나의 스킬 저장소를 ${users[uid].login} 의 설정으로 옮김`)
+    }
+  }
+}
 
 
 const server = http.createServer(async (req, res) => {
@@ -5196,15 +5229,23 @@ const server = http.createServer(async (req, res) => {
     if (p === '/prepaint.js') return sendFile(res, path.join(UI, 'prepaint.js'))
     if (p === '/bridge') return sendFile(res, path.join(ROOT, 'web/bridge.html'))
     // The installer holds nothing private (installing needs GitHub access to the repo), so curl can fetch it.
-    // What /skills is serving, for checking a deploy without signing in: the skills repo commit it reads and a hash of
-    // this server's /skills code (scripts/skills-code-hash.mjs computes the same hash for any git ref). Nothing private.
+    // What /skills is serving, for checking a deploy: a hash of this server's /skills code (scripts/skills-code-hash.mjs
+    // computes the same hash for any git ref), open to anyone. Which repo, its commit and how many skills only to the
+    // person signed in, and only their own (REQ-F-792).
     if (p === '/skills/version') {
-      if (!skills) return json(res, 503, { error: 'skills not configured' })
+      const who = whoami(req)
+      const skills = who ? skillsFor(skillsRepoOf(who)) : null
+      if (!skills) return json(res, 200, { code: SKILLS_CODE })
       const c = await skills.current()
       return json(res, 200, { code: SKILLS_CODE, repo: c.repo, sha: c.sha, date: c.date, skills: c.skills.length, check: c.check, auth: skills.auth })
     }
+    // ?repo=owner/repo: only a repo someone here set (or SKILLS_REPO, also the default without ?repo), else 404.
     if (p === '/skills/install.sh') {
-      if (!skills) return res.writeHead(503).end('skills not configured\n')
+      const want = (url.searchParams.get('repo') ?? SKILLS_REPO_ENV).trim().toLowerCase()
+      const repo = want && [SKILLS_REPO_ENV, ...Object.keys(users).map((u) => prefsOf(u).skillsRepo)].find((r) => typeof r === 'string' && r && r.toLowerCase() === want)
+      if (!(SKILLS_APP || SKILLS_TOKEN)) return res.writeHead(503).end('skills not configured\n')
+      if (!repo) return res.writeHead(404).end('no such skills repo\n')
+      const skills = skillsFor(repo)
       const c = await skills.current()
       return res.writeHead(200, { 'Content-Type': 'text/x-shellscript; charset=utf-8', 'Cache-Control': 'no-cache' }).end(c.install)
     }

@@ -210,9 +210,9 @@ docker build -t claude-bridge . && docker run -p 4300:4300 -v bridge-data:/data 
 | `BRIDGE_DEMO` | `1` 이면 공개 데모를 켠다: 로그인 화면의 "데모로 둘러보기" 한 번으로 맥 없이 정해진 데모 화면을 둘러본다(앱 심사용). 기본은 끔 |
 | `BRIDGE_SOURCE_URL` | 화면의 "소스 코드" 링크(AGPL 13조). 기본 `https://github.com/CreatiCoding/agent-bridge`, http(s) 주소만 |
 | `SKILLS_GITHUB_TOKEN` | `/skills` 를 켠다. 스킬 마켓플레이스 저장소를 읽는 읽기 전용 토큰(fine-grained, 그 저장소만 Contents: Read). 없으면 `/skills` 는 꺼진 상태로 안내한다 |
-| `SKILLS_REPO` | 스킬 마켓플레이스 저장소(`owner/repo`). 기본은 비어 있고, 비어 있으면 운영자가 설정 → 운영 → 스킬 저장소에서 넣은 값을 쓴다. 이 변수가 있으면 그게 우선이고 화면에서 바꿀 수 없다. 둘 다 비면 `/skills` 는 꺼진 상태로 안내한다 |
+| `SKILLS_REPO` | 스킬 마켓플레이스 저장소(`owner/repo`)의 서버 기본값. 자기 저장소를 정하지 않은 모든 사용자가 이걸 읽는다. 기본은 비어 있다 |
 
-`/skills` 는 로그인한 사용자에게 스킬 카드·상세(SKILL.md)와 설치 명령을 보여 준다. 설치는 GitHub 를 거치므로 그 저장소에 접근할 수 있는 사람만 된다. 이 페이지는 권한을 주지 않는다. `/skills/install.sh` 는 비밀이 없어 로그인 없이 받을 수 있다.
+`/skills` 는 로그인한 사용자에게 **자기** 스킬 저장소의 카드·상세(SKILL.md)와 설치 명령을 보여 준다. 저장소는 사용자마다 설정 → 더 보기 → 스킬 저장소에서 정한다(`owner/repo`). 서버의 App·토큰으로 남의 저장소를 읽지 않도록 **owner 가 자기 GitHub 로그인과 같은 저장소만** 넣을 수 있고(대소문자 무시), Apple 로그인·데모 계정은 정할 수 없다. 개인 설정이 있으면 그게 `SKILLS_REPO` 보다 우선이다. 다른 사용자의 저장소는 보이지 않고, 로그인 없이 열리는 `/skills/version` 은 코드 해시(`code`)만 내준다. 설치는 GitHub 를 거치므로 그 저장소에 접근할 수 있는 사람만 된다. `/skills/install.sh?repo=owner/repo` 는 누군가 정한 저장소(또는 `SKILLS_REPO`)일 때만 로그인 없이 받을 수 있다.
 
 사용자마다 호스트와 세션이 분리된다. 서버는 대화 사본을 디스크에 평문으로 두므로, 서버를 믿을 수 있는 사람이 운영해야 한다.
 

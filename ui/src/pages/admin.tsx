@@ -418,55 +418,6 @@ function ModelsBox({ initial, onRetry }: { initial: Models | null; onRetry: () =
   )
 }
 
-interface SkillsRepo {
-  repo: string
-  /** SKILLS_REPO is set on the server: it wins, and this box only shows it. */
-  env: boolean
-  auth: 'app' | 'token' | null
-  on: boolean
-}
-
-/** 스킬 저장소 (REQ-F-792): the GitHub repo /skills reads, `owner/repo`; empty turns /skills off. */
-function SkillsRepoBox() {
-  const [v, setV] = useState<SkillsRepo | null | undefined>(undefined)
-  const [repo, setRepo] = useState('')
-  const [busy, setBusy] = useState(false)
-  const load = () => get<SkillsRepo>('/api/admin/skills').then((x) => (setV(x), setRepo(x.repo)), () => setV(null))
-  useEffect(() => void load(), [])
-  if (v === undefined) return null
-  if (!v) return <LoadError what="스킬 저장소를" onRetry={() => void load()} />
-  const valid = !repo.trim() || /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/.test(repo.trim())
-  const save = async () => {
-    setBusy(true)
-    try {
-      const r = await post<SkillsRepo>('/api/admin/skills', { repo: repo.trim() })
-      setV(r)
-      setRepo(r.repo)
-      toast(r.repo ? (r.on ? '저장했어요' : '저장했어요 · 읽을 권한(SKILLS_GITHUB_APP_ID·KEY 또는 TOKEN)이 없어 아직 꺼져 있어요') : '스킬 페이지를 껐어요')
-    } catch (e) {
-      toast(errorText(e), { tone: 'bad' })
-    }
-    setBusy(false)
-  }
-  return (
-    <div className="card-box stack">
-      <span className="muted" style={{ fontSize: 'var(--fs-small)' }}>
-        /skills 가 읽는 GitHub 저장소(owner/repo). 비우면 스킬 페이지가 꺼져요. 환경 변수 SKILLS_REPO 가 있으면 그게 우선이에요.
-      </span>
-      <div className="hstack" style={{ gap: 6 }}>
-        <input className="input mono grow" aria-label="스킬 저장소" placeholder="owner/repo" autoComplete="off" spellCheck={false} value={repo} disabled={v.env || busy} onChange={(e) => setRepo(e.target.value)} />
-        <Button size="sm" busy={busy} disabled={v.env || !valid || repo.trim() === v.repo} onClick={() => void save()}>
-          저장
-        </Button>
-      </div>
-      <span className="muted" style={{ fontSize: 'var(--fs-small)' }}>
-        {v.env ? '환경 변수 SKILLS_REPO 로 정해져 있어요 · ' : ''}
-        {!valid ? 'owner/repo 형식으로 적어 주세요' : v.on ? `켜짐 · ${v.auth === 'app' ? 'GitHub App' : '토큰'}으로 읽어요` : v.repo ? '꺼짐 · 읽을 권한이 서버에 없어요' : '꺼짐'}
-      </span>
-    </div>
-  )
-}
-
 /** The settings page's 운영 tab (REQ-F-741): server, reports, models, access and everyone's Macs, for admins. */
 export function AdminPanel() {
   const [access, setAccess] = useState<Access | null>(null)
@@ -545,10 +496,6 @@ export function AdminPanel() {
       <section>
         <h2>모델 목록</h2>
         <ModelsBox key={models ? 'm' : 'none'} initial={models ?? null} onRetry={() => void loadModels()} />
-      </section>
-      <section>
-        <h2>스킬 저장소</h2>
-        <SkillsRepoBox />
       </section>
       <section>
         {/* The h2's own margins go on the row, so the button sits level with the title. */}
