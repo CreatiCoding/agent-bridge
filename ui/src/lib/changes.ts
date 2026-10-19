@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.296',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: 'iPhone 앱에서 키보드를 띄우면 머리 막대가 위로 34 px 밀려 잘리고 입력 상자 아래 줄이 잘리던 것: 입력창을 쓰는 동안은 iOS 의 밀어 올림을 되돌리고 입력창을 키보드 위로 직접 올림', refs: ['REQ-F-757'] },
+    ],
+  },
+  {
     version: '1.295',
+    commit: '00e692b',
     date: '2026-10-19',
     changes: [
       { kind: 'changed', scope: ['server', 'ui'], text: '스킬 저장소를 사람마다: 설정 → 더 보기 → 스킬 저장소에 내 GitHub 저장소(owner/repo)를 넣으면 /skills 가 그걸 읽음. SKILLS_REPO 는 설정하지 않은 사람의 기본값', refs: ['REQ-F-792', 'IF-247'] },

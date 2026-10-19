@@ -29,7 +29,7 @@ export function kbDebugText(page: HTMLElement) {
   probe.remove()
   const shown = vv ? vv.offsetTop + vv.height : innerHeight
   return [
-    `ih ${innerHeight} vv ${r(vv?.height)} top ${r(vv?.offsetTop)} x${vv?.scale.toFixed(2) ?? '-'}`,
+    `ih ${innerHeight} ch ${document.documentElement.clientHeight} vv ${r(vv?.height)} top ${r(vv?.offsetTop)} page ${r(vv?.pageTop)} sy ${r(scrollY)} x${vv?.scale.toFixed(2) ?? '-'}`,
     `kb ${page.classList.contains('kb-open') ? 'open' : 'no'} safe ${safe} pad ${comp ? getComputedStyle(comp).paddingBottom : '-'}`,
     `comp ${r(comp?.getBoundingClientRect().bottom)} box ${r(box?.getBoundingClientRect().bottom)} seen ${r(shown)} gap ${box ? r(shown - box.getBoundingClientRect().bottom) : '-'}`,
   ].join('\n')

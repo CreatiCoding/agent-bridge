@@ -470,6 +470,9 @@ export function SessionPage({ id }: { id: string }) {
   // An iPad does not pan the page for an input at its foot, and a pane of 분할 화면 is a frame that is never told about
   // the keyboard (its own visualViewport keeps its full height): both measure what is seen of the page around them
   // and lift the input (--kb-lift) by as much of it as the keyboard covers (REQ-F-757 rule 4a).
+  // A phone is panned back and lifted the same way while the input has the focus (rule 4b): the iOS app's web view
+  // runs under the home bar, and iOS pans past the foot of the page by that room (34 px), which offsetTop does not
+  // count (it stops at the foot). The header sat 34 px too high and the input was cut off over a blank band.
   useEffect(() => {
     const top = inPane ? window.parent : window
     const vv = top.visualViewport
@@ -480,11 +483,14 @@ export function SessionPage({ id }: { id: string }) {
       if (tallest.w !== top.innerWidth) tallest = { w: top.innerWidth, h: 0 }
       tallest.h = Math.max(tallest.h, top.innerHeight, vv.height)
       const kb = vv.scale < 1.05 && tallest.h - vv.height > 150
-      // Where this page is in the page around it (the whole of it when it is that page).
-      const box = frame?.getBoundingClientRect() ?? { top: 0, bottom: top.innerHeight }
+      const typing = !inPane && !!composerEl.current?.contains(document.activeElement)
+      if (kb && typing && !wideNow() && (vv.offsetTop > 0 || scrollY > 0)) scrollTo(0, 0)
+      // Where this page is in the page around it (the whole of it when it is that page). The page's own height, not
+      // innerHeight: on a phone that is what is seen, and shrinks with the keyboard.
+      const box = frame?.getBoundingClientRect() ?? { top: 0, bottom: document.documentElement.clientHeight }
       pageEl.style.setProperty('--vv-top', `${Math.max(0, Math.round(vv.offsetTop - box.top))}px`)
-      // A phone is panned: iOS already brings the input above the keyboard, and lifting it as well moved it twice.
-      const lift = kb && (inPane || (wideNow() && vv.offsetTop < 1)) ? Math.max(0, Math.round(box.bottom - (vv.offsetTop + vv.height))) : 0
+      // Not while panned: iOS has brought the input above the keyboard, and lifting it as well moved it twice.
+      const lift = kb && (inPane || ((wideNow() || typing) && vv.offsetTop < 1)) ? Math.max(0, Math.round(box.bottom - (vv.offsetTop + vv.height))) : 0
       pageEl.style.setProperty('--kb-lift', `${lift}px`)
       pageEl.classList.toggle('kb-open', kb)
       if (kbDebugOn()) setKbText(kbDebugText(pageEl))
@@ -492,7 +498,15 @@ export function SessionPage({ id }: { id: string }) {
     put()
     vv.addEventListener('scroll', put)
     vv.addEventListener('resize', put)
-    return () => (vv.removeEventListener('scroll', put), vv.removeEventListener('resize', put))
+    // The keyboard can stay up while the focus moves in or out of the input.
+    document.addEventListener('focusin', put)
+    document.addEventListener('focusout', put)
+    return () => {
+      vv.removeEventListener('scroll', put)
+      vv.removeEventListener('resize', put)
+      document.removeEventListener('focusin', put)
+      document.removeEventListener('focusout', put)
+    }
   }, [pageEl])
 
   // Older pages: keep what is on screen where it is while they are put above it.
