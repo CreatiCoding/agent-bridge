@@ -319,7 +319,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       icon: 'sparkle',
       hint: 'SESSION.md 로 새 세션',
       disabled: !alive,
-      onSelect: async () => (await confirmCopyMode()) && act(() => command(s, 'lightfork')),
+      onSelect: () => void lightCopy(s),
     },
     { label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move', disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) },
     // Shown where the Mac has more than one Claude account (설정 → Claude 계정).
@@ -352,6 +352,11 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
     },
     { label: '폴더 버리고 종료', icon: 'trash', danger: true, disabled: !live || away, onSelect: () => trash(s) },
   ]
+}
+
+/** 가벼운 복제 (REQ-F-402): a new session that picks up from SESSION.md. */
+export async function lightCopy(s: Session) {
+  return (await confirmCopyMode()) && act(() => command(s, 'lightfork'))
 }
 
 export async function refresh(s: Session) {

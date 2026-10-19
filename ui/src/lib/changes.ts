@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.301',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '압축해도 대화 기록(.jsonl) 100MB 입력 막힘이 풀리지 않던 것: 기록이 90MB 를 넘으면 압축 띠 대신 "압축은 기록 파일을 줄이지 않아요" 안내와 가벼운 복제 버튼', refs: ['REQ-F-776', 'REQ-P-129'] },
+    ],
+  },
+  {
     version: '1.300',
+    commit: '7201e3e',
     date: '2026-10-19',
     changes: [
       { kind: 'added', scope: ['ui'], text: '세션 메뉴(목록 길게 누르기·⋯)에 "지금 압축": 컨텍스트 크기와 상관없이 쉬는 세션의 대화를 요약해 그 세션에서 그대로 이어감. 폰에서도 원할 때 대화를 정리할 수 있게', refs: ['REQ-F-776'] },

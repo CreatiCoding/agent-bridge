@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { errorText } from '../lib/api'
 import { kbDebugOn, kbDebugText } from '../lib/kbdebug'
-import { duration, folderPath, shortLabel, tokens } from '../lib/format'
+import { bytes, duration, folderPath, shortLabel, tokens } from '../lib/format'
 import { getPref, markSeen, setPref } from '../lib/local'
 import { back, go, navigate } from '../lib/router'
 import { loadOlder, retryLog, useSessionLog } from '../lib/session-log'
@@ -16,7 +16,7 @@ import { openMenu, toast, type MenuEntry } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
 import type { VoiceDraft } from '../components/voice-mode'
 import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodoPanelPref, SettingsSheet, TodoAskCard, todoAskOf, TodoPanel, todoPanelPref, Todos, useTodoHidden } from '../components/session-extras'
-import { act, askTodos as askSessionTodos, canSlack, command, inSlack, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked } from '../components/session-menu'
+import { act, askTodos as askSessionTodos, canSlack, command, inSlack, lightCopy, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked } from '../components/session-menu'
 import { TimelineView, Writing } from '../components/timeline-view'
 import { DecisionCard } from '../components/decision-card'
 import { LockScreen, useUnlocked } from '../components/lock'
@@ -210,6 +210,31 @@ const LIGHT_NUDGE_AT = 300_000
 const LIGHT_NUDGE_AGAIN = 200_000
 /** How long the banner stays away after 지금 압축 while the compaction runs (the context drops when it is done). */
 const COMPACT_WAIT_MS = 300_000
+/** The conversation file (.jsonl) at which input is refused (server, REQ-P-129), and where the banner starts warning. */
+const LOG_BLOCK = 100 * 1024 * 1024
+const LOG_NUDGE_AT = 0.9 * LOG_BLOCK
+
+/**
+ * A compaction shrinks the context but not the .jsonl (Claude Code appends to it), so past LOG_NUDGE_AT the banner
+ * offers the light copy instead: a new session that picks up from SESSION.md (REQ-F-776 rule 6).
+ */
+function BigLogNudge({ s }: { s: Session }) {
+  const size = s.state.size ?? 0
+  if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || size < LOG_NUDGE_AT) return null
+  return (
+    <div className="banner" role="status" style={{ background: 'var(--violet-soft)' }}>
+      <Icon name="sparkle" />
+      <div className="banner-body">
+        대화 기록이 <b>{bytes(size)}</b> 예요{size >= LOG_BLOCK ? '. 100MB 가 넘어 입력을 막았어요' : '. 100MB 가 되면 입력을 막아요'}. 압축은 컨텍스트만 줄이고 기록 파일은 줄이지 않아요. 가벼운 복제로 SESSION.md 를 넘겨받은 새 세션에서 이어가세요.
+        <div className="banner-actions">
+          <Button size="sm" tone="primary" icon="sparkle" onClick={() => void lightCopy(s)}>
+            가벼운 복제
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function LightNudge({ s }: { s: Session }) {
   const [closedAt, setClosedAt] = useState<number | null>(() => getPref<Record<string, number>>('lightNudge', {})[s.id] ?? null)
@@ -217,6 +242,7 @@ function LightNudge({ s }: { s: Session }) {
   useTick(10_000)
   const ctx = s.state.cache?.ctx ?? 0
   if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || s.state.phase !== 'idle') return null
+  if ((s.state.size ?? 0) >= LOG_NUDGE_AT) return null
   if (ctx < LIGHT_NUDGE_AT || (closedAt != null && ctx < closedAt + LIGHT_NUDGE_AGAIN)) return null
   if (Date.now() - compactAt < COMPACT_WAIT_MS) return null
   const compact = () => {
@@ -796,6 +822,7 @@ export function SessionPage({ id }: { id: string }) {
               <SeatBanner s={s} />
               <DelegateAsks s={s} />
               <StateBanner s={s} />
+              <BigLogNudge s={s} />
               <LightNudge s={s} />
               <OfflineBanner s={s} />
               <ReturnedBanner s={s} />
