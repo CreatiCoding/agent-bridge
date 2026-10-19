@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.303',
+    date: '2026-10-20',
+    changes: [
+      { kind: 'fixed', scope: ['server'], text: '웹 검색을 한 답처럼 ```choices 블록 뒤에 Sources 목록이 붙어도 선택지 버튼이 나옴. 출처 목록은 답 글 끝에 남음', refs: ['REQ-F-579'] },
+    ],
+  },
+  {
     version: '1.302',
+    commit: '9037e3e',
     date: '2026-10-19',
     changes: [
       { kind: 'added', scope: ['ui', 'server', 'agent'], text: '"대화 기록 정리"(세션 메뉴의 가벼운 복제 아래, 100MB 띠): 압축한 세션의 .jsonl 에서 마지막 압축 앞부분을 덜어 내고(원본은 맥의 ~/.claude-bridge/trimmed/) 같은 세션으로 다시 열어 100MB 입력 막힘을 새 세션 없이 푼다', refs: ['REQ-F-793', 'IF-248', 'ERR-338', 'ERR-339'] },

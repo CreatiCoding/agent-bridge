@@ -24,16 +24,26 @@ const DENIED_RE = /denied by the Claude Code auto mode classifier\.?\s*(?:Reason
 const FAKE_NOTIFICATION_RE = /\s*<task-notification>[\s\S]*?<\/task-notification>/g
 
 /**
- * A trailing ```choices fenced block: up to 6 short options the person picks instead of typing. Only at the very
- * end of an answer; one in the middle is part of the text.
+ * A trailing ```choices fenced block: up to 6 short options the person picks instead of typing. Only at the end of
+ * an answer; one in the middle is part of the text. A web search makes Claude add a "Sources:" list after
+ * everything, so a block followed only by such a list still counts, and the list stays in the text.
  */
-const CHOICES_RE = /\n?```choices\n([\s\S]*?)\n```\s*$/
+const CHOICES_RE = /\n?```choices\n([\s\S]*?)\n```[ \t]*(?=\n|$)/g
+const SOURCES_HEAD_RE = /^(#{1,6}\s*)?(\*\*)?(sources|references|출처|참고(\s*자료)?)(\*\*)?\s*:?\s*(\*\*)?$/i
+const SOURCE_ITEM_RE = /^\s*([-*+]|\d+\.)\s+.*https?:\/\//
+function sourcesOnly(tail) {
+  const lines = tail.split('\n').map((l) => l.trim()).filter(Boolean)
+  return lines.length > 1 && SOURCES_HEAD_RE.test(lines[0]) && lines.slice(1).every((l) => SOURCE_ITEM_RE.test(l))
+}
 export function extractChoices(text) {
-  const m = CHOICES_RE.exec(text)
+  const m = [...text.matchAll(CHOICES_RE)].pop()
   if (!m) return { text }
+  const tail = text.slice(m.index + m[0].length)
+  if (tail.trim() && !sourcesOnly(tail)) return { text }
   const choices = m[1].split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 6)
   if (!choices.length) return { text }
-  return { text: text.slice(0, m.index).replace(/\s+$/, ''), choices }
+  const body = text.slice(0, m.index).replace(/\s+$/, '')
+  return { text: tail.trim() ? `${body}\n\n${tail.trim()}` : body, choices }
 }
 
 /**

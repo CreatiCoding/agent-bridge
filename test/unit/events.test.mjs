@@ -55,6 +55,19 @@ test('a ```todos block in an answer is the to-do list, taken out of the text (RE
   assert.equal(events[1].items[1].text, '배포')
 })
 
+test('a ```choices block followed only by a Sources list still gives buttons, and the list stays (REQ-F-579)', () => {
+  const text = (t) => lineToEvents(line({ type: 'assistant', message: { content: [{ type: 'text', text: t }] } }))[0]
+  const src = '\n\nSources:\n- [Tty (Unix), Wikipedia](https://en.wikipedia.org/wiki/Tty)\n- [Hacker News](https://news.ycombinator.com/)'
+  const e = text('어떤 이름으로 할까요?\n\n```choices\nkilotty\nhivetty\n```' + src)
+  assert.deepEqual(e.choices, ['kilotty', 'hivetty'])
+  assert.equal(e.text, '어떤 이름으로 할까요?' + src)
+  // Anything else after the block keeps it as text.
+  const mid = text('예시:\n\n```choices\nA\n```\n\n이렇게 쓰면 돼요.')
+  assert.equal(mid.choices, undefined)
+  assert.match(mid.text, /```choices/)
+  assert.equal(text('고르세요\n```choices\nA\nB\n```\n').choices.length, 2)
+})
+
 test("the bridge MCP's todos call is the same to-do list, and its result is not drawn (REQ-F-778)", () => {
   const silent = new Set()
   const events = lineToEvents(line({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't9', name: 'mcp__bridge__todos', input: { todos: [{ content: '고치기', activeForm: '고치는 중', status: 'in_progress' }] } }] } }), { silent })
