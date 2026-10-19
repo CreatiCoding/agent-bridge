@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.299',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '세션 목록에서 길게 누르거나 오른쪽 클릭한 메뉴에도 "할 일 정리". 폰에서 목록 메뉴로는 찾을 수 없었음', refs: ['REQ-F-778'] },
+    ],
+  },
+  {
     version: '1.298',
+    commit: '1f6ed7d',
     date: '2026-10-19',
     changes: [
       { kind: 'security', scope: ['server'], text: '로그인 쿠키를 __Host-cb(·__Host-cb_state·__Host-cb_apple)로: 미리보기 출처 같은 다른 하위 도메인이 쿠키를 심어 다른 계정으로 로그인시킬 수 없게. 옛 cb 로그인은 2026-11-02 까지 로그아웃 없이 새 이름으로 옮기고, __Host-cb 가 있으면 옛 cb 는 무시하고 지움', refs: ['REQ-S-080'] },

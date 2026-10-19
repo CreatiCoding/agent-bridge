@@ -34,8 +34,18 @@ test('the agent remembers the bridge tools a session started with and reports th
 test('the page reopens a session without the tool before asking, after its work when it works (AC-1354)', () => {
   const src = fs.readFileSync(new URL('../../ui/src/pages/session-page.tsx', import.meta.url), 'utf8')
   assert.match(src, /const noTodosTool = s\.state\.alive && !s\.state\.bridgeTools\?\.includes\('mcp__bridge__todos'\) && !s\.sawTodosTool/)
-  const ask = src.match(/const askTodos = async \(\) => \{[\s\S]*?\n {2}\}/)[0]
-  assert.ok(ask.indexOf("sessionPost(s, 'refresh', { when: later ? 'later' : 'now' })") < ask.indexOf('send(todoItems.length ? TODO_REASK : TODO_ASK)'))
+  const menu = fs.readFileSync(new URL('../../ui/src/components/session-menu.tsx', import.meta.url), 'utf8')
+  const ask = menu.match(/export async function askTodos\([\s\S]*?\n\}/)[0]
+  assert.match(ask, /const noTool = s\.state\.alive && !s\.state\.bridgeTools\?\.includes\('mcp__bridge__todos'\) && !s\.sawTodosTool/)
+  assert.ok(ask.indexOf("sessionPost(s, 'refresh', { when: later ? 'later' : 'now' })") < ask.indexOf('const text = again ? TODO_REASK : TODO_ASK'))
+})
+
+test('a row\'s menu on the list asks for the list too, and the session page shows it once (AC-1416)', () => {
+  const menu = fs.readFileSync(new URL('../../ui/src/components/session-menu.tsx', import.meta.url), 'utf8')
+  assert.match(menu, /\.\.\.\(opts\.noTodos \? \[\] : \[\{ label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked\(s\), onSelect: \(\) => void askTodos\(s\) \}\]\)/)
+  const page = fs.readFileSync(new URL('../../ui/src/pages/session-page.tsx', import.meta.url), 'utf8')
+  assert.match(page, /noRefresh: wide, noTodos: true \}/)
+  assert.equal(page.match(/label: '할 일 정리'/g).length, 1)
 })
 
 test('"다시 정리" with a list asks to recheck it against the real state, other sessions included (AC-1367)', () => {
@@ -46,7 +56,7 @@ test('"다시 정리" with a list asks to recheck it against the real state, oth
   assert.match(reask[0], /다른 세션/)
   assert.match(reask[0], /origin\/main/)
   const page = fs.readFileSync(new URL('../../ui/src/pages/session-page.tsx', import.meta.url), 'utf8')
-  assert.match(page, /send\(todoItems\.length \? TODO_REASK : TODO_ASK\)/)
+  assert.match(page, /askSessionTodos\(s, todoItems\.length > 0, send\)/)
 })
 
 test('a new list without the done items keeps them; an empty list still clears (AC-1374)', async () => {

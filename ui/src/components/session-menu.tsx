@@ -11,6 +11,7 @@ import { tokenOf } from '../lib/locks'
 import { clearLock, lockSession, relock } from './lock'
 import { confirmCopyMode } from './auto-allow-confirm'
 import { openCwd } from './cwd-sheet'
+import { TODO_ASK, TODO_REASK } from './session-extras'
 
 export async function act<T = { ok: true; note?: string }>(run: () => Promise<T>, done?: string | ((r: T) => string | undefined)) {
   try {
@@ -214,7 +215,37 @@ export async function trash(s: Session) {
   if (ok) await act(() => sessionPost(s, 'trash'))
 }
 
-export function sessionMenu(s: Session, opts: { groups?: { id: string; name: string }[]; noRefresh?: boolean } = {}): MenuEntry[] {
+/**
+ * 할 일 정리 (REQ-F-778): asks the session for its done and remaining work. A session started before the bridge MCP had
+ * its todos tool (rule 9) is reopened first, so the request reaches a Claude that has it: said while it reopens (or
+ * waits to), the request is held and handed to the session that comes back. `again` (a list is already there) asks
+ * it to check the open items against now (rule 6a). The session page passes its own send, which shows the bubble.
+ */
+export async function askTodos(s: Session, again = false, send?: (text: string) => Promise<boolean>) {
+  const busy = s.state.alive && s.state.phase === 'busy'
+  const later = busy || (s.bg?.length ?? 0) > 0
+  const noTool = s.state.alive && !s.state.bridgeTools?.includes('mcp__bridge__todos') && !s.sawTodosTool
+  if (noTool) {
+    try {
+      await sessionPost(s, 'refresh', { when: later ? 'later' : 'now' })
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+      return false
+    }
+  }
+  const text = again ? TODO_REASK : TODO_ASK
+  const ok = send ? await send(text) : (await act(() => sessionPost(s, 'say', { text, images: [] }), () => undefined)) != null
+  if (ok) toast(!noTool ? '할 일 정리를 부탁했어요' : later ? '하던 일이 끝나면 세션을 다시 열어 할 일 도구를 붙이고 정리를 부탁할게요' : '세션을 다시 열어 할 일 도구를 붙이고 정리를 부탁했어요')
+  return ok
+}
+
+/** Why 할 일 정리 cannot be sent now, or undefined when it can. */
+export const todoBlocked = (s: Session) => {
+  const host = getStore().state?.hosts.find((h) => h.id === s.hostId)
+  return inSlack(s) ? 'Slack 에서 작업 중이에요' : s.closed ? '끝난 세션이에요' : s.moving ? '옮기는 중이에요' : host && !host.online ? '맥이 연결돼 있지 않아요' : undefined
+}
+
+export function sessionMenu(s: Session, opts: { groups?: { id: string; name: string }[]; noRefresh?: boolean; noTodos?: boolean } = {}): MenuEntry[] {
   const host = getStore().state?.hosts.find((h) => h.id === s.hostId)
   const live = !s.closed && !!host?.online
   // In Slack the session is only read here: what would drive it waits until it is brought back.
@@ -264,6 +295,9 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
     'sep',
     // A wide session page has 새로고침 as a header button instead.
     ...(opts.noRefresh ? [] : [{ label: '새로고침', icon: 'refresh' as const, hint: '대화 그대로 다시 열기', disabled: !alive, onSelect: () => refresh(s) }]),
+    // The session page puts its own near the top (it knows whether a list is already there); a row's menu, the only
+    // way to it on a phone's list, asks as a first 정리.
+    ...(opts.noTodos ? [] : [{ label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked(s), onSelect: () => void askTodos(s) }]),
     {
       label: '복제',
       icon: 'fork',

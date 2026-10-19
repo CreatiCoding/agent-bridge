@@ -15,8 +15,8 @@ import { Button, Chip, Empty, Icon, IconButton, LoadError, Spinner, useTick, use
 import { openMenu, toast, type MenuEntry } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
 import type { VoiceDraft } from '../components/voice-mode'
-import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodoPanelPref, SettingsSheet, TODO_ASK, TODO_REASK, TodoAskCard, todoAskOf, TodoPanel, todoPanelPref, Todos, useTodoHidden } from '../components/session-extras'
-import { act, canSlack, command, inSlack, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge } from '../components/session-menu'
+import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodoPanelPref, SettingsSheet, TodoAskCard, todoAskOf, TodoPanel, todoPanelPref, Todos, useTodoHidden } from '../components/session-extras'
+import { act, askTodos as askSessionTodos, canSlack, command, inSlack, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked } from '../components/session-menu'
 import { TimelineView, Writing } from '../components/timeline-view'
 import { DecisionCard } from '../components/decision-card'
 import { LockScreen, useUnlocked } from '../components/lock'
@@ -647,20 +647,7 @@ export function SessionPage({ id }: { id: string }) {
   // reaches a Claude that has it: said while it reopens (or waits to), the request is held and handed to the session
   // that comes back. While it works, it reopens once the turn and the background work are done.
   const noTodosTool = s.state.alive && !s.state.bridgeTools?.includes('mcp__bridge__todos') && !s.sawTodosTool
-  const askTodos = async () => {
-    const later = busy || (s.bg?.length ?? 0) > 0
-    if (noTodosTool) {
-      try {
-        await sessionPost(s, 'refresh', { when: later ? 'later' : 'now' })
-      } catch (e) {
-        toast(errorText(e), { tone: 'bad' })
-        return false
-      }
-    }
-    const ok = await send(todoItems.length ? TODO_REASK : TODO_ASK)
-    if (ok) toast(!noTodosTool ? '할 일 정리를 부탁했어요' : later ? '하던 일이 끝나면 세션을 다시 열어 할 일 도구를 붙이고 정리를 부탁할게요' : '세션을 다시 열어 할 일 도구를 붙이고 정리를 부탁했어요')
-    return ok
-  }
+  const askTodos = () => askSessionTodos(s, todoItems.length > 0, send)
   // ▶ and a to-do item send the request like any message, so a busy session gets it after its turn (REQ-F-779).
   const runTodos = (text: string) => void send(text).then((ok) => ok && toast(busy ? '지금 하던 일이 끝나면 이어서 해요' : '할 일을 시작했어요'))
   const copyPath = () => navigator.clipboard?.writeText(s.cwd).then(() => toast('경로를 복사했어요'))
@@ -703,7 +690,7 @@ export function SessionPage({ id }: { id: string }) {
       : []
   }
   const screenItem: MenuEntry = { label: '터미널 화면', icon: 'terminal', disabled: !s.state.alive, onSelect: () => setSheet('screen') }
-  const disabled = away ? 'Slack 에서 작업 중이에요' : s.closed ? '끝난 세션이에요' : s.moving ? '옮기는 중이에요' : host && !host.online ? '맥이 연결돼 있지 않아요' : undefined
+  const disabled = todoBlocked(s)
   return (
     <div className={`main sess${s.delegatedBy && !s.closed ? ' driven' : ''}`} ref={setPageEl}>
       {kbDebug ? <pre className="kbdebug">{kbText}</pre> : null}
@@ -751,7 +738,7 @@ export function SessionPage({ id }: { id: string }) {
         {wide ? <IconButton icon="refresh" label="새로고침" title="대화 그대로 다시 열기" onClick={() => void refresh(s)} disabled={!!disabled || !s.state.alive} /> : null}
         <div className="glass-group">
           <ServerButton s={s} onPreview={setServer} />
-          <IconButton icon="more" label="세션 메뉴" onClick={(e) => openMenu([...splitMenu(), ...phoneMenu, screenItem, { label: '할 일 정리', icon: 'list', hint: '지금까지 한 일·남은 일', disabled: !!disabled, onSelect: () => void askTodos() }, ...wideMenu, 'sep', ...sessionMenu(s, { groups: groupTree(groups).map((t) => ({ id: t.group.id, name: t.path })), noRefresh: wide })], e.currentTarget, titleOf(s))} />
+          <IconButton icon="more" label="세션 메뉴" onClick={(e) => openMenu([...splitMenu(), ...phoneMenu, screenItem, { label: '할 일 정리', icon: 'list', hint: '지금까지 한 일·남은 일', disabled: !!disabled, onSelect: () => void askTodos() }, ...wideMenu, 'sep', ...sessionMenu(s, { groups: groupTree(groups).map((t) => ({ id: t.group.id, name: t.path })), noRefresh: wide, noTodos: true })], e.currentTarget, titleOf(s))} />
         </div>
       </div>
       <DrivenBar s={s} />
