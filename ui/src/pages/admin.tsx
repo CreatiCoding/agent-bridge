@@ -14,7 +14,7 @@ interface Access {
 }
 interface Overview {
   pending: number
-  server: { version: string; agentBuild: string; uptime: number; rss: number; bridges: number; controls: number; sessions: number }
+  server: { version: string; agentBuild: string; github?: boolean; originSet?: boolean; root?: boolean; agentSigned?: boolean; agentSeqBack?: boolean; uptime: number; rss: number; bridges: number; controls: number; sessions: number }
   users: { login: string; allowed: boolean; hosts: { id: string; name: string; online: boolean; agent: string | null; build: string | null; outdated: boolean; updateBlocked?: boolean; key?: KeyState | null; sessions: number; problem: string | null }[] }[]
 }
 
@@ -468,11 +468,18 @@ export function AdminPanel() {
         <div className="tiles">
           <div className="tile">
             <b>{over.server.version}</b>
-            <span>서버 · 켜진 지 {duration(over.server.uptime)} · {bytes(over.server.rss)}</span>
+            <span>
+              서버 · 켜진 지 {duration(over.server.uptime)} · {bytes(over.server.rss)}
+              {over.server.originSet === false ? ' · BRIDGE_ORIGIN 없음' : ''}
+              {over.server.root ? ' · root 로 실행 중' : ''}
+            </span>
           </div>
           <div className="tile">
             <b>{over.server.agentBuild}</b>
-            <span>최신 에이전트 build</span>
+            <span>
+              최신 에이전트 build
+              {over.server.agentSigned === false ? (over.server.agentSeqBack ? ' · 서명 순번이 뒤로 감, 업데이트 안 보냄' : ' · 서명 안 됨, 업데이트 안 보냄') : ''}
+            </span>
           </div>
           <div className="tile">
             <b>{over.server.bridges}</b>

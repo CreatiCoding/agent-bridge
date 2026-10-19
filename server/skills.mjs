@@ -63,6 +63,25 @@ export function appJwt(appId, key, now = Date.now()) {
   return `${body}.${crypto.sign('sha256', Buffer.from(body), key).toString('base64url')}`
 }
 
+/**
+ * A path taken from the repo's marketplace.json, made safe to put in a GitHub API address, else null. Those values
+ * are written by whoever can push to the repo; unchecked, `../../other/private/contents/x#` would send the
+ * server's token to another repo. Plain segments only (no `.`/`..`, `%`, `?`, `#`, `\`), each URL-encoded.
+ */
+export function safePath(s, { allowEmpty = false } = {}) {
+  if (s === '' && allowEmpty) return ''
+  if (typeof s !== 'string' || !/^[\w.-]+(\/[\w.-]+)*$/.test(s)) return null
+  const parts = s.split('/')
+  if (parts.some((x) => x === '.' || x === '..')) return null
+  return parts.map(encodeURIComponent).join('/')
+}
+
+/** What a skill with an unsafe path throws: that skill is left out, the rest load. */
+class UnsafePath extends Error {}
+
+/** The repo answered with a redirect (renamed or moved): shown to the person as "not found". */
+export class RepoGone extends Error {}
+
 /** Renew an installation token this long before GitHub says it expires (it lasts an hour). */
 const TOKEN_EARLY_MS = 5 * 60_000
 
@@ -78,8 +97,10 @@ export function createSkills({ token, app = null, repo, api = API, raw = RAW, lo
   let minted = null // { token, until } of the App's installation
   let minting = null
 
+  // redirect 'manual': a renamed or moved repo answers 301 and is not followed, so the token never reads the repo it
+  // now points at; it reads as "not found" until the person sets the new name.
   const gh = (url, auth, init = {}) =>
-    fetch(url, { ...init, headers: { Authorization: `Bearer ${auth}`, 'User-Agent': 'claude-bridge', 'X-GitHub-Api-Version': '2022-11-28', Accept: 'application/vnd.github+json', ...init.headers } })
+    fetch(url, { ...init, redirect: 'manual', headers: { Authorization: `Bearer ${auth}`, 'User-Agent': 'claude-bridge', 'X-GitHub-Api-Version': '2022-11-28', Accept: 'application/vnd.github+json', ...init.headers } })
 
   async function mint() {
     const jwt = appJwt(app.id, app.key)
@@ -105,19 +126,32 @@ export function createSkills({ token, app = null, repo, api = API, raw = RAW, lo
     return (await minting).token
   }
 
+  // Every address the token goes to must stay under this repo, whatever was put together before.
+  const base = new URL(`${api}/repos/${repo}/`)
   const get = async (p, raw = false) => {
-    const r = await gh(`${api}/repos/${repo}${p}`, await auth(), { headers: raw ? { Accept: 'application/vnd.github.raw+json' } : {} })
+    const u = `${api}/repos/${repo}${p}`
+    const at = new URL(u)
+    if (at.origin !== base.origin || !at.pathname.startsWith(base.pathname)) throw new UnsafePath('leaves the repo')
+    const r = await gh(u, await auth(), { headers: raw ? { Accept: 'application/vnd.github.raw+json' } : {} })
     if (r.status === 401) minted = null // revoked or expired early: the next read makes a new one
+    if (r.status >= 300 && r.status < 400) throw new RepoGone(`저장소를 찾을 수 없어요 (이름이 바뀌었거나 옮겨졌어요). 설정 → 더 보기 → 스킬 저장소를 확인해 주세요`)
     if (!r.ok) throw new Error(`${p}: GitHub ${r.status}`)
     return raw ? r.text() : r.json()
   }
-  const file = (ref, p) => get(`/contents/${p}?ref=${ref}`, true)
+  const file = (ref, p) => {
+    const sp = safePath(p)
+    if (sp === null || !/^[\w.-]+$/.test(ref)) throw new UnsafePath('bad path')
+    return get(`/contents/${sp}?ref=${encodeURIComponent(ref)}`, true)
+  }
 
   // A skill entry may point at a folder of someone else's public GitHub repo instead of a copy here
   // (`source: { source: 'git-subdir', url, path, sha }`). Its SKILL.md is read at the pinned commit, the one
   // that passed the marketplace's security check and that devices install.
   const rawFile = async ({ repo: from, path, ref }, name) => {
-    const url = `${raw}/${from}/${ref}/${path ? `${path}/` : ''}${name}`
+    const [f, p, n] = [safePath(from), safePath(path, { allowEmpty: true }), safePath(name)]
+    if (f === null || f.split('/').length !== 2 || p === null || n === null || !/^[\w.-]+$/.test(ref)) throw new UnsafePath('bad upstream')
+    const url = `${raw}/${f}/${encodeURIComponent(ref)}/${p ? `${p}/` : ''}${n}`
+    if (!new URL(url).pathname.startsWith(`${new URL(`${raw}/${f}/`).pathname}`)) throw new UnsafePath('leaves the upstream')
     const r = await fetch(url, { headers: { 'User-Agent': 'claude-bridge' } })
     if (!r.ok) throw new Error(`${url}: ${r.status}`)
     return r.text()
@@ -125,7 +159,7 @@ export function createSkills({ token, app = null, repo, api = API, raw = RAW, lo
 
   // An entry with `outputStyles` ships output styles instead of a skill: show each style file in turn.
   async function styles(up, p) {
-    const parts = await Promise.all(p.outputStyles.map(async (f) => frontMatter(await rawFile(up, f.replace(/^\.\//, '')))))
+    const parts = await Promise.all(p.outputStyles.map(async (f) => frontMatter(await rawFile(up, String(f).replace(/^\.\//, '')))))
     return {
       meta: { description: parts.map((x) => `${x.meta.name}: ${x.meta.description}`).join(' / ') },
       body: parts.map((x) => `## ${x.meta.name}\n\n${x.body.trim()}\n`).join('\n'),
@@ -135,6 +169,8 @@ export function createSkills({ token, app = null, repo, api = API, raw = RAW, lo
 
   async function skill(sha, root, p) {
     const up = upstreamOf(p.source)
+    // name is also part of /skills/<name> and of the API path: one plain segment.
+    if (typeof p.name !== 'string' || !/^[\w.-]+$/.test(p.name) || p.name === '.' || p.name === '..') throw new UnsafePath('bad name')
     const dir = [root, typeof p.source === 'string' ? p.source.replace(/^\.\//, '') : p.name].filter(Boolean).join('/')
     const { meta, body, styles: outputStyles = [] } =
       up && p.outputStyles?.length ? await styles(up, p) : frontMatter(up ? await rawFile(up, 'SKILL.md') : await file(sha, `${dir}/skills/${p.name}/SKILL.md`))
@@ -160,8 +196,20 @@ export function createSkills({ token, app = null, repo, api = API, raw = RAW, lo
     const [head, check] = await Promise.all([get('/commits/HEAD'), lastCheck()])
     if (cache?.sha === head.sha) return (cache = { ...cache, check })
     const market = JSON.parse(await file(head.sha, '.claude-plugin/marketplace.json'))
-    const root = (market.metadata?.pluginRoot || '.').replace(/^\.\/?/, '').replace(/\/+$/, '')
-    const skills = await Promise.all(market.plugins.map((p) => skill(head.sha, root, p)))
+    const root = String(market.metadata?.pluginRoot || '.').replace(/^\.\/?/, '').replace(/\/+$/, '')
+    if (safePath(root, { allowEmpty: true }) === null) throw new Error('marketplace.json 의 metadata.pluginRoot 가 올바르지 않아요')
+    // A skill whose path would leave the repo is skipped (said without the repo's name); any other error fails the load as before.
+    const skills = (
+      await Promise.all(
+        market.plugins.map((p, i) =>
+          skill(head.sha, root, p).catch((e) => {
+            if (!(e instanceof UnsafePath)) throw e
+            log(`skills: plugins[${i}] 건너뜀 (경로가 올바르지 않음)`)
+            return null
+          }),
+        ),
+      )
+    ).filter(Boolean)
     const install = await file(head.sha, 'install.sh')
     log(`skills: loaded ${skills.length} from ${repo}@${head.sha.slice(0, 7)}`)
     return (cache = { sha: head.sha, date: head.commit?.committer?.date ?? null, market: market.name, repo, skills, install, check })

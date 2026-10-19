@@ -12,8 +12,9 @@ let data = null
 let filter = null
 const picked = new Set()
 
-// Each repo has its own installer (REQ-F-792); quoted, since zsh reads an unquoted ? as a pattern.
-const script = () => `curl -fsSL '${data.origin}/skills/install.sh?repo=${data.repo}' | bash -s --`
+// Each repo has its own installer (REQ-F-792), at a signed address the server gives (REQ-S-078); quoted, since zsh
+// reads an unquoted ? or & as a pattern or a background job.
+const script = () => `curl -fsSL '${data.install}' | bash -s --`
 const commands = {
   install: (names) => `${script()} ${names.join(' ')}`,
   reset: (names) => `${script()} --reset ${names.join(' ')}`,

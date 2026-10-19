@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
-import { appJwt, appKey, codeHash, createSkills, frontMatter, SKILLS_FILES, upstreamOf } from '../../server/skills.mjs'
+import { appJwt, appKey, codeHash, createSkills, frontMatter, safePath, SKILLS_FILES, upstreamOf } from '../../server/skills.mjs'
 
 test('front matter: quoted, folded and plain values', () => {
   const { meta, body } = frontMatter(`---
@@ -139,4 +139,70 @@ test('skills: the App JWT is RS256 with iss and a 10 minute window back-dated a 
   assert.deepEqual(JSON.parse(Buffer.from(head, 'base64url')), { alg: 'RS256', typ: 'JWT' })
   assert.deepEqual(JSON.parse(Buffer.from(body, 'base64url')), { iat: 999_999_940, exp: 1_000_000_540, iss: '123' })
   assert.ok(crypto.verify('sha256', Buffer.from(`${head}.${body}`), publicKey, Buffer.from(sig, 'base64url')))
+})
+
+test('skills: paths from marketplace.json never take the token out of the repo (1.297)', async (t) => {
+  const evil = ['../../../victim/private/contents/x#', '..', '%2e%2e/x', 'a/../../b', 'x#', 'x?ref=main', '/abs/path', 'a\\..\\b', './', '.']
+  const market = {
+    name: 'm',
+    plugins: [
+      { name: 'ok', source: 'ok' },
+      ...evil.map((s) => ({ name: 'n', source: s })),
+      ...evil.map((s) => ({ name: s, source: 'fine' })),
+      { name: 'up', source: { source: 'git-subdir', url: 'https://github.com/o/r.git', path: '../../victim/x', sha: 'p1n' } },
+      { name: 'up2', source: { source: 'git-subdir', url: 'https://github.com/o/r.git', path: 'x', sha: '../../a' } },
+    ],
+  }
+  const files = {
+    'https://api.test/repos/me/skills/commits/HEAD': JSON.stringify({ sha: 'abc' }),
+    'https://api.test/repos/me/skills/contents/.claude-plugin/marketplace.json?ref=abc': JSON.stringify(market),
+    'https://api.test/repos/me/skills/contents/ok/skills/ok/SKILL.md?ref=abc': '---\nname: ok\n---\nmine',
+    'https://api.test/repos/me/skills/contents/install.sh?ref=abc': '#!/bin/sh',
+  }
+  const asked = []
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    asked.push({ url, token: !!init.headers?.Authorization })
+    return url in files ? new Response(files[url]) : new Response('', { status: 404 })
+  })
+  const logs = []
+  const c = await createSkills({ token: 't', repo: 'me/skills', api: 'https://api.test', raw: 'https://raw.test', log: (...a) => logs.push(a.join(' ')) }).current()
+  assert.deepEqual(
+    c.skills.map((s) => s.name),
+    ['ok'],
+  )
+  for (const a of asked.filter((x) => x.token)) assert.ok(new URL(a.url).pathname.startsWith('/repos/me/skills/'), a.url)
+  assert.ok(asked.every((a) => !/victim/.test(a.url)))
+  // The skip is logged without the repo's name.
+  const skips = logs.filter((l) => /건너뜀/.test(l))
+  assert.ok(skips.length && skips.every((l) => !l.includes('me/skills')))
+})
+
+test('skills: a pluginRoot that leaves the repo fails the load (1.297)', async (t) => {
+  for (const root of ['../../victim', 'a/#', '%2e%2e']) {
+    const files = {
+      'https://api.test/repos/me/skills/commits/HEAD': JSON.stringify({ sha: 'abc' }),
+      'https://api.test/repos/me/skills/contents/.claude-plugin/marketplace.json?ref=abc': JSON.stringify({ name: 'm', metadata: { pluginRoot: root }, plugins: [{ name: 'x', source: 'x' }] }),
+    }
+    const asked = []
+    t.mock.method(globalThis, 'fetch', async (url) => (asked.push(url), url in files ? new Response(files[url]) : new Response('', { status: 404 })))
+    await assert.rejects(createSkills({ token: 't', repo: 'me/skills', api: 'https://api.test' }).current())
+    assert.ok(asked.every((u) => new URL(u).pathname.startsWith('/repos/me/skills/')))
+    t.mock.restoreAll()
+  }
+})
+
+test('skills: a renamed or moved repo (301) is not followed (1.297)', async (t) => {
+  const inits = []
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    inits.push(init)
+    return new Response('', { status: 301, headers: { Location: 'https://api.test/repositories/99' } })
+  })
+  await assert.rejects(createSkills({ token: 't', repo: 'me/skills', api: 'https://api.test' }).current(), /저장소를 찾을 수 없어요/)
+  assert.ok(inits.length && inits.every((i) => i.redirect === 'manual'))
+})
+
+test('safePath: plain segments only', () => {
+  assert.equal(safePath('plugins/a.b_c-d'), 'plugins/a.b_c-d')
+  assert.equal(safePath('', { allowEmpty: true }), '')
+  for (const s of ['', '..', '.', 'a/..', '%2e', 'a#', 'a?b', '/a', 'a/', 'a\\b', 'a//b', null, 3]) assert.equal(safePath(s), null, String(s))
 })

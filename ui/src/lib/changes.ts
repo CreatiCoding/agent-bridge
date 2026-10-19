@@ -26,7 +26,18 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.297',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '스킬 저장소의 marketplace.json 경로(pluginRoot·source·name)가 GitHub API 주소에 그대로 붙어 서버 토큰을 다른 저장소에 쓸 수 있던 것: 평범한 경로 조각만 받고, 주소가 그 저장소 밖이면 그 스킬을 건너뜀', refs: ['REQ-S-076', 'REQ-F-792'] },
+      { kind: 'security', scope: ['server'], text: '이름이 바뀌었거나 옮겨진 스킬 저장소(GitHub 301)를 따라가지 않음. /skills 에 "저장소를 찾을 수 없어요"', refs: ['REQ-S-077'] },
+      { kind: 'security', scope: ['server', 'ui'], text: '/skills/install.sh 는 서버가 서명한 주소(?repo=…&t=…)로만 받음. 서명은 /api/skills 가 그 저장소를 쓰는 사람에게만 주고, 아니면 404. 설치 명령도 그 주소로', refs: ['REQ-S-078', 'REQ-F-792'] },
+      { kind: 'security', scope: ['server', 'ui'], text: '/api/health 는 ok·version·instance 만. BRIDGE_ORIGIN 유무·root 실행·에이전트 서명 상태는 운영 화면(/api/admin/overview)으로', refs: ['REQ-S-079', 'IF-039', 'IF-033'] },
+    ],
+  },
+  {
     version: '1.296',
+    commit: 'ab78491',
     date: '2026-10-19',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: 'iPhone 앱에서 키보드를 띄우면 머리 막대가 위로 34 px 밀려 잘리고 입력 상자 아래 줄이 잘리던 것: 입력창을 쓰는 동안은 iOS 의 밀어 올림을 되돌리고 입력창을 키보드 위로 직접 올림', refs: ['REQ-F-757'] },

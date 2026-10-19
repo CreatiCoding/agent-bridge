@@ -77,19 +77,28 @@ describe('per person, without SKILLS_REPO', () => {
     assert.deepEqual(Object.keys((await srv.api('alice', '/skills/version')).json), ['code'])
   })
 
-  test('install.sh only for a repo someone here set', async () => {
-    let r = await fetch(`${srv.origin}/skills/install.sh?repo=boss/skills`)
+  let install
+  test('install.sh only at the signed address /api/skills gives the owner (1.297)', async () => {
+    install = (await srv.api('boss', '/api/skills')).json.install
+    assert.match(install, /\/skills\/install\.sh\?repo=BOSS\/skills&t=[\w-]{32}$/)
+    assert.equal((await srv.api('alice', '/api/skills')).json.install, undefined)
+    const u = new URL(install)
+    let r = await fetch(`${srv.origin}${u.pathname}${u.search}`)
     assert.equal(r.status, 200)
     assert.match(await r.text(), /^#!\/bin\/sh/)
-    assert.equal((await fetch(`${srv.origin}/skills/install.sh?repo=env/repo`)).status, 404)
-    assert.equal((await fetch(`${srv.origin}/skills/install.sh`)).status, 404)
+    // The same repo in other letters is the same signature; without it, a wrong one, or for another repo: 404.
+    assert.equal((await fetch(`${srv.origin}/skills/install.sh?repo=boss/skills&t=${u.searchParams.get('t')}`)).status, 200)
+    for (const q of ['?repo=boss/skills', `?repo=boss/skills&t=${'A'.repeat(32)}`, '?repo=boss/skills&t=', `?repo=env/repo&t=${u.searchParams.get('t')}`, `?repo=boss/other&t=${u.searchParams.get('t')}`, '', '?repo=a/b'])
+      assert.equal((await fetch(`${srv.origin}/skills/install.sh${q}`)).status, 404, q)
   })
 
   test('empty clears it', async () => {
     const r = await srv.api('boss', '/api/prefs/skills', { method: 'POST', body: { repo: '' } })
     assert.equal(r.json.on, false)
     assert.equal(prefs(srv, 'boss').skillsRepo, undefined)
-    assert.equal((await fetch(`${srv.origin}/skills/install.sh?repo=boss/skills`)).status, 404)
+    // A signed address of a repo nobody uses any more is 404 too.
+    const u = new URL(install)
+    assert.equal((await fetch(`${srv.origin}${u.pathname}${u.search}`)).status, 404)
   })
 })
 
@@ -105,8 +114,11 @@ describe('SKILLS_REPO is the default', () => {
     assert.deepEqual((await srv.api('alice', '/api/skills')).json.skills.map((s) => s.name), ['shared'])
     await srv.api('boss', '/api/prefs/skills', { method: 'POST', body: { repo: 'boss/skills' } })
     assert.deepEqual((await srv.api('boss', '/api/skills')).json.skills.map((s) => s.name), ['review', 'verify'])
-    assert.equal((await fetch(`${srv.origin}/skills/install.sh`)).status, 200)
-    assert.equal((await fetch(`${srv.origin}/skills/install.sh?repo=env/repo`)).status, 200)
+    const u = new URL((await srv.api('alice', '/api/skills')).json.install)
+    assert.equal(u.searchParams.get('repo'), 'env/repo')
+    assert.equal((await fetch(`${srv.origin}${u.pathname}${u.search}`)).status, 200)
+    assert.equal((await fetch(`${srv.origin}/skills/install.sh`)).status, 404)
+    assert.equal((await fetch(`${srv.origin}/skills/install.sh?repo=env/repo`)).status, 404)
   })
 })
 

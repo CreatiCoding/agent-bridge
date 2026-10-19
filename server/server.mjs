@@ -12,7 +12,7 @@ import { threadOf, toCsEvent, toCsSession, cardMessage } from './cs.mjs'
 import { plugins } from './plugins.mjs'
 import { modelsFromCatalog } from './models.mjs'
 import { prSummary } from './prview.mjs'
-import { appKey, codeHash, createSkills } from './skills.mjs'
+import { appKey, codeHash, createSkills, RepoGone } from './skills.mjs'
 import { createHandover } from './handover.mjs'
 import { createPreview } from './preview.mjs'
 import { clipClient, fixPrompt } from './report-prompt.mjs'
@@ -159,6 +159,28 @@ const skillsFor = (repo) => {
   const k = repo.toLowerCase()
   if (!skillsByRepo.has(k)) skillsByRepo.set(k, createSkills({ token: SKILLS_TOKEN, app: SKILLS_APP, repo, api: process.env.SKILLS_GITHUB_API || undefined, log }))
   return skillsByRepo.get(k)
+}
+/**
+ * The key that signs install commands (REQ-S-078): /skills/install.sh is fetched by curl without the sign-in cookie,
+ * so it hands out a repo's installer only with the signature /api/skills gave that repo's owner. Made once, kept in
+ * the data folder (both servers of a handover share it), never shown.
+ */
+const SKILLS_INSTALL_KEY = (() => {
+  const f = path.join(DATA, 'skills-install.secret')
+  try {
+    fs.writeFileSync(f, crypto.randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 })
+  } catch {}
+  try {
+    return fs.readFileSync(f, 'utf8').trim()
+  } catch {
+    return crypto.randomBytes(32).toString('hex')
+  }
+})()
+const skillsInstallSig = (repo) => crypto.createHmac('sha256', SKILLS_INSTALL_KEY).update(`skills-install\0${repo.toLowerCase()}`).digest('base64url').slice(0, 32)
+const skillsInstallOk = (repo, t) => {
+  const want = Buffer.from(skillsInstallSig(repo))
+  const got = Buffer.from(String(t))
+  return got.length === want.length && crypto.timingSafeEqual(got, want)
 }
 const writeJson = (p, v) => {
   if (frozen) return
@@ -3846,8 +3868,12 @@ async function api(req, res, url, uid) {
     if (!(SKILLS_APP || SKILLS_TOKEN)) throw new Refuse(503, '스킬 저장소가 설정되지 않았습니다 (SKILLS_GITHUB_APP_ID·SKILLS_GITHUB_APP_KEY 또는 SKILLS_GITHUB_TOKEN)')
     const skills = skillsFor(skillsRepoOf(uid))
     if (!skills) throw new Refuse(503, '스킬 저장소가 없어요. 설정 → 더 보기 → 스킬 저장소에 내 GitHub 저장소(owner/repo)를 넣어 주세요')
-    const c = await skills.current()
-    const base = { repo: c.repo, market: c.market, sha: c.sha, date: c.date, check: c.check, origin: originOf(req) }
+    const c = await skills.current().catch((e) => {
+      throw e instanceof RepoGone ? new Refuse(404, e.message) : e
+    })
+    // repo is SKILLS_REPO_RE-checked (owner/repo of plain characters): no quoting needed inside the URL.
+    const install = `${originOf(req)}/skills/install.sh?repo=${c.repo}&t=${skillsInstallSig(c.repo)}`
+    const base = { repo: c.repo, market: c.market, sha: c.sha, date: c.date, check: c.check, origin: originOf(req), install }
     if (!sk[1]) return json(res, 200, { ...base, skills: c.skills.map(({ body, ...s }) => s) })
     const s = c.skills.find((x) => x.name === sk[1])
     if (!s) throw new Refuse(404, '없는 스킬입니다')
@@ -4380,7 +4406,8 @@ async function api(req, res, url, uid) {
     if (!isAdmin(uid)) throw new Refuse(403, '운영자만 볼 수 있습니다')
     return json(res, 200, {
       pending: Object.values(access).filter((a) => a.status === 'pending' && !isAllowed(a.login)).length,
-      server: { version: VERSION, agentBuild: AGENT_BUILD, uptime: Math.round(process.uptime() * 1000), rss: process.memoryUsage().rss, bridges: realBridges().length, controls: [...controls.values()].reduce((n, s) => n + s.size, 0), sessions: sessions.size },
+      // github, originSet, root, agentSigned, agentSeqBack: said in /api/health until 1.296 (REQ-S-079), the flags only (R1-L16, R1-L5).
+      server: { version: VERSION, agentBuild: AGENT_BUILD, github: !!GITHUB_CLIENT_ID, originSet: !!ORIGIN, root: process.getuid?.() === 0, agentSigned: AGENT_SIGNED, agentSeqBack: AGENT_SEQ_BACK, uptime: Math.round(process.uptime() * 1000), rss: process.memoryUsage().rss, bridges: realBridges().length, controls: [...controls.values()].reduce((n, s) => n + s.size, 0), sessions: sessions.size },
       users: Object.entries(users).filter(([id]) => !isDemoUid(id)).map(([id, u]) => ({
         login: u.login,
         allowed: isAllowed(u.login),
@@ -5192,8 +5219,9 @@ const server = http.createServer(async (req, res) => {
     }
     const url = new URL(req.url, 'http://x')
     const p = url.pathname
-    // originSet and root say how this server runs (BRIDGE_ORIGIN given, still root), not the values (R1-L16, R1-L5).
-    if (p === '/api/health') return json(res, 200, { ok: true, version: VERSION, github: !!GITHUB_CLIENT_ID, instance: handover.id, originSet: !!ORIGIN, root: process.getuid?.() === 0, agentSigned: AGENT_SIGNED, agentSeqBack: AGENT_SEQ_BACK })
+    // Open to anyone, for deploy checks and the handover: only what says a server is up and which one (REQ-S-079).
+    // How it runs (BRIDGE_ORIGIN given, root, agent signed) is for the operator, in /api/admin/overview.
+    if (p === '/api/health') return json(res, 200, { ok: true, version: VERSION, instance: handover.id })
     if (p.startsWith('/api/auth/')) return await auth(req, res, url)
     if (p.startsWith('/api/')) {
       // Changes must come from this site's own pages as JSON: a form on another site can do neither.
@@ -5228,7 +5256,6 @@ const server = http.createServer(async (req, res) => {
     if (asset) return sendFile(res, path.join(UI, 'assets', asset[1]), 'public, max-age=31536000, immutable')
     if (p === '/prepaint.js') return sendFile(res, path.join(UI, 'prepaint.js'))
     if (p === '/bridge') return sendFile(res, path.join(ROOT, 'web/bridge.html'))
-    // The installer holds nothing private (installing needs GitHub access to the repo), so curl can fetch it.
     // What /skills is serving, for checking a deploy: a hash of this server's /skills code (scripts/skills-code-hash.mjs
     // computes the same hash for any git ref), open to anyone. Which repo, its commit and how many skills only to the
     // person signed in, and only their own (REQ-F-792).
@@ -5239,12 +5266,13 @@ const server = http.createServer(async (req, res) => {
       const c = await skills.current()
       return json(res, 200, { code: SKILLS_CODE, repo: c.repo, sha: c.sha, date: c.date, skills: c.skills.length, check: c.check, auth: skills.auth })
     }
-    // ?repo=owner/repo: only a repo someone here set (or SKILLS_REPO, also the default without ?repo), else 404.
+    // ?repo=owner/repo&t=<signature>: the install command /api/skills gave (REQ-S-078). Without a right signature,
+    // or for a repo nobody here uses any more, 404, so nobody can probe which repos (and users) this server has.
     if (p === '/skills/install.sh') {
-      const want = (url.searchParams.get('repo') ?? SKILLS_REPO_ENV).trim().toLowerCase()
-      const repo = want && [SKILLS_REPO_ENV, ...Object.keys(users).map((u) => prefsOf(u).skillsRepo)].find((r) => typeof r === 'string' && r && r.toLowerCase() === want)
+      const want = (url.searchParams.get('repo') ?? '').trim().toLowerCase()
+      const repo = want && skillsInstallOk(want, url.searchParams.get('t') ?? '') && [SKILLS_REPO_ENV, ...Object.keys(users).map((u) => prefsOf(u).skillsRepo)].find((r) => typeof r === 'string' && r && r.toLowerCase() === want)
+      if (!repo) return res.writeHead(404).end('not found\n')
       if (!(SKILLS_APP || SKILLS_TOKEN)) return res.writeHead(503).end('skills not configured\n')
-      if (!repo) return res.writeHead(404).end('no such skills repo\n')
       const skills = skillsFor(repo)
       const c = await skills.current()
       return res.writeHead(200, { 'Content-Type': 'text/x-shellscript; charset=utf-8', 'Cache-Control': 'no-cache' }).end(c.install)

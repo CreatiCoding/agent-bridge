@@ -144,14 +144,24 @@ test("an operator does not see the home folder of someone else's Mac", async () 
 test('a server whose agent signature went back in seq says so and sends no update', async () => {
   const back = await startServer({ seed: { 'agent-seq.json': { max: 9_999_999_999 } } })
   try {
-    const h = await (await fetch(`${back.origin}/api/health`)).json()
+    await back.login('boss')
+    const h = (await back.api('boss', '/api/admin/overview')).json.server
     assert.equal(h.agentSigned, false)
     assert.equal(h.agentSeqBack, true)
     assert.match(back.log(), /순번\(\d+\)이 전에 내보낸 것/)
   } finally {
     await back.stop()
   }
-  assert.equal((await (await fetch(`${srv.origin}/api/health`)).json()).agentSigned, true)
+  assert.equal((await srv.api('boss', '/api/admin/overview')).json.server.agentSigned, true)
+})
+
+// Public 공개 전 점검: /api/health says only that a server is up and which one (REQ-S-079).
+test('/api/health is ok, version and instance only; how the server runs is for the operator', async () => {
+  assert.deepEqual(Object.keys(await (await fetch(`${srv.origin}/api/health`)).json()).sort(), ['instance', 'ok', 'version'])
+  const s = (await srv.api('boss', '/api/admin/overview')).json.server
+  assert.equal(s.originSet, true)
+  assert.equal(typeof s.root, 'boolean')
+  assert.equal((await srv.api('alice', '/api/admin/overview')).status, 403)
 })
 
 // R9-L2 (리포트 #9): an unreadable agent-seq.json was taken for a first deploy; the max is written once the server is up.
@@ -160,8 +170,8 @@ test('an unreadable seq file is kept aside and said, and nothing is recorded bef
   try {
     assert.match(s.log(), /agent-seq\.json\.broken/)
     assert.ok(fs.existsSync(path.join(s.data, 'agent-seq.json.broken')))
-    const h = await (await fetch(`${s.origin}/api/health`)).json()
-    assert.equal(h.agentSigned, true)
+    await s.login('boss')
+    assert.equal((await s.api('boss', '/api/admin/overview')).json.server.agentSigned, true)
     // R10-I1: recorded only when an update is first sent to a Mac, not on start.
     assert.equal(fs.existsSync(path.join(s.data, 'agent-seq.json')), false)
   } finally {

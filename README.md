@@ -212,9 +212,20 @@ docker build -t claude-bridge . && docker run -p 4300:4300 -v bridge-data:/data 
 | `SKILLS_GITHUB_TOKEN` | `/skills` 를 켠다. 스킬 마켓플레이스 저장소를 읽는 읽기 전용 토큰(fine-grained, 그 저장소만 Contents: Read). 없으면 `/skills` 는 꺼진 상태로 안내한다 |
 | `SKILLS_REPO` | 스킬 마켓플레이스 저장소(`owner/repo`)의 서버 기본값. 자기 저장소를 정하지 않은 모든 사용자가 이걸 읽는다. 기본은 비어 있다 |
 
-`/skills` 는 로그인한 사용자에게 **자기** 스킬 저장소의 카드·상세(SKILL.md)와 설치 명령을 보여 준다. 저장소는 사용자마다 설정 → 더 보기 → 스킬 저장소에서 정한다(`owner/repo`). 서버의 App·토큰으로 남의 저장소를 읽지 않도록 **owner 가 자기 GitHub 로그인과 같은 저장소만** 넣을 수 있고(대소문자 무시), Apple 로그인·데모 계정은 정할 수 없다. 개인 설정이 있으면 그게 `SKILLS_REPO` 보다 우선이다. 다른 사용자의 저장소는 보이지 않고, 로그인 없이 열리는 `/skills/version` 은 코드 해시(`code`)만 내준다. 설치는 GitHub 를 거치므로 그 저장소에 접근할 수 있는 사람만 된다. `/skills/install.sh?repo=owner/repo` 는 누군가 정한 저장소(또는 `SKILLS_REPO`)일 때만 로그인 없이 받을 수 있다.
+`/skills` 는 로그인한 사용자에게 **자기** 스킬 저장소의 카드·상세(SKILL.md)와 설치 명령을 보여 준다. 저장소는 사용자마다 설정 → 더 보기 → 스킬 저장소에서 정한다(`owner/repo`). 서버의 App·토큰으로 남의 저장소를 읽지 않도록 **owner 가 자기 GitHub 로그인과 같은 저장소만** 넣을 수 있고(대소문자 무시), Apple 로그인·데모 계정은 정할 수 없다. 개인 설정이 있으면 그게 `SKILLS_REPO` 보다 우선이다. 다른 사용자의 저장소는 보이지 않고, 로그인 없이 열리는 `/skills/version` 은 코드 해시(`code`)만 내준다. 설치는 GitHub 를 거치므로 그 저장소에 접근할 수 있는 사람만 된다. 설치 명령의 `/skills/install.sh?repo=owner/repo&t=…` 는 서버 비밀로 만든 서명(`t`)이 붙어 있어야 받을 수 있고, 그 서명은 `/api/skills` 가 그 저장소를 쓰는 사람에게만 준다. 서명이 없거나 틀리면, 또는 이제 아무도 쓰지 않는 저장소면 404 다. `marketplace.json` 의 경로(`pluginRoot`, `source`, `name`)는 평범한 경로 조각만 받고, 저장소 밖을 가리키는 스킬은 건너뛴다. 이름이 바뀌었거나 옮겨진 저장소(GitHub 의 301)는 따라가지 않고 "저장소를 찾을 수 없어요"라고 안내한다.
 
 사용자마다 호스트와 세션이 분리된다. 서버는 대화 사본을 디스크에 평문으로 두므로, 서버를 믿을 수 있는 사람이 운영해야 한다.
+
+### 보안 모델
+
+자기 서버를 올리기 전에 이 시스템이 무엇을 믿는지 알아 둔다.
+
+- **`BRIDGE_ORIGIN` 은 꼭 정하고, HTTPS 리버스 프록시 뒤에서만 운영한다.** 이 값이 없으면 서버는 요청의 `Host`·`X-Forwarded-Proto` 를 믿고 자기 주소(설치 명령, 로그인 콜백, 다른 출처 검사)를 만든다. 서버 포트를 인터넷에 바로 열지 않는다.
+- **처음 설치(`curl -fsSL <사이트>/install.sh | bash`)는 서버를 믿는 일이다.** 그때 받은 에이전트와 `agent/keys.mjs`(공개키)를 맥이 믿는다. 그 뒤 업데이트는 그 키의 서명이 맞을 때만 깔린다(위 "자기 서명 키 만들기").
+- **서버가 털리면 연결된 맥에 지시를 보낼 수 있다.** 서명 확인은 새 코드가 깔리는 것을 막을 뿐이다. 서버는 원래 맥의 Claude 세션을 열고 메시지를 보내는 곳이라, 서버를 가진 사람은 연결된 맥에서 그 사용자 권한으로 Claude 를 움직일 수 있다. 서버는 그만큼 믿을 수 있는 곳에 둔다.
+- **`/skills` 는 토큰보다 GitHub App 을 권한다**(`SKILLS_GITHUB_APP_ID`·`SKILLS_GITHUB_APP_KEY`). App 의 설치 토큰은 읽는 저장소 하나와 Contents 읽기로 좁혀지고 한 시간 뒤 끝난다. 토큰(`SKILLS_GITHUB_TOKEN`)을 쓰면 fine-grained 로, 그 저장소만 Contents: Read 로 만든다.
+- **로그인 없이 열리는 곳은 최소한만 내준다.** `/api/health` 는 `ok`·`version`·`instance` 만, 서버가 어떻게 도는지(`BRIDGE_ORIGIN` 유무, root 실행, 에이전트 서명)는 운영자의 `/api/admin/overview` 에서 본다.
+- **포크해서 iOS 앱을 빌드하면 Team ID 와 번들 ID 를 바꾼다.** `ios/Bridge.xcodeproj/project.pbxproj` 의 `DEVELOPMENT_TEAM`·`PRODUCT_BUNDLE_IDENTIFIER`, `scripts/testflight.sh` 의 `teamID`, Apple 로그인을 쓰면 `APPLE_CLIENT_ID` 환경 변수. 원 운영자의 값으로는 서명·로그인·알림이 되지 않는다.
 
 ### 자기 서명 키 만들기
 
