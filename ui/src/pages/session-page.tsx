@@ -16,7 +16,7 @@ import { openMenu, toast, type MenuEntry } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
 import type { VoiceDraft } from '../components/voice-mode'
 import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodoPanelPref, SettingsSheet, TodoAskCard, todoAskOf, TodoPanel, todoPanelPref, Todos, useTodoHidden } from '../components/session-extras'
-import { act, askTodos as askSessionTodos, canSlack, command, inSlack, lightCopy, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked } from '../components/session-menu'
+import { act, askTodos as askSessionTodos, canSlack, command, inSlack, lightCopy, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked, trimLog } from '../components/session-menu'
 import { TimelineView, Writing } from '../components/timeline-view'
 import { DecisionCard } from '../components/decision-card'
 import { LockScreen, useUnlocked } from '../components/lock'
@@ -225,9 +225,12 @@ function BigLogNudge({ s }: { s: Session }) {
     <div className="banner" role="status" style={{ background: 'var(--violet-soft)' }}>
       <Icon name="sparkle" />
       <div className="banner-body">
-        대화 기록이 <b>{bytes(size)}</b> 예요{size >= LOG_BLOCK ? '. 100MB 가 넘어 입력을 막았어요' : '. 100MB 가 되면 입력을 막아요'}. 압축은 컨텍스트만 줄이고 기록 파일은 줄이지 않아요. 가벼운 복제로 SESSION.md 를 넘겨받은 새 세션에서 이어가세요.
+        대화 기록이 <b>{bytes(size)}</b> 예요{size >= LOG_BLOCK ? '. 100MB 가 넘어 입력을 막았어요' : '. 100MB 가 되면 입력을 막아요'}. 압축은 컨텍스트만 줄이고 기록 파일은 줄이지 않아요. 압축한 뒤 대화 기록 정리로 압축 전 기록을 덜어 내면 이 세션에서 그대로 이어가요. 가벼운 복제는 SESSION.md 를 넘겨받은 새 세션에서 이어가요.
         <div className="banner-actions">
-          <Button size="sm" tone="primary" icon="sparkle" onClick={() => void lightCopy(s)}>
+          <Button size="sm" tone="primary" icon="doc" disabled={s.state.phase !== 'idle'} onClick={() => void trimLog(s)}>
+            대화 기록 정리
+          </Button>
+          <Button size="sm" icon="sparkle" onClick={() => void lightCopy(s)}>
             가벼운 복제
           </Button>
         </div>

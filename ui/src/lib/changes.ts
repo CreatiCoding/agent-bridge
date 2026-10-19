@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.302',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server', 'agent'], text: '"대화 기록 정리"(세션 메뉴의 가벼운 복제 아래, 100MB 띠): 압축한 세션의 .jsonl 에서 마지막 압축 앞부분을 덜어 내고(원본은 맥의 ~/.claude-bridge/trimmed/) 같은 세션으로 다시 열어 100MB 입력 막힘을 새 세션 없이 푼다', refs: ['REQ-F-793', 'IF-248', 'ERR-338', 'ERR-339'] },
+      { kind: 'changed', scope: ['server'], text: '100MB 입력 막힘 문구가 대화 기록 정리도 알려 줌', refs: ['REQ-P-129', 'ERR-062'] },
+    ],
+  },
+  {
     version: '1.301',
+    commit: '7ed355b',
     date: '2026-10-19',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: '압축해도 대화 기록(.jsonl) 100MB 입력 막힘이 풀리지 않던 것: 기록이 90MB 를 넘으면 압축 띠 대신 "압축은 기록 파일을 줄이지 않아요" 안내와 가벼운 복제 버튼', refs: ['REQ-F-776', 'REQ-P-129'] },

@@ -1,6 +1,30 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cacheStatus, countLine, emptyCache, EVENTS_MAX } from '../../agent/cache.mjs'
+import { cacheStatus, countLine, emptyCache, EVENTS_MAX, trimTranscript } from '../../agent/cache.mjs'
+
+// AC-1419: 대화 기록 정리 keeps the last compaction and what follows, and the newest setting line of each kind.
+test('trimTranscript cuts at the last compaction boundary', () => {
+  const j = (o) => JSON.stringify(o)
+  const boundary = (uuid) => j({ type: 'system', subtype: 'compact_boundary', parentUuid: null, logicalParentUuid: 'x', uuid })
+  const lines = [
+    j({ type: 'custom-title', customTitle: '옛 이름' }),
+    j({ type: 'user', uuid: 'u1', parentUuid: null, message: { content: '처음' } }),
+    j({ type: 'file-history-snapshot', messageId: 'u1' }),
+    j({ type: 'queue-operation', operation: 'enqueue' }),
+    boundary('b1'),
+    j({ type: 'user', uuid: 'u2', parentUuid: 'b1', isCompactSummary: true }),
+    j({ type: 'custom-title', customTitle: '새 이름' }),
+    j({ type: 'mode', mode: 'normal' }),
+    // A boundary that is not one (it has a parent) is not cut at.
+    j({ type: 'system', subtype: 'compact_boundary', parentUuid: 'u2', uuid: 'fake' }),
+    boundary('b2'),
+    j({ type: 'user', uuid: 'u3', parentUuid: 'b2', isCompactSummary: true }),
+    '',
+  ]
+  const kept = trimTranscript(lines.join('\n')).split('\n')
+  assert.deepEqual(kept, [lines[6], lines[7], boundary('b2'), lines[10], ''])
+  assert.equal(trimTranscript([lines[0], lines[1], ''].join('\n')), null)
+})
 
 const T0 = Date.parse('2026-10-18T00:00:00Z')
 const call = (id, { read = 0, write = 0, input = 1, output = 10, at = T0, model = 'claude-opus-5-5', side = false } = {}) =>

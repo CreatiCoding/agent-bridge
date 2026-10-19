@@ -69,3 +69,37 @@ export function cacheStatus(c) {
   const all = c.read + c.write + c.input
   return { calls: c.calls, read: c.read, write: c.write, input: c.input, output: c.output, hit: all ? Math.round((c.read / all) * 1000) / 10 : 0, ctx: c.ctx, at: c.at, events: c.events.slice() }
 }
+
+/** Bookkeeping lines that only matter as they are now (queued input, rewind snapshots, request dumps): not kept. */
+const TRIM_DROP = /^(queue-operation|file-history-|api-request)/
+
+/**
+ * 대화 기록 정리 (REQ-F-793): the part of a transcript that a resume still reads. A compaction writes a boundary whose
+ * parentUuid is null, so the chain Claude Code walks back from the newest line stops there: what came before is never
+ * loaded again, yet stays in the file. Kept: the last boundary and everything after it, and from before it only the
+ * newest line of each kind of setting line (title, mode, …: lines with no uuid). Null when there is no compaction.
+ */
+export function trimTranscript(text) {
+  const lines = String(text).split('\n')
+  let at = -1
+  for (let i = lines.length - 1; i > 0 && at < 0; i--) {
+    if (!lines[i].includes('"compact_boundary"')) continue
+    try {
+      const o = JSON.parse(lines[i])
+      if (o.type === 'system' && o.subtype === 'compact_boundary' && o.parentUuid == null) at = i
+    } catch {}
+  }
+  if (at < 0) return null
+  const newest = new Map()
+  for (let i = 0; i < at; i++) {
+    let o
+    try {
+      o = JSON.parse(lines[i])
+    } catch {
+      continue
+    }
+    if (o && typeof o.type === 'string' && !o.uuid && !TRIM_DROP.test(o.type)) newest.set(o.type, i)
+  }
+  const head = [...newest.values()].sort((a, b) => a - b).map((i) => lines[i])
+  return [...head, ...lines.slice(at)].join('\n')
+}

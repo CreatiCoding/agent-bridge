@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys } from './dialog.mjs'
 import { writingPreview } from './preview.mjs'
 import { mainColumn } from './split.mjs'
-import { cacheStatus, countLine, emptyCache } from './cache.mjs'
+import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt } from './guard.mjs'
@@ -383,6 +383,8 @@ const allProjects = () => [{ account: '', dir: projectsDir }, ...accounts.map((a
 const store = new EventStore(path.join(STATE_DIR, 'events'))
 /** Pictures by id: the ones sent from the page, and the ones in the transcripts (tail). */
 const IMAGES_DIR = path.join(STATE_DIR, 'images')
+/** Transcripts as they were before 대화 기록 정리 (REQ-F-793): kept whole, never deleted by the agent. */
+const TRIMMED_DIR = path.join(STATE_DIR, 'trimmed')
 /** How much of a transcript one `export` answer carries (base64 makes it a third bigger on the way). */
 const EXPORT_PART = 4 * 1024 * 1024
 /** Log hand-overs kept, told to the server in a batch so it stops holding them. */
@@ -2462,6 +2464,51 @@ const commands = {
       fail(e.message)
     } finally {
       from.lightforking = false
+    }
+  },
+  /**
+   * 대화 기록 정리 (REQ-F-793): a compaction shrinks the context but only adds to the transcript, so a long session
+   * grows past the 100 MB where the page stops taking text. What came before the last compaction is never read again
+   * (trimTranscript): it is moved out to TRIMMED_DIR whole, and the session is opened again on what is left. The
+   * page's log keeps every line: the trimmed file is read on from its end, nothing is sent again.
+   */
+  async trimlog({ reqId, sid }) {
+    const s = sessions.get(sid)
+    const mb = (n) => `${(n / 1048576).toFixed(1)}MB`
+    try {
+      if (!s) throw new Error('이 맥에 그 세션이 없습니다')
+      if (s.turn || s.wait || s.refreshing || s.lightforking || s.launching || s.alive === false) throw new Error('쉬고 있는 세션만 기록을 정리할 수 있어요')
+      const file = transcriptPath(s, sid)
+      if (!trimTranscript(fs.readFileSync(file, 'utf8'))) throw new Error('압축한 적이 없어 덜어 낼 기록이 없어요. 먼저 "지금 압축" 을 하세요')
+      s.refreshing = true
+      try {
+        // Stopped first: a running Claude Code would go on writing into the file that is moved away.
+        tail(sid, s)
+        await tmux('kill-session', '-t', `=${s.tmux}`)
+        tail(sid, s)
+        const text = fs.readFileSync(file, 'utf8')
+        const kept = trimTranscript(text)
+        const backup = path.join(TRIMMED_DIR, `${path.basename(file, '.jsonl')}-${Date.now()}.jsonl`)
+        fs.mkdirSync(TRIMMED_DIR, { recursive: true })
+        fs.writeFileSync(`${file}.trim`, kept)
+        fs.renameSync(file, backup)
+        fs.renameSync(`${file}.trim`, file)
+        // Read on from the new end: the lines kept were all sent already.
+        s.offset = fs.statSync(file).size
+        s.size = s.offset
+        const before = Buffer.byteLength(text)
+        log('info', 'trimlog', `${mb(before)} → ${mb(s.size)}, 원본 ${backup}`, sid)
+        note(sid, `🧹 대화 기록을 정리했어요: ${mb(before)} → ${mb(s.size)}. 마지막 압축 앞부분은 맥의 ${TRIMMED_DIR.startsWith(`${HOME}/`) ? `~${TRIMMED_DIR.slice(HOME.length)}` : TRIMMED_DIR}/ 에 그대로 두었어요. 이 화면의 대화는 그대로예요.`)
+        await launch(sid, s, ['--resume', s.conv || sid, ...settingsArgs(s)])
+        setTimeout(() => releaseHeld(sid, s, 'trimmed'), 2500)
+        emit({ t: 'trimlog', reqId, ok: true, before, after: s.size })
+      } finally {
+        s.refreshing = false
+        publish(sid, s)
+      }
+    } catch (e) {
+      log('error', 'trimlog', e.message, sid)
+      emit({ t: 'trimlog', reqId, ok: false, error: e.message })
     }
   },
   /** What ending the session and throwing its folder away would lose, per repository. Nothing is touched. */

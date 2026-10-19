@@ -4,7 +4,7 @@ import { del, errorText, get, post } from '../lib/api'
 import { go } from '../lib/router'
 import { hostIcon, KINDS, titleOf } from '../lib/sessions'
 import { getStore } from '../lib/store'
-import { tokens } from '../lib/format'
+import { bytes, tokens } from '../lib/format'
 import type { Session } from '../lib/types'
 import { chooseDialog, confirmDialog, type MenuEntry, promptDialog, toast } from '../kit/overlay'
 import { Icon, type IconName } from '../kit'
@@ -321,6 +321,13 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       disabled: !alive,
       onSelect: () => void lightCopy(s),
     },
+    {
+      label: '대화 기록 정리',
+      icon: 'doc',
+      hint: !alive ? undefined : s.state.phase !== 'idle' ? '쉬고 있을 때만' : s.state.size ? `${bytes(s.state.size)} · 압축 전 기록을 덜어 내고 이 세션에서 그대로` : '압축 전 기록을 덜어 내고 이 세션에서 그대로',
+      disabled: !alive || s.state.phase !== 'idle',
+      onSelect: () => void trimLog(s),
+    },
     { label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move', disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) },
     // Shown where the Mac has more than one Claude account (설정 → Claude 계정).
     ...((host?.accounts?.length ?? 0) > 1 ? [{ label: '다른 계정으로 옮기기', icon: 'user' as const, hint: `지금: ${accountOf(s)?.name ?? '기본 계정'}`, disabled: !alive || s.state.phase === 'busy', onSelect: () => moveAccount(s) }] : []),
@@ -357,6 +364,18 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
 /** 가벼운 복제 (REQ-F-402): a new session that picks up from SESSION.md. */
 export async function lightCopy(s: Session) {
   return (await confirmCopyMode()) && act(() => command(s, 'lightfork'))
+}
+
+/**
+ * 대화 기록 정리 (REQ-F-793): the Mac moves what came before the last compaction out of the .jsonl and opens the same
+ * session again. Asked first: the session restarts, and a rewind cannot reach back past that compaction any more.
+ */
+export async function trimLog(s: Session) {
+  const ok = await confirmDialog('대화 기록을 정리할까요?', {
+    text: '마지막 압축 앞의 기록을 기록 파일에서 덜어 내고(맥의 ~/.claude-bridge/trimmed/ 에 원본을 그대로 둬요) 이 세션을 다시 열어요. 대화는 압축 요약에서 그대로 이어지고 이 화면의 대화도 그대로예요. 압축한 적이 없으면 먼저 "지금 압축" 을 하세요.',
+    ok: '정리하기',
+  })
+  if (ok) await act(() => sessionPost(s, 'trimlog'))
 }
 
 export async function refresh(s: Session) {

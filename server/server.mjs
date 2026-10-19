@@ -1691,7 +1691,7 @@ function seatGuard(meta, via) {
   if ((via === 'slack' ? 'slack' : 'web') !== where) throw Object.assign(new Refuse(409, SEAT_AWAY[where]), { extra: { seat: where } })
 }
 /** What a page may not do to a session that is worked on in Slack: everything that drives it. */
-const SEAT_DRIVES = new Set(['say', 'do', 'send', 'retract', 'sendnow', 'esc', 'dropheld', 'answer', 'setting', 'refresh', 'report', 'btw', 'trash', 'resume', 'lightfork', 'fork', 'key', 'move', 'cwd'])
+const SEAT_DRIVES = new Set(['say', 'do', 'send', 'retract', 'sendnow', 'esc', 'dropheld', 'answer', 'setting', 'refresh', 'report', 'btw', 'trash', 'resume', 'lightfork', 'trimlog', 'fork', 'key', 'move', 'cwd'])
 /** The page of a session, for a link from elsewhere. */
 const sessionLink = (meta) => `${ORIGIN || `http://localhost:${PORT}`}/s/${meta.id}`
 
@@ -4800,7 +4800,7 @@ async function api(req, res, url, uid) {
       const hostId = liveHost(meta)
       // Past 100 MB the conversation takes no more text from here (a slash command still goes through):
       // every turn makes it slower to resume and to move. A light copy carries the work on.
-      if ((meta.state.size ?? 0) >= 100 * 1024 * 1024 && !/^\//.test(text.trim())) throw new Refuse(409, '🚫 대화 기록이 100MB 를 넘어 입력을 막았어요. 세션 메뉴의 가벼운 복제로 가벼운 새 세션을 띄우거나, 터미널에서 직접 입력하세요.')
+      if ((meta.state.size ?? 0) >= 100 * 1024 * 1024 && !/^\//.test(text.trim())) throw new Refuse(409, '🚫 대화 기록이 100MB 를 넘어 입력을 막았어요. 세션 메뉴의 대화 기록 정리(압축한 뒤)나 가벼운 복제를 쓰거나, 터미널에서 직접 입력하세요.')
       meta.resting = false
       for (const f of files) f.id = imageRef(uid, f.type, f.data, f.name)
       const id = crypto.randomUUID()
@@ -4875,6 +4875,15 @@ async function api(req, res, url, uid) {
         touch(meta)
         throw e
       }
+    } else if (op === 'trimlog') {
+      // 대화 기록 정리 (REQ-F-793): the Mac cuts the transcript at its last compaction and opens the session again.
+      if (!meta.state.alive || meta.state.phase !== 'idle') throw new Refuse(409, '쉬고 있는 세션만 기록을 정리할 수 있어요')
+      const r = await ask(liveHost(meta), { t: 'trimlog', sid: meta.id }, 120_000)
+      if (!r.ok) throw new Refuse(409, r.error || '대화 기록을 정리하지 못했어요')
+      const after = Number(r.after) || 0
+      meta.state.size = after
+      broadcastState(uid)
+      return json(res, 200, { ok: true, before: Number(r.before) || 0, after, note: `대화 기록을 ${Math.round((Number(r.before) || 0) / 1048576)}MB → ${Math.max(1, Math.round(after / 1048576))}MB 로 정리했어요` })
     } else if (op === 'lightfork') {
       const hostId = liveHost(meta)
       const sid = crypto.randomUUID()
