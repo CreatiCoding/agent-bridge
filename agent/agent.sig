@@ -1,0 +1,1 @@
+{"seq":1792373951,"msig":"bZIMq6tqRshn1ki6AuE7g3/tg+6Gq3n61RnBLY1sU4FdE6+aKT40dllOKbUNy7iQ64OdciSOYD8AzQD8xEc2BQ==","legacy":"RFfHW2dLgjSbr570gb4FVAalM3qGRjbeDfYGjuH+6YsxjhR84ZCFqeEQwgDTCoLsUkgy5Viv+AaV0veNl4BhBw=="}

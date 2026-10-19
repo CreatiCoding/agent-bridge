@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MCP 연결 가이드 · Agent Bridge</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/guide.css">
+</head>
+<body class="guide">
+<main>
+  <p class="crumb"><a href="/">← Agent Bridge</a></p>
+  <h1>MCP 연결 가이드</h1>
+  <p class="lead">세션에서 Dokploy 로 배포하거나 Slack 을 읽고 쓰게 하려면, 그 세션이 도는 <b>맥의 Claude Code</b> 에 MCP 서버를 연결합니다.</p>
+
+  <div class="note">
+    <b>먼저 알아 둘 것</b>
+    <ul>
+      <li>MCP 는 맥마다 따로 연결합니다. 아이맥과 맥북을 둘 다 쓰면 두 곳에서 한 번씩 합니다.</li>
+      <li>이 사이트(서버)에는 설정할 것이 없습니다. 연결 정보와 키는 그 맥에만 남습니다.</li>
+      <li>명령은 그 맥의 터미널에서 실행합니다. <code>-s user</code> 를 붙여야 어느 폴더의 세션에서든 쓸 수 있습니다.</li>
+      <li>이미 떠 있는 세션에는 바로 반영되지 않습니다. 세션 메뉴의 <b>새로고침</b>(세션 다시 열기)을 누르거나 새 세션을 시작하세요.</li>
+    </ul>
+  </div>
+
+  <nav class="toc">
+    <a href="#dokploy">1. Dokploy 연결</a>
+    <a href="#slack">2. Slack 연결</a>
+    <a href="#check">3. 확인과 문제 해결</a>
+  </nav>
+
+  <h2 id="dokploy">1. Dokploy 연결</h2>
+  <p>Dokploy 의 프로젝트·앱·도메인·배포를 세션에서 다룰 수 있게 됩니다. Dokploy 가 만든 MCP 서버(<code>@ahdev/dokploy-mcp</code>)를 씁니다.</p>
+
+  <h3>① API 키 만들기</h3>
+  <ol>
+    <li><a href="__DOKPLOY_URL__" target="_blank" rel="noopener">__DOKPLOY_URL__</a> 에 로그인합니다.</li>
+    <li><b>Settings → Profile</b> 로 가서 <b>API/CLI</b> 구역에서 키를 만듭니다(Generate).</li>
+    <li>키는 만들 때 한 번만 보입니다. 복사해 둡니다.</li>
+  </ol>
+  <p class="muted">관리자가 아닌 계정은 기본적으로 키를 만들 수 없습니다. 메뉴가 보이지 않으면 Dokploy 관리자에게 API 접근 권한을 요청하세요.</p>
+
+  <h3>② 맥에 연결하기</h3>
+  <p>맥의 터미널에서 실행합니다. 키를 물으면 붙여 넣고 Enter 를 누릅니다(입력한 키는 화면과 명령 기록에 남지 않습니다).</p>
+  <pre data-copy>printf 'Dokploy API 키: '; read -s KEY; echo; claude mcp add dokploy -s user -e DOKPLOY_URL=__DOKPLOY_URL__/api -e DOKPLOY_API_KEY="$KEY" -- npx -y @ahdev/dokploy-mcp; unset KEY</pre>
+
+  <h3>③ 확인</h3>
+  <pre data-copy>claude mcp get dokploy</pre>
+  <p><code>Connected</code> 가 보이면 됩니다. 세션에서 "Dokploy 프로젝트 목록 보여줘" 라고 해 보세요.</p>
+
+  <div class="note warn">
+    <b>주의</b>
+    <ul>
+      <li>이 키는 그 Dokploy 계정이 할 수 있는 일을 전부 할 수 있습니다. 배포, 환경 변수 변경, 앱과 데이터베이스 삭제가 포함됩니다.</li>
+      <li>지우는 일은 세션에 맡기기 전에 무엇을 지우는지 직접 확인하세요.</li>
+      <li>키를 바꾸거나 연결을 없애려면: <code>claude mcp remove dokploy -s user</code> 뒤에 ② 를 다시 합니다.</li>
+    </ul>
+  </div>
+
+  <h2 id="slack">2. Slack 연결</h2>
+  <p>세션이 Slack 채널과 스레드를 읽고, 검색하고, 메시지를 보낼 수 있게 됩니다.</p>
+  <div class="note">
+    <b>이것은 "Slack 플러그인" 과 다른 것입니다.</b>
+    <ul>
+      <li><b>Slack MCP (이 문서)</b>: 세션 안의 Claude 가 Slack 을 <b>도구로</b> 씁니다. "어제 #배포 채널에서 뭐라고 했는지 찾아줘" 같은 일을 시킬 수 있습니다.</li>
+      <li><b>Slack 플러그인</b> (조작 화면 메뉴 → 플러그인): 세션 자체를 Slack 스레드로 <b>보고 조작</b>합니다. 세션의 답이 스레드에 올라오고, 스레드에 답글을 달면 세션에 전달됩니다. 설정 방법은 그 화면에 단계별로 있습니다.</li>
+    </ul>
+    둘은 따로 쓸 수 있고, 함께 써도 됩니다.
+  </div>
+
+  <div class="note">
+    <b>서버에 Slack 연동을 따로 만들 필요는 없습니다.</b>
+    Slack 이 직접 운영하는 MCP 서버(<code>mcp.slack.com</code>)가 있고, 각자 자기 Slack 계정으로 로그인해 권한을 줍니다. 이 사이트는 그 사이에 끼지 않습니다. Slack 앱을 직접 만들어야 하는 경우는 아래 "봇으로 연결하기" 뿐입니다.
+  </div>
+
+  <h3>방법 A. 내 계정으로 연결하기 (권장)</h3>
+  <p>Claude Code 의 공식 Slack 플러그인을 씁니다. 세션은 <b>내 Slack 계정</b>으로 동작합니다: 내가 볼 수 있는 채널을 읽고, 내 이름으로 보냅니다.</p>
+  <h4>① 플러그인 설치</h4>
+  <pre data-copy>claude plugin install slack@claude-plugins-official</pre>
+  <h4>② Slack 로그인</h4>
+  <pre data-copy>claude mcp login plugin:slack:slack</pre>
+  <p>브라우저가 열립니다. 워크스페이스를 고르고 허용을 누르면 끝납니다.</p>
+  <h4>③ 확인</h4>
+  <pre data-copy>claude mcp list</pre>
+  <p><code>plugin:slack:slack: https://mcp.slack.com/mcp … Connected</code> 가 보이면 됩니다.</p>
+  <ul class="tips">
+    <li><code>claude mcp add</code> 로 <code>mcp.slack.com</code> 을 직접 넣으면 등록 단계에서 실패합니다. 플러그인으로 설치해야 합니다.</li>
+    <li>워크스페이스 정책에 따라 관리자의 앱 승인이 먼저 필요할 수 있습니다. 허용 화면에서 막히면 Slack 관리자에게 요청하세요.</li>
+    <li>맥 앞에 없어서 그 맥의 브라우저를 쓸 수 없다면 <code>claude mcp login --no-browser plugin:slack:slack</code> 를 실행합니다. 출력된 주소를 다른 기기의 브라우저에서 열어 허용하고, 마지막에 이동한 <code>http://localhost:…/callback?…</code> 주소 전체를 그 맥의 터미널에서 <code>curl '주소'</code> 로 호출합니다. 5분 안에 끝내야 합니다.</li>
+    <li>연결을 끊으려면: <code>claude mcp logout plugin:slack:slack</code></li>
+  </ul>
+
+  <h3>방법 B. 봇으로 연결하기</h3>
+  <p>세션이 사람 계정이 아니라 <b>봇</b>으로 글을 쓰게 하고 싶을 때만 씁니다. 이 경우에는 워크스페이스에 Slack 앱을 하나 만들어야 합니다. 봇은 초대된 채널만 읽고 쓸 수 있습니다.</p>
+  <ol>
+    <li><a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App</b> → From scratch → 워크스페이스 선택.</li>
+    <li><b>OAuth &amp; Permissions</b> 의 Bot Token Scopes 에 추가: <code>channels:history</code> <code>channels:read</code> <code>chat:write</code> <code>reactions:write</code> <code>users:read</code></li>
+    <li><b>Install to Workspace</b> 를 누르고, <code>xoxb-</code> 로 시작하는 Bot User OAuth Token 을 복사합니다.</li>
+    <li>팀 ID 를 확인합니다. Slack 을 브라우저로 열었을 때 주소의 <code>T</code> 로 시작하는 부분입니다(<code>app.slack.com/client/<b>T…</b>/…</code>).</li>
+    <li>봇이 읽고 쓸 채널에서 <code>/invite @봇이름</code> 을 실행합니다.</li>
+    <li>맥의 터미널에서 실행합니다(<code>T여기에_팀ID</code> 를 바꾸고, 토큰은 물을 때 붙여 넣습니다).</li>
+  </ol>
+  <pre data-copy>printf 'Slack 봇 토큰(xoxb-…): '; read -s TOKEN; echo; claude mcp add slack-bot -s user -e SLACK_BOT_TOKEN="$TOKEN" -e SLACK_TEAM_ID=T여기에_팀ID -- npx -y @modelcontextprotocol/server-slack; unset TOKEN</pre>
+
+  <h2 id="check">3. 확인과 문제 해결</h2>
+  <pre data-copy>claude mcp list</pre>
+  <table>
+    <tr><th>보이는 것</th><th>할 일</th></tr>
+    <tr><td><code>Connected</code> 인데 세션에서 도구가 안 보임</td><td>세션 메뉴의 <b>새로고침</b>, 또는 새 세션. MCP 는 세션이 시작될 때 읽습니다.</td></tr>
+    <tr><td><code>Failed to connect</code> (dokploy, slack-bot)</td><td><code>npx</code> 를 못 찾는 경우가 많습니다. 터미널에서 <code>which npx</code> 를 확인하세요. 키가 틀려도 이렇게 나옵니다.</td></tr>
+    <tr><td><code>Needs authentication</code> (Slack)</td><td><code>claude mcp login plugin:slack:slack</code> 를 다시 실행합니다.</td></tr>
+    <tr><td>목록에 아예 없음</td><td><code>-s user</code> 없이 추가하면 그 폴더에서만 보입니다. <code>claude mcp remove 이름</code> 뒤에 <code>-s user</code> 를 붙여 다시 추가하세요.</td></tr>
+    <tr><td>세션이 도구를 쓸 때마다 허용을 물음</td><td>조작 화면의 허용 카드에서 "항상 허용" 을 고르면 그 도구는 다시 묻지 않습니다.</td></tr>
+  </table>
+  <p class="muted">맥이 여러 대면 맥마다 위 과정을 반복합니다. 세션을 다른 맥으로 옮겨도 MCP 연결은 따라가지 않습니다.</p>
+</main>
+<script src="/guide.js" type="module"></script>
+</body>
+</html>

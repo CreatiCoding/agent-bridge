@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <script src="/theme.js"></script>
+    <title>연동 · Agent Bridge</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body class="bridge">
+    <main class="panel">
+      <h1>연동 페이지</h1>
+      <p class="muted">이 맥의 브라우저에 이 사이트의 탭(이 페이지나 조작 화면)이 하나라도 열려 있는 동안 이 맥의 Claude 세션이 웹에 연결됩니다. 모두 닫으면 끊깁니다.</p>
+      <ul class="links">
+        <li><span id="dot-agent" class="dot"></span> 이 맥의 에이전트 <b id="agent-text">확인 중</b></li>
+        <li><span id="dot-server" class="dot"></span> 웹 서버 <b id="server-text">확인 중</b></li>
+      </ul>
+      <p id="summary" class="muted"></p>
+      <p id="permission" class="banner warn" hidden></p>
+      <button id="takeover" class="btn" hidden>이 탭에서 연동하기</button>
+      <div id="setup" hidden>
+        <h2>이 맥의 에이전트가 응답하지 않습니다</h2>
+        <p>처음이라면 이 맥의 터미널에서 아래를 <b>한 번만</b> 실행하세요. 필요한 도구를 확인하고, 에이전트를 백그라운드 서비스로 설치합니다. 그 뒤로는 터미널 없이 이 페이지만 열면 됩니다.</p>
+        <p class="muted">이미 설치했다면 에이전트가 꺼져 있는 것입니다. 같은 명령을 다시 실행하면 최신으로 바꾸고 다시 켭니다.</p>
+        <pre id="install"></pre>
+        <button id="copy" class="btn">복사</button>
+      </div>
+      <p><a href="/" target="_blank" rel="noopener">세션 조작 화면 열기 (새 탭)</a></p>
+      <p class="muted">조작 화면이 열려 있으면 이 탭은 닫아도 됩니다. 조작 화면이 뒤에서 연동을 이어받습니다.</p>
+      <pre id="log" class="log"></pre>
+    </main>
+    <script src="/bridge.js" type="module"></script>
+  </body>
+</html>

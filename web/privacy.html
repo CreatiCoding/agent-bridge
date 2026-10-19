@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>개인정보 처리방침 · Agent Bridge</title>
+<meta name="description" content="Agent Bridge 개인정보 처리방침: 처리 목적, 항목, 보유 기간, 파기, 국외 이전, 정보주체의 권리, 안전성 확보 조치, 보호책임자. Privacy Policy of Agent Bridge.">
+<!-- 개인정보 처리방침 (REQ-F-767). Readable signed out at /privacy. Laid out by article as 개인정보 보호법 제30조 and
+     시행령 제31조 ask (an article with nothing to say still stays, saying 없습니다). Every line here is checked against
+     the code and docs/SPEC.md REQ-M-018; when what is stored changes, change this page in the same commit. -->
+<style>
+:root{--fs-small:13px;--fs-large:16px;--fs-xlarge:22px;--bg:#faf9f5;--text:#1f1e1d;--muted:#6b6a65;--line:rgba(127,127,127,.28);--card:rgba(127,127,127,.08)}
+@media (prefers-color-scheme:dark){:root{--bg:#262624;--text:#ecebe6;--muted:#a3a19a}}
+body{margin:0;background:var(--bg);color:var(--text);font:var(--fs-large)/1.7 -apple-system,system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:var(--fs-xlarge);margin:8px 0 4px}
+h2{font-size:var(--fs-large);margin:32px 0 8px;scroll-margin-top:16px}
+h3{font-size:var(--fs-large);margin:20px 0 6px}
+p,li{overflow-wrap:anywhere}
+li{margin:4px 0}
+a{color:inherit}
+code{background:var(--card);padding:1px 5px;border-radius:5px}
+.muted{color:var(--muted);font-size:var(--fs-small)}
+.box{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--card)}
+.toc{margin:0;padding-left:0;list-style:none;font-size:15px}
+.toc li{margin:2px 0}
+ol.n{padding-left:22px}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{border-top:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:top}
+th{white-space:nowrap}
+.wrap{overflow-x:auto}
+.xfer{margin:10px 0;padding:10px 14px}
+.xfer-to{margin:0 0 4px;font-weight:600}
+.xfer dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;font-size:15px}
+.xfer dt{color:var(--muted)}
+.xfer dd{margin:0}
+</style>
+<main>
+<p class="muted"><a href="/">← Agent Bridge</a> · <a href="/support">지원 · Support</a> · <a href="#en">English summary</a></p>
+<h1>개인정보 처리방침</h1>
+<p class="muted">시행일 2026-10-19 · 적용 대상: <code>bridge.creco.dev</code> 웹 서비스와 iOS 앱 Agent Bridge</p>
+
+<p>Agent Bridge(이하 "서비스")의 운영자(이하 "운영자")는 「개인정보 보호법」 제30조에 따라 정보주체의 개인정보를 보호하고 이와 관련한 고충을 신속하고 원활하게 처리하기 위하여 다음과 같이 개인정보 처리방침을 수립·공개합니다.</p>
+<div class="box">
+<p style="margin:0"><b>요약.</b> 서비스는 정보주체의 맥에서 실행되는 Claude Code 세션을 휴대전화와 웹에서 이어서 보고 조작하게 하는 도구입니다. 세션은 언제나 <b>정보주체의 맥</b>에서 실행되며, 대화의 원본도 맥에 있습니다. <b>서버는 세션의 대화를 저장하지 않고</b> 맥과 휴대전화·웹 사이에서 전달만 하며, 계정 정보와 세션 목록에 필요한 정보(제목, 상태 등)만 저장합니다. 광고·분석·원격 측정 도구는 사용하지 않으며, 개인정보를 판매하거나 광고에 이용하지 않습니다.</p>
+</div>
+<p class="muted">Agent Bridge 는 Anthropic 과 무관한 독립 프로젝트입니다. Claude 는 Anthropic 의 상표입니다.</p>
+
+<h2 style="margin-top:24px">목차</h2>
+<ul class="toc">
+<li><a href="#a1">제1조(개인정보의 처리 목적)</a></li>
+<li><a href="#a2">제2조(처리하는 개인정보의 항목)</a></li>
+<li><a href="#a3">제3조(개인정보의 처리 및 보유 기간)</a></li>
+<li><a href="#a4">제4조(개인정보의 파기 절차 및 방법)</a></li>
+<li><a href="#a5">제5조(개인정보의 제3자 제공)</a></li>
+<li><a href="#a6">제6조(개인정보 처리의 위탁)</a></li>
+<li><a href="#a7">제7조(개인정보의 국외 이전)</a></li>
+<li><a href="#a8">제8조(민감정보 및 가명정보의 처리)</a></li>
+<li><a href="#a9">제9조(정보주체와 법정대리인의 권리·의무 및 행사 방법)</a></li>
+<li><a href="#a10">제10조(개인정보의 안전성 확보 조치)</a></li>
+<li><a href="#a11">제11조(개인정보 자동 수집 장치의 설치·운영 및 거부)</a></li>
+<li><a href="#a12">제12조(개인정보 보호책임자)</a></li>
+<li><a href="#a13">제13조(개인정보 열람청구의 접수·처리)</a></li>
+<li><a href="#a14">제14조(정보주체의 권익침해에 대한 구제 방법)</a></li>
+<li><a href="#a15">제15조(개인정보 처리방침의 변경)</a></li>
+</ul>
+
+<h2 id="a1">제1조(개인정보의 처리 목적)</h2>
+<p>운영자는 다음 목적을 위하여 개인정보를 처리합니다. 처리하는 개인정보는 다음 목적 외의 용도로는 이용하지 않으며, 이용 목적이 변경되는 경우에는 「개인정보 보호법」 제18조에 따라 필요한 조치를 이행합니다.</p>
+<ol class="n">
+<li>회원 가입 및 관리: GitHub 또는 Apple 계정으로 로그인, 로그인 유지, 화면 표시, 다른 계정이 이름을 바꾸어 들어오는 것의 방지, 운영자의 접근 승인</li>
+<li>서비스 제공: 연결한 맥의 목록 표시, 세션을 실행할 계정의 선택, 세션 대화의 표시와 전달, 사용자가 고른 설정의 적용, 보낸 그림·영상의 맥 전달</li>
+<li>알림: 알림 목록, 웹 푸시 알림, iOS 앱 알림</li>
+<li>민원 처리 및 서비스 개선: 문제 제보의 처리, 연결 문제의 진단</li>
+<li>부정 이용 방지: 지나친 요청의 제한</li>
+</ol>
+
+<h2 id="a2">제2조(처리하는 개인정보의 항목)</h2>
+<p>① 서버가 정보주체에 관하여 저장하는 개인정보는 다음이 전부입니다.</p>
+<div class="wrap"><table>
+<tr><th>구분</th><th>항목</th><th>목적</th></tr>
+<tr><td>GitHub 계정</td><td>GitHub 로그인 이름, 숫자 id, 표시 이름, 아바타 주소</td><td>로그인과 화면 표시</td></tr>
+<tr><td>Apple 계정 (iOS 앱)</td><td>Apple 계정 번호로 만든 서버의 계정 이름, 처음 로그인할 때 받은 이름(없으면 이메일, "이메일 가리기"를 고른 경우 Apple 의 중계 주소), Apple 토큰 취소용 갱신 토큰(설정된 경우)</td><td>로그인, 화면 표시, 계정 삭제 시 Apple 연결 해제</td></tr>
+<tr><td>로그인 기록</td><td>로그인 토큰의 해시(원래 토큰은 저장하지 않음)와 만료 시각</td><td>로그인 유지</td></tr>
+<tr><td>이름 고정</td><td>GitHub 로그인 이름과 그 이름으로 처음 로그인한 GitHub 숫자 id</td><td>다른 계정이 이름을 바꾸어 들어오는 것의 방지</td></tr>
+<tr><td>접근 요청 기록</td><td>허용 전에 로그인한 계정의 이름·아바타, 처음·마지막 시도 시각, 시도 횟수, 결정한 운영자와 시각</td><td>운영자의 승인</td></tr>
+<tr><td>호스트(연결한 맥)</td><td>맥 이름·종류, 홈 폴더 경로, 마지막 연결 시각, 에이전트·Node·OS 버전, 그 맥에 로그인된 Claude 계정의 로그인 방식(이메일·요금제는 맥이 연결된 동안 메모리에만 두고 저장하지 않습니다)</td><td>맥 목록, 세션을 실행할 계정의 선택</td></tr>
+<tr><td>세션</td><td>제목, 미리보기(80자), 상태, 실행한 맥, 작업 폴더, 대화에 나온 PR 링크, 통계 숫자(일한 시간, 턴 수 등). 잠근 세션은 제목·미리보기도 저장하지 않습니다(정보주체가 직접 붙인 이름은 제외)</td><td>세션 목록과 통계 표시</td></tr>
+<tr><td>설정</td><td>그룹, 기본 프롬프트, 음성 설정과 용어 사전, 플러그인 설정(Slack 을 켠 경우 봇 토큰·채널·연결한 Slack 사용자 id 등)</td><td>사용자가 고른 동작</td></tr>
+<tr><td>알림</td><td>세션이 기다리는 일 등의 알림: 세션 제목(80자)과 한 줄(200자). 잠긴 세션은 "확인할 것이 있어요"만</td><td>알림 목록</td></tr>
+<tr><td>웹 푸시 구독</td><td>브라우저가 준 푸시 구독 주소(endpoint), 구독한 기기가 iPhone·iPad 인지 여부</td><td>푸시 알림</td></tr>
+<tr><td>앱 알림 (iOS 앱)</td><td>Apple 이 기기에 준 알림 토큰, 운영·개발 환경, iPhone·iPad 인지 여부</td><td>앱 알림</td></tr>
+<tr><td>보낸 영상</td><td>입력창으로 보낸 영상 파일</td><td>맥으로 전달</td></tr>
+<tr><td>문제 제보</td><td>제보 글·그림, 로그인 이름, 진단 정보(호스트 요약, 세션 제목·작업 폴더, 호스트 로그 일부)</td><td>문제 해결</td></tr>
+<tr><td>호스트 로그</td><td>에이전트·연동 상태 기록(보낸 글의 내용은 남기지 않음)</td><td>연결 문제 진단</td></tr>
+</table></div>
+<p>② <b>세션의 대화는 서버에 저장하지 않습니다.</b> 보낸 글, Claude 의 답, 도구 호출과 결과, 화면 기록, 대화의 그림과 보낸 그림은 정보주체의 맥(Claude Code 대화 파일과 에이전트의 화면 기록)에 있으며, 서버는 맥과 휴대전화·웹 사이에서 전달만 합니다. 전달을 위하여 세션마다 최근 기록 일부(최대 1,000개)와 그림 일부를 서버의 메모리에 잠시 두며, 세션을 다른 맥으로 옮기는 동안에는 그 대화를 메모리에 둡니다. 메모리의 정보는 디스크에 쓰지 않고 서버를 다시 시작하면 사라집니다. Slack 플러그인으로 보내는 대화도 메모리를 거쳐 전달만 합니다.</p>
+<p>③ 서비스 이용 과정에서 다음 정보가 자동으로 생성되어 처리됩니다.</p>
+<ol class="n">
+<li><b>IP 주소</b>: 지나친 요청을 막기 위하여 메모리에만 두며(공개 데모는 1시간, 그 밖은 1분) 저장하지 않습니다. 서버 실행 로그에도 남기지 않습니다.</li>
+<li><b>서버 실행 로그</b>: 로그인 이름, 맥 이름, 화면 오류 메시지가 남습니다. 맥 로그의 내용, 요청 주소의 쿼리, 작업 폴더 경로, 원격 저장소 주소의 인증 정보는 남기지 않습니다.</li>
+</ol>
+<p>④ 정보주체의 기기(브라우저·앱)에 저장하는 정보는 제11조에 적습니다.</p>
+<p>⑤ 개인정보는 정보주체가 GitHub 또는 Apple 로 로그인하거나, 맥을 연결하거나, 서비스를 이용하는 과정에서 수집합니다.</p>
+
+<h2 id="a3">제3조(개인정보의 처리 및 보유 기간)</h2>
+<p>운영자는 다음 기간 동안 개인정보를 처리·보유하며, 기간이 지나면 지체 없이 파기합니다.</p>
+<ol class="n">
+<li><b>끝난 세션</b>: 세션이 끝난 날부터 7일 뒤 세션 정보를 서버에서 삭제합니다. 정보주체가 세션을 지우면 즉시 삭제합니다. 이때 맥이 연결되어 있으면 맥의 에이전트에 둔 그 세션의 화면 기록도 함께 지웁니다.</li>
+<li><b>로그인 토큰</b>: 30일 동안 유효합니다. 만료된 토큰의 해시는 1시간 안에 삭제합니다.</li>
+<li><b>보낸 영상</b>: 맥이 받으면 바로 삭제하고, 받지 못한 영상도 24시간 뒤 삭제합니다.</li>
+<li><b>알림</b>: 30일 동안 최근 30개까지 보관하고 그 뒤 자동으로 삭제합니다. 세션을 지우면 그 세션의 알림도 삭제합니다.</li>
+<li><b>웹 푸시 구독</b>: 알림을 끄거나 푸시 서비스가 구독 종료를 알리면 삭제합니다.</li>
+<li><b>앱 알림 토큰</b>: 앱에서 알림을 끄거나 로그아웃하거나, Apple 이 토큰이 더 이상 쓰이지 않는다고 알리면 삭제합니다.</li>
+<li><b>호스트 로그</b>: 맥마다 약 10 MB 까지만 보관하고 오래된 것부터 삭제합니다.</li>
+<li><b>문제 제보</b>: 제보 글·그림·영상·진단 정보는 처리를 위하여 90일 동안 보관하고 자동으로 삭제합니다. 제보는 문제 해결을 위하여 운영자가 사용하는 AI 도구로 처리될 수 있습니다. 계정을 삭제하여도 그 기간 동안 남습니다. 그 전에 "지난 제보"에서 직접 삭제할 수 있습니다.</li>
+<li><b>접근 요청 기록</b>(대기·거절): 마지막 시도로부터 90일 뒤 삭제합니다.</li>
+<li><b>데모</b>: 데모에서 만든 세션과 설정은 24시간 동안 쓰지 않으면 삭제합니다.</li>
+<li><b>그 밖의 정보</b>(계정 정보, 허용된 접근 기록, 호스트, 설정): 자동으로 삭제하지 않으며, 회원 탈퇴(계정 삭제) 시 삭제합니다.</li>
+<li><b>이전에 저장된 대화</b>: 2026년 10월 18일 이전 판에서 서버에 저장된 대화 사본·화면 기록·그림은 맥으로 옮긴 뒤 2026년 10월 19일 서버에서 모두 삭제하였습니다.</li>
+<li><b>이름 고정 기록</b>: 계정을 삭제한 뒤에도 보관합니다(제4조 ③).</li>
+</ol>
+
+<h2 id="a4">제4조(개인정보의 파기 절차 및 방법)</h2>
+<p>① <b>파기 절차</b>: 운영자는 보유 기간이 지났거나 처리 목적이 달성된 개인정보를 제3조의 기준에 따라 자동으로 또는 정보주체의 요청에 따라 파기합니다.</p>
+<p>② <b>파기 방법</b>: 개인정보는 서버의 전자적 파일 형태로만 저장하며, 파기할 때에는 서버의 파일에서 삭제합니다. 종이 문서로 출력하여 보관하는 개인정보는 없습니다.</p>
+<ol class="n">
+<li>화면에서 직접 삭제: 세션 "지우기"·"목록에서 지우기", 그룹 "모두 지우기", 알림 "지우기"·"모두 지우기", 푸시 알림 끄기, 플러그인 "빼기", 내 제보 "지우기".</li>
+<li><b>계정 삭제</b>: 앱(웹)의 <b>설정 → 더 보기 → 계정 삭제</b>에서 로그인 이름(Apple 로 로그인한 경우 "삭제")을 입력하면 즉시 삭제합니다. Apple 로 로그인한 계정은 Apple 에 토큰 취소도 요청합니다. 계정 정보, 접근 요청 기록, 모든 기기의 로그인, 세션 정보·영상(이전 판에서 저장된 대화 사본·화면 기록·그림 포함), 설정·프롬프트·그룹, 알림, 웹 푸시 구독과 앱 알림 토큰, 플러그인 설정과 Slack 연결, 연결한 맥 기록과 연동이 서버에서 삭제되며(문제 제보는 위 보관 기간 동안 남습니다), 맥의 연동 탭·에이전트는 더 이상 이 서버에 연결되지 않습니다. 직접 삭제할 수 없는 경우 제12조의 연락처로 GitHub 로그인 이름과 함께 요청할 수 있습니다.</li>
+</ol>
+<p>③ 계정을 삭제하여도 <b>이름 고정 기록</b>(로그인 이름과 GitHub 숫자 id 한 줄)은 보관합니다. 허용 목록이 이름으로 정해져 있으므로, 다른 GitHub 계정이 그 이름으로 바꾸어 들어오는 것을 막기 위함입니다. 같은 GitHub 계정으로 다시 로그인하면 빈 새 계정으로 시작합니다.</p>
+<p>④ 정보주체의 맥에 있는 Claude Code 대화 파일과 작업 폴더는 서비스가 삭제하지 않으며, 정보주체가 맥에서 직접 관리합니다. 맥의 에이전트가 둔 화면 기록(<code>~/.claude-bridge/events/</code>)은 맥이 연결된 동안 세션을 지우면 함께 지우며, 그 밖에 남은 것(계정 삭제 뒤 포함)은 정보주체가 맥에서 직접 지울 수 있습니다.</p>
+
+<h2 id="a5">제5조(개인정보의 제3자 제공)</h2>
+<p>① 운영자는 개인정보를 제1조의 목적 범위에서만 처리하며, 정보주체의 개인정보를 제3자에게 제공하지 않습니다. 개인정보를 판매하거나 광고에 이용하지 않습니다.</p>
+<p>② 다만 정보주체가 Slack 플러그인을 직접 켠 경우에 한하여, 정보주체 자신의 Slack 앱으로 세션 제목·맥 이름·작업 폴더·대화를 보냅니다. 이 전송은 제7조에 적습니다.</p>
+
+<h2 id="a6">제6조(개인정보 처리의 위탁)</h2>
+<p>① 운영자는 개인정보 처리 업무를 위탁하지 않습니다.</p>
+<p>② 서버와 데이터는 운영자가 관리하는 서버에 있습니다. 데이터베이스나 외부 저장소 서비스는 사용하지 않고 그 서버의 파일로만 저장합니다.</p>
+
+<h2 id="a7">제7조(개인정보의 국외 이전)</h2>
+<p>① 운영자는 다음과 같이 개인정보를 국외로 이전합니다(「개인정보 보호법」 제28조의8). 국가는 이전받는 자의 본사 소재지이며, 실제 처리 서버의 위치는 이전받는 자가 정합니다.</p>
+<div class="box xfer"><p class="xfer-to">Apple Inc. (Apple 푸시 서비스, APNs)</p><dl><dt>국가</dt><dd>미국</dd><dt>이전 항목</dt><dd>앱 알림 토큰, 알림 제목(세션 이름, 80자까지), 한 줄 내용(200자까지), 세션 식별자. 잠긴 세션은 내용 대신 "확인할 것이 있어요"만 보냅니다.</dd><dt>시기·방법</dt><dd>iOS 앱 알림을 켠 뒤 알릴 일이 생길 때마다, 인터넷(HTTPS)으로 전송</dd><dt>목적</dt><dd>iOS 앱 알림 전달(앱이 서버에 직접 물어볼 수 없어 내용이 Apple 을 거칩니다)</dd><dt>보유 기간</dt><dd>Apple 의 정책에 따름</dd><dt>거부 방법</dt><dd>앱의 설정 → 이 기기에서 앱 알림 끄기</dd></dl></div>
+<div class="box xfer"><p class="xfer-to">Apple Inc. (Apple로 로그인)</p><dl><dt>국가</dt><dd>미국</dd><dt>이전 항목</dt><dd>로그인 때 Apple 이 준 인증 코드, 계정 삭제 때 토큰 취소를 위한 갱신 토큰</dd><dt>시기·방법</dt><dd>Apple 로 로그인할 때, 계정을 삭제할 때, 인터넷(HTTPS)으로 전송</dd><dt>목적</dt><dd>로그인 확인, 계정 삭제 시 Apple 연결 해제</dd><dt>보유 기간</dt><dd>Apple 의 정책에 따름</dd><dt>거부 방법</dt><dd>Apple 대신 GitHub 로 로그인</dd></dl></div>
+<div class="box xfer"><p class="xfer-to">GitHub, Inc.</p><dl><dt>국가</dt><dd>미국</dd><dt>이전 항목</dt><dd>로그인 때 GitHub 가 준 인증 코드(GitHub 접근 토큰은 저장하지 않습니다)</dd><dt>시기·방법</dt><dd>GitHub 로 로그인할 때, 인터넷(HTTPS)으로 전송</dd><dt>목적</dt><dd>로그인 확인과 계정 정보(로그인 이름, id, 표시 이름, 아바타 주소) 수신</dd><dt>보유 기간</dt><dd>GitHub 의 정책에 따름</dd><dt>거부 방법</dt><dd>GitHub 대신 Apple 로 로그인(iOS 앱)</dd></dl></div>
+<div class="box xfer"><p class="xfer-to">브라우저의 웹 푸시 서비스(브라우저에 따라 Apple, Google, Mozilla, Microsoft)</p><dl><dt>국가</dt><dd>미국</dd><dt>이전 항목</dt><dd>푸시 구독 주소로 보내는 내용 없는 신호("확인할 것이 있다"). 알림 글은 기기가 이 서버에서 직접 받습니다.</dd><dt>시기·방법</dt><dd>웹 푸시를 켠 뒤 알릴 일이 생길 때마다, 인터넷(HTTPS)으로 전송</dd><dt>목적</dt><dd>웹 푸시 알림 전달</dd><dt>보유 기간</dt><dd>각 회사의 정책에 따름</dd><dt>거부 방법</dt><dd>설정 → 이 기기에서 푸시 알림 끄기</dd></dl></div>
+<div class="box xfer"><p class="xfer-to">Slack Technologies, LLC</p><dl><dt>국가</dt><dd>미국</dd><dt>이전 항목</dt><dd>세션 제목, 맥 이름, 작업 폴더, 대화</dd><dt>시기·방법</dt><dd>정보주체가 Slack 플러그인을 켠 동안 세션이 진행될 때, 인터넷(HTTPS)으로 전송</dd><dt>목적</dt><dd>정보주체 자신의 Slack 앱으로 세션 전달</dd><dt>보유 기간</dt><dd>정보주체의 Slack 워크스페이스 설정에 따름</dd><dt>거부 방법</dt><dd>플러그인 "빼기"</dd></dl></div>
+<p>② 다음은 서버가 직접 보내지 않으며, 정보주체의 맥 또는 기기가 보냅니다.</p>
+<ol class="n">
+<li><b>Anthropic</b>: 세션은 정보주체의 맥에서 Claude Code 가 정보주체 본인의 Anthropic 계정으로 실행합니다. 보낸 글과 작업 내용은 Claude Code 를 거쳐 Anthropic 으로 전송되며, Anthropic 의 약관과 개인정보 처리방침을 따릅니다. 서버가 세션의 내용을 Anthropic 에 보내는 것은 없습니다.</li>
+<li><b>즉시 받아쓰기</b>: "즉시 받아쓰기"(말하는 동안 흐리게 보이는 글)는 브라우저의 음성 인식을 사용하므로, 기기에 따라 Apple 또는 Google 의 서버를 거칠 수 있습니다. 설정 → 음성에서 끌 수 있습니다.</li>
+<li><b>아바타 그림</b>: 브라우저가 GitHub 에서 직접 불러옵니다.</li>
+</ol>
+<p>③ <b>음성 받아쓰기</b>의 녹음은 서버를 거쳐 세션이 있는 정보주체의 맥으로만 전달되며, 맥의 whisper.cpp 가 맥 안에서 글로 바꿉니다. 녹음은 맥 밖으로 나가지 않습니다. 외부 AI 서비스로 보내지 않으며, 서버는 녹음을 저장하지 않고 맥에 넘기기만 합니다.</p>
+
+<h2 id="a8">제8조(민감정보 및 가명정보의 처리)</h2>
+<p>① 운영자는 민감정보(「개인정보 보호법」 제23조)를 수집하지 않습니다. 정보주체가 세션에 직접 적은 내용은 서버에 저장하지 않지만 맥의 대화 파일과 Anthropic 으로 전송되므로(제7조 ②), 민감한 내용은 적지 않기를 권합니다.</p>
+<p>② 운영자는 가명정보를 처리하지 않습니다.</p>
+
+<h2 id="a9">제9조(정보주체와 법정대리인의 권리·의무 및 행사 방법)</h2>
+<p>① 정보주체는 운영자에 대하여 언제든지 개인정보 열람, 정정·삭제, 처리정지 및 동의 철회를 요구할 수 있습니다.</p>
+<p>② 제1항에 따른 권리 행사는 서비스 화면(제4조 ②의 삭제 기능과 계정 삭제)에서 직접 하거나, 제12조의 연락처로 이메일을 보내 할 수 있으며, 운영자는 이에 대하여 지체 없이 조치합니다.</p>
+<p>③ 제1항에 따른 권리 행사는 정보주체의 법정대리인이나 위임을 받은 자 등 대리인을 통하여 할 수 있습니다.</p>
+<p>④ 운영자는 정보주체의 권리에 따른 요구가 있을 때 요구한 사람이 본인이거나 정당한 대리인인지를 확인합니다.</p>
+<p>⑤ 서비스는 개발자를 위한 도구이며 아동을 대상으로 하지 않습니다.</p>
+
+<h2 id="a10">제10조(개인정보의 안전성 확보 조치)</h2>
+<p>운영자는 개인정보의 안전성 확보를 위하여 다음 조치를 하고 있습니다.</p>
+<ol class="n">
+<li><b>접근 통제</b>: 운영자가 허용한 계정만 서비스를 이용할 수 있으며, 허용 전에 로그인한 계정은 운영자의 승인을 기다립니다.</li>
+<li><b>인증 정보의 보호</b>: 로그인 토큰은 원래 값이 아닌 해시(SHA-256)로만 저장합니다. GitHub 접근 토큰은 저장하지 않으며, Apple 계정 번호는 그대로 두지 않고 해시로 바꾸어 계정 이름을 만듭니다.</li>
+<li><b>쿠키 보호</b>: 로그인 쿠키는 HttpOnly·SameSite=Lax 이며, HTTPS 로 접속한 경우 Secure 로 설정합니다.</li>
+<li><b>전송 구간 보호</b>: 서비스는 HTTPS 로 제공합니다.</li>
+<li><b>요청 수 제한</b>: 로그인·제보·잠금 해제 등의 지나친 요청을 IP 주소마다 1분 단위로 제한합니다.</li>
+<li><b>저장 파일의 접근 제한</b>: 데이터 파일과 폴더는 서버 실행 계정만 읽고 쓸 수 있는 권한(0600·0700)으로 만듭니다.</li>
+<li><b>보안 머리글</b>: 콘텐츠 보안 정책(CSP), <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy: no-referrer</code> 를 적용합니다.</li>
+</ol>
+
+<h2 id="a11">제11조(개인정보 자동 수집 장치의 설치·운영 및 거부)</h2>
+<p>① 운영자는 로그인 유지를 위하여 다음 쿠키를 사용합니다. 모두 HttpOnly 입니다.</p>
+<ol class="n">
+<li><code>cb</code>: 로그인 유지, 30일</li>
+<li><code>cb_state</code>: GitHub 로그인 중 확인용, 10분</li>
+<li><code>cb_apple</code>: Apple 로그인 중 확인용, 10분</li>
+</ol>
+<p>② 브라우저 저장소에는 목록과 최근 세션 대화의 사본(빠른 표시용), 작성 중인 글, 화면·아이콘·음성 설정, 최근 받아쓰기 결과를 저장합니다. 이 정보는 해당 기기에만 있으며 서버로 보내지 않습니다.</p>
+<p>③ iOS 앱은 웹 화면을 띄우는 앱입니다. 위의 웹 저장소 외에는 따로 정보를 수집하거나 저장하지 않으며, 분석 도구를 사용하지 않습니다. 마이크와 음성 인식 권한은 받아쓰기를 사용할 때에만 사용합니다.</p>
+<p>④ 광고·분석·행태정보 수집을 위한 쿠키나 도구는 사용하지 않습니다.</p>
+<p>⑤ <b>거부 방법</b>: 정보주체는 브라우저 설정에서 쿠키 저장을 거부하거나 삭제할 수 있습니다. 다만 쿠키를 거부하면 로그인이 필요한 서비스를 이용할 수 없습니다.</p>
+
+<h2 id="a12">제12조(개인정보 보호책임자)</h2>
+<p>운영자는 개인정보 처리에 관한 업무를 총괄하여 책임지고, 개인정보 처리와 관련한 정보주체의 불만 처리 및 피해 구제를 위하여 다음과 같이 개인정보 보호책임자를 지정하고 있습니다.</p>
+<ul>
+<li>개인정보 보호책임자: 정석호 (운영자)</li>
+<li>연락처: <a href="mailto:nodejsdeveloper@kakao.com">nodejsdeveloper@kakao.com</a></li>
+</ul>
+
+<h2 id="a13">제13조(개인정보 열람청구의 접수·처리)</h2>
+<p>정보주체는 「개인정보 보호법」 제35조에 따른 개인정보 열람 청구를 아래로 할 수 있습니다. 별도의 부서는 없으며 운영자가 직접 접수·처리합니다.</p>
+<ul>
+<li>접수·처리: 정석호 (운영자), <a href="mailto:nodejsdeveloper@kakao.com">nodejsdeveloper@kakao.com</a></li>
+</ul>
+
+<h2 id="a14">제14조(정보주체의 권익침해에 대한 구제 방법)</h2>
+<p>정보주체는 개인정보침해로 인한 구제를 받기 위하여 다음 기관에 분쟁 해결이나 상담 등을 신청할 수 있습니다.</p>
+<ol class="n">
+<li>개인정보분쟁조정위원회: (국번 없이) 1833-6972, <a href="https://www.kopico.go.kr">www.kopico.go.kr</a></li>
+<li>개인정보침해신고센터: (국번 없이) 118, <a href="https://privacy.kisa.or.kr">privacy.kisa.or.kr</a></li>
+<li>대검찰청: (국번 없이) 1301, <a href="https://www.spo.go.kr">www.spo.go.kr</a></li>
+<li>경찰청: (국번 없이) 182, <a href="https://ecrm.police.go.kr">ecrm.police.go.kr</a></li>
+</ol>
+
+<h2 id="a15">제15조(개인정보 처리방침의 변경)</h2>
+<p>① 이 개인정보 처리방침은 2026년 10월 19일부터 적용됩니다. 내용이 바뀌면 이 페이지의 시행일과 내용을 고칩니다.</p>
+<p>② 변경 이력</p>
+<ul>
+<li>2026-10-19: 개인정보 보호책임자의 성명을 적고, 이전 판에서 저장된 대화를 서버에서 모두 삭제하였음을 적음(현재 판).</li>
+<li>2026-10-18: 서버가 세션의 대화·화면 기록·그림을 저장하지 않고 전달만 하도록 바꾸고(세션 정보는 제목·미리보기 80자·상태·맥·작업 폴더·PR 링크·통계 숫자만, 잠근 세션은 제목·미리보기도 저장하지 않음), 문제 제보가 운영자의 AI 도구로 처리될 수 있음을 적음.</li>
+<li>2026-10-18: 알림은 30일, 문제 제보는 90일(계정 삭제와 무관), 대기·거절된 접근 요청은 90일 뒤 삭제하도록 보관 기간을 정함.</li>
+<li>2026-10-18: 서버 실행 로그에서 IP 주소·로그 내용을 빼고, 맥의 Claude 계정 이메일·요금제를 저장하지 않으며, 보낸 영상은 맥이 받으면 바로, 만료된 로그인 토큰 해시는 1시간 안에 지우도록 바꿈.</li>
+<li>2026-10-18: 「개인정보 보호법」 제30조·시행령 제31조의 기재 사항에 따라 조문 형식으로 다시 씀.</li>
+<li>2026-10-18: 처음 공개한 판(항목별 안내 형식).</li>
+</ul>
+
+<hr style="border:0;border-top:1px solid var(--line);margin:40px 0 0">
+<section id="en" lang="en">
+<h2>Privacy Policy (English summary)</h2>
+<p class="muted">Effective 2026-10-19 · Applies to the <code>bridge.creco.dev</code> web service and the Agent Bridge iOS app. The Korean text above is the full policy.</p>
+<p>Agent Bridge lets you watch and drive the Claude Code sessions running on <b>your own Mac</b> from a phone or the web. <b>The server does not store your conversations</b>: it only relays them between your Mac and your devices. It is an independent project, not affiliated with Anthropic. Claude is a trademark of Anthropic.</p>
+<h3>Controller and contact</h3>
+<p>The person who operates this server, Jeong Seokho (정석호), is responsible for the data it stores and is the privacy officer. Questions and access or deletion requests: <a href="mailto:nodejsdeveloper@kakao.com">nodejsdeveloper@kakao.com</a>.</p>
+<h3>What is stored</h3>
+<ul>
+<li>Your GitHub login, numeric id, display name and avatar URL; a hash of your sign-in token and its expiry.</li>
+<li>With Sign in with Apple (iOS app): an account name made from your Apple user id, the name Apple gives at the first sign-in (or your e-mail, Apple's relay address if you hid it), and a refresh token kept only to revoke it when you delete your account.</li>
+<li>Access requests (accounts that signed in before being approved: name, avatar, first/last attempt, number of attempts, the deciding operator).</li>
+<li>The Macs you connect: name, type, home folder path, last seen, agent/Node/OS versions, and the sign-in method of the Claude accounts signed in on that Mac (their e-mail and plan are kept in memory only while the Mac is connected).</li>
+<li>Sessions: title, an 80-character preview, status, the Mac, working folder, PR links found in the conversation and usage numbers. A locked session keeps neither title nor preview (unless you named it). The conversation itself (messages, replies, tool calls and results, screen log, pictures) stays on your Mac; the server keeps only the latest part of it in memory to relay it (up to 1,000 entries per session), never on disk, and gone when the server restarts. Conversations stored by earlier versions were moved to your Mac and deleted from the server on 2026-10-19.</li>
+<li>Settings (groups, default prompt, voice settings and term list, plugin settings such as a Slack bot token), notifications, web push subscription endpoints, the iOS app's notification token, videos you send, problem reports, and host logs (which never contain message text).</li>
+<li>IP addresses are kept only in memory for rate limiting (one hour for the public demo, one minute otherwise) and are not stored, not even in the server log. The server log holds login names, Mac names and page error messages, never Mac log text, request queries, folder paths or credentials in git remote addresses.</li>
+<li>On your device: a sign-in cookie (30 days), sign-in state cookies (10 minutes), and a local cache of lists, recent conversations, drafts and settings. The iOS app collects nothing else and has no analytics; it uses the microphone and speech recognition only for dictation.</li>
+</ul>
+<h3>Retention and deletion</h3>
+<ul>
+<li>Ended sessions are deleted 7 days after they end, or at once when you delete them (together with the agent's screen log on your Mac, if it is connected). Videos: as soon as your Mac has them, 24 hours at most. Expired sign-in token hashes: within an hour. Notifications: 30 days (latest 30). Host logs: about 10 MB per Mac. Problem reports (text, pictures, videos, diagnostics): 90 days, even if you delete your account. Waiting or refused access requests: 90 days after the last attempt. Demo sessions and settings: deleted after 24 hours unused. Sign-in tokens are valid for 30 days.</li>
+<li>Your account, access record, Macs and settings are not deleted automatically. Delete your account in the app under <b>Settings → 더 보기 (More) → 계정 삭제 (Delete account)</b> by typing your login name (or 삭제 if you signed in with Apple): everything above is removed from the server at once, every sign-in ends, and your Macs' bridge can no longer connect. You can also email the contact above with your GitHub login.</li>
+<li>After deletion one line is kept: your login name and its GitHub numeric id, so that another GitHub account cannot take over the name the allow-list knows. Signing in again with the same GitHub account starts a new, empty account.</li>
+<li>Files on your own Mac (Claude Code conversations, working folders) are not touched.</li>
+</ul>
+<h3>Third parties and transfers abroad</h3>
+<ul>
+<li>No data is given to third parties, and no processing is outsourced.</li>
+<li><b>GitHub</b> (USA) for sign-in (login, id, name and avatar only; no GitHub access token is stored).</li>
+<li><b>Apple</b> (USA) for Sign in with Apple in the iOS app (user id, name, e-mail or relay address). Deleting your account asks Apple to revoke the app's token.</li>
+<li><b>Anthropic</b>: sessions are run by Claude Code on your Mac with your own Anthropic account; your prompts reach Anthropic through Claude Code under Anthropic's terms. This server sends no session content to Anthropic. Problem reports may be processed with an AI tool the operator uses to fix the problem.</li>
+<li><b>Voice dictation</b>: the recording goes through this server only to your own Mac running the session, where whisper.cpp turns it into text on the Mac. The recording does not leave your Mac: it is not sent to any outside AI service, and the server passes it on without storing it.</li>
+<li><b>Apple (and Google)</b> (USA): live dictation uses the browser's speech recognition, which may go through Apple's or Google's servers (can be turned off in Settings → Voice). Web push goes through the browser's push service with no content; the device fetches the notification text from this server. Notifications in the iOS app go through Apple's push service (APNs) and carry the device token, the notice title (the session name, up to 80 characters), one line of text (up to 200 characters) and the session id; a locked session's notice says only that there is something to check.</li>
+<li><b>Slack</b> (USA): only if you turn on the Slack plugin, to your own Slack app.</li>
+<li><b>Hosting</b>: data is stored as files on a server the operator manages; no external database or storage service.</li>
+</ul>
+<h3>Your rights and security</h3>
+<p>You may ask to see, correct or delete your data, or to stop its processing, in the app or by email. Sign-in tokens are stored only as hashes, cookies are HttpOnly, the service is served over HTTPS, only accounts the operator approves can use it, requests are rate-limited, and data files are readable only by the server. No data is sold or used for advertising. There are no ads, analytics or telemetry. The service is a developer tool and is not directed at children. You can also contact the Korean Personal Information Dispute Mediation Committee (1833-6972) or the Personal Information Infringement Report Center (118).</p>
+</section>
+</main>
+</html>

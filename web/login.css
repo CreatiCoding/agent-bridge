@@ -1,0 +1,6 @@
+/* The sign-in page and the pages drawn like it (server/pages.mjs): one panel on the page's tokens (web/app.css). */
+.muted { color: var(--muted); }
+.bridge-login { display: grid; place-items: start center; min-height: 100dvh; background: var(--bg); }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; margin: 12vh 16px 0; max-width: 560px; width: calc(100% - 32px); box-sizing: border-box; }
+.panel h1 { font-size: var(--fs-xlarge); margin: 0 0 8px; }
+.panel .btn { margin-top: 12px; text-decoration: none; }

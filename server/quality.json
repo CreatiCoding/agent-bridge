@@ -1,0 +1,1111 @@
+{
+ "rubric": "docs/QUALITY-RUBRIC.md",
+ "pages": [
+  {
+   "name": "login",
+   "label": "로그인",
+   "path": "/"
+  },
+  {
+   "name": "start",
+   "label": "시작 가이드",
+   "path": "/guide"
+  },
+  {
+   "name": "list",
+   "label": "세션 목록",
+   "path": "/#/"
+  },
+  {
+   "name": "session",
+   "label": "대화",
+   "path": "/#/s/:id"
+  },
+  {
+   "name": "new-session",
+   "label": "새 세션",
+   "path": "/#/new"
+  },
+  {
+   "name": "stats",
+   "label": "사용 통계",
+   "path": "/#/stats"
+  },
+  {
+   "name": "hosts",
+   "label": "기기 목록",
+   "path": "/#/hosts"
+  },
+  {
+   "name": "host",
+   "label": "기기 상세",
+   "path": "/#/hosts/:id"
+  },
+  {
+   "name": "settings",
+   "label": "설정",
+   "path": "/#/settings"
+  },
+  {
+   "name": "guide",
+   "label": "가이드",
+   "path": "/#/guide"
+  },
+  {
+   "name": "guide-move",
+   "label": "옮기기 가이드",
+   "path": "/#/guide/move"
+  },
+  {
+   "name": "admin",
+   "label": "운영",
+   "path": "/#/admin"
+  },
+  {
+   "name": "bridge",
+   "label": "연동",
+   "path": "/bridge"
+  },
+  {
+   "name": "skills",
+   "label": "스킬",
+   "path": "/skills"
+  },
+  {
+   "name": "guide-mcp",
+   "label": "MCP 가이드",
+   "path": "/guide/mcp"
+  },
+  {
+   "name": "recovery",
+   "label": "복구",
+   "path": "/recovery"
+  }
+ ],
+ "runs": [
+  {
+   "id": "A",
+   "at": "2026-10-10T07:20:00+09:00",
+   "build": "1b0f49f",
+   "label": "작업 전",
+   "notes": [
+    "Lighthouse 는 목록·대화만, 모바일만 쟀다",
+    "운영 서버도 JS 를 압축 없이 404 KB 로 보냈다"
+   ],
+   "pages": {
+    "list": {
+     "mobile": {
+      "perf": 84
+     }
+    },
+    "session": {
+     "mobile": {
+      "perf": 71,
+      "cls": 0.178
+     }
+    }
+   },
+   "server": {
+    "eventsP50Ms": 7.8,
+    "events10wideP95Ms": 58.4,
+    "statsP50Ms": 32.2,
+    "renameBytes": 35289,
+    "mainJsKB": 404,
+    "rssAfterMB": 212
+   },
+   "interactions": {
+    "dragLagPx": 44
+   }
+  },
+  {
+   "id": "B",
+   "at": "2026-10-10T16:55:00+09:00",
+   "build": "ca1e352",
+   "label": "압축·코드 분할·흔들림",
+   "notes": [
+    "정적 파일 Brotli, JSON gzip, 이벤트 증분 읽기, 통계 캐시, 상태 델타, 화면별 코드 분할, 대화 배너 흔들림 수정"
+   ],
+   "pages": {
+    "list": {
+     "mobile": {
+      "perf": 98
+     },
+     "desktop": {
+      "perf": 100
+     }
+    },
+    "session": {
+     "mobile": {
+      "perf": 98,
+      "cls": 0
+     },
+     "desktop": {
+      "perf": 100
+     }
+    }
+   },
+   "server": {
+    "eventsP50Ms": 2.6,
+    "events10wideP95Ms": 4.6,
+    "statsP50Ms": 1.7,
+    "renameBytes": 870,
+    "mainJsKB": 109,
+    "rssAfterMB": 102
+   }
+  },
+  {
+   "id": "5d9c7b4",
+   "at": "2026-10-10T17:55:00+09:00",
+   "build": "5d9c7b4",
+   "label": "전 화면 측정 · 인터렉티브 개선",
+   "notes": [
+    "16개 화면 × 모바일·데스크톱 Lighthouse 3회 중앙값(고정 빌드·고정 시드)",
+    "목록 폭 끌기가 포인터를 따라옴(평균 44 → 14 px), 세션 행·대화 항목은 바뀐 것만 다시 그림"
+   ],
+   "pages": {
+    "login": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "start": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "list": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 97
+     }
+    },
+    "session": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "new-session": {
+     "mobile": {
+      "perf": 89,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "stats": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "hosts": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "host": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "settings": {
+     "mobile": {
+      "perf": 49,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 89,
+      "interactive": 100
+     }
+    },
+    "guide": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "guide-move": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 98
+     }
+    },
+    "admin": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "bridge": {
+     "mobile": {
+      "perf": 99,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "skills": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "guide-mcp": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "recovery": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    }
+   },
+   "interactions": {
+    "dragLagPx": 14
+   }
+  },
+  {
+   "id": "938891c",
+   "at": "2026-10-10T19:58:00+09:00",
+   "build": "938891c",
+   "label": "2차 측정 · 흔들림·코드 분할 마무리",
+   "notes": [],
+   "pages": {
+    "login": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "start": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "list": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 98
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 97
+     }
+    },
+    "session": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 96
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "new-session": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "stats": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 59
+     }
+    },
+    "hosts": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "host": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "settings": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "guide": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 98
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "guide-move": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 98
+     }
+    },
+    "admin": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "bridge": {
+     "mobile": {
+      "perf": 99,
+      "interactive": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "skills": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "guide-mcp": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    },
+    "recovery": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100
+     }
+    }
+   }
+  },
+  {
+   "id": "ec83f75",
+   "at": "2026-10-10T20:08:00+09:00",
+   "build": "ec83f75",
+   "label": "목록 폭 끌기 멈춤 수정",
+   "notes": [],
+   "pages": {
+    "login": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 96
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 98
+     }
+    },
+    "start": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 98
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 98
+     }
+    },
+    "list": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 98,
+      "ux": 77
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 97,
+      "ux": 84
+     }
+    },
+    "session": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 96,
+      "ux": 81
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 81
+     }
+    },
+    "new-session": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99,
+      "ux": 89
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 85
+     }
+    },
+    "stats": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100,
+      "ux": 94
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 88
+     }
+    },
+    "hosts": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99,
+      "ux": 94
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 86
+     }
+    },
+    "host": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99,
+      "ux": 95
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 88
+     }
+    },
+    "settings": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100,
+      "ux": 87
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 87
+     }
+    },
+    "guide": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 98,
+      "ux": 86
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 87
+     }
+    },
+    "guide-move": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 97,
+      "ux": 85
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 98,
+      "ux": 85
+     }
+    },
+    "admin": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 97,
+      "ux": 88
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 85
+     }
+    },
+    "bridge": {
+     "mobile": {
+      "perf": 99,
+      "interactive": 97,
+      "ux": 93
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 93
+     }
+    },
+    "skills": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 87
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 91
+     }
+    },
+    "guide-mcp": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 97
+     }
+    },
+    "recovery": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 97,
+      "ux": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 97
+     }
+    }
+   }
+  },
+  {
+   "id": "84e4d49",
+   "at": "2026-10-10T22:50:00+09:00",
+   "build": "84e4d49",
+   "label": "UX 감사 수정·기기 상세 CLS",
+   "notes": [
+    "로딩·인터랙티브는 84e4d49 에서 32칸을 다시 쟀다",
+    "기기 상세는 로그가 상태를 기다리게 고친 뒤 다시 쟀다(모바일 89→97, CLS 0.134→0)",
+    "UX 는 2차 측정(0ab86b7) 점수"
+   ],
+   "pages": {
+    "admin": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 96,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 99,
+      "ux": 98,
+      "perf": 98
+     }
+    },
+    "bridge": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 93,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 97,
+      "ux": 93,
+      "perf": 99
+     }
+    },
+    "guide": {
+     "desktop": {
+      "interactive": 99,
+      "ux": 98,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 100,
+      "ux": 99,
+      "perf": 98
+     }
+    },
+    "guide-mcp": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 98,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 99,
+      "ux": 98,
+      "perf": 100
+     }
+    },
+    "guide-move": {
+     "desktop": {
+      "interactive": 99,
+      "ux": 97,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 99,
+      "ux": 98,
+      "perf": 98
+     }
+    },
+    "host": {
+     "desktop": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 95
+     },
+     "mobile": {
+      "perf": 97,
+      "interactive": 99,
+      "ux": 96
+     }
+    },
+    "hosts": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 98,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 100,
+      "ux": 100,
+      "perf": 98
+     }
+    },
+    "list": {
+     "desktop": {
+      "interactive": 96,
+      "ux": 98,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 98,
+      "ux": 100,
+      "perf": 98
+     }
+    },
+    "login": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 98,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 100,
+      "ux": 97,
+      "perf": 100
+     }
+    },
+    "new-session": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 97,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 99,
+      "ux": 98,
+      "perf": 97
+     }
+    },
+    "recovery": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 98,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 99,
+      "ux": 97,
+      "perf": 100
+     }
+    },
+    "session": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 97,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 100,
+      "ux": 96,
+      "perf": 98
+     }
+    },
+    "settings": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 97,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 100,
+      "ux": 99,
+      "perf": 98
+     }
+    },
+    "skills": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 97,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 100,
+      "ux": 91,
+      "perf": 100
+     }
+    },
+    "start": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 99,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 99,
+      "ux": 99,
+      "perf": 100
+     }
+    },
+    "stats": {
+     "desktop": {
+      "interactive": 100,
+      "ux": 97,
+      "perf": 100
+     },
+     "mobile": {
+      "interactive": 97,
+      "ux": 97,
+      "perf": 98
+     }
+    }
+   }
+  },
+  {
+   "id": "3014c09",
+   "at": "2026-10-11T00:30:00+09:00",
+   "build": "3014c09",
+   "label": "UX 3차 측정",
+   "notes": [
+    "UX 를 3014c09 에서 32칸 다시 쟀다(평가자 2명, QUALITY-RUBRIC §2)",
+    "로딩·인터랙티브는 84e4d49 측정과 기기 상세 재측정 값"
+   ],
+   "pages": {
+    "login": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 98
+     }
+    },
+    "start": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 100
+     }
+    },
+    "list": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 98,
+      "ux": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 96,
+      "ux": 100
+     }
+    },
+    "session": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100,
+      "ux": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 99
+     }
+    },
+    "new-session": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99,
+      "ux": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 99
+     }
+    },
+    "stats": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 97,
+      "ux": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 99
+     }
+    },
+    "hosts": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100,
+      "ux": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 100
+     }
+    },
+    "host": {
+     "mobile": {
+      "perf": 97,
+      "interactive": 99,
+      "ux": 96
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 95
+     }
+    },
+    "settings": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100,
+      "ux": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 99
+     }
+    },
+    "guide": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 100,
+      "ux": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 100
+     }
+    },
+    "guide-move": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99,
+      "ux": 99
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 99
+     }
+    },
+    "admin": {
+     "mobile": {
+      "perf": 98,
+      "interactive": 99,
+      "ux": 100
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 100
+     }
+    },
+    "bridge": {
+     "mobile": {
+      "perf": 99,
+      "interactive": 97,
+      "ux": 93
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 93
+     }
+    },
+    "skills": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 97
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 97
+     }
+    },
+    "guide-mcp": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 98
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 98
+     }
+    },
+    "recovery": {
+     "mobile": {
+      "perf": 100,
+      "interactive": 99,
+      "ux": 98
+     },
+     "desktop": {
+      "perf": 100,
+      "interactive": 100,
+      "ux": 98
+     }
+    }
+   }
+  }
+ ]
+}

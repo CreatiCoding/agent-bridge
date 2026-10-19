@@ -1,0 +1,16 @@
+{
+  "name": "claude-bridge",
+  "version": "0.2.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Bridge local Claude Code sessions on your Macs to the web: move them between Macs and drive them from your phone.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/server.mjs",
+    "agent": "node agent/agent.mjs",
+    "test": "node --test test/unit/*.test.mjs"
+  }
+}

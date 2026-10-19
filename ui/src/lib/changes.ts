@@ -1,0 +1,2073 @@
+// 변경 기록 (REQ-F-744): a changelog in the Keep a Changelog shape, shown to everyone in Settings → 변경 기록.
+// One release per SPEC version (the docs/SPEC.md 판 the commit carries), newest first. A commit that changes what
+// people see or what the system does adds its release here in the same commit (CLAUDE.md §1).
+// `commit` is filled in later (a commit cannot name its own hash); leave it out for the release being written.
+
+export type ChangeKind = 'added' | 'changed' | 'fixed' | 'removed' | 'security'
+export type ChangeScope = 'ui' | 'server' | 'agent'
+
+export interface Change {
+  kind: ChangeKind
+  scope: ChangeScope[]
+  text: string
+  /** SPEC ids (REQ-…, IF-…, ERR-…). */
+  refs?: string[]
+}
+
+export interface Release {
+  /** The SPEC version, e.g. '1.141'. */
+  version: string
+  /** YYYY-MM-DD */
+  date: string
+  /** Short hash of the commit that carries this version. */
+  commit?: string
+  changes: Change[]
+}
+
+export const CHANGES: Release[] = [
+  {
+    version: '1.294',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '리포를 CreatiCoding/agent-bridge 로 옮기고 소스 코드 링크를 새 주소로. 1.293 이전 커밋 해시는 비공개로 보관한 옛 리포에만 있음', refs: ['REQ-F-791'] },
+    ],
+  },
+  {
+    version: '1.293',
+    commit: '37f88f2',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: "TestFlight 빌드 번호를 커밋 수 대신 2026-01-01 UTC 부터 지난 분으로(지난번보다 항상 큼). 히스토리를 합쳐도 번호가 내려가지 않음", refs: ['REQ-F-762', 'REQ-F-781'] },
+    ],
+  },
+  {
+    version: '1.292',
+    commit: '9316146',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: "에이전트가 믿는 서명 공개키를 agent/keys.mjs 로 뺌. 서명되는 파일이라 서버가 바꿀 수 없고, 포크는 sign-agent.mjs --init 으로 자기 키를 만듦", refs: ['REQ-S-067', 'REQ-M-005'] },
+    ],
+  },
+  {
+    version: '1.291',
+    commit: 'f8d7c93',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: "공개 데모를 기본으로 끔: BRIDGE_DEMO=1 일 때만 로그인 화면에 데모로 둘러보기가 보임", refs: ['REQ-F-766', 'IF-222'] },
+    ],
+  },
+  {
+    version: '1.290',
+    commit: 'a024bf3',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'changed', scope: ['server', 'ui'], text: "스킬 저장소 기본값을 없애고, 운영자가 설정 → 운영 → 스킬 저장소에서 owner/repo 를 넣고 바꾸게 함(환경 변수 SKILLS_REPO 가 있으면 그게 우선)", refs: ['REQ-F-792', 'IF-246'] },
+    ],
+  },
+  {
+    version: '1.289',
+    commit: '3693975',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'added', scope: ['server', 'ui'], text: "라이선스를 AGPL-3.0 으로 정하고, 로그인 화면·지원 페이지 꼬리말과 설정 → 더 보기에 소스 코드 링크를 더함(주소는 BRIDGE_SOURCE_URL)", refs: ['REQ-F-791', 'REQ-M-008', 'IF-008'] },
+    ],
+  },
+  {
+    version: '1.288',
+    commit: 'a0186b9',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'fixed', scope: ['server'], text: '개인정보 처리방침 영어 요약의 보호책임자 이름 표기를 Jeong Seokho 로 고침', refs: ['REQ-F-767'] },
+    ],
+  },
+  {
+    version: '1.287',
+    commit: '7492117',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '개인정보 처리방침에 보호책임자 성명을 적고, 이전 판에서 저장된 대화를 서버에서 모두 지웠음을 적음', refs: ['REQ-F-767'] },
+    ],
+  },
+  {
+    version: '1.286',
+    commit: 'a7cdb04',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server'], text: '분할 조합 순서 바꾸기: 조합 메뉴의 "위로 옮기기·아래로 옮기기"로 목록과 조합 메뉴의 순서를 바꿈', refs: ['REQ-F-790', 'IF-245'] },
+    ],
+  },
+  {
+    version: '1.285',
+    commit: '97a9bb6',
+    date: '2026-10-19',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server'], text: '분할 조합: 분할 화면 막대의 "조합"에서 지금 칸들을 이름 붙여 저장하고, 저장한 조합을 다시 연다. 넓은 화면의 세션 목록 맨 위에서도 연다. 계정에 저장돼 모든 기기에 보인다', refs: ['REQ-F-790'] },
+    ],
+  },
+  {
+    version: '1.284',
+    commit: '41f02c0',
+    date: '2026-10-18',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '개인정보 처리방침: 문제 제보의 AI 도구 처리는 제3조의 한 줄로만 적고 제7조의 Anthropic 이전 카드를 뺌. 영어 요약에서 AI 도구 이름과 서버에 더 없는 pictures 를 뺌', refs: ['REQ-F-767'] },
+    ],
+  },
+  {
+    version: '1.283',
+    commit: '8d49747',
+    date: '2026-10-18',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '맥의 받아쓰기 모델에 "전송·리셋"을 미리 알려 줌(프롬프트 맨 끝): 혼자 말한 명령이 순종·전성·천송·리스트로 나오던 것을 줄임', refs: ['REQ-F-789'] },
+    ],
+  },
+  {
+    version: '1.282',
+    date: '2026-10-18',
+    commit: '081a60f',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '혼자 말한 짧은 낱말이 전송·리셋과 자모 하나 차이거나 자주 잘못 나오는 말(순종, 리스트)이면 그 명령으로 봄. 긴 말 속에서는 글', refs: ['REQ-F-789'] },
+    ],
+  },
+  {
+    version: '1.281',
+    date: '2026-10-18',
+    commit: '3e431da',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: '음성 명령: 한 마디 맨 앞에 "두 번째 세션"처럼 칸 이름을 말하면 그 칸으로 옮겨 쌓고, 맨 끝에 "전송"이면 보내고 "리셋"이면 모은 말을 지움. 다른 자리의 같은 말은 글', refs: ['REQ-F-789'] },
+    ],
+  },
+  {
+    version: '1.280',
+    date: '2026-10-18',
+    commit: '8c1ecdb',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: '분할 화면에서 음성 모드를 함께 씀: 한 칸에서 켜면 모든 칸이 켜지고, 말은 받는 칸 하나에 쌓여 그 칸의 전송으로 보냄. 다른 칸의 "여기로 받기"로 받는 칸을 바꾸고, 어디서 끄든 다 꺼짐', refs: ['REQ-F-788'] },
+    ],
+  },
+  {
+    version: '1.279',
+    date: '2026-10-18',
+    commit: '4988e9d',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '개인정보 처리방침: 서버가 세션의 대화를 저장하지 않고 전달만 함, 세션 정보는 제목·미리보기 80자·상태·맥·작업 폴더·PR 링크·통계 숫자만, 예전에 저장된 대화는 맥으로 옮긴 뒤 확인을 거쳐 삭제', refs: ['REQ-F-767', 'REQ-M-018'] },
+      { kind: 'changed', scope: ['server'], text: '개인정보 처리방침: 문제 제보가 운영자의 AI 도구로 처리될 수 있음과 그 국외 이전(Anthropic, 미국)을 적음', refs: ['REQ-F-767'] },
+      { kind: 'changed', scope: ['ui'], text: '계정 삭제 창: 서버에서 지우는 것을 세션 정보·보낸 영상·예전 대화 기록으로, 지우지 않는 것에 맥의 화면 기록', refs: ['REQ-F-770'] },
+    ],
+  },
+  {
+    version: '1.278',
+    date: '2026-10-18',
+    commit: 'dcdca29',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: 'iPad 에서는 Enter 로 보내고 Shift+Enter 로 줄바꿈(PC 와 같게). 폰은 그대로 Enter 가 줄바꿈', refs: ['REQ-F-075'] },
+    ],
+  },
+  {
+    version: '1.277',
+    date: '2026-10-18',
+    commit: '3cc4c9f',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '서버가 대화 사본·화면 기록·그림을 더 저장하지 않음. 화면은 맥에 물어 받고, 서버는 최근 기록 일부만 메모리에 둠', refs: ['REQ-S-069'] },
+      { kind: 'added', scope: ['ui'], text: '세션의 맥이 끊겨 있으면 대화 위에 "맥 연결 끊김" 띠, 이 기기에 남은 대화만 보이고 10초마다 다시 물음', refs: ['REQ-F-787'] },
+      { kind: 'changed', scope: ['server', 'agent'], text: '다른 맥으로 옮기기는 보내는 맥에서 대화와 기록을 받아 넘김. 보내는 맥이 꺼져 있으면 옮길 수 없음("전환" 버튼 없앰)', refs: ['REQ-S-069', 'IF-242'] },
+      { kind: 'changed', scope: ['server', 'agent'], text: '통계는 맥이 보낸 숫자로만 셈, 턴이 끝나면 5초 안에 갱신', refs: ['REQ-S-070', 'IF-238'] },
+      { kind: 'security', scope: ['server'], text: '잠근 세션은 미리보기와 손으로 붙이지 않은 제목을 저장하지 않음, 미리보기 80자, 마지막 글·맥 그림 경로 저장 안 함', refs: ['REQ-S-070'] },
+      { kind: 'changed', scope: ['server'], text: '운영자 정리에서 대화 파일(사본·기록·그림)을 고를 수 있게 됨(여전히 BRIDGE_PURGE=1 일 때만, 맥으로 옮기지 않은 기록은 남김)', refs: ['REQ-S-075'] },
+    ],
+  },
+  {
+    version: '1.276',
+    date: '2026-10-18',
+    commit: 'cd7ed5e',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: 'iPad 에서 화면 키보드가 뜨면 입력창이 키보드 뒤에 가려지던 것: 키보드가 가린 만큼 입력창을 올림. 분할 화면의 칸에서도', refs: ['REQ-F-757'] },
+    ],
+  },
+  {
+    version: '1.275',
+    date: '2026-10-18',
+    commit: '0fe4eb0',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: '분할 화면: 세션 ⋯ 메뉴 "분할로 띄우기"로 세션을 골라 최대 3개를 폰 폭 칸으로 나란히 띄움(iPad 가로 3칸·세로 2칸). 칸마다 따로 보내고, 칸 메뉴로 추가·빼기·크게 보기. 데모에서도 됨', refs: ['REQ-F-786'] },
+      { kind: 'added', scope: ['ui'], text: 'iOS 앱이 iPad 에서 전체 화면으로 뜨고 세로·가로를 모두 지원', refs: ['REQ-F-756'] },
+      { kind: 'changed', scope: ['ui'], text: '넓은 화면 기준을 900 px → 744 px 로: iPad 세로에서도 목록과 대화가 나란히 보임', refs: ['REQ-F-786'] },
+      { kind: 'security', scope: ['server'], text: "CSP frame-ancestors 를 'none' → 'self' 로(같은 사이트의 분할 칸만 허용, 다른 사이트는 계속 막음)", refs: ['REQ-S-011'] },
+    ],
+  },
+  {
+    version: '1.274',
+    date: '2026-10-18',
+    commit: '0814ff1',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server'], text: '세션 ⋯ 메뉴 "작업 폴더 바꾸기": 같은 맥의 다른 폴더(또는 새 기본 폴더)에서 같은 대화를 이어서 엶. 없는 폴더는 물어보고 만듦', refs: ['REQ-F-785', 'IF-241', 'ERR-337'] },
+    ],
+  },
+  {
+    version: '1.273',
+    date: '2026-10-18',
+    commit: 'd41affd',
+    changes: [
+      { kind: 'added', scope: ['agent', 'server'], text: '맥 에이전트가 세션 기록과 그림을 맥에 받아 둠(서버에 있던 것도 맥으로 옮김). 서버가 대화를 저장하지 않게 하는 준비, 화면은 그대로', refs: ['REQ-S-069'] },
+      { kind: 'added', scope: ['agent', 'server'], text: '통계 숫자와 대화에 나온 PR 링크를 맥이 계산해 보냄', refs: ['REQ-S-070'] },
+      { kind: 'security', scope: ['server'], text: '세션 상태 방송에서 통계 숫자·PR 링크·옛 지침 본문을 뺌', refs: ['REQ-S-070'] },
+    ],
+  },
+  {
+    version: '1.272',
+    date: '2026-10-18',
+    commit: '4fea9a3',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '알림 내역은 30일 동안 두고 자동으로 지움. 잠긴 세션의 알림은 이름 없이 "확인할 것이 있어요"만, 세션을 지우면 그 알림도 지움', refs: ['REQ-S-071', 'REQ-S-063'] },
+      { kind: 'changed', scope: ['server', 'ui'], text: '문제 제보는 90일 뒤 자동으로 지우고(그림·영상 함께), 계정을 지워도 그동안 남음. 제보 화면과 계정 삭제 창에 안내', refs: ['REQ-S-072', 'REQ-F-770'] },
+      { kind: 'changed', scope: ['server'], text: '대기·거절된 접근 요청은 마지막 시도 90일 뒤 지움', refs: ['REQ-S-074'] },
+      { kind: 'added', scope: ['server'], text: '운영자 전용 기존 데이터 정리: 대상 수·크기를 보고, BRIDGE_PURGE=1 일 때만 지움', refs: ['REQ-S-075'] },
+    ],
+  },
+  {
+    version: '1.271',
+    date: '2026-10-18',
+    commit: '0d8621c',
+    changes: [
+      { kind: 'security', scope: ['agent', 'server'], text: 'git 원격 주소의 인증 정보(user:token@, x-access-token, ssh 비밀번호)를 맥과 서버 양쪽에서 지워 저장·로그에 남기지 않음', refs: ['REQ-S-073'] },
+      { kind: 'security', scope: ['server'], text: '작업 폴더의 지침 파일(SESSION·AGENTS·CLAUDE.md) 본문을 서버에 저장하지 않음, 옮길 때 보내는 맥에서 받음', refs: ['REQ-S-073'] },
+      { kind: 'security', scope: ['server', 'agent'], text: '서버 로그에서 IP·요청 쿼리·맥 로그 본문을 빼고, 맥의 Claude 계정 이메일·요금제·hostname 을 저장하지 않음', refs: ['REQ-S-074'] },
+      { kind: 'changed', scope: ['server'], text: '보낸 영상은 맥이 받으면 바로, 만료된 로그인 토큰 해시는 1시간 안에 지움', refs: ['REQ-S-074'] },
+    ],
+  },
+  {
+    version: '1.270',
+    date: '2026-10-18',
+    commit: '3acdbd3',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '할 일 항목을 직접 뺀다. 항목 오른쪽 × 로 빼면 세션에 저장돼 다른 기기에서도, Claude 가 같은 일을 다시 보내도 빠진 채이고, 알림의 "되돌리기"로 다시 보인다',
+        refs: ['REQ-F-784', 'IF-067'],
+      },
+    ],
+  },
+  {
+    version: '1.269',
+    date: '2026-10-18',
+    commit: 'f8b5763',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'PC 맨 왼쪽 앱 레일의 새 세션(+)·검색 버튼이 목록 위 검색칸·+ 와 겹치던 것. 목록이 펼쳐져 있으면 레일에서 빼고, 목록을 접었을 때만 보인다',
+        refs: ['REQ-F-715'],
+      },
+    ],
+  },
+  {
+    version: '1.268',
+    date: '2026-10-18',
+    commit: '1cf8fde',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '답한 권한 카드가 "Do you want to proceed? · 허용"만 남아 무엇을 허락했는지 알 수 없던 것. 이제 닫힌 카드도 명령·파일 내용을 보인다. 알림 줄의 *전부 허용*이지만 처럼 별표 뒤에 글자가 붙은 강조도 굵게 그린다',
+        refs: ['REQ-F-591', 'REQ-F-592'],
+      },
+    ],
+  },
+  {
+    version: '1.267',
+    date: '2026-10-18',
+    commit: '134e08f',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '개인정보 처리방침 /privacy 를 "합니다"체의 공식 문서로: 개인정보 보호법 제30조·시행령 제31조의 기재 사항을 제1조~제15조(처리 목적, 항목, 보유 기간, 파기, 제3자 제공, 위탁, 국외 이전, 민감정보, 정보주체의 권리, 안전성 확보 조치, 쿠키, 보호책임자, 열람청구, 권익침해 구제, 변경)로 나누고 목차를 단다. 저장 항목·보관 기간·삭제 방법은 그대로',
+        refs: ['REQ-F-767'],
+      },
+    ],
+  },
+  {
+    version: '1.266',
+    date: '2026-10-18',
+    commit: '8dc4c24',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'Claude 가 남은 일만 담아 할 일을 다시 보내면 앞서 완료한 항목이 패널에서 모두 사라지던 것. 이제 새 목록에 없는 완료 항목은 완료로 남는다(빈 목록은 여전히 비움). "다시 정리" 부탁에도 완료 항목을 그대로 넣어 보내 달라고 적는다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
+    version: '1.265',
+    date: '2026-10-18',
+    commit: 'c58ff59',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '지원 페이지 /support: 로그인 없이 열리고, 시작 방법·자주 묻는 것(맥 연결, 앱 알림, 업데이트, 계정 삭제)·문의 메일·개인정보 처리방침 링크를 보인다. 로그인 화면과 처리방침에 "지원" 링크',
+        refs: ['REQ-F-783'],
+      },
+    ],
+  },
+  {
+    version: '1.264',
+    date: '2026-10-18',
+    commit: 'acb916f',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '세션 즐겨찾기: 세션 ⋯ 메뉴의 "즐겨찾기"로 표시하면 행 제목 앞에 별이 붙고, 최신순 보기에서 맨 위 "즐겨찾기" 절에 모인다. 서버에 저장돼 다른 기기에서도 같다',
+        refs: ['REQ-F-782', 'REQ-F-697', 'IF-067'],
+      },
+    ],
+  },
+  {
+    version: '1.263',
+    date: '2026-10-18',
+    commit: '8a4ce59',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: 'iOS 앱이 TestFlight 에 올린 최신 빌드보다 옛 빌드면, 올린 지 30분 뒤부터 앱을 열 때 "새 버전이 있어요" 창을 띄운다. "TestFlight 열기" 는 TestFlight 앱으로, "나중에" 는 그 빌드를 하루 동안 묻지 않는다. 최신 빌드는 앱을 올리는 운영자 맥의 에이전트가 testflight/result 를 읽어 서버에 알린다(운영자 맥만 받음). 브라우저·데모 계정은 띄우지 않는다',
+        refs: ['REQ-F-781'],
+      },
+    ],
+  },
+  {
+    version: '1.262',
+    date: '2026-10-18',
+    commit: 'f3f92cb',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '맥 연결이 잠깐 끊겼다 붙으면, 대답을 기다리는 권한 카드가 버튼·명령 없이 "답함" 으로 보여 무엇을 승인한 건지 알 수 없던 것. 이제 맥이 다시 알리는 카드 id 로 열린 카드를 되살린다',
+        refs: ['REQ-F-477'],
+      },
+    ],
+  },
+  {
+    version: '1.261',
+    date: '2026-10-18',
+    commit: '0ec7288',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 패널의 항목을 누르면 "이 일부터 진행"을 보내 하던 일을 두고 넘어가는 말로 읽히던 것을, 지금 하던 일을 마친 뒤 그 일을 이어서 하고 남은 일로 가게 바꾼다. 항목 설명과 대화 카드 머리는 "하던 일 끝나면 이 일 이어서 하기"',
+        refs: ['REQ-F-779', 'REQ-F-780'],
+      },
+    ],
+  },
+  {
+    version: '1.260',
+    date: '2026-10-18',
+    commit: '87e16a5',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '맥에 시스템 허락 창이 떴다는 알림이, 컴퓨터에 브리지 탭이 열려 있으면 폰으로 가지 않던 것. 이 알림은 맥 앞에서만 처리할 수 있어 페이지가 떠 있어도 푸시한다',
+        refs: ['REQ-F-777'],
+      },
+    ],
+  },
+  {
+    version: '1.259',
+    date: '2026-10-18',
+    commit: '62cbdaa',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '도구가 도는 동안 타임라인의 도구 줄과 그 아래 진행 줄이 같은 이름·명령을 두 번 보이던 것. 이제 타임라인에 그 도구 줄이 보이면 진행 줄은 "도구 실행 중 · 경과"만 보인다',
+        refs: ['REQ-F-138'],
+      },
+    ],
+  },
+  {
+    version: '1.258',
+    date: '2026-10-18',
+    commit: '0e2fab9',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '할 일이 있을 때 "다시 정리"가 처음 정리와 같은 부탁만 보내, 그사이 다른 세션이 끝낸 일이 남은 일로 남던 것. 이제 남은 일마다 지금 상태(origin/main 커밋, 다른 worktree·PR, 배포 상태 등)를 다시 확인해 완료·빼기·더하기 하고 근거를 끝 괄호에 적어 달라고 부탁한다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
+    version: '1.257',
+    date: '2026-10-18',
+    commit: 'e6da7c0',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui', 'server'],
+        text: '대화 화면에 같은 줄이 계속 쌓여 위로 올리면 읽던 자리가 밀려 내려가던 것. 배포 중 두 서버가 같은 기록에 번호를 겹쳐 매기지 않고, 화면은 같은 줄을 두 번 그리지 않는다. 열자마자 맨 아래를 따라가지 않던 것도 고쳤다',
+        refs: ['REQ-F-468', 'REQ-F-134', 'REQ-F-142'],
+      },
+    ],
+  },
+  {
+    version: '1.256',
+    date: '2026-10-18',
+    commit: '87201f5',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 패널의 항목을 누르면 그 일 하나만 하고 멈추던 것을, 그 일부터 하고 끝나면 남은 일을 위에서부터 이어서 하게 바꾼다. 항목 설명과 대화 카드 머리는 "이 일부터 하고 이어서 하기"',
+        refs: ['REQ-F-779', 'REQ-F-780'],
+      },
+    ],
+  },
+  {
+    version: '1.255',
+    date: '2026-10-18',
+    commit: '5a522bb',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '문제 제보에 동영상을 붙일 수 있다(mp4·mov·webm, 3개, 각 500MB 까지). 올리는 동안 진행률을 보이고, 지난 제보와 운영 화면에서 바로 재생되며, 고치기 세션에는 맥으로 영상 파일이 넘어간다',
+        refs: ['REQ-F-735', 'REQ-F-736', 'REQ-F-737', 'REQ-F-739', 'IF-229', 'IF-230', 'IF-231'],
+      },
+    ],
+  },
+  {
+    version: '1.254',
+    date: '2026-10-18',
+    commit: '9129a14',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '스킬 저장소를 GitHub App 으로 읽을 수 있다(SKILLS_GITHUB_APP_ID·SKILLS_GITHUB_APP_KEY). 1시간짜리 설치 토큰을 저절로 받아 써서, 만료된 토큰을 사람이 바꿔 넣을 일이 없다. App 값이 없으면 SKILLS_GITHUB_TOKEN 을 그대로 쓴다',
+        refs: ['REQ-F-290', 'REQ-S-059', 'ERR-036'],
+      },
+    ],
+  },
+  {
+    version: '1.253',
+    date: '2026-10-18',
+    commit: '277e9b0',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '넓은 화면 세션 머리줄의 터미널 화면 버튼을 ⋯ 메뉴로 넣고, 그 자리에 새로고침 버튼을 둔다. 쉬는 세션은 누르면 고르기 시트 없이 바로 새로고침한다',
+        refs: ['REQ-F-609', 'REQ-F-718'],
+      },
+    ],
+  },
+  {
+    version: '1.252',
+    date: '2026-10-18',
+    commit: '28bfa75',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '다른 맥에 맡긴 세션을 그룹 "Bridge 맡긴 세션"에 넣는다(없으면 맨 위에 만든다). 전에는 그룹 밖에 섞였다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.251',
+    date: '2026-10-18',
+    commit: '7258618',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 패널이 보낸 부탁(이 일만 하기·남은 일 모두 하기·정리 부탁)을 대화에 지시문 말풍선 대신 할 일 카드(머리 + ▶ 항목)로 그린다',
+        refs: ['REQ-F-780'],
+      },
+    ],
+  },
+  {
+    version: '1.250',
+    date: '2026-10-18',
+    commit: 'd84b4da',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '할 일 패널 머리에 ▶("남은 일 {n}개 모두 하기")를 둔다. 누르면 남은 일을 위에서부터 차례로 모두 하라는 부탁을 세션에 보낸다',
+        refs: ['REQ-F-779'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '할 일 패널의 남은 항목을 누르면 그 일 하나만 하라는 부탁을 보낸다(마우스를 올리면 ▶ 가 보임). 완료 항목은 누를 수 없다',
+        refs: ['REQ-F-779'],
+      },
+    ],
+  },
+  {
+    version: '1.249',
+    date: '2026-10-18',
+    commit: '03ceff3',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 패널이 왼쪽 목록처럼 화면 바닥까지 세로를 꽉 채운다. 열고 닫을 때 패널 폭과 대화 칸·입력창이 0.26초 동안 미끄러지듯 움직인다(줄인 움직임 설정이면 바로)',
+        refs: ['REQ-F-778'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '넓은 화면의 사용량 게이지는 컨텍스트와 노랑·빨강인 것만 보이고, 나머지는 "+n" 버튼으로 접는다',
+        refs: ['REQ-F-149'],
+      },
+      {
+        kind: 'removed',
+        scope: ['ui'],
+        text: '넓은 화면 입력창의 "AGENTS.md"·"옮기기" 칩을 뺐다. ⋯ 메뉴의 "AGENTS.md"와 "다른 맥으로 옮기기"·"Slack 으로 옮기기"로 한다',
+        refs: ['REQ-F-145', 'REQ-F-718'],
+      },
+    ],
+  },
+  {
+    version: '1.248',
+    date: '2026-10-18',
+    commit: 'a9dc470',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 글의 **굵게**·`코드`를 그린다. 굵은 핵심 낱말은 강조색으로, 글 끝의 괄호 메모 "(…)"는 흐린 색으로 낮춰 무엇을 할지가 먼저 보인다',
+        refs: ['REQ-F-778', 'REQ-F-143'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 정리 부탁(TODO_ASK)에 항목마다 핵심 낱말 하나를 굵게, 덧붙이는 말은 끝 괄호에 쓰라는 문장을 더한다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
+    version: '1.247',
+    date: '2026-10-18',
+    commit: '834a0ad',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 표지를 이모지(✅·🔄·⬜)에서 직접 그린 SVG 아이콘으로 바꾼다. 같은 둥근 상자에 할 일은 빈 상자, 하는 중은 강조색 점, 완료는 초록 체크',
+        refs: ['REQ-F-778', 'REQ-F-143'],
+      },
+    ],
+  },
+  {
+    version: '1.246',
+    date: '2026-10-18',
+    commit: 'dd4b229',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 목록(오른쪽 패널·입력창 위 막대)에서 완료 항목을 "완료 N개" 한 줄 아래로 접는다. 누르면 펼치고, 펼침 여부는 이 기기에 기억',
+        refs: ['REQ-F-778', 'REQ-F-143'],
+      },
+    ],
+  },
+  {
+    version: '1.245',
+    date: '2026-10-18',
+    commit: '91638f6',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent', 'server', 'ui'],
+        text: '할 일 도구가 생기기 전에 뜬 세션에서 "지금까지 한 일로 정리"를 누르면, 먼저 세션을 다시 열어 도구를 붙인 뒤 정리를 부탁한다. 일하는 중이면 끝난 뒤에 다시 연다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
+    version: '1.244',
+    date: '2026-10-18',
+    commit: '118b2fb',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '할 일 목록(오른쪽 패널·입력창 위 막대)에서 완료한 항목을 맨 아래로 모은다. 남은 일·하는 일은 위에, 각 묶음 안의 순서는 Claude 가 보낸 대로',
+        refs: ['REQ-F-778', 'REQ-F-143'],
+      },
+    ],
+  },
+  {
+    version: '1.243',
+    date: '2026-10-18',
+    commit: 'c6438a0',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '위쪽 막대의 "할 일" 버튼으로 패널을 언제든 연다. 할 일이 없으면 "지금까지 한 일로 정리", 있으면 "다시 정리"로 Claude 에게 한 일·하는 일·남은 일 정리를 부탁한다(좁은 화면은 ⋯ 메뉴 "할 일 정리"). 패널 머리의 접기는 닫기로',
+        refs: ['REQ-F-778'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '답 글 끝의 ```todos 블록([x]·[>]·[ ])을 할 일 목록으로 읽고 글에서 뺀다. todos 도구 없이 뜬 예전 세션도 패널을 채운다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
+    version: '1.242',
+    date: '2026-10-18',
+    commit: '7aa8c7b',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '세션의 할 일을 넓은 화면(1180 px 이상)에서 대화 오른쪽 패널로 보인다: ✅ 완료·🔄 하는 중·⬜ 할 일, 진행 막대, 접기(이 기기에 기억). 좁은 화면의 입력창 위 막대도 같은 이모지',
+        refs: ['REQ-F-778', 'REQ-F-143'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: 'bridge MCP 에 todos 도구: Claude 가 할 일 목록을 보내면 대화 기록을 거쳐 패널이 실시간으로 바뀐다. 권한을 묻지 않고, 세 단계 이상인 일에 쓰라고 시스템 프롬프트에 적는다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
+    version: '1.241',
+    date: '2026-10-18',
+    commit: '315e369',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '맡긴 세션의 답이 맡긴 쪽 세션에 가지 않던 것. 맥이 턴이 끝났다는 신호를 답보다 먼저 보내는 경우에도 이제 답이 들어오면 전한다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.240',
+    date: '2026-10-18',
+    commit: 'e9446dc',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '다른 세션의 권한 확인 창에 "Do you want to proceed?" 만 보이고 무엇을 허락하는지 안 보이던 것. 이제 그 창에서도 실행할 명령이나 고칠 파일이 보여요',
+        refs: ['REQ-F-080'],
+      },
+    ],
+  },
+  {
+    version: '1.239',
+    date: '2026-10-18',
+    commit: '12a0b5c',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '일하던 세션을 복제하면 복제본이 원본이 하던 일을 이어서 하거나 마저 할지 묻던 것. 이제 그 일은 원본이 계속 맡는다고 복제본에 알려서, 복제본은 새로 받은 요청만 해요',
+        refs: ['REQ-F-401'],
+      },
+    ],
+  },
+  {
+    version: '1.238',
+    date: '2026-10-18',
+    commit: 'd73f30f',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'server', 'agent'],
+        text: '화면 문구에서 맥의 폴더 경로 대신 "맥의 에이전트 폴더" 라고 불러요(가이드, 설정 → 음성, 계정 빼기). 데모 대화와 Slack 연결 안내는 앱 이름 Agent Bridge 를 쓰고, 덮개 설정 오류는 맥 화면의 안내에서 명령을 복사하라고 알려요. 붙여 넣는 명령은 그대로예요',
+        refs: ['REQ-F-768', 'ERR-115', 'REQ-F-737'],
+      },
+    ],
+  },
+  {
+    version: '1.237',
+    date: '2026-10-18',
+    commit: '292ee50',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '맥에 시스템 허락 창(예: 다운로드 폴더 접근 허락)이 떠서 세션이 멈추면 폰으로 알려 줘요. 맥에서 직접 눌러 주면 알림이 사라져요',
+        refs: ['REQ-F-777'],
+      },
+    ],
+  },
+  {
+    version: '1.236',
+    date: '2026-10-18',
+    commit: '1f64a6c',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server', 'agent', 'ui'],
+        text: '다른 맥에 맡긴 세션이 끝나도 맡긴 쪽 세션이 이어받지 않아 "뭐해"라고 물어야 하던 것. 이제 맡긴 세션의 턴이 끝나면 그 답이 맡긴 쪽 대화에 글로 들어가("맡긴 세션의 답") 바로 이어서 일한다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.235',
+    date: '2026-10-18',
+    commit: '3aff6b6',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '언어 지킴이가 설명 없이 부른 도구에서 그보다 앞의 영어 글이나 안내문을 설명으로 잘못 읽어 한국어 세션의 호출을 돌려보내던 것. 이제 지금 부르는 도구 바로 위에 붙은 글만 본다',
+        refs: ['REQ-F-710'],
+      },
+    ],
+  },
+  {
+    version: '1.234',
+    date: '2026-10-18',
+    commit: '7685afe',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'iOS 앱을 iPhone 전용으로(TARGETED_DEVICE_FAMILY 1, UIDeviceFamily [1]). iPad 에서는 Safari·홈 화면 웹앱으로 계속 쓴다',
+        refs: ['REQ-F-756'],
+      },
+    ],
+  },
+  {
+    version: '1.233',
+    date: '2026-10-18',
+    commit: 'f3f78ef',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '압축한 뒤에도 "컨텍스트가 470k 토큰이에요" 압축 권유 띠가 뜨던 것. 압축하면 컨텍스트 크기를 압축 뒤 크기로 바로 바꾼다',
+        refs: ['REQ-F-773', 'REQ-F-776'],
+      },
+    ],
+  },
+  {
+    version: '1.232',
+    commit: '4c676b6',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'iOS 앱: 키보드 위 ^ v 완료 줄을 비공개 클래스 대신 공개 API(WKWebView 하위 클래스의 inputAccessoryView)로 없앤다. 보이는 것은 그대로',
+        refs: ['REQ-F-756'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: 'iOS 앱: 웹 검사기(isInspectable)를 디버그 빌드에서만 켠다. TestFlight·App Store 빌드는 열 수 없다',
+        refs: ['REQ-F-756'],
+      },
+    ],
+  },
+  {
+    version: '1.231',
+    date: '2026-10-18',
+    commit: '944131e',
+    changes: [
+      {
+        kind: 'removed',
+        scope: ['ui', 'server', 'agent'],
+        text: '음성 받아쓰기의 OpenAI(whisper-1) 방식을 뺐어요. 받아쓰기는 세션이 있는 맥의 whisper.cpp 로만 하고, 녹음은 맥 밖으로 나가지 않아요. 설정 → 음성에서는 모델만 골라요',
+        refs: ['REQ-F-754', 'REQ-F-758', 'IF-212', 'IF-213', 'IF-215', 'IF-216', 'IF-214', 'ERR-327'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '예전에 OpenAI 방식으로 저장해 둔 음성 설정은 오류 없이 맥 방식으로 읽어요',
+        refs: ['REQ-F-754', 'IF-212'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '개인정보 처리방침: 제3자에서 OpenAI 를 빼고 "녹음은 맥 밖으로 나가지 않아요"로 고쳤어요',
+        refs: ['REQ-F-767'],
+      },
+    ],
+  },
+  {
+    version: '1.230',
+    date: '2026-10-18',
+    commit: '9edb931',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server', 'ui'],
+        text: '"지금 압축" 이 내가 보낸 말풍선으로 남지 않는다. 서버가 /compact 를 넣고 대화에는 "컨텍스트 압축을 요청했어요" 안내만 남긴다(:compact)',
+        refs: ['REQ-F-776'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '전부 허용에서 권한 창이 먼저 닫힌 뒤 카드 답의 숫자가 입력칸에 남아 다음 메시지 앞에 붙던 것("11/compact …"). 입력칸에 들어간 숫자는 지운다',
+        refs: ['REQ-F-437', 'REQ-F-436'],
+      },
+    ],
+  },
+  {
+    version: '1.229',
+    commit: '61c7d58',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '컨텍스트가 큰 채로 쉬는 세션의 띠가 가벼운 복제 대신 "지금 압축" 을 권한다. 누르면 그 세션에 /compact 를 보내 같은 세션에서 압축하고 그대로 이어간다(요약은 SESSION.md 에도)',
+        refs: ['REQ-F-776'],
+      },
+    ],
+  },
+  {
+    version: '1.228',
+    commit: 'd7bb804',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '컨텍스트가 300k 토큰 이상인 채로 쉬는 세션에 "가벼운 복제" 를 권하는 띠. 닫으면 컨텍스트가 200k 더 커질 때까지 다시 뜨지 않는다',
+        refs: ['REQ-F-776', 'REQ-F-402'],
+      },
+    ],
+  },
+  {
+    version: '1.227',
+    commit: 'e32cf41',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '맥 화면에 "자동 압축 시점"(기본·200k·400k·600k). 고르면 그 맥의 bridge 세션이 컨텍스트가 그만큼 차면 압축한다(--settings 의 autoCompactWindow, 내 settings.json 은 그대로). 새로 열거나 다시 여는 세션부터',
+        refs: ['REQ-F-775', 'IF-228'],
+      },
+    ],
+  },
+  {
+    version: '1.226',
+    commit: '5b4f250',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: 'iOS 앱 알림: 앱 안에서는 "이 기기로 앱 알림" 스위치로 켜고(그때만 알림 허락을 물음), 결정 대기·작업 끝남 같은 알림이 Apple 푸시(APNs)로 온다. 누르면 그 세션이 열린다. 서버는 node http2 와 ES256 토큰으로 보내고, 쓰이지 않는 토큰(410·BadDeviceToken)은 지운다',
+        refs: ['REQ-F-774', 'IF-226', 'IF-227', 'ERR-336'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '같은 iPhone·iPad 에 앱 알림이 있으면 그 기기 종류의 웹 푸시는 보내지 않는다(두 번 오지 않게). 앱에서 로그아웃하거나 계정을 지우면 기기 토큰도 지운다. 서버에 푸시 키가 없으면 등록만 받고 화면에 알린다. 공개 데모는 등록할 수 없다',
+        refs: ['REQ-F-517', 'REQ-F-770', 'REQ-F-774'],
+      },
+    ],
+  },
+  {
+    version: '1.225',
+    date: '2026-10-18',
+    commit: '63c984e',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '게이지 줄에 "캐시 nn%"(컨텍스트 중 캐시에서 읽은 몫). 누르면 읽음·씀·출력 토큰과 컨텍스트를 다시 쓴 때(세션 시작·1시간 쉼·5분 쉼·모델 변경·압축)를 본다. 에이전트가 대화 기록의 usage 를 세어 status 에 싣는다',
+        refs: ['REQ-F-773', 'REQ-F-149'],
+      },
+    ],
+  },
+  {
+    version: '1.224',
+    commit: '4c6826a',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '운영 페이지 "사용자별 기기"에서 맥마다 에이전트 키 상태를 본다: 바꾼 날, 연동 탭이 지금 키로 붙었는지, 예전 키로 온 브라우저와 연동 페이지를 다시 열었는지',
+        refs: ['REQ-S-065'],
+      },
+    ],
+  },
+  {
+    version: '1.223',
+    commit: '2976838',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '에이전트 키를 바꿀 때 꺼져 있던 브라우저가 "연결 안 됨"에 갇히던 것. 그 브라우저가 옛 키로 오면 에이전트가 그 브라우저에 연동 페이지를 새 키로 다시 열어 준다(옛 키에 새 키를 건네지 않음)',
+        refs: ['REQ-S-065'],
+      },
+    ],
+  },
+  {
+    version: '1.222',
+    commit: '33571de',
+    date: '2026-10-18',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: 'iOS 앱 로그인 화면에 "Apple로 로그인"(GitHub 버튼 위, 같은 크기). 서버가 Apple identity token 의 RS256 서명·iss·aud·만료·nonce 를 확인하고, 처음 로그인한 Apple 계정은 운영자 승인을 기다린다',
+        refs: ['REQ-F-772', 'IF-224', 'IF-225', 'ERR-335'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: 'Apple 계정 이름은 apple_… 로 GitHub 이름과 겹치지 않고, 허용 목록(* 포함)·운영자 목록이 적용되지 않아 운영자가 될 수 없다',
+        refs: ['REQ-F-772'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'ui'],
+        text: '계정 삭제: Apple 계정은 "삭제" 를 입력하고, Sign in with Apple 키가 있으면 Apple 토큰도 취소한다. 화면은 Apple 계정을 이름(또는 이메일)으로 부른다',
+        refs: ['REQ-F-770', 'REQ-F-772'],
+      },
+    ],
+  },
+  {
+    version: '1.221',
+    date: '2026-10-18',
+    commit: 'a2e7d86',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '새로 만든 에이전트가 첫 연동에서 키를 쓸데없이 바꾸던 것, 3초 안에 탭 두 개가 붙으면 키를 두 번 바꿔 처음 키가 15분 유예 없이 바로 막히던 것(다른 탭·에이전트가 연 연동 링크가 거절됨)을 고쳤다',
+        refs: ['REQ-S-065'],
+      },
+    ],
+  },
+  {
+    version: '1.220',
+    date: '2026-10-18',
+    commit: '3303329',
+    changes: [
+      {
+        kind: 'removed',
+        scope: ['ui', 'server'],
+        text: '예전 조작 화면 /cs·/classic 을 없앴다. 두 주소는 / 로 보낸다(302). 그 화면만 쓰던 파일(web/cs, web/app.js, overlay·migrate)과 API(/api/stream, /api/events, /api/state, /api/action, /api/thread/…/send, /api/session/…, /api/pr-view 등)도 함께 없앴다',
+        refs: ['REQ-F-235'],
+      },
+      {
+        kind: 'removed',
+        scope: ['ui'],
+        text: '설정 → 더 보기의 "예전 화면" 줄과, 시작 가이드·첫 화면·로그인 전 가이드의 "예전 Slack 기반 도구에서 옮기기" 길을 없앴다. 예전 /guide/move 주소는 처음 시작 가이드를 연다',
+        refs: ['REQ-F-688'],
+      },
+      {
+        kind: 'removed',
+        scope: ['agent'],
+        text: '예전 화면의 PR 창이 쓰던 prview 명령을 없앴다',
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '로그인 화면과 승인 대기 안내는 /app.css + /login.css 로 그린다. 연동 탭이 새 배포를 알아보는 지문은 연동 페이지 파일만으로 만든다',
+      },
+    ],
+  },
+  {
+    version: '1.219',
+    date: '2026-10-18',
+    commit: '8cd66dc',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '공개 데모: 로그인 화면과 승인 대기 안내의 "데모로 둘러보기" 버튼 한 번으로 아이디·비밀번호 없이 들어간다. 누를 때마다 그 사람만의 데모가 생긴다. DEMO_LOGIN·DEMO_PASSWORD 는 없앴고, BRIDGE_DEMO=0 이면 끈다',
+        refs: ['REQ-F-766', 'IF-222'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '공개 데모 남용 대비: 한 곳에서 1시간에 데모 10개, 동시에 50개(다 차면 15분 안 쓴 것만 비움), 24시간 안 쓴 데모 정리, 글 2,000자, 1분에 보내기 20번, 세션 20개, 본문 64 KB(녹음 1.5 MB). 허용 목록 밖과 남의 맥·세션은 그대로 403',
+        refs: ['REQ-S-068', 'REQ-P-170', 'REQ-P-171', 'REQ-P-172', 'REQ-P-173', 'REQ-P-174', 'REQ-P-175', 'ERR-330', 'ERR-332', 'ERR-333', 'ERR-334'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '데모 화면 위쪽 띠에 "내 맥 연결은 GitHub 로그인" 링크',
+        refs: ['REQ-F-766'],
+      },
+    ],
+  },
+  {
+    version: '1.218',
+    date: '2026-10-18',
+    commit: 'aa01ed8',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '로그인 화면에 GitHub 버튼과 같은 모양의 "데모로 둘러보기" 버튼(누르면 아이디·비밀번호 폼). 접힌 작은 링크라 찾기 어려웠다',
+        refs: ['REQ-F-766', 'IF-222'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '데모 로그인마다 그 로그인만의 데모 계정과 데모 맥을 새로 만든다. 같은 때 들어온 심사자들이 서로의 화면을 지우지 않는다(계정 삭제도 자기 데모만 되돌림). 서버가 다시 시작했거나 계정이 비워져도 그 로그인으로 오면 처음 상태로 다시 만들어 만료되지 않는다',
+        refs: ['REQ-F-766', 'REQ-S-068', 'REQ-F-770'],
+      },
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: '데모에서 설정 저장, 플러그인 목록, 맥 로그·점검, 세션 복제, 음성 입력(데모 맥은 음성 준비됨, 녹음을 보내면 "데모에서는 받아쓰지 않아요" 안내)이 된다',
+        refs: ['REQ-F-766', 'REQ-S-068'],
+      },
+    ],
+  },
+  {
+    version: '1.217',
+    date: '2026-10-18',
+    commit: '6f8bb8f',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: '계정 삭제: 설정 → 더 보기 맨 아래. 확인 창에 지우는 것과 지우지 않는 것(맥의 세션·파일, 이름 고정)을 보이고 로그인 이름을 입력해야 지운다. 서버의 계정·로그인 전부·세션과 대화 사본·그림·설정·알림·푸시 구독·플러그인과 Slack 연결·맥 기록과 연동·접근 요청 기록이 사라지고 맥의 연동은 더 붙지 못한다. 데모 계정은 처음 상태로 되돌린다',
+        refs: ['REQ-F-770', 'IF-223', 'ERR-331'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '개인정보 처리방침: 지우는 방법을 "설정 → 계정 삭제, 또는 이메일"로, 저장 항목에 이름 고정을 더함',
+        refs: ['REQ-F-767'],
+      },
+    ],
+  },
+  {
+    version: '1.216',
+    date: '2026-10-18',
+    commit: 'e1a6232',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '맡긴 세션 띠: 칩이 제목 · 맥 · 상태 순이고 맥 이름이 두 줄로 깨지지 않는다. 사람을 기다리는 칩(권한 요청·질문)은 주황 테두리로 맨 앞에. 컴퓨터 화면에선 넘치면 다음 줄로 내려간다(전엔 가려졌다)',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.215',
+    date: '2026-10-18',
+    commit: 'f1e0000',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: 'Claude 가 답 글에 직접 쓴 작업 알림(<task-notification>)이 대화에 XML 로 그대로 보이던 것을 지우고 "실제로 끝난 작업이 아니에요" 안내로 바꾼다. 이 가짜 알림으로 "끝났어요" 알림이 뜨거나 실제 백그라운드 작업이 목록에서 빠지지 않는다.',
+        refs: ['REQ-F-057', 'REQ-F-519'],
+      },
+    ],
+  },
+  {
+    version: '1.214',
+    date: '2026-10-18',
+    commit: 'a2c9a89',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: '개인정보 처리방침: 로그인 없이 /privacy 에서 본다(한국어와 영어 요약). 저장하는 것·보관 기간·지우는 방법·제3자·연락처. 로그인 화면, 승인 대기 안내, 설정 → 더 보기에서 링크',
+        refs: ['REQ-F-767', 'REQ-M-018'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'ui'],
+        text: '사람이 보는 이름을 Agent Bridge 로: 로그인 화면·탭 제목·상단 로고·홈 화면 앱 이름·푸시 기본 제목·가이드 페이지 제목. 로그인 전 화면에 "Anthropic 과 무관한 독립 프로젝트, Claude 는 Anthropic 의 상표" 한 줄',
+        refs: ['REQ-F-768'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '승인을 기다리는 계정의 화면: 무엇인지, 필요한 것(맥·에이전트·운영자 승인), 승인되면 어떻게 되는지, 그동안 할 수 있는 것(시작 가이드, 심사용 로그인, 처리방침, 문의처)과 "다시 로그인"',
+        refs: ['REQ-F-769', 'ERR-032'],
+      },
+    ],
+  },
+  {
+    version: '1.213',
+    date: '2026-10-18',
+    commit: '1b1abda',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '맡긴 세션 목록: 다른 맥에 일을 맡긴 세션 화면 위쪽에 "맡긴 세션 n" 띠와 이어진 세션마다 칩(상태 점·맥·제목)이 붙고, 누르면 그 세션이 열린다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.212',
+    date: '2026-10-18',
+    commit: 'fee6911',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: '데모 모드(앱 심사용): DEMO_LOGIN·DEMO_PASSWORD 가 있으면 로그인 화면에 "심사용 로그인". 로그인하면 서버 안의 가짜 "데모 맥"과 미리 만든 세션 3개(그룹·권한 카드 포함)만 보이고, 보낸 글에 1~2초 뒤 정해진 답이 온다. 로그인할 때마다 처음 상태로 돌아가고, 위쪽에 "데모 모드 · 실제 맥에 연결되지 않아요" 띠',
+        refs: ['REQ-F-766', 'IF-222', 'ERR-329', 'ERR-330'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '데모 계정(uid demo)은 허용 목록의 API 만 쓰고 그 밖은 403. 다른 사람의 맥·세션 id 를 경로나 본문에 넣어도 403. 운영·연동·QR·푸시·플러그인·제보·sudo·미리보기·업로드·그림은 막힘. 로그인은 상수 시간 비교, 주소당 분당 5번',
+        refs: ['REQ-S-068', 'ERR-328'],
+      },
+    ],
+  },
+  {
+    version: '1.211',
+    date: '2026-10-18',
+    commit: 'f13a7a2',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '설정 → 이 기기에 "버전" 카드: 웹 화면 판, iOS 앱 안에서는 앱 버전과 빌드(예: 1.0 (299))도. 앱은 User-Agent 끝에 AgentBridge/<버전> (<빌드>) 를 붙인다(이 판 이후 빌드부터)',
+        refs: ['REQ-F-765'],
+      },
+    ],
+  },
+  {
+    version: '1.210',
+    date: '2026-10-18',
+    commit: '5b8df0d',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'iOS 앱 이름을 Agent Bridge 로 바꿨다. bridge 는 다른 앱이 이미 써서 TestFlight 빌드가 Apple 처리에서 실패했다',
+        refs: ['REQ-F-762'],
+      },
+    ],
+  },
+  {
+    version: '1.209',
+    date: '2026-10-18',
+    commit: '41709a3',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '맡긴 세션에서 답하기: 다른 맥에 맡긴 세션이 권한 요청·질문으로 기다리면, 맡긴(부모) 세션 화면 대화 아래에 "<맥> 에 맡긴 세션이 기다려요"와 그 카드가 뜨고 여기서 누른 답이 맡긴 세션에 가서 그대로 이어진다. 그동안 그 카드는 확인 창으로 따로 뜨지 않는다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.208',
+    date: '2026-10-17',
+    commit: '6acd989',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '관리자 권한: 입력창에 `:sudo <명령>`(또는 `:root`)을 쓰면 세션의 맥에서 root 로 바로 실행하고 출력이 대화에 남는다. 비밀번호가 없으면 비밀번호 창이 뜨고, 넣으면 그 맥에서 5분 동안 다시 묻지 않는다(위쪽에 남은 시간과 "닫기")',
+        refs: ['REQ-F-764', 'IF-220', 'IF-221'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '세션의 Claude 가 쓰는 sudo(맡긴 세션 포함)도 같은 비밀번호 창으로 묻고, 열린 5분 동안은 그대로 쓴다. 감싸는 `~/.claude-bridge/bin/sudo` 가 askpass 로 에이전트에 묻는다',
+        refs: ['REQ-F-764'],
+      },
+      {
+        kind: 'security',
+        scope: ['server', 'agent'],
+        text: '비밀번호는 맥 에이전트 메모리에만 5분 두고 디스크·로그·인계 파일에 남기지 않는다. 쓸 때마다 서버에 물어 Slack 에서 작업 중인 세션은 거절하고, 비밀번호는 그 맥의 주인만 넣는다(운영자도 안 됨)',
+        refs: ['REQ-F-764', 'IF-220'],
+      },
+    ],
+  },
+  {
+    version: '1.207',
+    date: '2026-10-17',
+    commit: 'f931293',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '맡긴 세션 표시: 다른 맥의 세션이 맡긴 세션은 목록에 "맡김" 배지, 화면에 보라색 테두리와 위쪽 띠(어느 맥의 어떤 세션이 맡겼는지, "맡긴 세션 열기")가 붙는다. 그 세션이 보낸 글엔 "맡긴 세션이 보냄"',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.206',
+    date: '2026-10-17',
+    commit: '720da0f',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '새 세션 기본 폴더: 폴더 칸이 <기본 폴더>/<그룹>/<월일>-<id>(예 ~/bridge/works/개발/1017-a3f9c2)로 채워지고 묻지 않고 만들어 시작한다. 기본 폴더·그룹이 없을 때 이름은 설정 → 새 세션에서, 모든 맥에 같이. 최근 폴더는 칩으로',
+        refs: ['REQ-F-763', 'IF-191', 'IF-192'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'agent'],
+        text: '다른 맥에 맡긴 세션: 폴더를 정하지 않으면 홈 대신 같은 규칙의 새 폴더에서 시작',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.205',
+    date: '2026-10-16',
+    commit: 'a39c32a',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'TestFlight 자동 올리기: 끝난 뒤 lock 이 남아 다음 실행이 모두 멈추던 것, LaunchAgent 에서 Xcode 대신 Command Line Tools 의 xcodebuild 를 쓰던 것',
+        refs: ['REQ-F-762'],
+      },
+    ],
+  },
+  {
+    version: '1.204',
+    date: '2026-10-16',
+    commit: 'c2be0c5',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: 'iOS 앱 TestFlight 자동 올리기: ios/ 가 바뀐 커밋이 main 에 오르면 Xcode 가 있는 맥이 10분 안에 빌드해 올린다(scripts/testflight.sh)',
+        refs: ['REQ-F-762'],
+      },
+    ],
+  },
+  {
+    version: '1.203',
+    date: '2026-10-16',
+    commit: 'dfb460f',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'iOS 앱: 키보드가 올라올 때 입력창이 잠깐 키보드 뒤로 숨었다 튀어나오던 것. 앱이 키보드 때문에 웹뷰를 줄이지 않는다(앱을 다시 깔아야 적용)',
+        refs: ['REQ-F-756'],
+      },
+    ],
+  },
+  {
+    version: '1.202',
+    date: '2026-10-16',
+    commit: '2c9efce',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '입력창: 붙인 영상 칸에 배경을 채웠다. 뒤의 대화 글이 비쳐 보였다',
+        refs: ['REQ-F-761'],
+      },
+    ],
+  },
+  {
+    version: '1.201',
+    date: '2026-10-16',
+    commit: '9b67f65',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '영상 보내기: 입력창 + 로 영상(mp4·mov·webm, 500MB, 3개까지)을 붙여 보내면 올리는 중 % 를 보이고, 세션의 맥 ~/.claude-bridge/images 에 파일로 놓여 메시지에 경로가 붙는다. 대화에는 🎬 이름',
+        refs: ['REQ-F-761', 'IF-218', 'IF-219'],
+      },
+    ],
+  },
+  {
+    version: '1.200',
+    date: '2026-10-16',
+    commit: 'a97c6ff',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '입력창: iOS 앱에서도 키보드에 딱 붙인다. 앱은 키보드가 뜨면 웹뷰 자체가 줄어 키보드를 알아채지 못해 10px 틈이 남았다',
+        refs: ['REQ-F-757'],
+      },
+    ],
+  },
+  {
+    version: '1.199',
+    date: '2026-10-16',
+    commit: '62db0cf',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '설정 → 이 기기 "화면 진단 표시": 켜면 세션 화면에 키보드·입력창 위치 숫자를 작게 띄운다(입력창과 키보드 사이 틈의 원인 찾기용)',
+        refs: ['REQ-F-757'],
+      },
+    ],
+  },
+  {
+    version: '1.198',
+    date: '2026-10-16',
+    commit: '2444597',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '입력창: 폰 키보드가 떠 있으면 입력창 아래 여백을 없애 키보드에 딱 붙인다. 틈으로 뒤의 대화가 비쳤다',
+        refs: ['REQ-F-757'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '다른 맥에 맡기기: 도구 호출 사이에 잠깐 쉰 것을 끝으로 읽어 중간 말을 답으로 돌려주던 것. 쉬는 상태가 5초 이어질 때만 끝으로 본다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
+    version: '1.197',
+    date: '2026-10-16',
+    commit: 'b5519c4',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '전부 허용이 묻는 비밀 파일을 좁혔다: ~/.claude-bridge 전체가 아니라 agent.json·hook.header·openai.key·browser 와 ~/.claude-bridge-signing 만. 에이전트 코드·로그를 읽어도 물었다',
+        refs: ['REQ-F-759'],
+      },
+    ],
+  },
+  {
+    version: '1.196',
+    date: '2026-10-16',
+    commit: '2449c0c',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '다른 맥에 맡기기: 세션의 Claude 가 bridge MCP 도구(delegate 등)로 서브에이전트처럼 다른 맥에 세션을 열어 일을 맡기고 답을 받는다. 맡긴 세션의 허용 정책을 따라가고, 한 단계만·3개까지, 맡긴 세션이 멈추거나 닫히면 같이. 맥 화면에서 "다른 맥의 일 받기"로 끈다',
+        refs: ['REQ-F-760', 'IF-217'],
+      },
+    ],
+  },
+  {
+    version: '1.195',
+    date: '2026-10-16',
+    commit: '495630f',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '전부 허용이어도 위험한 호출은 카드로 묻는다: 세션 폴더 밖 rm -r, git 강제 push·reset --hard, sudo, 비밀 파일(~/.ssh·.env·~/.claude-bridge·키체인), Claude 설정·LaunchAgents 바꾸기',
+        refs: ['REQ-F-759'],
+      },
+    ],
+  },
+  {
+    version: '1.194',
+    date: '2026-10-16',
+    commit: '8c5fff5',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '음성: 맥이 준비 상태(whisper.cpp·모델·말소리 감지·ffmpeg·OpenAI 키)를 알려 설정 → 음성 "맥마다"에 보인다',
+        refs: ['REQ-F-758'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '음성: whisper-server 가 말소리 감지(--vad)로 한 번 못 뜨면 에이전트가 도는 내내 감지 없이 돌던 것을, 한 시간 뒤 다시 켜 보게 했다. 음성 모델을 받는 중에 띄워도 그렇게 꺼졌다',
+        refs: ['REQ-F-754'],
+      },
+    ],
+  },
+  {
+    version: '1.193',
+    date: '2026-10-16',
+    commit: '7a5fa90',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '음성: 설정 → 음성 "맥마다"에서 맥마다 변환 방식·모델을 따로 고르고(비우면 계정 값), 맥마다 준비 상태(whisper.cpp·모델·말소리 감지·ffmpeg·OpenAI 키)를 본다',
+        refs: ['REQ-F-758', 'IF-215', 'IF-216'],
+      },
+    ],
+  },
+  {
+    version: '1.192',
+    date: '2026-10-16',
+    commit: 'e209d98',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '입력창: 입력 상자를 아래로 쓸면 폰 키보드가 내려간다',
+        refs: ['REQ-F-757'],
+      },
+    ],
+  },
+  {
+    version: '1.191',
+    date: '2026-10-16',
+    commit: 'f710f78',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'iOS 앱 아이콘을 비율로 다시 그렸다(말풍선 폭 690 가운데, 위 240·아래 176). ios/tools/icon.py 로 위아래를 골라 적용한다',
+        refs: ['REQ-F-756'],
+      },
+    ],
+  },
+  {
+    version: '1.190',
+    date: '2026-10-16',
+    commit: 'cf8dd94',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'iOS 앱: 키보드 위 ^ v 완료 줄을 없앴다',
+        refs: ['REQ-F-756'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '입력창: 보내기를 눌러도 폰 키보드가 내려가지 않는다(포커스를 입력창에 둔다)',
+        refs: ['REQ-F-757'],
+      },
+    ],
+  },
+  {
+    version: '1.189',
+    date: '2026-10-16',
+    commit: 'f6e56af',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: 'iOS 앱(ios/): 웹 화면을 띄우는 얇은 앱. 마이크 허용은 처음 한 번만 묻고 iOS 가 기억한다(홈 화면 웹앱은 켤 때마다 다시 물음)',
+        refs: ['REQ-F-756'],
+      },
+    ],
+  },
+  {
+    version: '1.188',
+    date: '2026-10-15',
+    commit: '4367c50',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: 'iPhone 홈 화면 앱: 음성 모드 안내와 설정 → 이 기기에 "Safari로 열기". 홈 화면 앱은 켤 때마다 마이크를 다시 묻지만 Safari 는 허용을 기억한다',
+        refs: ['REQ-F-755'],
+      },
+    ],
+  },
+  {
+    version: '1.187',
+    date: '2026-10-15',
+    commit: 'aa78862',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '음성 모드: iPhone 에서 흐린 글이 다시 나온다. 즉시 받아쓰기를 먼저 켜고, 듣기 시작한 뒤에 녹음 마이크를 연다(허용은 그대로 한 번)',
+        refs: ['REQ-F-754'],
+      },
+    ],
+  },
+  {
+    version: '1.186',
+    date: '2026-10-15',
+    commit: '9e08827',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '음성 모드: 켤 때 마이크 허용을 두 번 묻던 것. 마이크가 열린 뒤에 즉시 받아쓰기를 켜요', refs: ['REQ-F-754', 'AC-1277'] },
+    ],
+  },
+  {
+    version: '1.185',
+    date: '2026-10-15',
+    commit: '53c3fe1',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '음성 모드: 전송하면 판이 바로 비고, 글이 대화에 바로 흐린 말풍선으로 올라가요. 맥 받아쓰기가 끝나면 그 말풍선이 받아쓴 글로 바뀌며 보내져요', refs: ['REQ-F-754', 'AC-1276'] },
+    ],
+  },
+  {
+    version: '1.184',
+    date: '2026-10-15',
+    commit: '6c2a886',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '음성 모드: 흐린 글만 보여도 전송을 바로 누를 수 있어요. 보낸 글은 판 위에 흐리게 떠 있다가 맥 받아쓰기가 끝나면 흰 글로 바뀌며 보내져요. 판은 바로 비고 계속 들어요', refs: ['REQ-F-754', 'AC-1275'] },
+    ],
+  },
+  {
+    version: '1.183',
+    date: '2026-10-15',
+    commit: 'a0bdd83',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '음성: 말소리 감지(VAD)를 켜서, 주변 소리에 whisper 가 확신 있게 지어낸 "감사합니다." 도 걸러요. 맥이 감지 모델(885 KB)을 한 번 받아 둬요. 짧은 진짜 말("네")은 이제 버리지 않아요', refs: ['REQ-F-754', 'AC-1274'] },
+    ],
+  },
+  {
+    version: '1.182',
+    date: '2026-10-15',
+    commit: 'f10a843',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '음성: 기침·두드림 같은 잡음을 whisper 가 "감사합니다." 같은 말로 지어내던 것을 걸러요. whisper 가 확신하지 못한 짧은 글(20자 이하)은 보내지 않아요', refs: ['REQ-F-754', 'AC-1273'] },
+    ],
+  },
+  {
+    version: '1.181',
+    date: '2026-10-15',
+    commit: '520e654',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '한 번 보낸 메시지가 두 번 가던 문제: 답이 5초 안에 끝나면 에이전트가 전달 안 된 걸로 보고 다시 붙여넣었어요. 다시 넣기 전에 대화 기록에 이미 들어갔는지 확인해요', refs: ['REQ-F-429', 'AC-1272'] },
+    ],
+  },
+  {
+    version: '1.180',
+    date: '2026-10-15',
+    commit: 'c8be9f1',
+    changes: [
+      { kind: 'changed', scope: ['ui', 'server'], text: '음성 모드: 마이크 버튼(⌥ Space)으로 켜면 입력창 대신 큰 판이 뜨고 계속 들어요. 말하는 동안 글이 바로 보이고(브라우저 받아쓰기), 말을 멈출 때마다 맥의 whisper 가 그 마디를 확정해요. 버튼은 리셋과 전송 둘, Enter 는 전송·Esc 는 리셋', refs: ['REQ-F-754', 'IF-212', 'AC-1270', 'AC-1271'] },
+      { kind: 'removed', scope: ['ui', 'server'], text: '누른 채 말하기·버튼 방식·"보내기 전에 보기" 설정: 음성 모드가 대신해요. 설정 → 음성 → 이 기기에 "즉시 받아쓰기" 켜고 끄기가 생겼어요', refs: ['REQ-F-754', 'IF-212'] },
+    ],
+  },
+  {
+    version: '1.179',
+    date: '2026-10-15',
+    commit: '6e632e7',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server', 'agent'], text: '음성 입력: 입력창의 마이크를 누른 채로 말하면 세션이 있는 맥이 whisper.cpp(또는 OpenAI)로 받아쓰고 군말·용어를 다듬어 입력창에 넣어요. 설정 → 음성에서 켜고, 모델·언어·잡음 줄이기·용어 사전·단축키(⌥ Space)를 골라요', refs: ['REQ-F-754', 'IF-212', 'IF-213', 'IF-214'] },
+    ],
+  },
+  {
+    version: '1.178',
+    date: '2026-10-15',
+    changes: [
+      { kind: 'fixed', scope: ['server'], text: 'Slack 에서 굵게가 **…** 그대로 보이던 것: 굵게 안에 코드가 있거나 한글에 바로 붙으면 안 됐어요. 이제 세션의 글을 Slack 이 Markdown 그대로 읽게 보내요', refs: ['REQ-F-541', 'AC-1268'] },
+    ],
+  },
+  {
+    version: '1.177',
+    date: '2026-10-15',
+    commit: '76aa425',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: 'Slack 자동 허용 묶음에서 같은 도구가 이어서 다룬 파일은 한 줄로(Write a.ts, b.ts), 같은 일을 되풀이하면 ×2. MCP 도구 이름도 짧게', refs: ['REQ-F-753'] },
+    ],
+  },
+  {
+    version: '1.176',
+    date: '2026-10-15',
+    commit: 'c727f20',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: 'Slack 스레드가 자동 허용 줄로 덮이던 것: 이어지는 자동 허용은 메시지 하나에 한 줄씩(도구와 설명) 모아 고쳐 써요. 명령 원문·바뀐 코드는 Slack 에 올리지 않아요', refs: ['REQ-F-753'] },
+      { kind: 'fixed', scope: ['server'], text: '긴 명령·큰 수정의 권한 카드가 Slack 한도(섹션 3,000자)를 넘어 아예 올라가지 않던 것', refs: ['REQ-F-541', 'AC-1267'] },
+    ],
+  },
+  {
+    version: '1.175',
+    date: '2026-10-14',
+    commit: 'da0874e',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '헤드리스 연동 모드를 껐다 켠 뒤 "헤드리스 브라우저가 끝남 (코드 21)" 이 60초마다 되풀이되던 것: 프로필을 쥔 채 살아 있는 Chrome 을 찾아 이어받아요', refs: ['REQ-F-646', 'AC-1265'] },
+    ],
+  },
+  {
+    version: '1.174',
+    date: '2026-10-13',
+    commit: 'acff3c5',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '폰에서 설정 탭 줄이 좌우로 움직이던 것: 탭이 8개가 되며 폭을 넘었어요. 이제 폰에서는 아이콘 위·이름 아래로 쌓아 한 줄에 다 들어가고, "Claude 계정" 은 "계정" 으로 적어요', refs: ['REQ-F-711'] },
+    ],
+  },
+  {
+    version: '1.173',
+    commit: '19c24b6',
+    date: '2026-10-13',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '제보 자동 대응·"이 오류 고치기"에서 세션을 띄울 맥을 고른다(전엔 늘 연결된 첫 맥)', refs: ['REQ-F-737', 'REQ-F-738', 'IF-207'] }],
+  },
+  {
+    version: '1.172',
+    date: '2026-10-13',
+    commit: '77d20f9',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server', 'agent'], text: '맥마다 Claude 계정을 여러 개: 설정 → Claude 계정에서 더하고 웹에서 로그인(코드 붙여 넣기)·로그아웃·빼기. 계정마다 로그인·사용량 한도·대화 기록이 따로고, 설정·스킬·플러그인·MCP 는 같이 써요', refs: ['REQ-F-748', 'REQ-F-749', 'IF-211'] },
+      { kind: 'added', scope: ['ui', 'server', 'agent'], text: '새 세션을 계정을 골라 시작하고, 세션 메뉴의 "다른 계정으로 옮기기" 로 대화·되감기 사본·폴더 메모리를 그대로 넘김. 다른 맥으로 옮길 때도 받는 계정을 골라요', refs: ['REQ-F-750', 'REQ-F-751', 'IF-066'] },
+      { kind: 'added', scope: ['ui'], text: '시작 가이드에 "멀티 계정" 갈래(/guide/accounts)', refs: ['REQ-F-752'] },
+    ],
+  },
+  {
+    version: '1.171',
+    date: '2026-10-12',
+    commit: 'a7061d8',
+    changes: [{ kind: 'fixed', scope: ['ui'], text: '헤드리스 브라우저가 대신 연동 중인 맥에서 연동 페이지가 고장처럼(회색 점, "이 탭은 멈춤") 보이던 것', refs: ['REQ-F-693', 'AC-1257'] }],
+  },
+  {
+    version: '1.170',
+    date: '2026-10-12',
+    commit: '8c27246',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '운영자에게 남의 맥 기능 줄·백그라운드 오류의 경로가 보이던 것, 두 서버가 함께 돌 때 미리보기 출처가 다시 겹치던 것', refs: ['IF-030', 'REQ-F-727', 'AC-1255'] },
+      { kind: 'changed', scope: ['ui', 'server'], text: '서버가 서명 문제로 에이전트 업데이트를 보내지 못하면 기기 화면에 "업데이트 보류"로 표시', refs: ['REQ-S-067'] },
+    ],
+  },
+  {
+    version: '1.169',
+    date: '2026-10-12',
+    commit: '34314c0',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '미리보기 출처를 넘겨준 세션의 옛 주소가 잠시 뒤 다시 통하던 것', refs: ['REQ-F-727', 'AC-1253'] },
+      { kind: 'security', scope: ['server'], text: '운영자에게 남의 맥 점검 목록의 경로가 보이던 것, 서명 순번 기록이 깨지거나 일찍 적히던 것', refs: ['REQ-S-067', 'IF-030', 'AC-1254'] },
+    ],
+  },
+  {
+    version: '1.168',
+    date: '2026-10-12',
+    commit: '2c6f674',
+    changes: [
+      { kind: 'security', scope: ['server', 'agent'], text: '서명 순번이 뒤로 간 배포가 모든 맥의 업데이트를 막던 것: 서버가 미리 알아채고 보내지 않음', refs: ['REQ-S-067', 'AC-1250'] },
+      { kind: 'security', scope: ['server'], text: '운영자에게 남의 맥의 홈 폴더·오류 경로가 보이던 것, 배포 중 미리보기 주소가 만료되던 것, 이름표가 깨지면 모든 이름 보호가 사라지던 것', refs: ['IF-030', 'REQ-F-727', 'AC-1251', 'AC-1252'] },
+    ],
+  },
+  {
+    version: '1.167',
+    date: '2026-10-12',
+    commit: 'd34454f',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: '서명 순번이 거꾸로 가서 모든 맥이 업데이트를 거절할 수 있던 것, 설치 실패 뒤 이전 판을 다시 받을 수 없던 것', refs: ['REQ-S-067', 'AC-1247'] },
+      { kind: 'security', scope: ['server'], text: '배포 뒤 다른 세션끼리 미리보기 출처를 함께 쓰던 것: 배정을 저장하고 지금 가진 세션의 주소만 통함', refs: ['REQ-F-727', 'AC-1248'] },
+      { kind: 'security', scope: ['server', 'ui'], text: '운영자가 보는 남의 호스트 로그에서 경로 가림, 이름표 파일이 깨져도 놓아 준 이름이 되살아나지 않음', refs: ['IF-030', 'AC-1249'] },
+    ],
+  },
+  {
+    version: '1.166',
+    date: '2026-10-12',
+    commit: '7c952f8',
+    changes: [
+      { kind: 'changed', scope: ['agent'], text: '에이전트 업데이트 로그에 서명 순번을 남김', refs: ['REQ-S-067'] },
+    ],
+  },
+  {
+    version: '1.165',
+    date: '2026-10-12',
+    commit: '4fcdc23',
+    changes: [
+      { kind: 'security', scope: ['agent', 'server'], text: '업데이트 서명이 짧은 지문에 걸려 있어 다른 코드나 바꿔 끼운 파일이 통과할 수 있던 것: 파일 목록 전체와 순번에 서명', refs: ['REQ-S-067', 'AC-1245'] },
+      { kind: 'security', scope: ['server'], text: '미리보기 출처 확인값을 흉내 낼 수 있던 것, 최근 세션끼리 미리보기 출처가 겹치던 것', refs: ['REQ-F-727', 'AC-1246'] },
+    ],
+  },
+  {
+    version: '1.164',
+    date: '2026-10-12',
+    commit: '2491520',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '키가 옛 세대인 맥에서 헤드리스 연동 페이지가 옛 버전이면 에이전트가 3초 뒤 꺼지던 것', refs: ['REQ-S-065', 'AC-1242'] },
+      { kind: 'security', scope: ['server', 'ui'], text: '놓아 준 이름이 배포 뒤 되살아나던 것, 놓아 줄 때 옛 계정의 로그인을 끝냄, 거절된 시도는 따로 표시', refs: ['REQ-S-025', 'AC-1243'] },
+      { kind: 'security', scope: ['server', 'agent'], text: '예전에 만든 대화 파일도 0600 으로, 운영자 로그에 남던 폴더 경로 가림', refs: ['REQ-S-066', 'AC-1244'] },
+    ],
+  },
+  {
+    version: '1.162',
+    date: '2026-10-12',
+    commit: '41c2d23',
+    changes: [
+      { kind: 'changed', scope: ['agent'], text: '에이전트 업데이트 로그에 관리자 서명을 확인했다고 남김', refs: ['REQ-S-067'] },
+    ],
+  },
+  {
+    version: '1.161',
+    date: '2026-10-12',
+    commit: '7c314c7',
+    changes: [
+      { kind: 'security', scope: ['agent', 'server'], text: '에이전트 자동 업데이트에 관리자 서명: 서버나 사이트가 뚫려도 맥에 코드를 심지 못함', refs: ['REQ-S-067', 'AC-1240'] },
+    ],
+  },
+  {
+    version: '1.160',
+    date: '2026-10-12',
+    commit: '747ada4',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '다른 세션의 로컬 미리보기 앱끼리 저장소·쿠키를 나누던 것: 세션마다 다른 미리보기 출처(도메인이 준비되면 자동으로 씀)', refs: ['REQ-F-727', 'AC-1239'] },
+    ],
+  },
+  {
+    version: '1.159',
+    date: '2026-10-12',
+    commit: '0b53551',
+    changes: [
+      { kind: 'security', scope: ['server', 'ui'], text: '이름을 바꾼 운영자가 다시 로그인하면 옛 이름 고정이 풀리던 것, 운영 화면에서 고정된 이름을 놓아 주기', refs: ['REQ-S-025', 'AC-1237'] },
+      { kind: 'security', scope: ['server'], text: '로그아웃된 브라우저가 남의 QR 로그인 주소를 열기만 해도 그 계정으로 로그인되던 것', refs: ['REQ-S-030', 'AC-1236'] },
+      { kind: 'security', scope: ['server', 'agent'], text: '대화 파일 0600, 운영자 로그에서 폴더 경로·git 오류 가림, 배포 넘김 비밀값이 미리보기 앱으로 가던 것', refs: ['REQ-R-017', 'AC-1238'] },
+    ],
+  },
+  {
+    version: '1.158',
+    date: '2026-10-12',
+    commit: '033eb59',
+    changes: [{ kind: 'fixed', scope: ['ui'], text: '폰에서 세션을 열었다가 목록으로 돌아오면 스크롤이 맨 위로 돌아가던 것(검색어·이어서 하기 펼침도 이어짐)', refs: ['REQ-F-747'] }],
+  },
+  {
+    version: '1.157',
+    date: '2026-10-12',
+    commit: '8792ddc',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '헤드리스 연동이 예전 페이지를 계속 써서 에이전트 키 교체가 시작되지 않던 것', refs: ['REQ-S-065'] },
+    ],
+  },
+  {
+    version: '1.156',
+    date: '2026-10-12',
+    commit: '6f97ec4',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '공개 서버는 사이트 주소(BRIDGE_ORIGIN)를 반드시 설정에서 받음: 요청 머리글로 출처를 정하던 것', refs: ['REQ-S-002', 'AC-1234'] },
+    ],
+  },
+  {
+    version: '1.155',
+    date: '2026-10-12',
+    commit: '26cc805',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '서버가 컨테이너 안에서 root 로 돌던 것: 데이터 폴더를 node 사용자에게 넘기고 그 사용자로 돔', refs: ['REQ-S-066', 'AC-1233'] },
+    ],
+  },
+  {
+    version: '1.154',
+    date: '2026-10-12',
+    commit: '74867f1',
+    changes: [
+      { kind: 'security', scope: ['agent', 'ui'], text: '예전에 새어 나갔을 수 있는 에이전트 키를 연결을 끊지 않고 한 번 바꿈, 호스트 상태에 "키 바꾸기" 버튼', refs: ['REQ-S-065', 'AC-1232'] },
+    ],
+  },
+  {
+    version: '1.153',
+    date: '2026-10-11',
+    commit: '791c96c',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: 'Claude 답 속의 확인 창 모양 글이 확인 창으로 읽혀 아래 창이 눌릴 수 있던 것: 아는 창은 세션이 뜰 때와 모델 전환 직후에만 넘김', refs: ['REQ-F-033', 'AC-1231'] },
+      { kind: 'security', scope: ['server', 'agent'], text: '다른 운영자의 제보도 전부 허용으로 돌던 것, 운영자에게 남의 git 오류·확인 창 제목이 보이던 것, compact 요약이 링크를 따라 쓰이던 것', refs: ['REQ-F-738', 'IF-030'] },
+    ],
+  },
+  {
+    version: '1.152',
+    date: '2026-10-11',
+    commit: '63de530',
+    changes: [
+      { kind: 'security', scope: ['server'], text: 'GitHub 이름을 바꾼 계정의 옛 이름을 새로 가진 사람이 그 권한(운영자 포함)으로 로그인하던 것', refs: ['REQ-S-025', 'AC-1229'] },
+      { kind: 'security', scope: ['server'], text: 'QR 로그인 주소를 열기만 해도 이미 로그인된 다른 계정이 바뀌던 것: 이제 확인을 받음', refs: ['REQ-S-030', 'AC-1228'] },
+      { kind: 'security', scope: ['server'], text: '웹 푸시 구독은 브라우저 푸시 서비스 주소만 받음, 서버 데이터 파일 0600, 배포 넘김 머리글은 공유 비밀값으로만, PR 보기 응답에 보안 머리글, 에이전트 답은 명령 보낸 호스트 것만', refs: ['REQ-S-047', 'REQ-R-017', 'REQ-F-247'] },
+    ],
+  },
+  {
+    version: '1.151',
+    date: '2026-10-11',
+    commit: 'c9bef32',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: '헤드리스 로그인 주소를 사이트와 비슷한 다른 주소로 바꿔 에이전트 키를 빼 갈 수 있던 것', refs: ['REQ-F-639', 'AC-1226'] },
+      { kind: 'security', scope: ['agent'], text: '맥의 아무 그림·폴더 밖 파일이 링크·경로로 서버에 올라가거나 덮어써질 수 있던 것, 받은 폴더의 git 설정이 에이전트 git 에서 프로그램을 돌리던 것', refs: ['REQ-F-722', 'REQ-F-393', 'REQ-F-046'] },
+      { kind: 'security', scope: ['agent'], text: '에이전트 폴더(~/.claude-bridge)를 나만 읽게(0700), 로그·백업 0600', refs: ['REQ-F-046'] },
+      { kind: 'fixed', scope: ['agent'], text: '두 세션에 같은 순간 보낸 글이 섞일 수 있던 것, 세션과 상관없는 로컬 서버에 1분마다 요청하던 것', refs: ['REQ-F-038'] },
+    ],
+  },
+  {
+    version: '1.150',
+    date: '2026-10-11',
+    commit: '51f5939',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '로컬 미리보기 주소가 세션이 끝난 뒤에도 24시간 쓰이던 것, 토큰이 든 주소가 다른 사이트로 Referer 로 가던 것, 다른 사이트가 미리보기 웹소켓을 열 수 있던 것', refs: ['REQ-F-727', 'AC-1225'] },
+    ],
+  },
+  {
+    version: '1.149',
+    date: '2026-10-11',
+    commit: '2e5145f',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '요청 머리글을 바꿔 속도 제한을 피하던 것: 프록시가 쓴 주소로 세고, 잠금 비밀번호 시도는 세션마다도 1분 10번', refs: ['REQ-F-523', 'AC-1224'] },
+      { kind: 'fixed', scope: ['server'], text: '잠금 비밀번호 검사가 도는 동안 서버의 다른 요청이 멈추던 것', refs: ['REQ-F-523'] },
+    ],
+  },
+  {
+    version: '1.148',
+    date: '2026-10-11',
+    commit: '5e49ff1',
+    changes: [
+      { kind: 'security', scope: ['server'], text: 'Slack 연결 링크를 열면 바로 연결되던 것을, 누구를 연결할지 보여 주고 확인을 누를 때만 연결하게', refs: ['REQ-F-540', 'AC-1223'] },
+      { kind: 'security', scope: ['server'], text: 'Slack 첨부 그림은 Slack 파일 호스트에서만 봇 토큰으로 받음', refs: ['REQ-F-540'] },
+    ],
+  },
+  {
+    version: '1.147',
+    date: '2026-10-11',
+    commit: 'f15be0e',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '잠긴 채 끝난 세션의 제목·폴더·첫 메시지가 이어서 하기 목록으로 보이던 것', refs: ['REQ-F-001', 'AC-1221'] },
+      { kind: 'security', scope: ['server', 'agent'], text: '운영자가 남의 맥 상태·로그를 볼 때 세션 제목·폴더·대기 글·Claude 설명이 보이던 것', refs: ['REQ-F-223', 'AC-1222'] },
+      { kind: 'security', scope: ['server'], text: '대화 사본은 그 호스트의 지금 연동 탭에만 내줌(옛 탭 예외 없앰)', refs: ['REQ-S-016'] },
+    ],
+  },
+  {
+    version: '1.146',
+    date: '2026-10-11',
+    commit: '61e1b16',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '운영자가 아닌 사람의 제보로 띄우는 고치기 세션은 전부 허용 대신 명령마다 확인받는 모드로, 제보 글은 지시가 아닌 자료로 분리', refs: ['REQ-F-738', 'AC-1219'] },
+      { kind: 'fixed', scope: ['server'], text: '화면 정보가 큰 제보가 500 오류로 저장되지 않던 것', refs: ['REQ-F-735', 'AC-1220'] },
+    ],
+  },
+  {
+    version: '1.145',
+    date: '2026-10-11',
+    commit: '772face',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: '명령 안에 확인 창 문구만 있어도 일반 권한 창이 자동으로 승인되던 것을 막음: 지금 그려진 창의 질문·선택지에서만 판정', refs: ['REQ-F-033', 'AC-1217'] },
+      { kind: 'security', scope: ['agent'], text: '프로젝트(.mcp.json)의 MCP 서버 사용 창은 자동으로 넘기지 않고 카드로 물어봄', refs: ['REQ-F-033', 'AC-1218'] },
+    ],
+  },
+  {
+    version: '1.144',
+    date: '2026-10-11',
+    commit: '02664e8',
+    changes: [{ kind: 'changed', scope: ['ui'], text: '변경 기록을 changelog 양식으로: 릴리스(SPEC 판)마다 Added·Changed·Fixed·Removed·Security 로 나누고 범위·참조·커밋을 붙인다', refs: ['REQ-F-744'] }],
+  },
+  {
+    version: '1.143',
+    date: '2026-10-11',
+    commit: '00d54ad',
+    changes: [{ kind: 'fixed', scope: ['ui'], text: '폰에서 실시간 상태(작업 중 요약·진행 줄·휴면 버튼·로컬 서버 버튼)가 생기고 사라질 때 목록과 대화가 위아래로 밀리던 레이아웃 이동', refs: ['REQ-F-746'] }],
+  },
+  {
+    version: '1.142',
+    date: '2026-10-11',
+    commit: 'd358772',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '운영 탭과 호스트 상세에 에이전트 build 와 최신 build(AGENT_BUILD)를 함께 보이고 "최신"/"최신 아님" 배지', refs: ['REQ-F-745', 'IF-033'] }],
+  },
+  {
+    version: '1.141',
+    date: '2026-10-11',
+    commit: '6704cd6',
+    changes: [{ kind: 'added', scope: ['ui'], text: '설정에 누구나 보는 "변경 기록" 탭(/settings/changes)', refs: ['REQ-F-744'] }],
+  },
+  {
+    version: '1.140',
+    date: '2026-10-11',
+    commit: '3cbb98d',
+    changes: [{ kind: 'security', scope: ['agent', 'server'], text: '에이전트 키를 tmux 명령줄(ps 에 보임)에서 뺐다. 훅은 /hook·/statusline 에서만 통하는 훅 전용 키를 0600 파일로 읽는다', refs: ['REQ-S-065', 'IF-091'] }],
+  },
+  {
+    version: '1.139',
+    date: '2026-10-11',
+    commit: '56c0bf6',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '자동 업데이트가 파일을 바꾸기 전에 새 agent.mjs 와 가져오는 모듈을 link 해 보고, 뜨지 못할 업데이트(ERR_MODULE_NOT_FOUND)는 거절하고 지금 버전으로 계속 돈다', refs: ['REQ-F-369', 'ERR-113'] },
+      { kind: 'added', scope: ['agent'], text: '연동 페이지가 30 s 동안 에이전트를 못 찾으면 오류 끝에 그 맥에서 다시 설치하는 명령을 붙인다', refs: ['REQ-F-240'] },
+    ],
+  },
+  {
+    version: '1.138',
+    date: '2026-10-11',
+    commit: 'e09d994',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '목록의 "그룹 없음" 절을 그룹처럼 접고 펼친다(서버 collapsed 의 id loose 로 모든 기기 공유)', refs: ['REQ-F-743'] }],
+  },
+  {
+    version: '1.137',
+    date: '2026-10-11',
+    commit: '90414f5',
+    changes: [{ kind: 'added', scope: ['server'], text: '끝난 세션은 closedAt 에서 7일 뒤 "이어서 하기"에서 저절로 지운다(맥의 폴더·대화는 남음)', refs: ['REQ-F-742'] }],
+  },
+  {
+    version: '1.136',
+    date: '2026-10-11',
+    commit: 'ce4ca9e',
+    changes: [{ kind: 'fixed', scope: ['server'], text: '자동 대응 세션 제목을 제보 글로 고정(manualTitle): Claude Code 가 나중에 지은 제목이 덮어쓰던 것', refs: ['REQ-F-738'] }],
+  },
+  {
+    version: '1.135',
+    date: '2026-10-11',
+    commit: '8610f52',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '운영 화면을 설정의 "운영" 탭으로 옮김(운영자만). /admin 은 그 탭을 연다', refs: ['REQ-F-741'] },
+      { kind: 'removed', scope: ['ui'], text: '라우트 admin 과 더 보기의 "운영" 줄', refs: ['REQ-F-741'] },
+    ],
+  },
+  {
+    version: '1.134',
+    date: '2026-10-11',
+    commit: '8efaa13',
+    changes: [{ kind: 'changed', scope: ['server'], text: '자동 대응이 켜진 동안엔 고치던 세션이 닫힌 제보를 배포 여부와 상관없이 완료로 지운다', refs: ['REQ-F-740'] }],
+  },
+  {
+    version: '1.133',
+    date: '2026-10-11',
+    commit: 'dc2e7a4',
+    changes: [{ kind: 'added', scope: ['ui'], text: '그룹 메뉴 "휴면 세션 n개"의 세션마다 열기·제거하기 하위 메뉴', refs: ['REQ-F-562'] }],
+  },
+  {
+    version: '1.132',
+    date: '2026-10-11',
+    commit: 'ad01579',
+    changes: [{ kind: 'added', scope: ['server'], text: '자동 대응 세션이 "[제보 대응: 배포 완료]"로 보고를 끝내면 그 턴 뒤 스스로 종료', refs: ['REQ-F-738'] }],
+  },
+  {
+    version: '1.131',
+    date: '2026-10-11',
+    commit: 'adf0f88',
+    changes: [{ kind: 'added', scope: ['server'], text: '배포 뒤 끝난 고치기 세션의 제보를 목록에서 저절로 지운다', refs: ['REQ-F-740'] }],
+  },
+  {
+    version: '1.130',
+    date: '2026-10-11',
+    commit: '44b000f',
+    changes: [{ kind: 'changed', scope: ['server'], text: '자동 대응을 켜면 이미 기다리던 새 제보도 오래된 것부터 바로 시작', refs: ['REQ-F-738'] }],
+  },
+  {
+    version: '1.129',
+    date: '2026-10-11',
+    commit: '945afa8',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '제보 시트는 열 때마다 새 제보로 시작, "지난 제보 보기"로 다시 보기·지우기', refs: ['REQ-F-739', 'IF-208', 'IF-209', 'IF-210'] }],
+  },
+  {
+    version: '1.128',
+    date: '2026-10-11',
+    commit: 'c526dd4',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '제보 자동 대응: 켜 두면 새 제보마다 운영자의 맥에 전부 허용 세션을 띄워 배포까지 고친다(실패하면 60 s 마다 3번까지)', refs: ['REQ-F-738', 'IF-207'] }],
+  },
+  {
+    version: '1.127',
+    date: '2026-10-11',
+    commit: '6754985',
+    changes: [{ kind: 'changed', scope: ['server'], text: '제보 고치기 세션을 그룹 "Bridge 제보 대응"에 넣는다', refs: ['REQ-F-737'] }],
+  },
+  {
+    version: '1.126',
+    date: '2026-10-11',
+    commit: 'effc850',
+    changes: [{ kind: 'fixed', scope: ['ui'], text: '에이전트가 다시 시작하는 동안 입력칸이 막히면 커서가 빠지고 돌아오지 않던 것', refs: ['REQ-F-151'] }],
+  },
+  {
+    version: '1.125',
+    date: '2026-10-11',
+    commit: 'b1d58fc',
+    changes: [{ kind: 'fixed', scope: ['ui'], text: '제보 시트 안내 줄이 글자 사이에서 갈라지던 것(word-break: keep-all)', refs: ['REQ-F-735'] }],
+  },
+  {
+    version: '1.124',
+    date: '2026-10-11',
+    commit: 'bc5506e',
+    changes: [{ kind: 'changed', scope: ['server'], text: '"이 오류 고치기"는 맥에 없는 폴더를 만들어 세션을 띄운다', refs: ['REQ-F-737'] }],
+  },
+  {
+    version: '1.123',
+    date: '2026-10-11',
+    commit: '6b8be72',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '문제 제보: 서비스센터 버튼으로 글·그림과 디버깅 정보를 보내고, 운영 화면에서 보고 "이 오류 고치기"로 세션을 띄운다', refs: ['REQ-F-735', 'REQ-F-736', 'REQ-F-737', 'IF-202'] }],
+  },
+  {
+    version: '1.122',
+    date: '2026-10-11',
+    commit: 'cab2432',
+    changes: [{ kind: 'changed', scope: ['server', 'ui'], text: '운영자도 남의 맥의 에이전트 스위치(지금 복구·헤드리스·잠자기)를 다룬다', refs: ['REQ-F-734'] }],
+  },
+  {
+    version: '1.121',
+    date: '2026-10-11',
+    commit: 'f0960ef',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: '단축키 ⌥1~⌥9: n번째 세션 탭으로', refs: ['REQ-F-733'] },
+      { kind: 'fixed', scope: ['ui'], text: '⌘Enter 가 한글 조합 중이거나 슬래시 후보가 떠 있으면 보내지지 않던 것', refs: ['REQ-F-075'] },
+    ],
+  },
+  {
+    version: '1.120',
+    date: '2026-10-11',
+    commit: 'fdc14e4',
+    changes: [{ kind: 'fixed', scope: ['ui'], text: '펼친 도구 묶음 안의 긴 명령 줄이 화면 밖으로 나가던 것', refs: ['REQ-F-599'] }],
+  },
+  {
+    version: '1.119',
+    date: '2026-10-11',
+    commit: 'd162210',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '새 배포면 열어 둔 화면이 스스로 새로고침(입력 중·시트·메뉴가 열려 있으면 기다림)', refs: ['REQ-F-732', 'IF-193'] }],
+  },
+  {
+    version: '1.118',
+    date: '2026-10-11',
+    commit: 'a05db02',
+    changes: [{ kind: 'added', scope: ['server', 'agent'], text: '로컬 미리보기에 웹소켓이 지나가 다른 기기에서도 HMR 동작', refs: ['REQ-F-727', 'IF-201'] }],
+  },
+  {
+    version: '1.117',
+    date: '2026-10-11',
+    commit: 'ee839ae',
+    changes: [{ kind: 'changed', scope: ['ui'], text: '로컬 서버 메뉴의 "열기"를 "인앱으로 열기"·"새 탭으로 열기" 둘로', refs: ['REQ-F-729'] }],
+  },
+  {
+    version: '1.116',
+    date: '2026-10-11',
+    commit: 'ee6bd11',
+    changes: [{ kind: 'changed', scope: ['ui'], text: '세션 화면에서 휴면을 누르면 세션을 숨기고 목록으로 간다', refs: ['REQ-F-570'] }],
+  },
+  {
+    version: '1.115',
+    date: '2026-10-11',
+    commit: '888df9c',
+    changes: [{ kind: 'changed', scope: ['agent'], text: '전부 허용을 화면 읽기 대신 PermissionRequest 훅에서 답한다(확인 창이 그려지기 전에)', refs: ['REQ-F-731'] }],
+  },
+  {
+    version: '1.114',
+    date: '2026-10-11',
+    commit: '9008b89',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: 'Slack 새 세션을 띄울 폴더를 맥마다 버튼으로 정하고, 없는 폴더는 만든다', refs: ['REQ-F-730'] }],
+  },
+  {
+    version: '1.113',
+    date: '2026-10-11',
+    commit: '3b8c064',
+    changes: [{ kind: 'changed', scope: ['ui'], text: '휴면 세션은 어느 길(탭·검색·링크)로 열든 깨운다', refs: ['REQ-F-562'] }],
+  },
+  {
+    version: '1.112',
+    date: '2026-10-11',
+    commit: '04dd1ed',
+    changes: [{ kind: 'added', scope: ['ui', 'agent'], text: '컴퓨터 버튼 우클릭(폰은 길게 누르기)으로 로컬 서버 열기·끄기(SIGTERM, 3 s 뒤 SIGKILL)', refs: ['REQ-F-729', 'IF-200'] }],
+  },
+  {
+    version: '1.111',
+    date: '2026-10-11',
+    commit: '1f8d255',
+    changes: [{ kind: 'added', scope: ['ui', 'server'], text: '아이콘 크기(14~24 px)·채움을 설정에서 고르고 계정에 저장', refs: ['REQ-F-728', 'IF-198', 'IF-199'] }],
+  },
+  {
+    version: '1.110',
+    date: '2026-10-11',
+    commit: '4188544',
+    changes: [{ kind: 'fixed', scope: ['agent'], text: '나뉜 화면(오른쪽 diff 패널)의 글자가 확인 창에 섞여 전부 허용인데도 확인 카드가 뜨던 것: 화면의 왼쪽만 읽는다' }],
+  },
+]
