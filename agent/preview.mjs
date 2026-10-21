@@ -114,11 +114,88 @@ function isDimLangLine(line) {
   return codes.includes('2') && !codes.includes('1') ? plain : undefined
 }
 
+/**
+ * How Claude Code (2.1.305) draws a fenced code block: no fence, no language line, no background, only the block's
+ * own two-space indent like the text around it. A block with a language is syntax-coloured with the 16 basic
+ * colours (SGR 30–37, 90–97: keywords 34, names 33, comments and numbers 32), which text never uses (links are
+ * plain, quotes dim and italic); a block without one is drawn wholly in the inline-code colour (CODE_FG).
+ * Returns whether this line looks like that: a basic colour on any visible character, or every visible character
+ * in the inline-code colour. Found off a real screen (test/unit/fixtures/preview-code-*.txt).
+ */
+function looksLikeCode(line) {
+  let fg = null
+  let basic = false
+  let all = true
+  let any = false
+  let last = 0
+  SGR_RE.lastIndex = 0
+  const see = (text) => {
+    if (!text.trim()) return
+    any = true
+    if (fg === 'basic') basic = true
+    if (fg !== CODE_FG) all = false
+  }
+  let m
+  while ((m = SGR_RE.exec(line))) {
+    see(line.slice(last, m.index))
+    last = SGR_RE.lastIndex
+    const codes = m[0].slice(2, -1).split(';')
+    for (let i = 0; i < codes.length; i++) {
+      const c = Number(codes[i] || 0)
+      if (c === 0 || c === 39) fg = null
+      else if (c === 38 && codes[i + 1] === '5') (fg = codes[i + 2]), (i += 2)
+      else if (c === 38 && codes[i + 1] === '2') (fg = 'rgb'), (i += 4)
+      else if (c === 48) i += codes[i + 1] === '5' ? 2 : codes[i + 1] === '2' ? 4 : 0
+      else if ((c >= 30 && c <= 37) || (c >= 90 && c <= 97)) fg = 'basic'
+    }
+  }
+  see(line.slice(last))
+  return any && (basic || all)
+}
+
+/**
+ * Which of the block's lines are a code block's: every line of a paragraph (lines between blank lines) in which
+ * one line looks like code (a `}` or plain line of a coloured block has no colour of its own), and the blank lines
+ * between two such paragraphs (a blank line inside the code).
+ */
+function codeLines(lines) {
+  const code = lines.map(() => false)
+  const blank = (i) => !stripAnsi(lines[i]).trim()
+  let i = 0
+  while (i < lines.length) {
+    if (blank(i)) {
+      i++
+      continue
+    }
+    let j = i
+    while (j < lines.length && !blank(j)) j++
+    if (lines.slice(i, j).some(looksLikeCode)) for (let k = i; k < j; k++) code[k] = true
+    i = j
+  }
+  for (let k = 0; k < lines.length; k++) {
+    if (!blank(k) || code[k]) continue
+    let a = k
+    while (a >= 0 && blank(a)) a--
+    let b = k
+    while (b < lines.length && blank(b)) b++
+    if (a >= 0 && b < lines.length && code[a] && code[b]) code[k] = true
+  }
+  return code
+}
+
 /** The raw block's lines (bottom-up order already resolved), as one markdown string — fences restored. */
 function blockToMarkdown(lines) {
   const out = []
+  const code = codeLines(lines)
   let i = 0
   while (i < lines.length) {
+    if (code[i]) {
+      // As drawn, without colours: the indentation inside the block is the code's own.
+      const body = []
+      while (i < lines.length && code[i]) body.push(stripAnsi(lines[i++]).replace(/\s+$/, ''))
+      out.push('```', ...body, '```')
+      continue
+    }
     const lang = isDimLangLine(lines[i])
     if (lang !== undefined) {
       const code = []
@@ -177,24 +254,31 @@ const LIST_RE = /^\s*([-*+]|\d+[.)])\s/
 const HEAD_LINE_RE = /^\s*#{1,6}\s/
 
 /**
- * Claude Code wraps a long paragraph at the terminal width. Put back the breaks that were only the wrap: the
- * next line's first word would have fit on the line above (with 2 columns to spare), so the break was the
- * screen's, not the writer's. List items, headings, code and blank lines are never joined.
+ * Claude Code wraps a long paragraph at the terminal width, at a space. Put back the breaks that were only the
+ * wrap: the next line's first word would NOT have fit on the line above in the text's columns (the terminal's
+ * width less the block's two-space indent), so the screen broke the line there, not the writer. A line the
+ * writer ended is shorter than that. Code (codeLines, or after an old-style language line), list items,
+ * headings and blank lines are never joined. Until 1.308 the width test was the other way round: the short lines
+ * the writer ended (code) were joined and a wrapped paragraph was not.
  */
 function reflow(raw, width) {
   const out = []
+  const code = codeLines(raw)
   let inCode = false
-  for (const line of raw) {
+  let prevCode = false
+  raw.forEach((line, i) => {
     const plain = stripAnsi(line)
     if (isDimLangLine(line) !== undefined) inCode = true
     else if (!plain.trim()) inCode = false
-    const above = out.length ? out[out.length - 1]  : undefined
-    if (!inCode && above !== undefined && canJoin(stripAnsi(above), plain, width)) {
-      const a = stripAnsi(above)
-      const sep = !/\s$/.test(a) && /[\x21-\x7e]$/.test(a) && /^[\x21-\x7e]/.test(plain) ? ' ' : ''
+    const above = out.length ? out[out.length - 1] : undefined
+    const word = plain.trimStart().split(' ')[0]
+    if (!inCode && !code[i] && !prevCode && above !== undefined && canJoin(stripAnsi(above), plain, width)) {
+      // The space the wrap took goes back, unless the word was longer than a whole line and broken inside.
+      const sep = /\s$/.test(stripAnsi(above)) || visualWidth(word) >= width - 2 ? '' : ' '
       out[out.length - 1] = above + sep + line
     } else out.push(line)
-  }
+    prevCode = code[i]
+  })
   return out
 }
 
@@ -204,7 +288,7 @@ function canJoin(above, next, width) {
   if (above.trimStart().startsWith('```') || next.trimStart().startsWith('```')) return false
   if (/^\s/.test(next)) return false // indented beyond the block's own two spaces: code
   const word = next.trimStart().split(' ')[0]
-  return visualWidth(above.trimEnd()) + 1 + visualWidth(word) <= width - 2
+  return visualWidth(above.trimEnd()) + 1 + visualWidth(word) > width - 2
 }
 
 /** The squashed text (no whitespace) of each line, with the same markdown marks removed as the block had. */

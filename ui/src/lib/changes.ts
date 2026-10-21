@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.308',
+    date: '2026-10-21',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '답을 쓰는 동안 미리보기에서 코드블록 줄이 한 줄로 합쳐지던 것(`return a + b; }`): 화면 폭 때문에 접힌 줄만 잇도록 폭 검사를 바로잡고, Claude Code 가 코드에 쓰는 색(문법 강조 16색, 언어 없는 블록은 줄 전체 코드 색)으로 코드블록을 알아봐 잇지 않고 들여쓰기 그대로 코드로 보임', refs: ['REQ-F-036'] },
+      { kind: 'fixed', scope: ['agent'], text: '쓰는 중인 긴 문단이 화면 폭에서 접힌 그대로 여러 줄로 보이던 것: 한 문단으로 이어 보임', refs: ['REQ-F-036'] },
+    ],
+  },
+  {
     version: '1.307',
+    commit: '45f9a22',
     date: '2026-10-21',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '다시 여는 중(기본 프롬프트 변경·새로고침 등)에 세션을 지우면 맥에 zeropty·tmux 세션이 남던 것: 지우기가 먼저 닫힘을 표시하고, 다시 열기는 그 표시를 보면 멈추며 이미 띄운 터미널을 스스로 끝냄', refs: ['REQ-F-400', 'REQ-F-377'] },
