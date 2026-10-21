@@ -126,7 +126,7 @@ function cacheOf(c) {
   out.events = (Array.isArray(c.events) ? c.events : []).slice(-5).filter((e) => CACHE_KINDS.includes(e?.kind)).map((e) => ({ at: n(e.at), kind: e.kind, tokens: n(e.tokens), gap: n(e.gap) }))
   return out
 }
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'keys.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs']
 
 fs.mkdirSync(DATA, { recursive: true })
 const log = (...a) => console.log(new Date().toISOString(), ...a)
@@ -2154,7 +2154,7 @@ function hostDetail(hostId, viewer) {
       .map((m) => {
         const a = agentSessions.get(m.id)
         const shown = shielded(other ? { ...m, lock: m.lock || true, manualTitle: false } : m)
-        return { id: m.id, title: other ? '' : shown.title, cwd: shown.cwd, state: shown.state, locked: !!m.lock, hooks: a?.hooks ?? null, serverLines: m.lines, agentLines: a?.lines ?? null, behind: a ? Math.max(0, a.lines - m.lines) : null, syncedAt: m.syncedAt, transcriptBytes: a?.transcriptBytes ?? null, tmux: a?.tmux ?? null, folderAt: a?.folderAt ?? null, pushError: other ? (a?.pushError ? '(가림)' : null) : (a?.pushError ?? null), knownToAgent: !!a }
+        return { id: m.id, title: other ? '' : shown.title, cwd: shown.cwd, state: shown.state, locked: !!m.lock, hooks: a?.hooks ?? null, serverLines: m.lines, agentLines: a?.lines ?? null, behind: a ? Math.max(0, a.lines - m.lines) : null, syncedAt: m.syncedAt, transcriptBytes: a?.transcriptBytes ?? null, tmux: a?.tmux ?? null, mux: a?.mux ?? null, folderAt: a?.folderAt ?? null, pushError: other ? (a?.pushError ? '(가림)' : null) : (a?.pushError ?? null), knownToAgent: !!a }
       }),
   }
 }

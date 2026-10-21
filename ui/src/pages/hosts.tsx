@@ -425,9 +425,9 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
 interface Detail {
   host: { id: string; name: string; kind: string; online: boolean; user: string; home: string; info: { version: string; build: string; node: string; os: string } | null; updateBlocked?: boolean; outdated: boolean; latest?: string; takesWork?: boolean }
   link: { connectedAt: number | null; disconnectedAt: number | null; connects: number; rtt: number | null }
-  health: null | { version: string; uptime: number; checks: { id: string; level: string; title: string; detail: string; fix?: string }[]; load: number; memFree: number; memTotal: number; rss: number; keepAwake: boolean; compactWindow?: number | null; awake?: Awake; background?: Background; features?: Feature[]; repairs?: { at: number; id: string; text: string; ok: boolean }[]; at: number; lastCommand?: { t: string; at: number } | null }
+  health: null | { version: string; uptime: number; tools?: { zeropty?: string | null; tmux?: string | null }; checks: { id: string; level: string; title: string; detail: string; fix?: string }[]; load: number; memFree: number; memTotal: number; rss: number; keepAwake: boolean; compactWindow?: number | null; awake?: Awake; background?: Background; features?: Feature[]; repairs?: { at: number; id: string; text: string; ok: boolean }[]; at: number; lastCommand?: { t: string; at: number } | null }
   page: null | { visible: string; queue: number; ua: string; upFail: number; agentReconnects: number; at: number }
-  sessions: { id: string; title: string; cwd: string; state: Session['state']; serverLines: number; agentLines: number | null; behind: number | null; syncedAt: number | null; pushError: string | null }[]
+  sessions: { id: string; title: string; cwd: string; state: Session['state']; mux?: 'zeropty' | 'tmux' | null; serverLines: number; agentLines: number | null; behind: number | null; syncedAt: number | null; pushError: string | null }[]
 }
 interface LogEntry {
   ts: number
@@ -512,6 +512,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   <dd>
                     {h?.info ? `${h.info.version} · build ${h.info.build}${h.latest ? (h.updateBlocked ? ` (최신 ${h.latest} 아님 · 서버가 서명 문제로 업데이트를 보내지 않음)` : h.outdated ? ` (최신 ${h.latest} 아님)` : ' (최신)') : ''} · node ${h.info.node}` : '-'}
                     {detail.health ? ` · 켜진 지 ${duration(detail.health.uptime)} · 메모리 ${bytes(detail.health.rss)}` : ''}
+                    {detail.health?.tools?.zeropty ? ` · zeropty ${detail.health.tools.zeropty}` : ''}
                   </dd>
                   {detail.health ? (
                     <>
@@ -548,7 +549,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                     <Row
                       key={s.id}
                       title={s.title || shortPath(s.cwd, h?.home)}
-                      sub={`${PHASE[s.state.phase] ?? s.state.phase} · 사본 ${s.serverLines}줄${s.behind ? ` · ${s.behind}줄 밀림` : ''}${s.syncedAt ? ` · ${clock(s.syncedAt)}` : ''}${s.pushError ? ` · push 실패: ${s.pushError}` : ''}`}
+                      sub={`${PHASE[s.state.phase] ?? s.state.phase}${s.mux ? ` · ${s.mux}` : ''} · 사본 ${s.serverLines}줄${s.behind ? ` · ${s.behind}줄 밀림` : ''}${s.syncedAt ? ` · ${clock(s.syncedAt)}` : ''}${s.pushError ? ` · push 실패: ${s.pushError}` : ''}`}
                       onClick={() => go({ name: 'session', id: s.id })}
                       chevron
                     />

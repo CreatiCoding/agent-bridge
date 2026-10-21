@@ -26,7 +26,18 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.305',
+    date: '2026-10-21',
+    changes: [
+      { kind: 'changed', scope: ['agent'], text: '세션 터미널을 tmux 에서 zeropty 로: 에이전트가 켜질 때 zeropty 0.1.3 을 GitHub 릴리스에서 받아, 에이전트 코드에 고정된 SHA-256 이 맞을 때만 ~/.claude-bridge/zeropty/0.1.3 에 설치(맞지 않거나 못 받으면 설치하지 않고 tmux, 30분 뒤 다시). 그 뒤 새로 여는 세션부터 zeropty 에서 돌고, 이미 tmux 에서 돌던 세션은 닫거나 다시 열 때까지 tmux 로 이어 다룸', refs: ['REQ-F-794'] },
+      { kind: 'added', scope: ['agent'], text: 'zeropty 를 쓰면 처음 세션을 띄울 때 서명을 바꾼 claude 사본이 홈의 ~/.zeropty/tty 에 생김(claude 한 벌, 약 260MB)과 소켓 ~/.zeropty/mux.sock. 원치 않으면 `node ~/.claude-bridge/agent.mjs service install --mux tmux` 로 새 세션도 tmux 로(`--mux auto` 로 되돌림)', refs: ['REQ-F-794', 'IF-164'] },
+      { kind: 'changed', scope: ['agent'], text: '설치 스크립트와 점검에서 tmux 는 필수가 아니라 zeropty 가 안 될 때의 대비. 점검에 zeropty 항목', refs: ['REQ-F-794'] },
+      { kind: 'added', scope: ['ui', 'server'], text: '호스트 화면에 에이전트의 zeropty 버전과 세션마다 터미널(zeropty·tmux)', refs: ['REQ-F-794'] },
+    ],
+  },
+  {
     version: '1.304',
+    commit: '2e0a44f',
     date: '2026-10-20',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '대화 기록 정리를 한 세션에서, 연동이 다시 붙은 뒤 Claude 의 답이 화면에 안 오던 것: 덜어 낸 줄 수(lineBase)를 기억해 다시 읽을 때 줄 번호를 서버와 맞춤. 이미 이렇게 된 세션은 파일 끝까지 읽은 뒤 서버 줄 수에 맞춰 다음 답부터 다시 옴', refs: ['REQ-F-793'] },

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // claude-bridge local agent. Runs on the Mac that hosts Claude Code sessions.
 // It listens on 127.0.0.1 only and never connects out: the bridge page in the browser relays for it.
-// No dependencies; needs node >= 18, tmux, git and the `claude` CLI.
+// No dependencies; needs node >= 18, git and the `claude` CLI. Sessions run in zeropty (fetched by the agent, mux.mjs) or tmux.
 import http from 'node:http'
 import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
@@ -24,11 +24,12 @@ import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
 import { stripCreds, hideRemotes } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
+import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, muxEnv, targetName } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'keys.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -63,6 +64,8 @@ const flag = (name) => {
 const portArg = flag('port')
 const nameArg = flag('name')
 const kindArg = flag('kind')
+/** `--mux tmux`: new sessions too stay in tmux; `--mux auto` goes back to zeropty when it is installed (REQ-F-794). */
+const muxArg = flag('mux')
 const bool = (name) => args.includes(`--${name}`) && !!args.splice(args.indexOf(`--${name}`), 1)
 const noOpen = bool('no-open')
 const noAutoUpdateArg = bool('no-auto-update')
@@ -173,7 +176,7 @@ if (!/^https?:\/\//.test(config.site) && !doctorOnly && !['status', 'uninstall']
   node agent.mjs link                           연동 페이지 링크를 다시 열기
   node agent.mjs doctor                         점검만 하고 끝냄
   node agent.mjs <사이트 주소>                   이 터미널에서 직접 실행 (터미널을 닫으면 꺼짐)
-옵션: --port 4317  --kind imac|macbook|macmini|macstudio|other  --name "내 아이맥"  --keep-awake|--allow-sleep  --no-open`)
+옵션: --port 4317  --kind imac|macbook|macmini|macstudio|other  --name "내 아이맥"  --keep-awake|--allow-sleep  --no-open  --mux tmux|auto`)
   process.exit(1)
 }
 
@@ -225,6 +228,10 @@ function detectKind() {
     return 'other'
   }
 }
+if (muxArg && !['tmux', 'auto'].includes(muxArg)) {
+  console.error('--mux 는 tmux 또는 auto 입니다')
+  process.exit(1)
+}
 if (kindArg && !KINDS[kindArg]) {
   console.error(`--kind 는 ${Object.keys(KINDS).join(', ')} 중 하나입니다`)
   process.exit(1)
@@ -241,6 +248,8 @@ if (chromeArg) config.chrome = true
 config.chrome ??= true
 const noAutoUpdate = !!config.noAutoUpdate
 if (kindArg) config.kind = kindArg
+if (muxArg === 'tmux') config.mux = 'tmux'
+if (muxArg === 'auto') delete config.mux
 if (nameArg) config.name = nameArg
 // First run: ask which device this is, so hosts and their logs can be told apart on the site.
 if ((!config.kind || !config.name) && !doctorOnly) {
@@ -268,7 +277,7 @@ if ((!config.kind || !config.name) && !doctorOnly) {
 }
 writeJson(configPath, config)
 
-// tmux is what every session runs in. Offer to install it now rather than fail at the first session.
+// tmux is what a session runs in when zeropty is not there (or the Mac keeps to tmux): offered now rather than missed later.
 if (process.stdin.isTTY && process.platform === 'darwin' && !process.env.CLAUDE_BRIDGE_SKIP_TOOL_PROMPT && !doctorOnly) {
   const has = (cmd) => {
     try {
@@ -302,7 +311,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, autoPush: s.autoPush, autoAllow: !!s.autoAllow, conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -340,9 +349,55 @@ function run(cmd, argv, opts = {}) {
     )
   })
 }
-const tmux = (...argv) => run('tmux', argv)
-/** tmux output as printed: a screen's leading spaces and blank lines mean something. */
-const tmuxRaw = (...argv) => new Promise((resolve) => execFile('tmux', argv, { maxBuffer: 16 * 1024 * 1024, timeout: 15_000 }, (err, stdout) => resolve(err ? '' : String(stdout))))
+// ---------- the terminal program: zeropty or tmux (REQ-F-794, agent/mux.mjs) ----------
+
+const ZP = zeroptyPaths(STATE_DIR)
+/** Whether this agent's zeropty is unpacked: new sessions start in it from then on. */
+let zeroptyReady = zeroptyInstalled(ZP)
+/** The terminal names that live in zeropty. Every other name (an older session, one kept to tmux) is tmux's. */
+const zeroptyNames = new Set()
+for (const s of sessions.values()) if (muxOf(s) === 'zeropty' && s.tmux) zeroptyNames.add(s.tmux)
+/** Run with zeropty's own environment (mux.mjs muxEnv): its server keeps what the command that started it had. */
+const ZP_ENV = muxEnv({ ...process.env, GIT_TERMINAL_PROMPT: '0' })
+const muxProgram = (name) => (zeroptyNames.has(name) ? { bin: ZP.bin, env: ZP_ENV } : { bin: 'tmux', env: process.env })
+/** Where a terminal name goes from now on. */
+function placeTerminal(name, mux) {
+  if (mux === 'zeropty') zeroptyNames.add(name)
+  else zeroptyNames.delete(name)
+}
+/** The backend a terminal that starts now gets. */
+const newMux = () => pickMux({ force: config.mux, ready: zeroptyReady })
+/** In zeropty a terminal is a socket, not a PTY: claude is started through zeropty-tty to see a terminal. */
+const ttyPrefix = (mux) => (mux === 'zeropty' ? `${shq(ZP.tty)} ` : '')
+/** A tmux-style command for the terminal `name`, run by that terminal's program. */
+const muxAt = (name, ...argv) => {
+  const m = muxProgram(name)
+  return new Promise((resolve) =>
+    execFile(m.bin, argv, { maxBuffer: 16 * 1024 * 1024, timeout: 60_000, env: m.env }, (err, stdout, stderr) =>
+      resolve({ ok: !err, out: String(stdout).trim(), err: String(stderr).trim() || (err ? String(err.message) : '') }),
+    ),
+  )
+}
+/** Named `tmux` from before zeropty: the terminal is the command's own `-t` (or `new-session -s`). */
+const tmux = (...argv) => muxAt(targetName(argv), ...argv)
+/** Output as printed: a screen's leading spaces and blank lines mean something. */
+const tmuxRaw = (...argv) => {
+  const m = muxProgram(targetName(argv))
+  return new Promise((resolve) => execFile(m.bin, argv, { maxBuffer: 16 * 1024 * 1024, timeout: 15_000, env: m.env }, (err, stdout) => resolve(err ? '' : String(stdout))))
+}
+/** Fetched in the background at start: a failure only means new sessions keep starting in tmux. */
+async function ensureZeropty() {
+  if (zeroptyReady || doctorOnly) return
+  const r = await installZeropty(STATE_DIR, { log: (m) => log('info', 'zeropty', m) })
+  zeroptyReady = zeroptyInstalled(ZP)
+  if (!r.ok) {
+    log('warn', 'zeropty', `zeropty ${ZEROPTY.version} 를 받지 못함 (새 세션은 tmux 로, ${ZEROPTY_RETRY_MS / 60_000}분 뒤 다시): ${r.error}`)
+    setTimeout(() => ensureZeropty().catch(() => {}), ZEROPTY_RETRY_MS).unref()
+  } else if (!r.already) (zeroptyAt = Date.now()), (checkedAt = 0) // the checks say so with the next health message
+}
+const ZEROPTY_RETRY_MS = 30 * 60_000
+/** When zeropty was unpacked: checks that began before it are run again. */
+let zeroptyAt = 0
 // GIT_SAFE: a folder's own git config (core.fsmonitor, hooks) runs nothing when the agent itself calls git (R1-L10).
 const git = (dir, ...argv) => run('git', [...GIT_SAFE, '-C', dir, ...argv])
 const isLink = (p) => {
@@ -627,6 +682,11 @@ async function launchNow(sid, s, claudeArgs) {
   }
   writeHookSettings()
   s.tmux = `cb-${config.hostId.slice(0, 4)}-${sid.slice(0, 8)}`
+  // Whatever terminal this session had goes, in the program it ran in; the new one starts in zeropty when it is
+  // there (a session that was in tmux moves over when it is opened again), and a leftover of the same name there goes too.
+  await tmux('kill-session', '-t', `=${s.tmux}`)
+  s.mux = newMux()
+  placeTerminal(s.tmux, s.mux)
   await tmux('kill-session', '-t', `=${s.tmux}`)
   resetRuntime(s)
   s.starting = true
@@ -657,12 +717,12 @@ async function launchNow(sid, s, claudeArgs) {
   // The tools this process starts with: a session started before a tool was added does not have it until it is
   // reopened, and the page offers to reopen it (REQ-F-778, 할 일 정리).
   s.bridgeTools = BRIDGE_TOOLS.map((t) => t.name)
-  const cmd = `${clean}; export PATH=${shq(sudoBinDir)}:"$PATH"; ${CLAUDE_BIN} --settings ${shq(hookSettingsPath)} --mcp-config ${shq(mcpFile)} --add-dir ${shq(imagesDir)} --append-system-prompt "$(cat ${shq(promptFile)})" ${claudeArgs.map(shq).join(' ')}; echo "[claude exited $?]"; sleep 6`
+  const cmd = `${clean}; export PATH=${shq(sudoBinDir)}:"$PATH"; ${ttyPrefix(s.mux)}${CLAUDE_BIN} --settings ${shq(hookSettingsPath)} --mcp-config ${shq(mcpFile)} --add-dir ${shq(imagesDir)} --append-system-prompt "$(cat ${shq(promptFile)})" ${claudeArgs.map(shq).join(' ')}; echo "[claude exited $?]"; sleep 6`
   // Tall, so Claude Code draws more of the answer it is writing (the preview is read off the screen).
   const r = await tmux('new-session', '-d', '-s', s.tmux, '-x', '220', '-y', '80', '-c', s.cwd, '-e', `CB_HOOK=http://127.0.0.1:${config.port}/hook?sid=${sid}`,
     // The suggested next prompt is drawn in the input box like typed text: an idle prompt would not read as empty.
     '-e', 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false', ...accountEnv, cmd)
-  if (!r.ok) throw new Error(`tmux: ${r.err}`)
+  if (!r.ok) throw new Error(`${s.mux}: ${r.err}`)
   await sleep(3000)
   const screen = await term.capture(pane(s))
   if (!(await alive(s)) || /\[claude exited \d+\]/.test(screen)) {
@@ -670,6 +730,7 @@ async function launchNow(sid, s, claudeArgs) {
   }
   s.alive = true
   s.aliveAt = Date.now()
+  log('info', 'session', `터미널: ${s.mux}`, sid)
 }
 
 /** Everything about a session that does not survive its terminal: a fresh start has none of it. */
@@ -1074,7 +1135,7 @@ async function deliver(sid, s, text, attempts = 1) {
     // nothing is pasted, while the Enter after it still goes out.
     const file = path.join(STATE_DIR, `${buffer}.txt`)
     fs.writeFileSync(file, text, { mode: 0o600 })
-    const loaded = await tmux('load-buffer', '-b', buffer, file)
+    const loaded = await muxAt(s.tmux, 'load-buffer', '-b', buffer, file)
     fs.rmSync(file, { force: true })
     if (!loaded.ok) throw new Error(`글을 터미널에 올리지 못했습니다: ${loaded.err}`)
     // -p brackets the paste so a newline inside stays part of the message; -d drops the buffer afterwards.
@@ -1575,7 +1636,7 @@ async function watch(sid, s) {
     if (!isAlive && (s.refreshing || s.reviving || s.launching)) return
     if (!isAlive) {
       if (s.alive !== false) {
-        log('warn', 'session', 'claude 가 끝남 (tmux 세션 없음)', sid)
+        log('warn', 'session', `claude 가 끝남 (${muxOf(s)} 세션 없음)`, sid)
         if (s.card?.open) foldCard(sid, s, '세션이 끝남')
         const lost = s.held.splice(0).length
         note(sid, '세션이 끝났어요 (claude 가 종료됨). 글을 보내면 대화 그대로 다시 엽니다.', 'warn')
@@ -3189,7 +3250,7 @@ async function health() {
     try {
       size = fs.statSync(transcriptPath(s, sid)).size
     } catch {}
-    list.push({ id: sid, cwd: s.cwd, tmux: s.tmux, alive: s.alive ?? null, phase: phaseOf(s), hooks: !!s.hooks, held: s.held?.length ?? 0, lines: s.lineNo ?? 0, offset: s.offset ?? 0, transcriptBytes: size, folderAt: s.folderAt || null, autoPush: s.autoPush !== false, pushError: Object.values(s.pushError ?? {}).filter(Boolean)[0] ?? null })
+    list.push({ id: sid, cwd: s.cwd, tmux: s.tmux, mux: muxOf(s), alive: s.alive ?? null, phase: phaseOf(s), hooks: !!s.hooks, held: s.held?.length ?? 0, lines: s.lineNo ?? 0, offset: s.offset ?? 0, transcriptBytes: size, folderAt: s.folderAt || null, autoPush: s.autoPush !== false, pushError: Object.values(s.pushError ?? {}).filter(Boolean)[0] ?? null })
   }
   emit({
     t: 'health',
@@ -3342,10 +3403,12 @@ async function startLogin(id) {
   const name = loginTmux(id)
   await tmux('kill-session', '-t', `=${name}`)
   logins.delete(id)
+  const mux = newMux()
+  placeTerminal(name, mux)
   const env = Object.entries({ ...accountEnvOf(id), BROWSER: '/usr/bin/true' }).flatMap(([k, v]) => ['-e', `${k}=${v}`])
   // Waits 15 minutes for the code, then the terminal goes away by itself.
-  const r = await tmux('new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...env, `unset CLAUDECODE; ${shq(CLAUDE_BIN)} auth login; echo "[login exited $?]"; sleep 900`)
-  if (!r.ok) throw new Error(`tmux: ${r.err}`)
+  const r = await tmux('new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...env, `unset CLAUDECODE; ${ttyPrefix(mux)}${shq(CLAUDE_BIN)} auth login; echo "[login exited $?]"; sleep 900`)
+  if (!r.ok) throw new Error(`${mux}: ${r.err}`)
   let screen = ''
   for (let i = 0; i < 40; i++) {
     await sleep(500)
@@ -3396,9 +3459,19 @@ async function runChecks() {
   const out = []
   const add = (id, level, title, detail, fix, blocks) => out.push({ id, level, title, detail, ...(level !== 'ok' && fix ? { fix } : {}), ...(blocks ? { blocks: true } : {}) })
 
+  const startedAt = Date.now()
+  // zeropty is where new sessions run (REQ-F-794); tmux is what they fall back to, and where older sessions stay.
+  zeroptyReady = zeroptyInstalled(ZP)
+  const zv = zeroptyReady ? await run(ZP.bin, ['-V']) : null
+  stats.tools.zeropty = zv?.ok ? ZEROPTY.version : null
+  const keepTmux = config.mux === 'tmux'
+  if (zv?.ok) add('zeropty', 'ok', 'zeropty', `${ZEROPTY.version}${keepTmux ? ' (이 맥은 tmux 로 고정: --mux tmux)' : ''}`)
+  else add('zeropty', 'warn', 'zeropty', zeroptyReady ? `${ZEROPTY.version} 가 실행되지 않습니다. 새 세션은 tmux 로 엽니다` : `${ZEROPTY.version} 를 아직 받지 못했습니다. 새 세션은 tmux 로 엽니다 (에이전트가 다시 받아 봅니다)`)
   const tm = await run('tmux', ['-V'])
   stats.tools.tmux = tm.ok ? tm.out : null
-  tm.ok ? add('tmux', 'ok', 'tmux', tm.out) : add('tmux', 'fail', 'tmux', '설치돼 있지 않습니다. 세션은 tmux 안에서 돕니다', 'brew install tmux', true)
+  if (tm.ok) add('tmux', 'ok', 'tmux', tm.out)
+  else if (zv?.ok && !keepTmux) add('tmux', 'warn', 'tmux', '설치돼 있지 않습니다. 세션은 zeropty 에서 돌고, tmux 는 zeropty 가 안 될 때의 대비입니다', 'brew install tmux')
+  else add('tmux', 'fail', 'tmux', '설치돼 있지 않습니다. zeropty 가 없거나 tmux 로 고정해 세션은 tmux 안에서 돕니다', 'brew install tmux', true)
 
   const gt = await run('git', ['--version'])
   stats.tools.git = gt.ok ? gt.out : null
@@ -3469,7 +3542,7 @@ async function runChecks() {
     if (c.level === 'ok' && was && was !== 'ok') log('info', 'check', `해결됨 — ${c.title}: ${c.detail}`)
   }
   checks = out
-  checkedAt = Date.now()
+  checkedAt = zeroptyAt >= startedAt ? 0 : Date.now()
   return out
 }
 
@@ -4463,6 +4536,8 @@ server.on('listening', async () => {
   log('info', 'agent', `시작: ${config.name} (${config.kind}), node ${process.version}, 포트 ${config.port}, build ${BUILD}`)
   // A new version may hook more events (PermissionRequest for 전부 허용): sessions already running read the file too.
   writeHookSettings()
+  // In the background: the agent works without it, and new sessions start in tmux until it is there.
+  ensureZeropty().catch((e) => log('warn', 'zeropty', e.message))
   await runChecks()
   printChecks()
   reviveAfterRestart().catch((e) => log('error', 'revive', e.message))

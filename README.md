@@ -8,11 +8,11 @@
 
 ```
 [핸드폰·다른 기기]                       [아이맥 / 맥북]
- 조작 페이지  ⇄  웹 서버  ⇄  연동 페이지(브라우저 JS)  ⇄  로컬 에이전트  ⇄  claude (tmux)
+ 조작 페이지  ⇄  웹 서버  ⇄  연동 페이지(브라우저 JS)  ⇄  로컬 에이전트  ⇄  claude (zeropty·tmux)
 ```
 
 - `server/` 웹 서버. GitHub 로그인, 호스트 등록, 중계, 세션 사본(트랜스크립트·작업 폴더 상태)의 디스크 보관. Claude 를 실행하지 않는다.
-- `agent/` 맥에서 도는 로컬 에이전트. `127.0.0.1` 에서만 듣고 바깥으로 연결하지 않는다. `agent.mjs`(세션, 훅, 싱크), `dialog.mjs`(터미널 확인 창 읽기와 누르기), `preview.mjs`(쓰는 중인 글), `screen.mjs`(화면 판독).
+- `agent/` 맥에서 도는 로컬 에이전트. `127.0.0.1` 에서만 듣고 바깥으로 연결하지 않는다. `agent.mjs`(세션, 훅, 싱크), `dialog.mjs`(터미널 확인 창 읽기와 누르기), `preview.mjs`(쓰는 중인 글), `screen.mjs`(화면 판독), `mux.mjs`(세션 터미널 프로그램: zeropty 받기·확인, zeropty·tmux 고르기).
 - `agent/plugins.mjs`·`agent/skills.mjs` 세션이 쓰는 플러그인 버전, 스킬 목록과 호출 수.
 - `web/relay.js` 중계. 맥의 브라우저에 떠 있는 이 사이트의 페이지가 에이전트와 서버를 잇는다. 조작 페이지는 뒤에서, 연동 페이지(`web/bridge.*`)는 상태를 보여 주면서 돌린다. 사이트의 탭을 모두 닫으면 끊긴다.
 - `ui/` 조작 페이지(`/`). React 로 쓰고 Vite 로 빌드한다(`ui/dist`). 서버의 bridge API(`/api/classic/stream`, `/api/sessions/…`)에 바로 붙는다. 맥에서 열면 이 페이지가 뒤에서 중계도 한다(`web/relay.js`).
@@ -33,7 +33,8 @@
    curl -fsSL https://<사이트>/install.sh | bash
    ```
 
-   - `node`(18 이상)·`tmux`·`git`·`claude` 가 있는지 확인하고, 없는 것은 Homebrew 로 설치할지 묻는다.
+   - `node`(18 이상)·`git`·`claude` 가 있는지 확인하고, 없는 것은 Homebrew 로 설치할지 묻는다. `tmux` 도 묻지만 없어도 된다(아래 zeropty 가 안 될 때의 대비).
+   - **세션 터미널은 zeropty 다.** 에이전트는 켜질 때 [zeropty](https://github.com/CreatiCoding/zeropty) 를 GitHub 릴리스에서 받아, 에이전트 코드에 고정된 버전(0.1.3)과 SHA-256 이 맞을 때만 `~/.claude-bridge/zeropty/0.1.3/` 에 푼다(맞지 않으면 설치하지 않고 tmux 를 쓴다). 그 뒤 새로 여는 세션부터 zeropty 에서 돌고, 이미 tmux 에서 돌던 세션은 닫거나 다시 열 때까지 tmux 에 남는다. zeropty 는 처음 세션을 띄울 때 `claude` 의 서명을 바꾼 사본을 `~/.zeropty/tty/` 에 만든다(claude 한 벌 크기, 약 260MB. claude 가 업데이트되면 다시 만든다). zeropty 서버의 소켓은 `~/.zeropty/mux.sock`. tmux 로 되돌리려면 `node ~/.claude-bridge/agent.mjs service install --mux tmux`(서비스를 다시 설치하며 `agent.json` 에 `"mux": "tmux"` 를 남긴다. 떠 있는 세션은 그대로). `--mux auto` 로 같은 명령을 다시 하면 되돌림을 푼다.
    - 이 기기가 무엇인지(아이맥·맥북·맥미니·맥 스튜디오·기타)와 사이트에 보일 이름을 묻는다(`… | bash -s -- --kind imac --name "내 아이맥"` 으로 미리 줄 수 있다).
    - 에이전트를 **백그라운드 서비스**(launchd)로 설치한다. 로그인하면 자동으로 켜지고, 죽으면 다시 뜬다. 화면에는 아무것도 뜨지 않으며 터미널은 닫아도 된다.
    - 연동 페이지를 브라우저에 연다.
@@ -43,7 +44,7 @@
    - Chrome 이 "로컬 네트워크의 기기에 연결" 을 허용할지 물으면 허용한다. Safari 는 이 연결을 막을 수 있어 Chrome 을 권한다.
    - 중계는 에이전트마다 탭 하나만 한다. 그 탭을 닫으면 열려 있는 다른 탭이 이어받는다.
    - 서비스 상태·제거: `node ~/.claude-bridge/agent.mjs service status`, `… service uninstall`. 다른 브라우저에서 처음 연동할 때는 `… link` 가 연결 정보가 든 링크를 연다.
-   - 설치는 한 번이면 된다. 서버가 새 버전을 내주면 연동 탭이 그 파일을 에이전트에 건네고, 에이전트는 세션이 쉴 때 스스로 바꾸고 다시 시작한다(세션은 tmux 에 남는다). 끄려면 `--no-auto-update`(다시 켜려면 `--auto-update`). 이 선택은 `agent.json` 에 남아 백그라운드 서비스에도 적용된다.
+   - 설치는 한 번이면 된다. 서버가 새 버전을 내주면 연동 탭이 그 파일을 에이전트에 건네고, 에이전트는 세션이 쉴 때 스스로 바꾸고 다시 시작한다(세션은 zeropty·tmux 에 남는다). 끄려면 `--no-auto-update`(다시 켜려면 `--auto-update`). 이 선택은 `agent.json` 에 남아 백그라운드 서비스에도 적용된다.
    - 에이전트가 띄우는 세션은 Claude in Chrome(`claude --chrome`)을 켠 채로 뜬다. 그 맥의 Chrome(로그인된 사이트 포함)을 세션이 쓸 수 있다. 끄려면 `--no-chrome`(다시 켜려면 `--chrome`), `agent.json` 의 `chrome` 에 남는다. 세션 하나만 끄려면 새 세션 화면의 "Claude in Chrome" 스위치를 끈다. 이미 떠 있는 세션은 새로고침해야 바뀐다.
    - 서비스 없이 터미널에서만 돌리려면 `… | bash -s -- --foreground`.
 3. 폰이나 다른 기기에서 사이트를 열어 세션을 시작하고 조작한다.
@@ -86,7 +87,7 @@
 
 ## 동작
 
-- **세션**: 에이전트가 tmux 안에 `claude` 를 띄우고, 트랜스크립트(`~/.claude/projects/…/<id>.jsonl`)를 읽어 서버로 싱크한다. 입력은 tmux 로 넣는다.
+- **세션**: 에이전트가 zeropty(받지 못했거나 `--mux tmux` 면 tmux) 안에 `claude` 를 띄우고, 트랜스크립트(`~/.claude/projects/…/<id>.jsonl`)를 읽어 서버로 싱크한다. 입력은 같은 터미널 프로그램으로 넣는다. 호스트 화면에 세션마다 어느 쪽인지 보인다.
 - **상태**: 턴과 도구의 시작·끝은 Claude Code 훅으로 안다. 훅은 브리지 세션에만 `--settings` 로 등록하고(`~/.claude/settings.json` 은 건드리지 않는다), 그 맥의 에이전트(`127.0.0.1`)로만 보낸다. 세션은 뜨는 중 → 대기 ⇄ 작업 중 ⇄ 응답 대기 → 끝남 가운데 하나다.
 - **글 보내기**: 도구가 도는 중에 보낸 글은 붙잡았다가 도구가 끝나면 한 번에 전달한다. 붙잡힌 글은 "지금 보내기"로 바로 넣거나 "수정"으로 되돌릴 수 있다. 전달한 글이 턴을 시작했는지 5초 뒤 확인하고, 입력칸에 남아 있으면 Enter 를 다시 누른다.
 - **결정 카드**: 터미널에 뜬 확인 창(권한 요청, AskUserQuestion, 플랜 승인, 그 밖의 번호·키 창)은 대화에 카드로 뜬다. 권한 카드는 실행할 명령이나 바뀔 내용을 보여 준다. 버튼은 그 선택지가 지금 화면에 있을 때만 누른다. 보고 있지 않은 세션의 카드는 모달로 뜬다. 폴더 신뢰·MCP 동의·모델 전환 창은 자동으로 넘긴다.
@@ -129,7 +130,8 @@
 
 | 점검 | 문제일 때 | 세션 시작 |
 |---|---|---|
-| tmux | 설치 안 됨 → `brew install tmux` | 막음 |
+| zeropty | 아직 받지 못함·실행 안 됨 → 새 세션은 tmux 로(에이전트가 30분마다 다시 받아 본다) | 막지 않음 |
+| tmux | 설치 안 됨 → `brew install tmux` | zeropty 가 되면 경고만, 아니면 막음 |
 | claude | 실행 안 됨 → 설치 안내 | 막음 |
 | claude 버전 | `--session-id`·`--resume` 이 없는 옛 버전 → `claude update` | 막음 |
 | claude 로그인 | 로그인 안 됨 → 터미널에서 `claude` 실행 후 `/login` | 막음 |
@@ -189,7 +191,7 @@
 
 두 서버가 같은 상태를 동시에 쓰는 일은 없다. 돌고 있는 서버가 없으면(처음 켤 때, 옛 서버를 먼저 끄는 배포) 바로 시작한다. 이미지의 `HEALTHCHECK` 가 통과한 뒤에만 새 컨테이너가 트래픽을 받는다. 구현은 `server/handover.mjs`.
 
-배포 중에도 맥에서 도는 세션은 영향을 받지 않는다. 세션은 맥의 tmux 에서 계속 돌고, 에이전트는 서버에 다시 붙은 뒤 그 사이의 대화를 이어서 올린다.
+배포 중에도 맥에서 도는 세션은 영향을 받지 않는다. 세션은 맥의 zeropty·tmux 에서 계속 돌고, 에이전트는 서버에 다시 붙은 뒤 그 사이의 대화를 이어서 올린다.
 
 ## 서버 올리기
 
@@ -222,6 +224,7 @@ docker build -t claude-bridge . && docker run -p 4300:4300 -v bridge-data:/data 
 
 - **`BRIDGE_ORIGIN` 은 꼭 정하고, HTTPS 리버스 프록시 뒤에서만 운영한다.** 이 값이 없으면 서버는 요청의 `Host`·`X-Forwarded-Proto` 를 믿고 자기 주소(설치 명령, 로그인 콜백, 다른 출처 검사)를 만든다. 서버 포트를 인터넷에 바로 열지 않는다.
 - **처음 설치(`curl -fsSL <사이트>/install.sh | bash`)는 서버를 믿는 일이다.** 그때 받은 에이전트와 `agent/keys.mjs`(공개키)를 맥이 믿는다. 그 뒤 업데이트는 그 키의 서명이 맞을 때만 깔린다(위 "자기 서명 키 만들기").
+- **에이전트는 서버 말고 GitHub 에서도 하나를 받는다: zeropty.** 주소·버전·SHA-256 은 서명된 에이전트 파일(`agent/mux.mjs`)에 고정돼 있어, 받은 묶음의 해시가 다르면 아무것도 설치하지 않는다(그러면 tmux 를 쓴다). 업데이트로 버전이 바뀔 때만 다른 것을 받는다. 이 일로 모든 맥의 홈에 `~/.claude-bridge/zeropty/`, 서명을 바꾼 claude 사본 `~/.zeropty/tty/`(약 260MB), 소켓 `~/.zeropty/mux.sock`(0600, 같은 사용자만)이 생긴다. 원치 않으면 `--mux tmux` 로 새 세션도 tmux 로 연다(받기는 그대로 하지만 쓰지 않는다).
 - **서버가 털리면 연결된 맥에 지시를 보낼 수 있다.** 서명 확인은 새 코드가 깔리는 것을 막을 뿐이다. 서버는 원래 맥의 Claude 세션을 열고 메시지를 보내는 곳이라, 서버를 가진 사람은 연결된 맥에서 그 사용자 권한으로 Claude 를 움직일 수 있다. 서버는 그만큼 믿을 수 있는 곳에 둔다.
 - **`/skills` 는 토큰보다 GitHub App 을 권한다**(`SKILLS_GITHUB_APP_ID`·`SKILLS_GITHUB_APP_KEY`). App 의 설치 토큰은 읽는 저장소 하나와 Contents 읽기로 좁혀지고 한 시간 뒤 끝난다. 토큰(`SKILLS_GITHUB_TOKEN`)을 쓰면 fine-grained 로, 그 저장소만 Contents: Read 로 만든다.
 - **로그인 없이 열리는 곳은 최소한만 내준다.** `/api/health` 는 `ok`·`version`·`instance` 만, 서버가 어떻게 도는지(`BRIDGE_ORIGIN` 유무, root 실행, 에이전트 서명)는 운영자의 `/api/admin/overview` 에서 본다.

@@ -48,7 +48,14 @@ need() {
 say "claude-bridge 에이전트를 준비합니다 ($SITE)"
 say "필요한 도구를 확인합니다:"
 need node node "https://nodejs.org 에서 설치하거나 brew install node"
-need tmux tmux "brew install tmux  (Homebrew 가 없으면 https://brew.sh 먼저)"
+# tmux is the fallback (REQ-F-794): sessions run in zeropty, which the agent fetches itself at a fixed version and hash.
+if have tmux; then
+  say "  ✓ tmux (zeropty 가 안 될 때의 대비)"
+elif have brew && ask "  tmux 가 없습니다. 세션은 에이전트가 받는 zeropty 에서 돌고, tmux 는 그게 안 될 때의 대비입니다. Homebrew 로 설치할까요? (brew install tmux)"; then
+  if brew install tmux && have tmux; then say "  ✓ tmux 설치됨"; else say "  - tmux 설치 실패 (없어도 zeropty 로 세션을 엽니다)"; fi
+else
+  say "  - tmux 없음 (없어도 zeropty 로 세션을 엽니다. 대비로 두려면: brew install tmux)"
+fi
 need git git "xcode-select --install"
 if have claude; then
   say "  ✓ claude"

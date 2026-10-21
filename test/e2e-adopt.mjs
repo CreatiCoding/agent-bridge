@@ -10,6 +10,7 @@ import path from 'node:path'
 const { chromium } = await import(process.env.PLAYWRIGHT)
 const SITE = process.env.SITE || 'http://localhost:4399'
 const [home, work2, shots] = [process.env.AGENT_A, process.env.WORK2, process.env.SHOTS]
+let MUX = 'tmux'
 const cfg = JSON.parse(fs.readFileSync(path.join(home, 'agent.json'), 'utf8'))
 const step = (s) => console.log(`\n== ${s}`)
 const ok = (cond, what) => {
@@ -60,10 +61,16 @@ await app.screenshot({ path: `${shots}/adopt-1-session.png` })
 
 step('맥이 다시 켜진 뒤 되살리기')
 const tmuxName = `cb-${cfg.hostId.slice(0, 4)}-${sid.slice(0, 8)}`
+// The program the session's terminal is in (REQ-F-794): zeropty when the agent recorded it, else tmux.
+if (JSON.parse(fs.readFileSync(path.join(home, 'sessions.json'), 'utf8'))[sid]?.mux === 'zeropty') {
+  const v = fs.readdirSync(path.join(home, 'zeropty')).find((d) => /^\d/.test(d))
+  MUX = path.join(home, 'zeropty', v, 'zeropty')
+}
+console.log(`terminal: ${MUX}`)
 const pid = Number(fs.readFileSync(path.join(home, 'agent.pid'), 'utf8'))
 process.kill(pid)
 await wait(1500)
-execSync(`tmux kill-session -t =${tmuxName}`)
+execSync(`'${MUX}' kill-session -t =${tmuxName}`)
 ok(!hasSession(tmuxName), '에이전트를 끄고 세션의 터미널을 없앰 (다시 켜진 맥처럼)')
 spawn('/bin/sh', ['-c', process.env.AGENT_START], { detached: true, stdio: 'ignore' }).unref()
 let back = false
@@ -88,7 +95,7 @@ await browser.close()
 
 function hasSession(name) {
   try {
-    execSync(`tmux has-session -t =${name}`, { stdio: 'ignore' })
+    execSync(`'${MUX}' has-session -t =${name}`, { stdio: 'ignore' })
     return true
   } catch {
     return false
