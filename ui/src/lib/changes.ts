@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.306',
+    date: '2026-10-21',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '세션 파일 게이지 시험(AC-1159)을 넓은 화면 접기(1.249)에 맞춤: 작은 SESSION.md 게이지는 "+n" 안에 있고 펼친 뒤 누르면 시트, AGENTS.md 는 ⋯ 메뉴. 화면 동작은 그대로', refs: ['REQ-F-147', 'REQ-F-149'] },
+    ],
+  },
+  {
     version: '1.305',
+    commit: '383a1b0',
     date: '2026-10-21',
     changes: [
       { kind: 'changed', scope: ['agent'], text: '세션 터미널을 tmux 에서 zeropty 로: 에이전트가 켜질 때 zeropty 0.1.3 을 GitHub 릴리스에서 받아, 에이전트 코드에 고정된 SHA-256 이 맞을 때만 ~/.claude-bridge/zeropty/0.1.3 에 설치(맞지 않거나 못 받으면 설치하지 않고 tmux, 30분 뒤 다시). 그 뒤 새로 여는 세션부터 zeropty 에서 돌고, 이미 tmux 에서 돌던 세션은 닫거나 다시 열 때까지 tmux 로 이어 다룸', refs: ['REQ-F-794'] },

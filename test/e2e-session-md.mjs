@@ -1,4 +1,4 @@
-// End-to-end (AC-1159, AC-1160): the session file's gauge (SESSION.md / SESSION-<id8>.md) opens the file in a sheet, like the
+// End-to-end (AC-1159): the session file's gauge (SESSION.md / SESSION-<id8>.md) opens the file in a sheet, like the
 // AGENTS.md chip. Needs a server (SITE, default :4699) and an agent; its home folder as the first argument.
 //   PLAYWRIGHT=… node test/e2e-session-md.mjs <agent home>
 import fs from 'node:fs'
@@ -26,12 +26,21 @@ const md = await ctx.request.get(`${SITE}/api/sessions/${id}/agentsmd?file=sessi
 console.log('before file:', md.status(), (await md.json()).error)
 ok(md.status() === 404, '파일이 없으면 404')
 fs.writeFileSync(`${work}/SESSION-${id.slice(0, 8)}.md`, '# 세션 인계\n\n- 할 일: 시험 MDVIEW_OK\n')
-const gauge = app.locator('.gauge-link')
+// A wide screen folds the calm gauges behind "+{n}" (REQ-F-149 rule 8, AC-1359), and a small SESSION.md is calm:
+// wait until the state has the file, open the fold, then take the file's own gauge (not the "+{n}" button).
 await app.evaluate(() => { new EventSource('/api/classic/stream').onmessage = (e) => { const m = JSON.parse(e.data); if (m.sessions) window.__st = m } })
-await gauge.waitFor({ timeout: 40000 }).catch(async (e) => {
+await app.waitForFunction((sid) => window.__st?.sessions.find((x) => x.id === sid)?.state?.sessionMd, id, { timeout: 40000 }).catch(async (e) => {
   console.log('state:', JSON.stringify(await app.evaluate((sid) => { const s = window.__st?.sessions.find((x) => x.id === sid)?.state; return { sessionMd: s?.sessionMd, mdFile: s?.mdFile, phase: s?.phase } }, id)), fs.readdirSync(work))
   throw e
 })
+const more = app.locator('.gauge-more')
+await app.waitForTimeout(500)
+if (await more.count()) {
+  ok(/SESSION-[0-9a-f]{8}\.md/.test((await more.getAttribute('title')) ?? ''), `조용한 SESSION 게이지는 "+n" 에 접힘: ${await more.textContent()} (${await more.getAttribute('title')})`)
+  await more.click()
+}
+const gauge = app.locator('.gauge-link:not(.gauge-more)', { hasText: 'SESSION' })
+await gauge.waitFor({ timeout: 10000 })
 ok((await gauge.textContent()).includes('SESSION'), `게이지가 버튼으로 보임: ${await gauge.textContent()}`)
 // The limit comes with the state (a tenth of the window: Haiku 200k → 20 KB) and the gauge says it.
 await app.waitForFunction((sid) => window.__st?.sessions.find((x) => x.id === sid)?.state?.mdMax, id, { timeout: 15000 }).catch(() => {})
@@ -46,7 +55,9 @@ ok(/SESSION-[0-9a-f]{8}\.md/.test(text) && text.includes('MDVIEW_OK') && text.in
 await app.screenshot({ path: `${T}/mdview.png` })
 await app.keyboard.press('Escape')
 await app.waitForTimeout(400)
-await app.getByText('AGENTS.md', { exact: true }).first().click()
-await app.waitForFunction(() => document.querySelector('.sheet')?.textContent.includes('폴더 규칙'), null, { timeout: 15000 }).then(() => ok(true, 'AGENTS.md 칩은 그대로 AGENTS.md'), () => ok(false, 'AGENTS.md 칩은 그대로 AGENTS.md'))
+// A wide screen has AGENTS.md in the ⋯ menu, not as a chip (REQ-F-145, 1.249).
+await app.getByRole('button', { name: '세션 메뉴' }).click()
+await app.getByRole('menuitem', { name: /^AGENTS\.md/ }).click()
+await app.waitForFunction(() => document.querySelector('.sheet')?.textContent.includes('폴더 규칙'), null, { timeout: 15000 }).then(() => ok(true, '⋯ 메뉴의 AGENTS.md 는 그대로 AGENTS.md'), () => ok(false, '⋯ 메뉴의 AGENTS.md 는 그대로 AGENTS.md'))
 await ctx.request.delete(`${SITE}/api/sessions/${id}`, { headers: { Origin: SITE } })
 await browser.close()
