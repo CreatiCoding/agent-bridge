@@ -20,6 +20,9 @@ async function fakeSlack() {
   let socket = null
   const acks = []
   const server = http.createServer(async (req, res) => {
+    // The plugin only POSTs. Anything else is not a Slack call: the bridge agent running these tests probes the
+    // servers its sessions start with GET /, and counting that made the call counts flaky.
+    if (req.method !== 'POST') return res.writeHead(404).end()
     let raw = ''
     for await (const c of req) raw += c
     const method = req.url.slice(1)
