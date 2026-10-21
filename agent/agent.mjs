@@ -660,6 +660,15 @@ function autoAllowAnswer(sid, ev) {
  */
 const BRIDGE_PROMPT = 'This session is also read and driven from a web page (claude-bridge), often on a phone. When you want the person to pick between a few short options, end your answer with a fenced block tagged `choices`, one option per line, at most 6; the page shows them as buttons. Do not use it for anything else. For work of three or more steps, keep the page\'s to-do panel current with the `mcp__bridge__todos` tool: the whole list each time, one item in_progress while you work on it, completed as soon as it is done.'
 
+/**
+ * A session closed (deleted or moved away) while its terminal was being started: the start stops, and a terminal it
+ * already made is closed again, so nothing is left running that no session owns.
+ */
+class SessionClosed extends Error {
+  constructor() {
+    super('세션이 닫혔어요')
+  }
+}
 async function launch(sid, s, claudeArgs) {
   // While claude is being started its terminal may not exist yet: that is not a session that ended.
   s.launching = true
@@ -670,6 +679,14 @@ async function launch(sid, s, claudeArgs) {
   }
 }
 async function launchNow(sid, s, claudeArgs) {
+  // `close` may come at any await below. Before the terminal exists, the start stops; once it may exist, the
+  // terminal goes too (close's own kill may have run before it was made).
+  const stillOpen = async (made) => {
+    if (!s.closed) return
+    if (made) await tmux('kill-session', '-t', `=${s.tmux}`)
+    throw new SessionClosed()
+  }
+  await stillOpen(false)
   await requireReady()
   // Another Claude account runs with its own config folder (agent/accounts.mjs). What was added to the main folder
   // since (a new skills folder) is linked in now; nothing that is there is replaced.
@@ -688,6 +705,7 @@ async function launchNow(sid, s, claudeArgs) {
   s.mux = newMux()
   placeTerminal(s.tmux, s.mux)
   await tmux('kill-session', '-t', `=${s.tmux}`)
+  await stillOpen(false)
   resetRuntime(s)
   s.starting = true
   s.launchedAt = Date.now()
@@ -722,8 +740,10 @@ async function launchNow(sid, s, claudeArgs) {
   const r = await tmux('new-session', '-d', '-s', s.tmux, '-x', '220', '-y', '80', '-c', s.cwd, '-e', `CB_HOOK=http://127.0.0.1:${config.port}/hook?sid=${sid}`,
     // The suggested next prompt is drawn in the input box like typed text: an idle prompt would not read as empty.
     '-e', 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false', ...accountEnv, cmd)
+  await stillOpen(true)
   if (!r.ok) throw new Error(`${s.mux}: ${r.err}`)
   await sleep(3000)
+  await stillOpen(true)
   const screen = await term.capture(pane(s))
   if (!(await alive(s)) || /\[claude exited \d+\]/.test(screen)) {
     throw new Error(`claude 가 바로 끝났습니다: ${screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'}`)
@@ -1596,7 +1616,7 @@ async function cycleToMode(s, value) {
  * carried over and handed to the new process.
  */
 async function refresh(sid, s) {
-  if (s.refreshing) return
+  if (s.refreshing || s.closed) return
   s.refreshing = true
   s.refreshAfter = false
   // Reopened in the middle of work (a turn going, or waiting on a question): the work is cut off with the old
@@ -1614,11 +1634,12 @@ async function refresh(sid, s) {
     // What was held before, and what was said while it was closed, goes to the session that came back.
     setTimeout(() => releaseHeld(sid, s, 'refreshed'), 2500)
   } catch (e) {
+    if (e instanceof SessionClosed) return void log('info', 'refresh', '다시 여는 중에 세션이 닫혀 멈춤 (터미널을 남기지 않음)', sid)
     log('error', 'refresh', `세션을 다시 열지 못함: ${e.message}`, sid)
     note(sid, `❌ 세션을 다시 열지 못했습니다. ${e.message}`, 'warn')
   } finally {
     s.refreshing = false
-    publish(sid, s)
+    if (!s.closed) publish(sid, s)
   }
 }
 
@@ -2262,7 +2283,8 @@ const commands = {
       try {
         await launch(sid, s, ['--resume', s.conv, ...settingsArgs(s)])
       } catch (e) {
-        old ? sessions.set(sid, old) : sessions.delete(sid)
+        // Closed while it opened: it stays gone, not back to what it was.
+        e instanceof SessionClosed || !old ? sessions.delete(sid) : sessions.set(sid, old)
         throw e
       }
       saveSessions()
@@ -2387,6 +2409,8 @@ const commands = {
   async close({ sid }) {
     const s = sessions.get(sid)
     if (!s) return
+    // First: a reopening (refresh, revive) in flight sees it and does not leave a terminal behind (launchNow).
+    s.closed = true
     await tmux('kill-session', '-t', `=${s.tmux}`)
     trashMdFile(sid, s)
     resetRuntime(s)
@@ -2399,6 +2423,7 @@ const commands = {
   async release({ sid }) {
     const s = sessions.get(sid)
     if (!s) return
+    s.closed = true
     await tmux('kill-session', '-t', `=${s.tmux}`)
     resetRuntime(s)
     sessions.delete(sid)
@@ -2436,6 +2461,7 @@ const commands = {
       if (s.turn) note(sid, '⏳ 작업이 끝나면 새로고침합니다. 그동안 보낸 메시지는 붙잡아 두었다가 다시 연 세션에 넘깁니다.')
       maybeRefresh(sid, s)
     } else await refresh(sid, s)
+    if (s.closed) return
     saveSessions()
     publish(sid, s)
     if (when === 'cancel') releaseHeld(sid, s, 'refresh cancelled')
@@ -2581,7 +2607,7 @@ const commands = {
         emit({ t: 'trimlog', reqId, ok: true, before, after: s.size })
       } finally {
         s.refreshing = false
-        publish(sid, s)
+        if (!s.closed) publish(sid, s)
       }
     } catch (e) {
       log('error', 'trimlog', e.message, sid)

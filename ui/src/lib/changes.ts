@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.307',
+    date: '2026-10-21',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '다시 여는 중(기본 프롬프트 변경·새로고침 등)에 세션을 지우면 맥에 zeropty·tmux 세션이 남던 것: 지우기가 먼저 닫힘을 표시하고, 다시 열기는 그 표시를 보면 멈추며 이미 띄운 터미널을 스스로 끝냄', refs: ['REQ-F-400', 'REQ-F-377'] },
+    ],
+  },
+  {
     version: '1.306',
+    commit: '30290c7',
     date: '2026-10-21',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: '세션 파일 게이지 시험(AC-1159)을 넓은 화면 접기(1.249)에 맞춤: 작은 SESSION.md 게이지는 "+n" 안에 있고 펼친 뒤 누르면 시트, AGENTS.md 는 ⋯ 메뉴. 화면 동작은 그대로', refs: ['REQ-F-147', 'REQ-F-149'] },
