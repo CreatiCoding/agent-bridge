@@ -1,4 +1,4 @@
-// Findings of review report #1 that only show through the server's HTTP API, checked against a real server.mjs.
+// Findings of review report #1 that only show through the server's HTTP API, checked against the real server.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -104,7 +104,9 @@ test('a public server does not start without BRIDGE_ORIGIN', async () => {
   const env = { ...process.env, HOME: data, BRIDGE_DATA: data, PORT: '0', GITHUB_CLIENT_ID: 'x', GITHUB_CLIENT_SECRET: 'y' }
   delete env.BRIDGE_ORIGIN
   delete env.CLAUDECODE
-  const r = spawnSync(process.execPath, [path.join(path.dirname(new URL(import.meta.url).pathname), '../../server/server.mjs')], { env, timeout: 10_000, encoding: 'utf8' })
+  const { serverBin, ROOT } = await import('./server-bin.mjs')
+  env.BRIDGE_ROOT = ROOT
+  const r = spawnSync(serverBin(), [], { env, timeout: 10_000, encoding: 'utf8' })
   assert.equal(r.status, 1)
   assert.match(r.stderr, /BRIDGE_ORIGIN/)
   fs.rmSync(data, { recursive: true, force: true })

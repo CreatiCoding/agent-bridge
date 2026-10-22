@@ -4,7 +4,9 @@ import { test, before, after, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { startServer } from './server-harness.mjs'
 import { readFileSync } from 'node:fs'
-import { pendingPage, APP_NAME, SOURCE_URL } from '../../server/pages.mjs'
+// The waiting-for-approval page itself is checked in server/pages_test.go.
+const APP_NAME = 'Agent Bridge'
+const SOURCE_URL = 'https://github.com/CreatiCoding/agent-bridge'
 
 describe('signed-out pages', () => {
   let srv
@@ -63,28 +65,8 @@ test('the repository is licensed AGPL-3.0-only', () => {
 // 1.232: words people read name no `claude-bridge`; a command to paste keeps the real path (REQ-F-768 rule 4).
 test('screens people read say 에이전트 폴더 instead of the claude-bridge folder', () => {
   const read = (f) => readFileSync(new URL(`../../${f}`, import.meta.url), 'utf8')
-  for (const f of ['ui/src/pages/guide.tsx', 'ui/src/pages/voice-settings.tsx', 'ui/src/pages/accounts.tsx', 'ui/src/pages/admin.tsx', 'server/demo.mjs']) assert.ok(!read(f).includes('claude-bridge'), f)
+  for (const f of ['ui/src/pages/guide.tsx', 'ui/src/pages/voice-settings.tsx', 'ui/src/pages/accounts.tsx', 'ui/src/pages/admin.tsx', 'server/demo.go']) assert.ok(!read(f).includes('claude-bridge'), f)
   // Slack keeps only the bot's handle (`@claude-bridge`) and its manifest name, which existing bots already carry.
-  const slack = read('server/plugins/slack.mjs').replace(/@claude-bridge|name: 'claude-bridge'|display_name: 'claude-bridge'/g, '')
+  const slack = read('server/slack.go').replace(/@claude-bridge|\{"name", "claude-bridge"\}|\{"display_name", "claude-bridge"\}/g, '')
   assert.ok(!slack.includes('claude-bridge'))
-})
-
-describe('waiting for approval', () => {
-  test('says what this is, what it needs, what happens once allowed, and what to do meanwhile', () => {
-    const t = pendingPage({ login: 'alice', demo: false })
-    for (const s of ['승인을 기다리는 중', 'alice', '맥', '에이전트', '운영자의 승인', '승인되면', '그동안 할 수 있는 것', 'href="/guide"', 'href="/privacy"', 'href="/api/auth/github"']) assert.ok(t.includes(s), s)
-  })
-
-  test('offers the public demo as a button when 데모 모드 is on, and none when it is off', () => {
-    const on = pendingPage({ login: 'alice', demo: true })
-    assert.ok(on.includes('<form method="post" action="/api/auth/demo"'))
-    assert.ok(on.includes('데모로 둘러보기'))
-    assert.ok(!pendingPage({ login: 'alice', demo: false }).includes('/api/auth/demo'))
-  })
-
-  test('the login is escaped', () => {
-    const t = pendingPage({ login: '<b>x</b>', demo: false })
-    assert.ok(!t.includes('<b><b>x'))
-    assert.ok(t.includes('&#60;b&#62;x'))
-  })
 })

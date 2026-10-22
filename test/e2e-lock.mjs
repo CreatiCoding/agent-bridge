@@ -75,9 +75,16 @@ ok(raw.status() === 423, `열쇠 없는 요청은 423 (${raw.status()})`)
 const row = await other.evaluate(async (id) => {
   const res = await fetch('/api/classic/stream')
   const rd = res.body.getReader()
-  const { value } = await rd.read()
+  // Read until the first whole frame: it may come in several reads, split inside a character.
+  const dec = new TextDecoder()
+  let buf = ''
+  while (!buf.includes('\n\n')) {
+    const { value, done } = await rd.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+  }
   rd.cancel()
-  const m = /data: (.*)/.exec(new TextDecoder().decode(value))
+  const m = /data: (.*)/.exec(buf)
   return JSON.parse(m[1]).sessions.find((s) => s.id === id)
 }, sid)
 ok(row.locked === true && !row.last && !row.preview && !row.lock, '목록에는 잠겼다는 것만 오고 내용·잠금 정보는 없음')

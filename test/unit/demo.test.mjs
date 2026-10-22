@@ -4,7 +4,6 @@ import { test, before, after, afterEach, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
-import { demoReply } from '../../server/demo.mjs'
 
 import crypto from 'node:crypto'
 let ipN = 0
@@ -36,11 +35,13 @@ async function stateOf(srv, jar) {
   const ctl = new AbortController()
   const r = await fetch(`${srv.origin}/api/classic/stream`, { headers: { cookie: jar }, signal: ctl.signal })
   const reader = r.body.getReader()
+  // One decoder in stream mode: a frame may come in several reads, split inside a character.
+  const dec = new TextDecoder()
   let buf = ''
   for (;;) {
     const { value, done } = await reader.read()
     if (done) break
-    buf += new TextDecoder().decode(value)
+    buf += dec.decode(value, { stream: true })
     const m = /data: (\{"t":"state"[^\n]*)\n\n/.exec(buf)
     if (m) return (ctl.abort(), JSON.parse(m[1]))
   }
@@ -376,10 +377,4 @@ describe('demo state on disk', () => {
       await srv.stop()
     }
   })
-})
-
-test('the demo replies: the default says it is the demo, the permission words ask with a card', () => {
-  assert.match(demoReply('아무 말').text, /데모 모드예요\. 실제 맥에 연결돼 있지 않아요/)
-  assert.ok(demoReply('권한 요청 보여 줘').permission)
-  assert.match(demoReply('코드 예시 보여 줘').text, /```ts/)
 })

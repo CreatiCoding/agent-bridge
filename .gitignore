@@ -6,3 +6,5 @@ data
 ui/dist
 ui/.yarn
 .claude/worktrees/
+/server/server
+/server/bridge-server

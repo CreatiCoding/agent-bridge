@@ -1,4 +1,4 @@
-// A real server.mjs on a free port over a fresh data folder, for tests that go through HTTP. Dev login is on, so
+// The real (Go) server on a free port over a fresh data folder, for tests that go through HTTP. Dev login is on, so
 // `login(name)` signs a person in without GitHub; `boss` is the operator. `seed` writes files into the data folder
 // before the server starts (relative path -> JSON value). The session's own environment (CLAUDECODE, HOME) is not
 // passed on.
@@ -8,6 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
 import { fileURLToPath } from 'node:url'
+import { serverBin } from './server-bin.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const freePort = () => new Promise((resolve) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)) }) })
@@ -20,10 +21,10 @@ export async function startServer({ seed = {}, env = {} } = {}) {
   }
   const port = await freePort()
   const origin = `http://localhost:${port}`
-  const childEnv = { ...process.env, HOME: data, PORT: String(port), BRIDGE_DATA: data, BRIDGE_DEV_LOGIN: '1', BRIDGE_ADMIN_LOGINS: 'boss', GITHUB_ALLOWED_LOGINS: '*', BRIDGE_ORIGIN: origin, ...env }
+  const childEnv = { ...process.env, HOME: data, PORT: String(port), BRIDGE_DATA: data, BRIDGE_DEV_LOGIN: '1', BRIDGE_ADMIN_LOGINS: 'boss', GITHUB_ALLOWED_LOGINS: '*', BRIDGE_ORIGIN: origin, BRIDGE_ROOT: ROOT, ...env }
   delete childEnv.CLAUDECODE
   for (const [k, v] of Object.entries(env)) if (v === undefined) delete childEnv[k]
-  const child = spawn(process.execPath, [path.join(ROOT, 'server/server.mjs')], { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(serverBin(), [], { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   let out = ''
   child.stdout.on('data', (d) => (out += d))
   child.stderr.on('data', (d) => (out += d))

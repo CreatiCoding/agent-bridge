@@ -16,7 +16,9 @@ const LINK_CHECK = AGENT.match(/const LINK_CHECK = `([\s\S]*?)`/)[1]
 const linkCheck = (dir) => execFileSync(process.execPath, ['--experimental-vm-modules', '--no-warnings', '--input-type=module', '-e', LINK_CHECK, path.join(dir, 'agent.mjs')], { stdio: 'pipe' })
 
 test('the server ships the same files the agent fingerprints', () => {
-  assert.deepEqual(filesIn(read('server/server.mjs')), filesIn(AGENT))
+  // server/config.go: var AGENT_FILES = []string{"agent.mjs", ...}
+  const go = JSON.parse(read('server/config.go').match(/var AGENT_FILES = \[\]string\{([^}]*)\}/)[1].replace(/^/, '[').replace(/$/, ']'))
+  assert.deepEqual(go, filesIn(AGENT))
 })
 
 test('every file an agent file imports is shipped', () => {

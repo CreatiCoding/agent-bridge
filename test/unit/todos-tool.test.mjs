@@ -1,27 +1,9 @@
 // 할 일 도구가 없는 세션 (REQ-F-778 rule 9): the page reopens a session whose Claude has no bridge todos tool before
-// asking it for its list. Whether it has one: the tools the agent started it with, or what its transcript showed.
+// asking it for its list. Whether it has one: the tools the agent started it with, or what its transcript showed
+// (the server's side, trackTodosTool, is tested in server/keystate_test.go).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-
-test('the transcript tells a session has the todos tool only when it was offered or called (AC-1354)', () => {
-  const src = fs.readFileSync(new URL('../../server/server.mjs', import.meta.url), 'utf8')
-  const body = src.match(/function trackTodosTool\(meta, line\) \{[\s\S]*?\n\}/)[0]
-  const trackTodosTool = new Function(`${body}; return trackTodosTool`)()
-  const seen = (...lines) => {
-    const meta = {}
-    for (const l of lines) trackTodosTool(meta, typeof l === 'string' ? l : JSON.stringify(l))
-    return !!meta.sawTodosTool
-  }
-  // The request "지금까지 한 일로 정리" names the tool: that is not the tool.
-  assert.equal(seen({ type: 'user', message: { content: '`mcp__bridge__todos` 도구가 있으면 그 도구로 보내고' } }), false)
-  assert.equal(seen({ type: 'attachment', attachment: { type: 'deferred_tools_delta', addedNames: ['mcp__bridge__hosts', 'mcp__bridge__delegate'] } }), false)
-  assert.equal(seen('not json mcp__bridge__todos'), false)
-  assert.equal(seen({ type: 'attachment', attachment: { type: 'deferred_tools_delta', addedNames: ['mcp__bridge__hosts', 'mcp__bridge__todos'] } }), true)
-  assert.equal(seen({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'mcp__bridge__todos', input: { todos: [] } }] } }), true)
-  assert.match(src, /function trackBackground\(meta, line\) \{\n  trackTodosTool\(meta, line\)/)
-  assert.match(src, /bridgeTools: Array\.isArray\(msg\.bridgeTools\)/)
-})
 
 test('the agent remembers the bridge tools a session started with and reports them (AC-1354)', () => {
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')

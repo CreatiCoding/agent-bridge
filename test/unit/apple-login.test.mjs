@@ -1,11 +1,9 @@
-// Apple로 로그인 (REQ-F-772): the identity token check on its own (signature, issuer, audience, expiry, nonce), the
-// client secret for Apple's token and revoke calls, and the whole sign-in against a real server.mjs with its own test
-// keys standing in for Apple's.
+// Apple로 로그인 (REQ-F-772): the whole sign-in against the real server with its own test keys standing in for
+// Apple's. The identity token check on its own and the client secret are tested in server/apple_test.go.
 import { test, before, after, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import { startServer } from './server-harness.mjs'
-import { AppleTokenError, appleClient, appleIds, isAppleLogin, sha256hex, verifyIdentityToken } from '../../server/apple.mjs'
 
 const AUD = 'dev.creco.bridge'
 const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
@@ -17,54 +15,8 @@ function token(claims = {}, { key = privateKey, head = { alg: 'RS256', kid: 'k1'
   const data = `${enc(head)}.${enc({ iss: 'https://appleid.apple.com', aud: AUD, sub: '001234.abcdef', iat: now, exp: now + 600, nonce: 'N', email: 'x@privaterelay.appleid.com', ...claims })}`
   return `${data}.${crypto.sign('RSA-SHA256', Buffer.from(data), key).toString('base64url')}`
 }
-const keyOf = async (kid) => (kid === 'k1' ? publicKey : null)
-const check = (t, nonce = 'N') => verifyIdentityToken(t, { audience: AUD, nonce, keyOf })
-
-describe('identity token', () => {
-  test('a good token gives its claims', async () => {
-    const c = await check(token())
-    assert.equal(c.sub, '001234.abcdef')
-  })
-  for (const [what, t, nonce] of [
-    ['another key’s signature', () => token({}, { key: other.privateKey })],
-    ['a changed payload', () => { const [h, , s] = token().split('.'); return `${h}.${enc({ iss: 'https://appleid.apple.com', aud: AUD, sub: 'someone-else', exp: 9e9, nonce: 'N' })}.${s}` }],
-    ['alg none', () => `${enc({ alg: 'none', kid: 'k1' })}.${enc({ iss: 'https://appleid.apple.com', aud: AUD, sub: 's', exp: 9e9, nonce: 'N' })}.`],
-    ['an unknown kid', () => token({}, { head: { alg: 'RS256', kid: 'k9' } })],
-    ['another issuer', () => token({ iss: 'https://evil.example' })],
-    ['another app', () => token({ aud: 'com.other.app' })],
-    ['an old token', () => token({ exp: Math.floor(Date.now() / 1000) - 5 })],
-    ['another nonce', () => token({ nonce: 'M' })],
-    ['no nonce', () => token({ nonce: undefined })],
-    ['not a JWT', () => 'abc'],
-  ]) {
-    test(`refused: ${what}`, async () => {
-      await assert.rejects(check(t(), nonce), AppleTokenError)
-    })
-  }
-})
-
-test('Apple names never look like a GitHub name', () => {
-  const { uid, login } = appleIds('001234.abcdef')
-  assert.match(uid, /^ap[0-9a-f]{24}$/)
-  assert.ok(isAppleLogin(login))
-  assert.ok(!/^[a-z0-9-]+$/.test(login))
-  assert.ok(!isAppleLogin('apple-0123456789'))
-})
-
-test('client secret is an ES256 JWT for Apple, and revoke sends the refresh token', async () => {
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' })
-  const sent = []
-  const c = appleClient({ teamId: 'TEAM', keyId: 'KEY', clientId: AUD, privateKey: ec.privateKey.export({ format: 'pem', type: 'pkcs8' }), post: async (url, f) => (sent.push({ url, f }), { ok: true, json: { refresh_token: 'R' } }) })
-  assert.equal(await c.refreshToken('CODE'), 'R')
-  assert.equal(await c.revoke('R'), true)
-  assert.equal(sent[1].url, 'https://appleid.apple.com/auth/revoke')
-  assert.deepEqual([sent[1].f.token, sent[1].f.token_type_hint, sent[1].f.client_id], ['R', 'refresh_token', AUD])
-  const [h, p, s] = sent[1].f.client_secret.split('.')
-  assert.deepEqual(JSON.parse(Buffer.from(h, 'base64url')), { alg: 'ES256', kid: 'KEY' })
-  assert.deepEqual((({ iss, aud, sub }) => ({ iss, aud, sub }))(JSON.parse(Buffer.from(p, 'base64url'))), { iss: 'TEAM', aud: 'https://appleid.apple.com', sub: AUD })
-  assert.ok(crypto.verify('sha256', Buffer.from(`${h}.${p}`), { key: ec.publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(s, 'base64url')))
-  assert.equal(appleClient({ teamId: '', keyId: 'KEY', clientId: AUD, privateKey: 'x' }), null)
-})
+/** This server's login for an Apple account (server/apple.go appleIds). */
+const appleLogin = (sub) => `apple_${crypto.createHash('sha256').update(`apple|${sub}`).digest('hex').slice(0, 10)}`
 
 describe('Apple로 로그인 against the server', () => {
   let srv
@@ -111,7 +63,7 @@ describe('Apple로 로그인 against the server', () => {
     const pageText = await r.text()
     assert.match(pageText, /승인을 기다리는 중/)
     assert.match(pageText, /Apple 계정 <b>홍길동<\/b>/)
-    const { login } = appleIds('001234.abcdef')
+    const login = appleLogin('001234.abcdef')
     const list = await srv.api('boss', '/api/admin/access')
     const row = list.json.entries.find((e) => e.login === login)
     assert.equal(row?.name, '홍길동')
@@ -138,7 +90,4 @@ describe('Apple로 로그인 against the server', () => {
     assert.match(srv.log(), /Apple 토큰 취소 건너뜀 \(APPLE_PRIVATE_KEY 없음\)/)
   })
 
-  test('the checks hold with the real hash of a nonce', () => {
-    assert.equal(sha256hex('a'), crypto.createHash('sha256').update('a').digest('hex'))
-  })
 })

@@ -1,4 +1,5 @@
-# The control page (ui/) is built first; the server and the agent need nothing but node.
+# The control page (ui/) is built with node; the server is one Go binary (standard library only). The image that
+# runs has no node: the agent's files (agent/*.mjs) are only served to the Macs, never run here.
 FROM node:22.23.4-alpine AS ui
 WORKDIR /ui
 RUN corepack enable
@@ -8,16 +9,31 @@ COPY ui ./
 COPY web/relay.js web/qr.js /web/
 RUN yarn build
 
-FROM node:22.23.4-alpine
-WORKDIR /app
-COPY package.json ./
+# gofmt, go vet and the tests must pass, or the image is not built.
+FROM golang:1.27.3-alpine AS server
+WORKDIR /src
 COPY server ./server
+COPY agent ./agent
+COPY web ./web
+COPY package.json ./
+WORKDIR /src/server
+RUN test -z "$(gofmt -l .)" || { echo "gofmt 가 고칠 파일:"; gofmt -l .; exit 1; }
+RUN go vet ./...
+RUN CGO_ENABLED=0 go test ./...
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bridge-server .
+
+FROM alpine:3.22
+WORKDIR /app
+RUN apk add --no-cache ca-certificates tzdata
+COPY package.json ./
+COPY server/quality.json ./server/quality.json
 COPY web ./web
 COPY agent ./agent
 COPY --from=ui /ui/dist ./ui/dist
-ENV PORT=4300 BRIDGE_DATA=/data NODE_ENV=production
+COPY --from=server /out/bridge-server ./bridge-server
+ENV PORT=4300 BRIDGE_DATA=/data
 VOLUME /data
 EXPOSE 4300
 # A deploy starts the new container before stopping the old one; it is sent traffic only once this passes.
-HEALTHCHECK --interval=3s --timeout=3s --start-period=30s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4300)+'/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
-CMD ["node", "server/server.mjs"]
+HEALTHCHECK --interval=3s --timeout=3s --start-period=30s --retries=3 CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-4300}/api/health" || exit 1
+CMD ["/app/bridge-server"]

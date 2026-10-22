@@ -1,5 +1,5 @@
-// 앱 알림 (REQ-F-774): the provider token, the request APNs gets, and the whole path against a real server.mjs with a
-// local HTTP/2 server standing in for Apple's: registering a device, sending a notice, dropping tokens APNs refuses,
+// 앱 알림 (REQ-F-774): the whole path against the real server with a local HTTP/2 server standing in for Apple's
+// (the provider token, the payload and the client's request are tested in server/apns_test.go): registering a device, sending a notice, dropping tokens APNs refuses,
 // the demo, no key, deleting the account, and the web push not saying the same thing twice.
 import { test, before, after, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,7 +9,6 @@ import http2 from 'node:http2'
 import path from 'node:path'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
-import { apnsClient, apnsJwt, apnsPayload, deadToken, deviceOf, webTargets } from '../../server/apns.mjs'
 
 const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' })
 const PEM = ec.privateKey.export({ format: 'pem', type: 'pkcs8' })
@@ -48,66 +47,6 @@ const deviceFiles = (data) => {
   return fs.readdirSync(u).map((id) => path.join(u, id, 'apns.json')).filter((f) => fs.existsSync(f))
 }
 const tokensIn = (data) => deviceFiles(data).flatMap((f) => JSON.parse(fs.readFileSync(f, 'utf8')).map((d) => d.token))
-
-test('provider token: ES256 JWT with kid, iss and iat, signed by the key', () => {
-  const now = Date.UTC(2026, 9, 18, 4, 0, 0)
-  const [h, p, s] = apnsJwt({ teamId: 'TEAM123456', keyId: 'KEY1234567', key: ec.privateKey, now }).split('.')
-  assert.deepEqual(json64(h), { alg: 'ES256', kid: 'KEY1234567' })
-  assert.deepEqual(json64(p), { iss: 'TEAM123456', iat: now / 1000 })
-  assert.equal(Buffer.from(s, 'base64url').length, 64)
-  assert.ok(crypto.verify('sha256', Buffer.from(`${h}.${p}`), { key: ec.publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(s, 'base64url')))
-})
-
-test('no client without every part of the key', () => {
-  assert.equal(apnsClient({ teamId: 'T', keyId: '', privateKey: PEM, topic: 'dev.creco.bridge' }), null)
-  assert.equal(apnsClient({ teamId: '', keyId: 'K', privateKey: PEM, topic: 'dev.creco.bridge' }), null)
-  assert.equal(apnsClient({ teamId: 'T', keyId: 'K', privateKey: '', topic: 'dev.creco.bridge' }), null)
-})
-
-test('which answers drop a token', () => {
-  assert.ok(deadToken(410, 'Unregistered'))
-  assert.ok(deadToken(400, 'BadDeviceToken'))
-  assert.ok(!deadToken(400, 'BadCollapseId'))
-  assert.ok(!deadToken(403, 'InvalidProviderToken'))
-  assert.ok(!deadToken(200, ''))
-})
-
-test('payload: the notice on the lock screen, and the session to open', () => {
-  assert.deepEqual(apnsPayload({ sid: 'abcdef12', title: '세션', text: '권한 대기' }), { aps: { alert: { title: '세션', body: '권한 대기' }, sound: 'default', 'thread-id': 'abcdef12' }, sid: 'abcdef12' })
-  assert.equal(apnsPayload({ title: 'x'.repeat(500), text: 'y'.repeat(500) }).aps.alert.body.length, 200)
-})
-
-test('web push leaves out the phone that has the app, keeps computers and old subscriptions', () => {
-  assert.equal(deviceOf('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari'), 'iphone')
-  assert.equal(deviceOf('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)'), 'ipad')
-  assert.equal(deviceOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome'), '')
-  const subs = [{ endpoint: 'a', dev: 'iphone' }, { endpoint: 'b' }, { endpoint: 'c', dev: 'ipad' }]
-  assert.deepEqual(webTargets(subs, [{ token: OK, dev: 'iphone' }]).map((s) => s.endpoint), ['b', 'c'])
-  assert.deepEqual(webTargets(subs, []).map((s) => s.endpoint), ['a', 'b', 'c'])
-})
-
-test('client: path and headers APNs expects, production and sandbox each to their own address', async () => {
-  const prod = await fakeApns()
-  const sand = await fakeApns()
-  const c = apnsClient({ teamId: 'TEAM', keyId: 'KID', privateKey: PEM, topic: 'dev.creco.bridge', origins: { production: prod.origin, sandbox: sand.origin } })
-  try {
-    assert.deepEqual(await c.send({ token: OK, env: 'production', payload: apnsPayload({ sid: 'sess-0001', title: 't', text: 'x' }), collapseId: 'sess-0001' }), { status: 200, reason: '' })
-    assert.deepEqual(await c.send({ token: DEAD, env: 'sandbox', payload: apnsPayload({}) }), { status: 410, reason: 'Unregistered' })
-    const h = prod.seen[0].headers
-    assert.equal(h[':method'], 'POST')
-    assert.equal(h[':path'], `/3/device/${OK}`)
-    assert.equal(h['apns-topic'], 'dev.creco.bridge')
-    assert.equal(h['apns-push-type'], 'alert')
-    assert.equal(h['apns-collapse-id'], 'sess-0001')
-    const [head, claims] = h.authorization.replace(/^bearer /, '').split('.')
-    assert.deepEqual([json64(head).kid, json64(claims).iss], ['KID', 'TEAM'])
-    assert.equal(sand.seen.length, 1)
-  } finally {
-    c.close()
-    await prod.close()
-    await sand.close()
-  }
-})
 
 describe('앱 알림 against the server', () => {
   let srv, apns

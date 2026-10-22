@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
-import { lineToEvents } from '../../server/events.mjs'
 
 test('영상: 같은 출처·영상 형식만 받고, 메시지에 실려 맥으로 가며, 연동 탭이 받아 간다 (1.201)', async () => {
   const s = await startServer()
@@ -44,9 +43,4 @@ test('영상: 같은 출처·영상 형식만 받고, 메시지에 실려 맥으
     await s.stop()
   }
 })
-
-test('영상: 맥에서 돌아온 메시지의 영상 줄은 "🎬 이름" 으로 보인다 (1.201)', () => {
-  const text = '봐 줘\n[Video attached: /Users/x/.claude-bridge/images/0123abcd-화면 녹화.mov] (영상은 바로 볼 수 없어요. 필요하면 ffmpeg 로 장면을 뽑아 보세요)'
-  const ev = lineToEvents(JSON.stringify({ type: 'user', message: { role: 'user', content: text } }), {})
-  assert.equal(ev.find((e) => e.k === 'user').text, '봐 줘\n🎬 화면 녹화.mov')
-})
+// The video line from the Mac ("🎬 이름") is checked in server/events_test.go.

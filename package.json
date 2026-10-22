@@ -9,8 +9,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node server/server.mjs",
+    "start": "cd server && go build -o bridge-server . && ./bridge-server",
     "agent": "node agent/agent.mjs",
-    "test": "node --test test/unit/*.test.mjs"
+    "test": "node --test test/unit/*.test.mjs && cd server && test -z \"$(gofmt -l .)\" && go vet ./... && go test ./..."
   }
 }

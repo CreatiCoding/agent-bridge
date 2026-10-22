@@ -247,7 +247,7 @@ node scripts/sign-agent.mjs          # agent/ 를 고칠 때마다 서명해 age
 ## 개발
 
 ```sh
-PORT=4399 BRIDGE_DEV_LOGIN=1 GITHUB_ALLOWED_LOGINS=tester node server/server.mjs   # /api/auth/dev?login=tester 로 로그인
+(cd server && go build -o bridge-server .) && PORT=4399 BRIDGE_DEV_LOGIN=1 GITHUB_ALLOWED_LOGINS=tester ./server/bridge-server   # Go 1.27, /api/auth/dev?login=tester 로 로그인
 CLAUDE_BRIDGE_HOME=/tmp/agentA node agent/agent.mjs http://localhost:4399 --port 4398 --name MacA
 ```
 

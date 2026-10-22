@@ -2,7 +2,7 @@
 
 호스트(macOS)의 Claude Code 세션을 웹에서 다루는 셀프호스팅 시스템이다.
 
-- `server/`: 서버(Node, 의존성 없음)
+- `server/`: 서버(Go, 표준 라이브러리만, 의존성 없음)
 - `agent/`: 호스트 에이전트(Node, 의존성 없음)
 - `web/`: 연동 페이지(`/bridge`)와 예전 화면
 - `ui/`: 조작 페이지(React + Vite, yarn)

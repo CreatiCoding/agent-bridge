@@ -1,5 +1,6 @@
 // A browser of this Mac that was closed while the agent key changed comes back with the retired key. The agent knows
 // that key by its print only, never hands it the new key, and opens the link page in that same browser instead.
+// What the server passes on of the key state (AC-1333) is tested in server/keystate_test.go.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -36,20 +37,6 @@ test('agent.mjs reopens the link page only for a retired key, and keeps the old 
   assert.match(src, /if \(key && \(config\.retiredKeys \?\? \[\]\)\.includes\(keyPrint\(key\)\)\) reopenLink\(req\.headers\['user-agent'\]\)\n\s*return res\.writeHead\(401/)
   assert.match(src, /config\.retiredKeys = retireKey\(config\.retiredKeys, config\.key\)/)
   assert.match(src, /if \(config\.oldKey\?\.key && /)
-})
-
-test('the server passes on only the known key-state fields: no key or key print gets through (AC-1333)', () => {
-  const src = fs.readFileSync(new URL('../../server/server.mjs', import.meta.url), 'utf8')
-  const body = src.match(/function cleanKeyState\(k\) \{[\s\S]*?\n\}/)[0]
-  const cleanKeyState = new Function(`${body}; return cleanKeyState`)()
-  const now = Date.now()
-  const out = cleanKeyState({ gen: 2, latest: 2, at: now, oldUntil: null, retired: 1, linked: 'current', stale: { at: now, app: 'com.google.Chrome', key: 'K' }, reopen: { at: now, app: 'com.google.Chrome', ok: true }, key: 'SECRET', print: 'abc' })
-  assert.deepEqual(out, { gen: 2, latest: 2, at: now, oldUntil: null, retired: 1, linked: 'current', stale: { at: now, app: 'com.google.Chrome' }, reopen: { at: now, app: 'com.google.Chrome', ok: true } })
-  assert.equal(cleanKeyState(null), null)
-  assert.equal(cleanKeyState({ linked: 'x', stale: { at: 'no' }, reopen: { at: now, app: '<script>' } }).linked, null)
-  assert.equal(cleanKeyState({ stale: { at: 'no' } }).stale, null)
-  assert.equal(cleanKeyState({ reopen: { at: now, app: '<script>' } }).reopen.app, null)
-  assert.match(src, /key: cleanKeyState\(st\.health\?\.keyState\)/)
 })
 
 test('agent.mjs reports the key state in health without the key itself', () => {

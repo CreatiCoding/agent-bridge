@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.309',
+    date: '2026-10-23',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '서버를 Node 에서 Go 로 다시 작성: 표준 라이브러리만 쓰는 바이너리 하나. 경로·메시지·쿠키·플러그인 API·데이터 파일 형식·환경 변수·포트·오류 문구는 그대로이고, 실행 이미지에 node 가 없음(HEALTHCHECK 는 wget). JSON 키 순서와 압축(gzip 만)만 달라짐', refs: ['REQ-M-016', 'CON-014', 'CON-015'] },
+    ],
+  },
+  {
     version: '1.308',
+    commit: '577c7f6',
     date: '2026-10-21',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '답을 쓰는 동안 미리보기에서 코드블록 줄이 한 줄로 합쳐지던 것(`return a + b; }`): 화면 폭 때문에 접힌 줄만 잇도록 폭 검사를 바로잡고, Claude Code 가 코드에 쓰는 색(문법 강조 16색, 언어 없는 블록은 줄 전체 코드 색)으로 코드블록을 알아봐 잇지 않고 들여쓰기 그대로 코드로 보임', refs: ['REQ-F-036'] },
