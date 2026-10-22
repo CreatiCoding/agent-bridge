@@ -27,6 +27,8 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 COPY package.json ./
 COPY server/quality.json ./server/quality.json
+# /skills/version 의 code 는 server/skills.go 의 내용까지 해시한다(codeHash). 바이너리만 두면 빈 값으로 계산된다.
+COPY server/skills.go ./server/skills.go
 COPY web ./web
 COPY agent ./agent
 COPY --from=ui /ui/dist ./ui/dist
