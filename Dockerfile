@@ -1,5 +1,5 @@
 # The control page (ui/) is built first; the server and the agent need nothing but node.
-FROM node:22-alpine AS ui
+FROM node:22.23.4-alpine AS ui
 WORKDIR /ui
 RUN corepack enable
 COPY ui/package.json ui/yarn.lock ui/.yarnrc.yml ./
@@ -8,7 +8,7 @@ COPY ui ./
 COPY web/relay.js web/qr.js /web/
 RUN yarn build
 
-FROM node:22-alpine
+FROM node:22.23.4-alpine
 WORKDIR /app
 COPY package.json ./
 COPY server ./server
