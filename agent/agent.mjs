@@ -311,7 +311,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -642,11 +642,12 @@ function autoAllowAnswer(sid, ev) {
   const tool = { name: ev.tool_name, input: ev.tool_input ?? {} }
   // Still asked, as a card, even in 전부 허용 (REQ-F-759). The dialog this leaves to be drawn must not be pressed
   // by the screen reader below either, which may not know which call it is about.
-  const risk = riskyCall(tool, { cwd: s.cwd, home: os.homedir() })
+  // 전부 허용 that asks nothing (allowAll, REQ-F-796): no risky call is held back either.
+  const risk = s.allowAll ? null : riskyCall(tool, { cwd: s.cwd, home: os.homedir() })
   s.guarded = risk ? { reason: risk, at: Date.now() } : null
   if (risk) {
-    log('info', 'dialog', `전부 허용이지만 ${risk} 라 물어봄: ${ev.tool_name}`, sid)
-    note(sid, `⚠️ *전부 허용*이지만 ${risk}라서 물어봐요.`, 'warn')
+    log('info', 'dialog', `안전한 전부 허용이라 ${risk} 는 물어봄: ${ev.tool_name}`, sid)
+    note(sid, `⚠️ *안전한 전부 허용*이라 ${risk}는 물어봐요.`, 'warn')
     return null
   }
   emit({ t: 'card', sid, card: { id: crypto.randomUUID(), kind: 'permission', open: false, auto: true, at: Date.now(), title: `${ev.tool_name} 권한 요청`, tool, result: '자동 허용' } })
@@ -1017,6 +1018,7 @@ function publish(sid, s) {
     effort: s.effort ?? null,
     context: s.context ?? null,
     autoAllow: !!s.autoAllow,
+    allowAll: !!(s.autoAllow && s.allowAll),
     model: s.model ?? null,
     refreshAfter: !!s.refreshAfter,
     bridgeTools: s.bridgeTools ?? null,
@@ -1350,8 +1352,8 @@ async function surfaceDialog(sid, s, screen) {
   // Just answered and not yet redrawn: not a new question.
   if (s.answered?.sig === sig && Date.now() - s.answered.at < 3000) return true
   const guarded = s.guarded && Date.now() - s.guarded.at < 120_000 ? s.guarded.reason : null
-  const risk = s.autoAllow && proceed ? guarded ?? (tool ? riskyCall(tool, { cwd: s.cwd, home: os.homedir() }) : null) : null
-  if (risk && !guarded) note(sid, `⚠️ *전부 허용*이지만 ${risk}라서 물어봐요.`, 'warn')
+  const risk = s.autoAllow && !s.allowAll && proceed ? guarded ?? (tool ? riskyCall(tool, { cwd: s.cwd, home: os.homedir() }) : null) : null
+  if (risk && !guarded) note(sid, `⚠️ *안전한 전부 허용*이라 ${risk}는 물어봐요.`, 'warn')
   if (s.autoAllow && proceed && !risk) {
     // 전부 허용: the widest allow that ends with the session, never one that is written into the settings.
     const r = await driver.answerProceed(pane(s), 'auto')
@@ -1699,6 +1701,7 @@ async function watch(sid, s) {
       if ((await cycleToMode(s, 'default')) === 'default') note(sid, `🔁 전부 허용인데 터미널이 ${moved} 모드여서 manual 로 되돌렸습니다.`)
       else {
         s.autoAllow = false
+        s.allowAll = false
         saveSessions()
         note(sid, `⚠️ 터미널이 ${moved} 모드라 전부 허용을 껐습니다.`, 'warn')
       }
@@ -2221,7 +2224,7 @@ const commands = {
     }
   },
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
-  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, model, effort, mode, sysPrompt, chrome, mdFile, account }) {
+  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account }) {
     try {
       // Ids go into file names (the transcript): no path in them (R1-L7).
       if (!safeConvId(sid) || (conv && !safeConvId(conv))) throw new Error('세션 id 가 올바르지 않아요')
@@ -2249,7 +2252,7 @@ const commands = {
       if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
       if (account && accountAuth.get(account)?.loggedIn === false) throw new Error('그 Claude 계정은 로그인돼 있지 않아요. 설정 → Claude 계정에서 먼저 로그인해 주세요')
       if (old) await tmux('kill-session', '-t', `=${old.tmux}`)
-      const s = { cwd: dir, autoPush: autoPush !== false, autoAllow: !!autoAllow, conv: conv || sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(chrome === false ? { chrome: false } : {}), ...(isMdName(mdFile) ? { mdFile } : {}), ...(account ? { account } : {}) }
+      const s = { cwd: dir, autoPush: autoPush !== false, autoAllow: !!autoAllow, ...(autoAllow && allowAll === true ? { allowAll: true } : {}), conv: conv || sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(chrome === false ? { chrome: false } : {}), ...(isMdName(mdFile) ? { mdFile } : {}), ...(account ? { account } : {}) }
       // Moving to another account on this Mac: what Claude Code keeps beside the transcript goes along.
       if (old && (old.account ?? '') !== (account ?? '') && accountDir(old.account ?? '')) {
         const copied = copySessionState(s.conv, accountDir(old.account ?? ''), accountDir(account ?? ''))
@@ -2383,7 +2386,7 @@ const commands = {
     const folder = s ? await syncFolder(sid, s) : null
     emit({ t: 'flushed', reqId, sid, ok: !!s, ...(folder ? { folder } : {}) })
   },
-  async set({ sid, autoPush, autoAllow }) {
+  async set({ sid, autoPush, autoAllow, allowAll }) {
     const s = sessions.get(sid)
     if (!s) return
     if (typeof autoPush === 'boolean') Object.assign(s, { autoPush, folderAt: 0 })
@@ -2397,9 +2400,12 @@ const commands = {
       }
     }
     if (typeof autoAllow === 'boolean') {
+      // allowAll (REQ-F-796) rides on autoAllow: a server that does not say it turns on the safe one.
+      const all = autoAllow && allowAll === true
       s.autoAllow = autoAllow
-      log('info', 'session', `auto-allow ${autoAllow ? 'on' : 'off'}`, sid)
-      note(sid, autoAllow ? '⚡ *전부 허용* 켬 · 권한 요청을 에이전트가 바로 허용하고, 허용한 내용은 여기에 남깁니다.' : '🔐 *전부 허용* 끔 · 권한 요청을 다시 버튼으로 묻습니다.')
+      s.allowAll = all
+      log('info', 'session', `auto-allow ${autoAllow ? (all ? 'all' : 'on') : 'off'}`, sid)
+      note(sid, !autoAllow ? '🔐 *전부 허용* 끔 · 권한 요청을 다시 버튼으로 묻습니다.' : all ? '🔴 *전부 허용* 켬 · 위험한 호출(폴더 밖 삭제·강제 push·sudo·비밀 파일)까지 묻지 않고 바로 허용하고, 허용한 내용은 여기에 남깁니다.' : '⚡ *안전한 전부 허용* 켬 · 권한 요청을 에이전트가 바로 허용하되 위험한 호출은 묻고, 허용한 내용은 여기에 남깁니다.')
       // Whatever is already asking is answered by the next look at the screen.
       if (autoAllow && s.card?.open && s.card.kind === 'permission') (foldCard(sid, s, '전부 허용으로 넘김'), (s.answered = null))
     }

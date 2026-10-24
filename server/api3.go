@@ -701,9 +701,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			}
 			refuse(502, orStr(r["error"], "가벼운 복제를 하지 못했습니다"))
 		}
-		if launchAutoAllow(uid) {
-			turnOnAutoAllow(cp)
-		}
+		inheritAllow(cp, meta, uid)
 		touch(cp)
 		besideInGroup(uid, meta.id(), sid)
 		savePrefs(uid)
@@ -759,9 +757,12 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoPush": v})
 		}
 		if v, ok := b["autoAllow"].(bool); ok {
+			// allowAll (REQ-F-796) rides on autoAllow: on only with it, and an autoAllow that does not say is the safe one.
+			all := v && b["allowAll"] == true
 			for _, s := range append([]*Sess{meta}, delegatesOf(meta)...) {
 				s.set("autoAllow", v)
-				toHost(s.host(), M{"t": "set", "sid": s.id(), "autoAllow": v})
+				s.set("allowAll", all)
+				toHost(s.host(), M{"t": "set", "sid": s.id(), "autoAllow": v, "allowAll": all})
 				if s != meta {
 					touch(s)
 				}
@@ -1029,9 +1030,7 @@ func forkOp(res *Res, uid string, meta *Sess) {
 		broadcastState(uid)
 		refuse(502, orStr(r["error"], "세션을 복제하지 못했습니다"))
 	}
-	if launchAutoAllow(uid) {
-		turnOnAutoAllow(cp)
-	}
+	inheritAllow(cp, meta, uid)
 	touch(cp)
 	toHost(hostID, M{"t": "report", "sid": sid})
 	jsonRes(res, 200, M{"ok": true, "id": sid})

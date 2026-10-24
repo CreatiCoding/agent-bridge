@@ -56,6 +56,8 @@ export interface SessionState {
   effort: string | null
   context: string | null
   autoAllow: boolean
+  /** 전부 허용 that asks nothing, risky calls included (REQ-F-796); off means 안전한 전부 허용 while autoAllow is on. */
+  allowAll?: boolean
   refreshAfter?: boolean
   /** The bridge MCP tools the session's process started with (null: an agent before 1.245 did not say). */
   bridgeTools?: string[] | null
@@ -114,6 +116,7 @@ export interface Session {
   syncedAt: number | null
   autoPush: boolean
   autoAllow: boolean
+  allowAll?: boolean
   folder: { repos?: Repo[]; files?: string[] } | null
   closed: boolean
   resting?: boolean

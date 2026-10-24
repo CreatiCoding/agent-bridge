@@ -3842,6 +3842,25 @@ body.group-sorting * {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--line-strong);
 }
+/* 전부 허용 that asks nothing (REQ-F-796): a red ring round whatever the dot says, a red disc when it says nothing. */
+.srow-dot-allow-all {
+  outline: 1.5px solid var(--red);
+  outline-offset: 1.5px;
+}
+.srow-dot-allow-all.srow-dot-none {
+  background: var(--red);
+  box-shadow: none;
+}
+.allow-all-text {
+  color: var(--red);
+}
+.input-allow-all {
+  color: var(--red);
+  border-color: var(--red);
+}
+.opt-allow-all {
+  color: var(--red);
+}
 /* Put to rest (휴면): a pause mark where the dot goes, in the dot's 8 px slot, "휴면" where the time goes, and the
    row's contents at half strength (the open one stays readable). Not the row itself: on a phone the swipe buttons
    sit under it and would show through. */

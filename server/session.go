@@ -167,9 +167,8 @@ func startSession(uid string, b M, req *Req) string {
 	if truthy(b["model"]) {
 		meta.set("launchModel", jsSliceTo(jsString(b["model"]), 60))
 	}
-	_ = autoAllow
-	if _, aa := startMode(orStr(b["mode"])); aa {
-		turnOnAutoAllow(meta)
+	if autoAllow {
+		turnOnAutoAllow(meta, jsSliceTo(orStr(b["mode"]), 20) == "allowAll")
 	}
 	touch(meta)
 	// Anything it said before this point may have been said to nobody: have it say where it stands.
@@ -375,7 +374,7 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 		cwd = newCwdS
 		home = nil
 	}
-	open := M{"t": "open", "sysPrompt": sysPromptOf(meta.uid()), "sid": meta.id(), "conv": conv, "cwd": cwd, "home": home, "folder": folder, "autoPush": meta.get("autoPush"), "autoAllow": meta.get("autoAllow"), "model": orStr(meta.get("launchModel")), "effort": orStr(st["effort"]), "mode": orStr(st["mode"])}
+	open := M{"t": "open", "sysPrompt": sysPromptOf(meta.uid()), "sid": meta.id(), "conv": conv, "cwd": cwd, "home": home, "folder": folder, "autoPush": meta.get("autoPush"), "autoAllow": meta.get("autoAllow"), "allowAll": truthy(meta.get("autoAllow")) && truthy(meta.get("allowAll")), "model": orStr(meta.get("launchModel")), "effort": orStr(st["effort"]), "mode": orStr(st["mode"])}
 	if home == nil {
 		delete(open, "home")
 	}

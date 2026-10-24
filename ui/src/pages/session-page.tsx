@@ -876,9 +876,10 @@ export function SessionPage({ id }: { id: string }) {
                   Slack 에서 작업 중
                 </Chip>
               ) : null}
+              {/* 전부 허용 that asks nothing is red (REQ-F-796); the safe one keeps the warning colour. */}
               {s.state.autoAllow ? (
-                <Chip icon="shield" tone="warn" onClick={() => act(() => sessionPost(s, 'settings', { autoAllow: false }), '전부 허용을 껐어요')} title="눌러서 끄기">
-                  전부 허용 중
+                <Chip icon="shield" tone={s.state.allowAll ? 'bad' : 'warn'} onClick={() => act(() => sessionPost(s, 'settings', { autoAllow: false }), '전부 허용을 껐어요')} title="눌러서 끄기">
+                  {s.state.allowAll ? '전부 허용 중' : '안전한 전부 허용'}
                 </Chip>
               ) : null}
               {s.state.refreshAfter ? (

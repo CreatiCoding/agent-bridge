@@ -196,11 +196,20 @@ function LaunchDefaults({ opts, initial }: { opts: Options | null; initial: Laun
           ))}
         </select>
       </Field>
-      <Field label="권한 모드" hint={v.mode === 'autoAllow' ? '⚠️ 모든 새 세션과 복제가 확인 없이 명령을 실행해요. 시작할 때마다 한 번 더 물어요.' : undefined}>
-        <select className="input" value={v.mode} onChange={(e) => setV({ ...v, mode: e.target.value })}>
+      <Field
+        label="권한 모드"
+        hint={
+          v.mode === 'allowAll' ? (
+            <span className="allow-all-text">🔴 모든 새 세션과 복제가 위험한 호출까지 하나도 묻지 않고 실행해요. 시작할 때마다 한 번 더 물어요.</span>
+          ) : v.mode === 'autoAllow' ? (
+            '⚠️ 모든 새 세션과 복제가 확인 없이 명령을 실행해요(위험한 호출만 물어요). 시작할 때마다 한 번 더 물어요.'
+          ) : undefined
+        }
+      >
+        <select className={`input${v.mode === 'allowAll' ? ' input-allow-all' : ''}`} value={v.mode} onChange={(e) => setV({ ...v, mode: e.target.value })}>
           <option value="">지정 안 함</option>
           {opts.modes.map((m) => (
-            <option key={m.value} value={m.value}>
+            <option key={m.value} value={m.value} className={m.value === 'allowAll' ? 'opt-allow-all' : undefined}>
               {m.label}
             </option>
           ))}

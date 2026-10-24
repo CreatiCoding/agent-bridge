@@ -767,6 +767,9 @@ func toCsSession(meta M, at M) M {
 	out["held"] = float64(len(asArr(st["held"])))
 	out["canKeys"] = reachable
 	out["autoAllow"] = truthy(st["autoAllow"]) || truthy(meta["autoAllow"])
+	if out["autoAllow"] == true && (truthy(st["allowAll"]) || truthy(meta["allowAll"])) {
+		out["allowAll"] = true
+	}
 	if truthy(st["refreshAfter"]) {
 		out["refreshAfter"] = true
 	}

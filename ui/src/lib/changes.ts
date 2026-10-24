@@ -26,8 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.312',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server', 'agent'], text: '권한 모드에 빨간 "전부 허용"을 더함: 위험한 호출(폴더 밖 삭제·강제 push·sudo·비밀 파일)까지 묻지 않고 바로 허용. 세션 칩·선택칸·목록의 점이 빨갛게 보임', refs: ['REQ-F-796'] },
+      { kind: 'changed', scope: ['ui', 'server', 'agent'], text: '지금까지의 전부 허용은 "안전한 전부 허용"으로 이름을 바꿈(위험한 호출만 물음). 복제·가벼운 복제는 원래 세션의 전부 허용을 그대로 잇고, 맡긴 세션·맥 옮기기도 같은 정책으로', refs: ['REQ-F-796', 'REQ-F-760'] },
+    ],
+  },
+  {
     version: '1.311',
     date: '2026-10-25',
+    commit: 'abe1f06',
     changes: [
       { kind: 'changed', scope: ['server'], text: '권한 허용이 필요하면 푸시 알림에 어느 세션(제목)·어느 맥·무슨 호출(예: Bash: git push origin main)인지 담아 보내고, 조작 페이지가 다른 기기에서 앞에 떠 있어도 보냄. 5·10분 다시 알리기도 같은 형식', refs: ['REQ-F-795', 'REQ-F-482', 'REQ-F-483', 'REQ-F-517'] },
       { kind: 'removed', scope: ['server'], text: '백그라운드 작업이 끝났을 때의 푸시 알림: 알림 목록에만 남김', refs: ['REQ-F-519'] },

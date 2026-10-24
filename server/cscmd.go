@@ -151,7 +151,10 @@ func csCommand(uid string, value any, opts csOptsCmd) string {
 		return "휴면을 풀었어요"
 	case cmd == "mode" && arg == "autoAllow":
 		op("settings", M{"autoAllow": true})
-		return "전부 허용을 켰어요"
+		return "안전한 전부 허용을 켰어요"
+	case cmd == "mode" && arg == "allowAll":
+		op("settings", M{"autoAllow": true, "allowAll": true})
+		return "전부 허용을 켰어요 · 위험한 호출도 묻지 않아요"
 	case cmd == "model" || cmd == "effort" || cmd == "mode":
 		if cmd == "mode" && (truthy(st["autoAllow"]) || truthy(meta.get("autoAllow"))) {
 			op("settings", M{"autoAllow": false})

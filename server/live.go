@@ -434,7 +434,7 @@ func labeled(pairs [][2]string) []any {
 var CS_OPTIONS = M{
 	"models":  labeled([][2]string{{"Fable 5.1 (1M)", "claude-fable-5-1[1m]"}, {"Fable 5.1", "claude-fable-5-1"}, {"Opus 5.5 (1M)", "claude-opus-5-5[1m]"}, {"Opus 5.5", "claude-opus-5-5"}, {"Sonnet 5.5", "claude-sonnet-5-5"}, {"Haiku 5.5", "claude-haiku-5-5"}, {"Opus 5", "claude-opus-5"}, {"Sonnet 5", "claude-sonnet-5"}, {"Haiku 4.5", "claude-haiku-4-5-20251001"}, {"Opus plan / Sonnet work", "opusplan"}, {"Default", "default"}}),
 	"efforts": []any{"low", "medium", "high", "xhigh", "max"},
-	"modes":   labeled([][2]string{{"manual · 편집·명령마다 물어봄", "default"}, {"acceptEdits · 파일 편집은 자동 승인", "acceptEdits"}, {"plan · 계획만 세우고 실행 안 함", "plan"}, {"auto · 거의 모두 자동 승인", "auto"}, {"전부 허용", "autoAllow"}}),
+	"modes":   labeled([][2]string{{"manual · 편집·명령마다 물어봄", "default"}, {"acceptEdits · 파일 편집은 자동 승인", "acceptEdits"}, {"plan · 계획만 세우고 실행 안 함", "plan"}, {"auto · 거의 모두 자동 승인", "auto"}, {"안전한 전부 허용 · 위험한 호출만 물어봄", "autoAllow"}, {"🔴 전부 허용 · 하나도 묻지 않음", "allowAll"}}),
 }
 
 // The model list the new-session page offers: CS_OPTIONS.models, then Claude Code's own catalog while `auto` is on.

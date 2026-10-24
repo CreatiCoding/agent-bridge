@@ -107,7 +107,8 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
           <Icon name="pause" />
         </span>
       ) : (
-        <span className={`dot srow-dot dot-${l.tone}${l.pulse ? ' pulse' : ''}${quiet ? ' srow-dot-none' : ''}`} aria-hidden />
+        // 전부 허용 that asks nothing (REQ-F-796): a red ring round the dot, whatever the dot says the session is doing.
+        <span className={`dot srow-dot dot-${l.tone}${l.pulse ? ' pulse' : ''}${quiet ? ' srow-dot-none' : ''}${s.state.autoAllow && s.state.allowAll ? ' srow-dot-allow-all' : ''}`} aria-hidden title={s.state.autoAllow && s.state.allowAll ? '전부 허용 중' : undefined} />
       )}
       <span className="srow-main">
         {/* One line: the title, what needs the person (a badge), and when it last moved. No preview of the

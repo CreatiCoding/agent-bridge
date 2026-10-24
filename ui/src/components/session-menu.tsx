@@ -312,7 +312,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       icon: 'fork',
       hint: '같은 대화에서 갈라진 새 세션',
       disabled: !alive,
-      onSelect: async () => (await confirmCopyMode()) && act(() => sessionPost<{ ok: true; id: string }>(s, 'fork'), '복제한 세션을 띄웠어요').then((r) => r && go({ name: 'session', id: r.id })),
+      onSelect: async () => (await confirmCopyMode(s)) && act(() => sessionPost<{ ok: true; id: string }>(s, 'fork'), '복제한 세션을 띄웠어요').then((r) => r && go({ name: 'session', id: r.id })),
     },
     {
       label: '가벼운 복제',
@@ -363,7 +363,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
 
 /** 가벼운 복제 (REQ-F-402): a new session that picks up from SESSION.md. */
 export async function lightCopy(s: Session) {
-  return (await confirmCopyMode()) && act(() => command(s, 'lightfork'))
+  return (await confirmCopyMode(s)) && act(() => command(s, 'lightfork'))
 }
 
 /**

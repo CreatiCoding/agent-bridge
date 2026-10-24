@@ -12,6 +12,7 @@ import type { CacheUsage, Options, Session, Todo } from '../lib/types'
 import { Button, Chip, Collapse, Field, Help, Icon, IconButton, Segmented, Spinner, Switch } from '../kit'
 import { openMenu, Sheet, toast, type MenuEntry } from '../kit/overlay'
 import { act, command, sessionPost } from './session-menu'
+import { AllowHint, confirmAllowAll } from './auto-allow-confirm'
 
 /** How a to-do's state reads at a glance (REQ-F-778). */
 const TODO_MARK: Record<string, string> = { completed: 'todoDone', in_progress: 'todoNow', pending: 'todo' }
@@ -355,13 +356,19 @@ export function Gauges({ s, onOpenMd, onOpenCache, fold }: { s: Session; onOpenM
 let options: Promise<Options> | null = null
 const getOptions = () => (options ??= get<Options>('/api/options').catch((e) => ((options = null), Promise.reject(e))))
 
+/** 권한 모드 from the session's settings: 전부 허용 that asks nothing is asked about first (REQ-F-796). */
+async function setMode(s: Session, mode: string) {
+  if (mode === 'allowAll' && !(await confirmAllowAll(false))) return
+  await act(() => command(s, 'mode', mode), '권한 모드를 바꿨어요')
+}
+
 export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean; onClose: () => void }) {
   const [opts, setOpts] = useState<Options | null>(null)
   useEffect(() => {
     if (open) getOptions().then(setOpts, () => {})
   }, [open])
   const model = s.launchModel || s.model
-  const mode = s.state.autoAllow ? 'autoAllow' : (s.state.mode ?? 'default')
+  const mode = s.state.autoAllow ? (s.state.allowAll ? 'allowAll' : 'autoAllow') : (s.state.mode ?? 'default')
   return (
     <Sheet open={open} onClose={onClose} title="세션 설정">
       {!opts ? (
@@ -381,10 +388,10 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
           <Field label="생각 수준 (effort)">
             <Segmented label="effort" value={s.state.effort ?? ''} options={opts.efforts.map((e) => ({ value: e, label: e }))} onChange={(v) => act(() => command(s, 'effort', v), `effort ${v}`)} />
           </Field>
-          <Field label="권한 모드" hint="전부 허용: 권한 요청을 에이전트가 바로 허용하고 대화에 남겨요. 설정에 남는 '다시 묻지 않기' 는 누르지 않아요">
-            <select className="input" value={mode} onChange={(e) => act(() => command(s, 'mode', e.target.value), '권한 모드를 바꿨어요')}>
+          <Field label="권한 모드" hint={<AllowHint mode={mode} />}>
+            <select className={`input${mode === 'allowAll' ? ' input-allow-all' : ''}`} value={mode} onChange={(e) => void setMode(s, e.target.value)}>
               {opts.modes.map((m) => (
-                <option key={m.value} value={m.value}>
+                <option key={m.value} value={m.value} className={m.value === 'allowAll' ? 'opt-allow-all' : undefined}>
                   {m.label}
                 </option>
               ))}

@@ -246,9 +246,9 @@ func runDelegate(uid, hostID string, msg M) any {
 			}
 			cwd = defaultFolder(L["folderBase"], L["folderNoGroup"], group)
 		}
-		mode := "default"
-		if truthy(parent.get("autoAllow")) {
-			mode = "autoAllow"
+		mode := allowModeOf(parent)
+		if mode == "" {
+			mode = "default"
 		}
 		sid := startSession(uid, M{"hostId": target, "cwd": cwd, "create": given == "", "prompt": task, "title": "↪ " + jsSliceTo(collapse(task), 70), "mode": mode, "via": "delegate", "group": namedGroup(uid, DELEGATE_GROUP)}, &Req{internal: true, Header: map[string][]string{}})
 		c, _ := sessions.Get(sid)

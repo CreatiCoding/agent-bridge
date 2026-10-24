@@ -10,7 +10,7 @@ import { NONE, useStore } from '../lib/store'
 import type { Options } from '../lib/types'
 import { Badge, Button, Empty, Field, Icon, IconButton, NO_AUTOFILL, Segmented, Spinner, Switch, useWide } from '../kit'
 import { AdoptList, presetAdopt } from './adopt-list'
-import { confirmAutoAllow } from '../components/auto-allow-confirm'
+import { confirmLaunchMode } from '../components/auto-allow-confirm'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { confirmDialog, toast } from '../kit/overlay'
 
@@ -96,7 +96,7 @@ export function NewSessionPage() {
   const start = async (retry = false) => {
     if (!host) return
     // 전부 허용: allowed without asking from the first request on. Said before it starts, not after.
-    if (mode === 'autoAllow' && !retry && !(await confirmAutoAllow())) return
+    if (!retry && !(await confirmLaunchMode(mode))) return
     // The default folder is always new: made without asking. A folder typed or picked is asked about.
     const create = retry || auto
     setBusy(true)
@@ -267,10 +267,10 @@ export function NewSessionPage() {
                 <Switch label="Claude in Chrome 연동" checked={chrome} onChange={setChrome} />
               </Field>
               <Field label="권한 모드">
-                <select className="input" value={mode} onChange={(e) => setMode(e.target.value)}>
+                <select className={`input${mode === 'allowAll' ? ' input-allow-all' : ''}`} value={mode} onChange={(e) => setMode(e.target.value)}>
                   <option value="">기본값</option>
                   {opts.modes.map((m) => (
-                    <option key={m.value} value={m.value}>
+                    <option key={m.value} value={m.value} className={m.value === 'allowAll' ? 'opt-allow-all' : undefined}>
                       {m.label}
                     </option>
                   ))}

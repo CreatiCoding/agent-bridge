@@ -179,7 +179,7 @@ type demoSess struct {
 	card                M
 	pendingTool         string
 	mode, effort, model string
-	autoAllow           bool
+	autoAllow, allowAll bool
 	turnAt              any
 	timers              map[*Timer]bool
 }
@@ -226,7 +226,7 @@ func (d *DemoMac) status(s *demoSess) {
 		since = s.card["at"]
 		card = s.card["id"]
 	}
-	d.send(orderedObj{{"t", "status"}, {"sid", s.id}, {"alive", s.phase != "ended"}, {"phase", phase}, {"waiting", waiting}, {"waitingSince", since}, {"held", []any{}}, {"tool", nil}, {"tools", 0}, {"running", []any{}}, {"mode", s.mode}, {"effort", s.effort}, {"context", "9%"}, {"autoAllow", s.autoAllow}, {"model", s.model}, {"turnAt", s.turnAt}, {"size", 24_000}, {"card", card}})
+	d.send(orderedObj{{"t", "status"}, {"sid", s.id}, {"alive", s.phase != "ended"}, {"phase", phase}, {"waiting", waiting}, {"waitingSince", since}, {"held", []any{}}, {"tool", nil}, {"tools", 0}, {"running", []any{}}, {"mode", s.mode}, {"effort", s.effort}, {"context", "9%"}, {"autoAllow", s.autoAllow}, {"allowAll", s.autoAllow && s.allowAll}, {"model", s.model}, {"turnAt", s.turnAt}, {"size", 24_000}, {"card", card}})
 }
 
 func (d *DemoMac) flush(s *demoSess) {
@@ -502,6 +502,7 @@ func (d *DemoMac) handle(cmd M) {
 		}
 		if v, ok := cmd["autoAllow"].(bool); ok {
 			s.autoAllow = v
+			s.allowAll = v && cmd["allowAll"] == true
 		}
 		d.status(s)
 	case "setting":

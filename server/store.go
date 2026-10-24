@@ -70,7 +70,7 @@ func eventsFile(meta *Sess) string { return filepath.Join(sessionDir(meta), "eve
 
 // noState: what is known about a session whose agent is not reporting.
 func noState() M {
-	return M{"alive": false, "phase": "ended", "waiting": nil, "waitingSince": nil, "held": []any{}, "tool": nil, "tools": 0.0, "turnAt": nil, "mode": nil, "effort": nil, "context": nil, "autoAllow": false}
+	return M{"alive": false, "phase": "ended", "waiting": nil, "waitingSince": nil, "held": []any{}, "tool": nil, "tools": 0.0, "turnAt": nil, "mode": nil, "effort": nil, "context": nil, "autoAllow": false, "allowAll": false}
 }
 
 // newSess makes a session from saved meta, with the in-memory parts fresh.
@@ -284,19 +284,42 @@ func sysPromptOf(uid string) string {
 }
 
 var LAUNCH_EFFORTS = []string{"low", "medium", "high", "xhigh", "max"}
-var LAUNCH_MODES = []string{"default", "acceptEdits", "plan", "auto", "autoAllow"}
+var LAUNCH_MODES = []string{"default", "acceptEdits", "plan", "auto", "autoAllow", "allowAll"}
 
-// startMode: the mode claude is started with, and whether 전부 허용 is turned on once it is up.
+// startMode: the mode claude is started with, and whether 전부 허용 is turned on once it is up. autoAllow is
+// 안전한 전부 허용 (risky calls still asked, REQ-F-759); allowAll is 전부 허용 that asks nothing (REQ-F-796).
 func startMode(mode string) (string, bool) {
-	if mode == "autoAllow" {
+	if mode == "autoAllow" || mode == "allowAll" {
 		return "default", true
 	}
 	return mode, false
 }
 
-func turnOnAutoAllow(meta *Sess) {
+func turnOnAutoAllow(meta *Sess, all bool) {
 	meta.set("autoAllow", true)
-	toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoAllow": true})
+	meta.set("allowAll", all)
+	toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoAllow": true, "allowAll": all})
+}
+
+// allowModeOf: a session's permission policy as a launch mode ('' when it asks as the terminal does).
+func allowModeOf(meta *Sess) string {
+	if !truthy(meta.get("autoAllow")) {
+		return ""
+	}
+	if truthy(meta.get("allowAll")) {
+		return "allowAll"
+	}
+	return "autoAllow"
+}
+
+// inheritAllow: a copy keeps the original's 전부 허용 as it is (REQ-F-796); an original that asks leaves it to the
+// person's defaults.
+func inheritAllow(cp, from *Sess, uid string) {
+	if m := allowModeOf(from); m != "" {
+		turnOnAutoAllow(cp, m == "allowAll")
+	} else if launchAutoAllow(uid) {
+		turnOnAutoAllow(cp, launchOf(uid)["mode"] == "allowAll")
+	}
 }
 
 var launchModelRe = regexp.MustCompile(`^[\w.\[\]-]{1,60}$`)
@@ -395,7 +418,10 @@ func launchOver(uid string) M {
 	return o
 }
 
-func launchAutoAllow(uid string) bool { return launchOf(uid)["mode"] == "autoAllow" }
+func launchAutoAllow(uid string) bool {
+	m := launchOf(uid)["mode"]
+	return m == "autoAllow" || m == "allowAll"
+}
 
 func prefsOf(uid string) M {
 	if p, ok := prefsCache[uid]; ok {
