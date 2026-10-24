@@ -87,7 +87,7 @@ const reference: DefaultTheme.SidebarItem[] = [
 ]
 
 export default withMermaid(defineConfig({
-  mermaid: { themeVariables: { fontSize: '15px' } },
+  mermaid: { themeVariables: { fontSize: '15px', fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif' } },
   lang: 'ko',
   title: 'Agent Bridge',
   description: '맥에서 도는 Claude Code 세션을 폰에서 다루고, 맥 사이로 옮기는 셀프호스팅 시스템',
