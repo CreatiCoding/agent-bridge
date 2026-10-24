@@ -1,0 +1,17 @@
+{
+  "name": "agent-bridge-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare-site": "node scripts/prepare.mjs",
+    "dev": "node scripts/prepare.mjs && vitepress dev src",
+    "build": "node scripts/prepare.mjs && vitepress build src && node scripts/check-links.mjs && node scripts/llms.mjs https://agent-bridge.pubdoc.dev",
+    "preview": "vitepress preview src"
+  },
+  "devDependencies": {
+    "mermaid": "11.4.1",
+    "vitepress": "1.6.3",
+    "vitepress-plugin-mermaid": "2.0.17"
+  },
+  "packageManager": "yarn@4.18.0"
+}
