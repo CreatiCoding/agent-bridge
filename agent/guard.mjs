@@ -196,6 +196,46 @@ export function tailOf(text, max = 20_000) {
 }
 
 /**
+ * The systemd user unit that runs the agent as a service on Linux, the counterpart of the launchd plist on macOS.
+ * Every value is quoted for systemd: `%` is a specifier and `$` a variable to it, and a line break would start a
+ * directive of its own, so a path or PATH entry with one is refused rather than written.
+ * KillMode=process: a restart (an update, the site's "restart") ends the agent only. The terminal server and the
+ * headless browser it started are in the same cgroup and must outlive it, as they do under launchd.
+ * @param {{ node: string, self: string, home: string, log: string, env: Record<string, string> }} o
+ */
+export function systemdUnit({ node, self, home, log, env }) {
+  const plain = (s) => {
+    if (/[\r\n]/.test(String(s))) throw new Error('줄바꿈이 든 값은 systemd 유닛에 쓸 수 없습니다')
+    return String(s).replace(/%/g, '%%')
+  }
+  const q = (s) => `"${plain(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+  const arg = (s) => q(s).replace(/\$/g, '$$$$')
+  return `[Unit]
+Description=Agent Bridge agent
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${arg(node)} ${arg(self)} --service
+WorkingDirectory=${plain(home)}
+${Object.entries(env)
+  .map(([k, v]) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) throw new Error(`환경 변수 이름이 맞지 않습니다: ${k}`)
+    return `Environment=${q(`${k}=${v}`)}`
+  })
+  .join('\n')}
+Restart=always
+RestartSec=10
+KillMode=process
+StandardOutput=append:${plain(log)}
+StandardError=append:${plain(log)}
+
+[Install]
+WantedBy=default.target
+`
+}
+
+/**
  * A retired agent key, kept only as this print: a tab that comes back with it is a browser of this Mac that was
  * closed while the key changed, and is never told the new key (the key changed so that the old one opens nothing).
  */

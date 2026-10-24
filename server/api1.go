@@ -83,7 +83,12 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 				sid = b["sid"]
 			}
 		}
-		qrCodes[sha256hexs(code)] = M{"uid": uid, "exp": float64(nowMs() + QR_MS), "sid": sid}
+		// headless: a sign-in for a host with no screen (REQ-F-798), only for its headless browser, landing on /bridge.
+		if b["headless"] == true {
+			qrCodes[sha256hexs(code)] = M{"uid": uid, "exp": float64(nowMs() + QR_MS), "sid": nil, "next": "/bridge", "headless": true, "server": true}
+		} else {
+			qrCodes[sha256hexs(code)] = M{"uid": uid, "exp": float64(nowMs() + QR_MS), "sid": sid}
+		}
 		jsonRes(res, 200, M{"url": originOf(req) + "/api/auth/qr/" + code, "exp": float64(nowMs() + QR_MS)})
 		return true
 	}

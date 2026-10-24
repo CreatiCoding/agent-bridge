@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# claude-bridge agent installer for macOS: checks what the agent needs, offers to install what is missing,
-# downloads the agent and starts it.   curl -fsSL __ORIGIN__/install.sh | bash
+# claude-bridge agent installer for macOS and Linux (systemd): checks what the agent needs, offers to install what
+# is missing, downloads the agent and starts it.   curl -fsSL __ORIGIN__/install.sh | bash
 set -euo pipefail
 SITE="__ORIGIN__"
 DIR="$HOME/.claude-bridge"
@@ -18,7 +18,11 @@ ask() {
   case "$a" in '' | y | Y | yes) return 0 ;; *) return 1 ;; esac
 }
 
-[ "$(uname)" = "Darwin" ] || { say "이 설치 스크립트는 macOS 용입니다."; exit 1; }
+OS="$(uname)"
+case "$OS" in
+  Darwin | Linux) ;;
+  *) say "이 설치 스크립트는 macOS 와 Linux 용입니다."; exit 1 ;;
+esac
 
 # Homebrew may be installed without being on this shell's PATH.
 if ! have brew; then
@@ -34,7 +38,7 @@ need() {
     say "  ✓ $1"
     return
   fi
-  if have brew && ask "  $1 이 없습니다. Homebrew 로 설치할까요? (brew install $2)"; then
+  if [ "$OS" = Darwin ] && have brew && ask "  $1 이 없습니다. Homebrew 로 설치할까요? (brew install $2)"; then
     if brew install "$2" && have "$1"; then
       say "  ✓ $1 설치됨"
       return
@@ -45,18 +49,55 @@ need() {
   MISSING="$MISSING $1"
 }
 
+# Linux: Node.js from nodejs.org into the agent's own folder, no root needed. The archive is checked against the
+# SHA-256 list published beside it, and node is then found on PATH by the service as well (it keeps this PATH).
+NODE_HOME="$DIR/node"
+[ -x "$NODE_HOME/bin/node" ] && PATH="$NODE_HOME/bin:$PATH"
+node_local() {
+  local arch dist list file
+  case "$(uname -m)" in x86_64) arch=x64 ;; aarch64 | arm64) arch=arm64 ;; *) return 1 ;; esac
+  dist="https://nodejs.org/dist/latest-v22.x"
+  list="$(curl -fsSL "$dist/SHASUMS256.txt")" || return 1
+  file="$(printf '%s\n' "$list" | awk -v a="linux-$arch.tar.gz" '$2 ~ a"$" {print $2; exit}')"
+  [ -n "$file" ] || return 1
+  mkdir -p "$DIR" && chmod 700 "$DIR"
+  local tmp
+  tmp="$(mktemp -d "$DIR/.node.XXXXXX")"
+  curl -fsSL "$dist/$file" -o "$tmp/$file" || { rm -rf "$tmp"; return 1; }
+  if ! (cd "$tmp" && printf '%s\n' "$list" | grep " $file\$" | sha256sum -c - >/dev/null); then
+    say "  ✗ 받은 Node.js 의 SHA-256 이 맞지 않습니다."
+    rm -rf "$tmp"
+    return 1
+  fi
+  tar -xzf "$tmp/$file" -C "$tmp" && rm -rf "$NODE_HOME" && mv "$tmp/${file%.tar.gz}" "$NODE_HOME"
+  rm -rf "$tmp"
+  PATH="$NODE_HOME/bin:$PATH"
+  have node
+}
+
 say "claude-bridge 에이전트를 준비합니다 ($SITE)"
 say "필요한 도구를 확인합니다:"
-need node node "https://nodejs.org 에서 설치하거나 brew install node"
+if [ "$OS" = Linux ] && ! have node; then
+  if ask "  node 가 없습니다. Node.js 22 를 $NODE_HOME 에 받을까요? (관리자 권한 필요 없음)"; then
+    if node_local; then say "  ✓ node $(node -v) 받음 ($NODE_HOME)"; else say "  ✗ Node.js 를 받지 못했습니다."; fi
+  fi
+fi
+need node node "https://nodejs.org 에서 설치하거나 $([ "$OS" = Darwin ] && echo 'brew install node' || echo '이 스크립트를 터미널에서 다시 실행해 받기')"
 # tmux is the fallback (REQ-F-794): sessions run in zeropty, which the agent fetches itself at a fixed version and hash.
-if have tmux; then
+if [ "$OS" = Linux ]; then
+  # zeropty has no Linux build in this agent yet: sessions need tmux there (REQ-F-798).
+  if have tmux; then say "  ✓ tmux"; else
+    say "  ✗ tmux 없음 — 직접 설치: sudo apt install tmux  (이 기기에서는 세션이 tmux 에서 돕니다)"
+    MISSING="$MISSING tmux"
+  fi
+elif have tmux; then
   say "  ✓ tmux (zeropty 가 안 될 때의 대비)"
 elif have brew && ask "  tmux 가 없습니다. 세션은 에이전트가 받는 zeropty 에서 돌고, tmux 는 그게 안 될 때의 대비입니다. Homebrew 로 설치할까요? (brew install tmux)"; then
   if brew install tmux && have tmux; then say "  ✓ tmux 설치됨"; else say "  - tmux 설치 실패 (없어도 zeropty 로 세션을 엽니다)"; fi
 else
   say "  - tmux 없음 (없어도 zeropty 로 세션을 엽니다. 대비로 두려면: brew install tmux)"
 fi
-need git git "xcode-select --install"
+need git git "$([ "$OS" = Darwin ] && echo 'xcode-select --install' || echo 'sudo apt install git')"
 if have claude; then
   say "  ✓ claude"
 else
@@ -72,7 +113,7 @@ if ! have node; then
 fi
 if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)'; then
   say ""
-  say "node $(node -v) 는 너무 오래됐습니다. 18 이상이 필요합니다 (brew upgrade node)."
+  say "node $(node -v) 는 너무 오래됐습니다. 18 이상이 필요합니다$([ "$OS" = Darwin ] && echo ' (brew upgrade node)')."
   exit 1
 fi
 

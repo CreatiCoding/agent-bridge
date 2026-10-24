@@ -272,6 +272,13 @@ func auth(req *Req, res *Res, u *url.URL) {
 		// Opening the address only asks (R1-L14); saying yes is a form post from this page.
 		current := whoami(req)
 		eu := mstr(entry, "uid")
+		// A code made for a host with no screen of its own (REQ-F-798) is pasted into its terminal and opened by its
+		// headless browser, with no one there to press a button. Any other browser only learns what it is for: such a
+		// code signing in an ordinary browser would hand that browser's Mac to whoever made the code.
+		if entry != nil && truthy(entry["server"]) && !strings.Contains(req.H("user-agent"), "HeadlessChrome/") {
+			res.WriteHead(200, SECURITY, M{"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}).EndS(page("서버에 붙여 넣는 주소예요", "이 주소는 화면 없는 기기의 터미널에서 <code>node ~/.claude-bridge/agent.mjs headless '주소'</code> 로 넘기는 주소예요. 브라우저로는 로그인되지 않아요."))
+			return
+		}
 		if entry != nil && jsNumber(entry["exp"]) >= float64(nowMs()) && users.Has(eu) && !truthy(entry["headless"]) && current != eu {
 			if req.Method != "POST" {
 				who := escHtml(mstr(users.Val(eu), "login"))

@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -37,6 +37,9 @@ const HOME = os.homedir()
 const STATE_DIR = process.env.CLAUDE_BRIDGE_HOME || path.join(HOME, '.claude-bridge')
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(HOME, '.claude')
 const CLAUDE_BIN = process.env.CLAUDE_BRIDGE_CLAUDE || 'claude'
+/** A Mac, or a Linux host (a server, usually without a screen): what only macOS has is left out on Linux. */
+const IS_MAC = process.platform === 'darwin'
+const IS_LINUX = process.platform === 'linux'
 const DEFAULT_BRANCHES = (process.env.CLAUDE_BRIDGE_DEFAULT_BRANCHES || 'main,develop,master').split(',')
 const INSTRUCTION_FILES = (process.env.CLAUDE_BRIDGE_SYNC_FILES || 'SESSION.md,AGENTS.md,CLAUDE.md').split(',')
 const TAIL_MS = 700
@@ -77,13 +80,16 @@ const allowSleepArg = bool('allow-sleep')
 /** Started by launchd as the background service: never asks, never opens a browser. */
 const asService = bool('service')
 // What is left is an optional site address and an optional command: doctor | link | service install|uninstall|status
-const siteArg = args.find((a) => /^https?:\/\//.test(a))
+// The address after `headless` is a sign-in address, not the site's.
+const siteArg = args.find((a, i) => /^https?:\/\//.test(a) && args[i - 1] !== 'headless')
 const words = args.filter((a) => a !== siteArg)
 const doctorOnly = words[0] === 'doctor'
 const linkOnly = words[0] === 'link'
+/** `headless <sign-in address>`: a host with no browser of its own signs its headless browser in (REQ-F-798). */
+const headlessLogin = words[0] === 'headless' ? words[1] || '' : null
 const serviceCmd = words[0] === 'service' ? words[1] || 'status' : null
 const awakeCmd = words[0] === 'awake' ? words[1] || 'status' : null
-if (words[0] && !doctorOnly && !linkOnly && !['install', 'uninstall', 'status'].includes(serviceCmd) && !['setup', 'remove', 'status'].includes(awakeCmd)) {
+if (words[0] && !doctorOnly && !linkOnly && headlessLogin === null && !['install', 'uninstall', 'status'].includes(serviceCmd) && !['setup', 'remove', 'status'].includes(awakeCmd)) {
   console.error(`모르는 명령입니다: ${words.join(' ')}`)
   process.exit(1)
 }
@@ -176,11 +182,12 @@ if (!/^https?:\/\//.test(config.site) && !doctorOnly && !['status', 'uninstall']
   node agent.mjs link                           연동 페이지 링크를 다시 열기
   node agent.mjs doctor                         점검만 하고 끝냄
   node agent.mjs <사이트 주소>                   이 터미널에서 직접 실행 (터미널을 닫으면 꺼짐)
-옵션: --port 4317  --kind imac|macbook|macmini|macstudio|other  --name "내 아이맥"  --keep-awake|--allow-sleep  --no-open  --mux tmux|auto`)
+  node agent.mjs headless '<로그인 주소>'          화면 없는 기기: 헤드리스 브라우저를 그 주소로 로그인시켜 연동
+옵션: --port 4317  --kind imac|macbook|macmini|macstudio|server|other  --name "내 아이맥"  --keep-awake|--allow-sleep  --no-open  --mux tmux|auto`)
   process.exit(1)
 }
 
-// ---------- background service (launchd) ----------
+// ---------- background service (launchd on macOS, systemd --user on Linux) ----------
 
 const LABEL = process.env.CLAUDE_BRIDGE_LABEL || 'dev.claude-bridge.agent'
 const PLIST = path.join(HOME, 'Library/LaunchAgents', `${LABEL}.plist`)
@@ -194,20 +201,46 @@ const launchctl = (...argv) => {
     return { ok: false, out: String(e.stderr || e.message) }
   }
 }
-const serviceLoaded = () => launchctl('print', `${DOMAIN}/${LABEL}`).ok
+const UNIT = path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'systemd/user', `${LABEL}.service`)
+const systemctl = (...argv) => {
+  try {
+    return { ok: true, out: execFileSync('systemctl', ['--user', ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  } catch (e) {
+    return { ok: false, out: `${e.stdout ?? ''}${e.stderr || e.message}` }
+  }
+}
+/** Where the service is written down: the launchd plist or the systemd unit. */
+const SERVICE_FILE = IS_MAC ? PLIST : UNIT
+const serviceLoaded = () => (IS_MAC ? launchctl('print', `${DOMAIN}/${LABEL}`).ok : systemctl('is-active', '--quiet', `${LABEL}.service`).ok)
+/** Stops the service and takes it off boot, leaving its file. */
+const serviceOff = () => (IS_MAC ? launchctl('bootout', `${DOMAIN}/${LABEL}`) : systemctl('disable', '--now', `${LABEL}.service`))
+/**
+ * Linux: a user's services stop when the user's last login ends, and do not start at boot, unless systemd keeps a
+ * manager for that user ("linger"). Turning it on needs root, so it is only said. null when it cannot be read.
+ */
+function lingerOn() {
+  try {
+    return execFileSync('loginctl', ['show-user', os.userInfo().username, '-p', 'Linger', '--value'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim() === 'yes'
+  } catch {
+    return null
+  }
+}
+const LINGER_FIX = `sudo loginctl enable-linger ${os.userInfo().username}`
 const pingAgent = () => fetch(`http://127.0.0.1:${config.port}/ping`, { signal: AbortSignal.timeout(1500) }).then((r) => r.json()).then((j) => j.agent === 'claude-bridge', () => false)
 const bridgeLink = () => `${config.site}/bridge#port=${config.port}&key=${config.key}`
 
 if (serviceCmd === 'status') {
   const loaded = serviceLoaded()
-  console.log(`서비스: ${fs.existsSync(PLIST) ? (loaded ? '설치됨, 켜져 있음' : '설치됨, 꺼져 있음') : '설치 안 됨'}`)
+  console.log(`서비스: ${fs.existsSync(SERVICE_FILE) ? (loaded ? '설치됨, 켜져 있음' : '설치됨, 꺼져 있음') : '설치 안 됨'}`)
+  if (IS_LINUX && lingerOn() === false) console.log(`  로그아웃하면 서비스도 멈추고, 재부팅 뒤에는 로그인해야 켜집니다. 늘 켜 두려면: ${LINGER_FIX}`)
   console.log(`에이전트: ${(await pingAgent()) ? `127.0.0.1:${config.port} 에서 응답함` : '응답 없음'}`)
   console.log(`로그: ${path.join(STATE_DIR, 'service.log')}`)
   process.exit(0)
 }
 if (serviceCmd === 'uninstall') {
-  launchctl('bootout', `${DOMAIN}/${LABEL}`)
-  fs.rmSync(PLIST, { force: true })
+  serviceOff()
+  fs.rmSync(SERVICE_FILE, { force: true })
+  if (IS_LINUX) systemctl('daemon-reload')
   console.log('서비스를 제거했습니다. 에이전트는 더 이상 자동으로 켜지지 않습니다. 설정과 로그는 ~/.claude-bridge 에 남아 있습니다.')
   process.exit(0)
 }
@@ -216,11 +249,29 @@ if (linkOnly) {
   if (process.platform === 'darwin') spawn('open', [bridgeLink()], { stdio: 'ignore', detached: true }).unref()
   process.exit(0)
 }
+/**
+ * Where `headless` leaves the sign-in address for the running agent, which takes it within a minute (heal) or when it
+ * starts. The agent, not this command, turns 헤드리스 연동 모드 on: it writes agent.json from what it holds.
+ */
+const HEADLESS_LOGIN = path.join(STATE_DIR, 'headless-login')
+if (headlessLogin !== null) {
+  const ok = siteLogin(headlessLogin, config.site)
+  if (!ok) {
+    console.error(`${config.site} 의 로그인 주소가 아닙니다. 사이트의 기기 화면 → "화면 없는 기기 연결" 에서 주소를 만들어 붙여 넣어 주세요 (5분 동안 한 번).`)
+    process.exit(1)
+  }
+  fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  fs.writeFileSync(HEADLESS_LOGIN, ok, { mode: 0o600 })
+  const up = await pingAgent()
+  console.log(up ? '받았습니다. 에이전트가 1분 안에 헤드리스 브라우저를 그 주소로 로그인시키고 연동합니다. 사이트의 기기 목록에 이 기기가 뜨는지 보세요.' : `받았습니다. 에이전트가 켜지면 그 주소로 로그인합니다. 지금은 에이전트가 응답하지 않습니다 (상태: node ${SELF} service status).`)
+  process.exit(0)
+}
 
 // ---------- which device is this ----------
 
-const KINDS = { imac: '아이맥', macbook: '맥북', macmini: '맥미니', macstudio: '맥 스튜디오', other: '기타' }
+const KINDS = { imac: '아이맥', macbook: '맥북', macmini: '맥미니', macstudio: '맥 스튜디오', server: '서버', other: '기타' }
 function detectKind() {
+  if (!IS_MAC) return IS_LINUX ? 'server' : 'other'
   try {
     const model = /Model Name:\s*(.+)/.exec(execFileSync('/usr/sbin/system_profiler', ['SPHardwareDataType'], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] }))?.[1] ?? ''
     return /iMac/i.test(model) ? 'imac' : /MacBook/i.test(model) ? 'macbook' : /Mac mini/i.test(model) ? 'macmini' : /Mac Studio/i.test(model) ? 'macstudio' : 'other'
@@ -266,13 +317,13 @@ if ((!config.kind || !config.name) && !doctorOnly) {
       config.kind = keys[Number(a) - 1] ?? guess
     }
     if (!config.name) {
-      const suggested = config.kind === 'other' ? os.hostname().replace(/\.local$/, '') : KINDS[config.kind]
+      const suggested = ['other', 'server'].includes(config.kind) ? os.hostname().replace(/\.local$/, '') : KINDS[config.kind]
       config.name = (await ask(`사이트에 보일 이름 [${suggested}]: `)).slice(0, 60) || suggested
     }
     rl.close()
   } else {
     config.kind ||= guess
-    config.name ||= config.kind === 'other' ? os.hostname().replace(/\.local$/, '') : KINDS[config.kind]
+    config.name ||= ['other', 'server'].includes(config.kind) ? os.hostname().replace(/\.local$/, '') : KINDS[config.kind]
   }
 }
 writeJson(configPath, config)
@@ -387,7 +438,8 @@ const tmuxRaw = (...argv) => {
 }
 /** Fetched in the background at start: a failure only means new sessions keep starting in tmux. */
 async function ensureZeropty() {
-  if (zeroptyReady || doctorOnly) return
+  // No release for this system (a Linux build is not out yet): its sessions run in tmux, and nothing is fetched.
+  if (zeroptyReady || doctorOnly || !ZEROPTY) return
   const r = await installZeropty(STATE_DIR, { log: (m) => log('info', 'zeropty', m) })
   zeroptyReady = zeroptyInstalled(ZP)
   if (!r.ok) {
@@ -3497,18 +3549,20 @@ async function runChecks() {
   const zv = zeroptyReady ? await run(ZP.bin, ['-V']) : null
   stats.tools.zeropty = zv?.ok ? ZEROPTY.version : null
   const keepTmux = config.mux === 'tmux'
-  if (zv?.ok) add('zeropty', 'ok', 'zeropty', `${ZEROPTY.version}${keepTmux ? ' (이 맥은 tmux 로 고정: --mux tmux)' : ''}`)
+  if (!ZEROPTY) add('zeropty', 'warn', 'zeropty', `이 시스템(${process.platform}-${process.arch})용 zeropty 는 아직 없습니다. 세션은 tmux 로 엽니다`)
+  else if (zv?.ok) add('zeropty', 'ok', 'zeropty', `${ZEROPTY.version}${keepTmux ? ' (이 기기는 tmux 로 고정: --mux tmux)' : ''}`)
   else add('zeropty', 'warn', 'zeropty', zeroptyReady ? `${ZEROPTY.version} 가 실행되지 않습니다. 새 세션은 tmux 로 엽니다` : `${ZEROPTY.version} 를 아직 받지 못했습니다. 새 세션은 tmux 로 엽니다 (에이전트가 다시 받아 봅니다)`)
   const tm = await run('tmux', ['-V'])
   stats.tools.tmux = tm.ok ? tm.out : null
+  const tmuxFix = IS_MAC ? 'brew install tmux' : 'sudo apt install tmux'
   if (tm.ok) add('tmux', 'ok', 'tmux', tm.out)
-  else if (zv?.ok && !keepTmux) add('tmux', 'warn', 'tmux', '설치돼 있지 않습니다. 세션은 zeropty 에서 돌고, tmux 는 zeropty 가 안 될 때의 대비입니다', 'brew install tmux')
-  else add('tmux', 'fail', 'tmux', '설치돼 있지 않습니다. zeropty 가 없거나 tmux 로 고정해 세션은 tmux 안에서 돕니다', 'brew install tmux', true)
+  else if (zv?.ok && !keepTmux) add('tmux', 'warn', 'tmux', '설치돼 있지 않습니다. 세션은 zeropty 에서 돌고, tmux 는 zeropty 가 안 될 때의 대비입니다', tmuxFix)
+  else add('tmux', 'fail', 'tmux', '설치돼 있지 않습니다. zeropty 가 없거나 tmux 로 고정해 세션은 tmux 안에서 돕니다', tmuxFix, true)
 
   const gt = await run('git', ['--version'])
   stats.tools.git = gt.ok ? gt.out : null
   if (gt.ok) add('git', 'ok', 'git', gt.out)
-  else add('git', 'warn', 'git', /xcode-select|xcrun|developer tools/i.test(gt.err) ? 'Xcode 명령줄 도구가 설치돼 있지 않아 git 을 쓸 수 없습니다. 브랜치·커밋 싱크와 자동 push 가 빠집니다' : '설치돼 있지 않습니다. 브랜치·커밋 싱크와 자동 push 가 빠집니다', 'xcode-select --install')
+  else add('git', 'warn', 'git', /xcode-select|xcrun|developer tools/i.test(gt.err) ? 'Xcode 명령줄 도구가 설치돼 있지 않아 git 을 쓸 수 없습니다. 브랜치·커밋 싱크와 자동 push 가 빠집니다' : '설치돼 있지 않습니다. 브랜치·커밋 싱크와 자동 push 가 빠집니다', IS_MAC ? 'xcode-select --install' : 'sudo apt install git')
 
   const cv = await runClaude(['--version'])
   stats.tools.claude = cv.ok ? cv.out.split('\n')[0].slice(0, 60) : null
@@ -3564,6 +3618,18 @@ async function runChecks() {
     if (asService || serviceCmd === 'install') add('service', 'ok', '실행 방식', '백그라운드 서비스 (로그인하면 자동으로 켜짐)')
     else if (doctorOnly) add('service', 'ok', '실행 방식', fs.existsSync(PLIST) ? '백그라운드 서비스가 설치돼 있음' : '백그라운드 서비스가 설치돼 있지 않음')
     else add('service', 'warn', '실행 방식', '터미널에서 실행 중입니다. 이 터미널을 닫으면 에이전트가 꺼집니다', `node ${SELF} service install 로 설치하면 터미널 없이 로그인할 때 자동으로 켜집니다`)
+  }
+
+  if (IS_LINUX) {
+    // A user's systemd services end with the user's last login and wait for a login after a reboot, unless lingering.
+    const linger = lingerOn()
+    if (asService || serviceCmd === 'install' || (doctorOnly && fs.existsSync(UNIT))) {
+      if (linger === false) add('service', 'warn', '실행 방식', '백그라운드 서비스(systemd --user) · 로그아웃하면 멈추고, 재부팅 뒤에는 로그인해야 켜집니다', LINGER_FIX)
+      else add('service', 'ok', '실행 방식', `백그라운드 서비스(systemd --user)${linger ? ' · 부팅하면 켜짐' : ''}`)
+    } else if (doctorOnly) add('service', 'ok', '실행 방식', '백그라운드 서비스가 설치돼 있지 않음')
+    else add('service', 'warn', '실행 방식', '터미널에서 실행 중입니다. 이 터미널을 닫으면 에이전트가 꺼집니다', `node ${SELF} service install`)
+    // No browser tab on a server: the headless one (헤드리스 연동 모드) is what links it.
+    CHROME_BIN ? add('browser', 'ok', '브라우저', `${path.basename(CHROME_BIN)} 있음 (헤드리스 연동 모드에 씀)`) : add('browser', 'warn', '브라우저', 'Chrome·Chromium 이 없습니다. 화면 없이 연동하려면 헤드리스 연동 모드에 필요합니다', CHROME_FIX)
   }
 
   // Say it once when something breaks and once when it is fixed, not on every round.
@@ -3681,7 +3747,7 @@ async function watchSysDialog() {
 if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd) {
   applyAwake().catch((e) => log('error', 'awake', e.message))
   setInterval(() => watchLid().catch(() => {}), LID_MS).unref()
-  setInterval(() => watchSysDialog().catch(() => {}), SYSDIALOG_MS).unref()
+  if (IS_MAC) setInterval(() => watchSysDialog().catch(() => {}), SYSDIALOG_MS).unref()
   process.on('exit', releaseLid)
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => (releaseLid(), process.exit(0)))
 }
@@ -3693,7 +3759,14 @@ if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd) {
 // keeps the agent's port and key in that profile, so they are on its command line only the first time.
 // Local network access from the site to 127.0.0.1 is allowed in that profile only (LocalNetworkAccessChecks):
 // nobody is there to answer Chrome's question.
-const CHROME_BIN = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', path.join(HOME, 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome')].find((p) => fs.existsSync(p)) ?? null
+// On Linux: Google Chrome from its package, or Chromium (apt or snap).
+const CHROME_BIN =
+  (IS_MAC
+    ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', path.join(HOME, 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome')]
+    : ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/opt/google/chrome/chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium']
+  ).find((p) => fs.existsSync(p)) ?? null
+// Not snap's Chromium: a snap may not write under a hidden folder of the home (~/.claude-bridge/browser).
+const CHROME_FIX = IS_MAC ? 'Chrome 을 설치하세요: https://www.google.com/chrome' : 'Google Chrome 을 설치하세요: wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo apt install -y /tmp/chrome.deb'
 const BG_PROFILE = path.join(STATE_DIR, 'browser')
 const bg = { child: null, startedAt: null, restarts: 0, error: null, login: null, timer: null, firstKey: false }
 /**
@@ -3713,7 +3786,7 @@ let keepBrowser = false
 function profileChrome() {
   let out = ''
   try {
-    out = execFileSync('/bin/ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8', timeout: 5000 })
+    out = execFileSync('/bin/ps', IS_MAC ? ['-axww', '-o', 'pid=,command='] : ['-e', '-ww', '-o', 'pid=,args='], { encoding: 'utf8', timeout: 5000 })
   } catch {}
   for (const line of out.split('\n')) {
     const m = /^\s*(\d+)\s+(.*)$/.exec(line)
@@ -3749,7 +3822,7 @@ function adoptBackground() {
 }
 function startBackground() {
   if (bg.child || !config.background || doctorOnly || serviceCmd || linkOnly || awakeCmd) return
-  if (!CHROME_BIN) return void (bg.error = 'Chrome 이 없습니다. https://www.google.com/chrome 에서 설치해 주세요')
+  if (!CHROME_BIN) return void (bg.error = IS_MAC ? 'Chrome 이 없습니다. https://www.google.com/chrome 에서 설치해 주세요' : `Chrome 이나 Chromium 이 없습니다. ${CHROME_FIX}`)
   const kept = bg.login ? null : adoptBackground()
   if (kept) return watchBackground(kept)
   // The key goes on the command line only while the profile does not have it yet (first start, or a new sign-in).
@@ -3766,8 +3839,9 @@ function startBackground() {
     '--disable-features=LocalNetworkAccessChecks',
     // A headless Chrome cannot answer the keychain's prompt, and without the keychain it keeps no cookies, so the
     // sign-in would be gone after a restart. Cookies of this profile are kept under a fixed key instead: the
-    // profile folder (0700) is then what holds the sign-in.
-    '--use-mock-keychain',
+    // profile folder (0700) is then what holds the sign-in. On Linux the same for a desktop's keyring, which a
+    // server does not have.
+    IS_MAC ? '--use-mock-keychain' : '--password-store=basic',
     '--disable-background-timer-throttling',
     '--disable-renderer-backgrounding',
     '--disable-backgrounding-occluded-windows',
@@ -3796,6 +3870,29 @@ function watchBackground(child) {
     clearTimeout(bg.timer)
     bg.timer = setTimeout(startBackground, wait)
   })
+}
+/**
+ * The sign-in address `agent.mjs headless` left (REQ-F-798): 헤드리스 연동 모드 goes on and its browser signs in with
+ * it, as when the site turns the mode on. The file is taken once; an address that is not the site's is dropped.
+ */
+function takeHeadlessLogin() {
+  let url = ''
+  try {
+    url = fs.readFileSync(HEADLESS_LOGIN, 'utf8').trim()
+  } catch {
+    return false
+  }
+  fs.rmSync(HEADLESS_LOGIN, { force: true })
+  const ok = siteLogin(url, config.site)
+  if (!ok) return void log('warn', 'background', 'headless 명령이 남긴 주소가 이 사이트의 로그인 주소가 아니라 버림')
+  config.background = true
+  writeJson(configPath, config)
+  bg.login = ok
+  bg.restarts = 0
+  stopBackground()
+  startBackground()
+  log('info', 'background', 'headless 명령으로 받은 주소로 헤드리스 연동 모드를 켬')
+  return true
 }
 function stopBackground() {
   clearTimeout(bg.timer)
@@ -3845,6 +3942,7 @@ async function sleepDisabledNow() {
 }
 async function heal() {
   if (doctorOnly || serviceCmd || linkOnly || awakeCmd) return
+  if (takeHeadlessLogin()) repaired('background', '이 기기 터미널에서 받은 로그인 주소로 헤드리스 연동 모드를 켬')
   if (config.keepAwake && !keepAwake && process.platform === 'darwin') {
     await applyAwake()
     repaired('awake', keepAwake ? '잠자기 막기(caffeinate)가 꺼져 있어 다시 띄움' : '잠자기 막기(caffeinate)를 다시 띄우지 못함', !!keepAwake)
@@ -3882,7 +3980,7 @@ async function features() {
   const add = (id, title, state, detail, extra = {}) => out.push({ id, title, state, detail, ...extra })
   add('link', '연동', client ? 'ok' : 'fail', client ? (clientBg ? '헤드리스 브라우저가 연동 중' : '브라우저 탭이 연동 중') : '연동 페이지가 붙어 있지 않음', client ? {} : { fix: '이 맥의 Chrome 에서 사이트를 열거나 헤드리스 연동 모드를 켜세요' })
   const b = backgroundState()
-  add('background', '헤드리스 연동 모드', !b.on ? 'off' : !b.chrome ? 'fail' : b.connected ? 'ok' : b.error ? 'fail' : 'warn', !b.on ? '꺼짐' : !b.chrome ? 'Chrome 이 없음' : b.connected ? `연동 중 · 다시 띄운 횟수 ${b.restarts}` : (b.error ?? '띄우는 중이거나 연결을 기다리는 중'), { ...(b.on ? { action: 'background-restart' } : {}), ...(!b.chrome ? { fix: 'Chrome 을 설치하세요: https://www.google.com/chrome' } : b.on && !b.connected ? { fix: '기기 화면에서 헤드리스 연동 모드를 껐다가 다시 켜세요(다시 로그인)' } : {}) })
+  add('background', '헤드리스 연동 모드', !b.on ? 'off' : !b.chrome ? 'fail' : b.connected ? 'ok' : b.error ? 'fail' : 'warn', !b.on ? '꺼짐' : !b.chrome ? 'Chrome 이 없음' : b.connected ? `연동 중 · 다시 띄운 횟수 ${b.restarts}` : (b.error ?? '띄우는 중이거나 연결을 기다리는 중'), { ...(b.on ? { action: 'background-restart' } : {}), ...(!b.chrome ? { fix: CHROME_FIX } : b.on && !b.connected ? { fix: '기기 화면에서 헤드리스 연동 모드를 껐다가 다시 켜세요(다시 로그인)' } : {}) })
   if (process.platform === 'darwin') {
     add('awake', '잠자기 막기', !config.keepAwake ? 'off' : keepAwake ? 'ok' : 'fail', !config.keepAwake ? '꺼짐 (쓰지 않으면 잠들 수 있음)' : keepAwake ? `caffeinate 실행 중 (pid ${keepAwake.pid})` : 'caffeinate 가 떠 있지 않음', config.keepAwake ? { action: 'awake-apply' } : {})
     const ready = await lidReady()
@@ -4475,14 +4573,18 @@ if (doctorOnly) {
 }
 
 if (serviceCmd === 'install') {
-  if (process.platform !== 'darwin') {
-    console.error('백그라운드 서비스 설치는 macOS 에서만 됩니다.')
+  if (!IS_MAC && !IS_LINUX) {
+    console.error('백그라운드 서비스 설치는 macOS 와 Linux(systemd) 에서만 됩니다.')
+    process.exit(1)
+  }
+  if (IS_LINUX && !systemctl('--version').ok) {
+    console.error('systemctl --user 를 쓸 수 없습니다. systemd 가 없는 시스템이면 에이전트를 터미널에서 직접 실행해 주세요 (install.sh 에 --foreground).')
     process.exit(1)
   }
   await runChecks()
   printChecks()
   // Whatever agent runs now (one left in a terminal, or an older service) gives way to the service.
-  launchctl('bootout', `${DOMAIN}/${LABEL}`)
+  serviceOff()
   const oldPid = Number(readJson(PID_FILE, 0))
   // A pid file can outlive its process and the number can be reused: only an agent is ever signalled.
   if (oldPid && oldPid !== process.pid && (await run('/bin/ps', ['-p', String(oldPid), '-o', 'command='])).out.includes('agent.mjs')) {
@@ -4491,17 +4593,19 @@ if (serviceCmd === 'install') {
     } catch {}
   }
   for (let i = 0; i < 20 && (await pingAgent()); i++) await sleep(250)
-  const x = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  // launchd starts programs with a bare PATH: the service gets the one this terminal has, where tmux, git and claude were found.
+  // launchd and systemd start programs with a bare PATH: the service gets the one this terminal has, where tmux, git and claude were found.
   const env = { PATH: process.env.PATH, HOME, LANG: process.env.LANG || 'en_US.UTF-8', ...(process.env.CLAUDE_BRIDGE_HOME ? { CLAUDE_BRIDGE_HOME: STATE_DIR } : {}), ...(process.env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: CLAUDE_DIR } : {}), ...(process.env.CLAUDE_BRIDGE_LABEL ? { CLAUDE_BRIDGE_LABEL: LABEL } : {}) }
   // The `node` on PATH rather than the resolved binary: a Homebrew upgrade moves the latter to a new versioned folder.
   const found = (await run('/usr/bin/which', ['node'])).out
   const nodePath = found && fs.existsSync(found) ? found : process.execPath
   const logFile = path.join(STATE_DIR, 'service.log')
-  fs.mkdirSync(path.dirname(PLIST), { recursive: true })
-  fs.writeFileSync(
-    PLIST,
-    `<?xml version="1.0" encoding="UTF-8"?>
+  fs.mkdirSync(path.dirname(SERVICE_FILE), { recursive: true })
+  let boot
+  if (IS_MAC) {
+    const x = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    fs.writeFileSync(
+      PLIST,
+      `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>${x(LABEL)}</string>
@@ -4516,9 +4620,14 @@ if (serviceCmd === 'install') {
   <key>StandardErrorPath</key><string>${x(logFile)}</string>
 </dict></plist>
 `,
-  )
-  const boot = launchctl('bootstrap', DOMAIN, PLIST)
-  if (!boot.ok && !serviceLoaded()) launchctl('load', '-w', PLIST)
+    )
+    boot = launchctl('bootstrap', DOMAIN, PLIST)
+    if (!boot.ok && !serviceLoaded()) launchctl('load', '-w', PLIST)
+  } else {
+    fs.writeFileSync(UNIT, systemdUnit({ node: nodePath, self: SELF, home: HOME, log: logFile, env }))
+    systemctl('daemon-reload')
+    boot = systemctl('enable', '--now', `${LABEL}.service`)
+  }
   let up = false
   for (let i = 0; i < 40 && !up; i++) {
     await sleep(250)
@@ -4530,14 +4639,28 @@ if (serviceCmd === 'install') {
     console.error(`\n서비스를 등록했지만 에이전트가 응답하지 않습니다. 로그를 확인해 주세요: ${logFile}\n  ${boot.ok ? '' : boot.out.trim()}`)
     process.exit(1)
   }
-  console.log(`
+  if (IS_MAC)
+    console.log(`
 백그라운드 서비스로 설치했습니다. 이 터미널은 닫아도 됩니다.
   · 맥에 로그인하면 에이전트가 자동으로 켜집니다. 화면에는 아무것도 뜨지 않습니다.
   · 에이전트는 혼자서는 바깥과 통신하지 않습니다. 이 맥의 브라우저에 연동 페이지를 열어 둔 동안만 사이트에 연결됩니다:
       ${config.site}/bridge
   · 상태: node ${SELF} service status     제거: node ${SELF} service uninstall
 `)
-  if (!noOpen) spawn('open', [bridgeLink()], { stdio: 'ignore', detached: true }).unref()
+  else {
+    const linger = lingerOn()
+    console.log(`
+백그라운드 서비스(systemd --user)로 설치했습니다. 이 터미널은 닫아도 됩니다.${linger === false ? `
+  · 지금은 로그아웃하면 서비스도 멈추고, 재부팅 뒤에는 로그인해야 켜집니다. 늘 켜 두려면 (관리자 권한):
+      ${LINGER_FIX}` : ''}
+  · 에이전트는 혼자서는 바깥과 통신하지 않고, 이 기기의 브라우저에 열린 연동 페이지를 거쳐 사이트에 붙습니다.
+    화면 없는 서버라면 헤드리스 브라우저(Chrome 또는 Chromium)가 그 페이지를 엽니다:
+      1. 다른 기기에서 ${config.site} 에 로그인 → 기기 → "화면 없는 기기 연결" 에서 로그인 주소 만들기 (5분, 한 번)
+      2. 이 서버에서: node ${SELF} headless '<로그인 주소>'
+  · 상태: node ${SELF} service status     제거: node ${SELF} service uninstall
+`)
+  }
+  if (!noOpen && IS_MAC) spawn('open', [bridgeLink()], { stdio: 'ignore', detached: true }).unref()
   process.exit(0)
 }
 
@@ -4573,12 +4696,14 @@ server.on('listening', async () => {
   await runChecks()
   printChecks()
   reviveAfterRestart().catch((e) => log('error', 'revive', e.message))
+  takeHeadlessLogin()
   // A browser left running for this agent while 헤드리스 연동 모드 was turned off in between: it goes.
   if (!config.background && !doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && (bg.child = adoptBackground())) stopBackground()
   startBackground()
   // The link carries this agent's key. A terminal shows it to the person who ran the agent; the background
   // service writes to a log file, where a key has no business: there it says how to open the link instead.
-  if (asService) console.log(`\n127.0.0.1:${config.port} 에서 듣는 중. 이 맥의 브라우저(Chrome)에 ${config.site}/bridge 를 열어 두세요.\n처음 연동하는 브라우저라면 터미널에서: node ${path.join(STATE_DIR, 'agent.mjs')} link\n`)
+  if (asService && IS_LINUX) console.log(`\n127.0.0.1:${config.port} 에서 듣는 중. ${config.background ? '헤드리스 연동 모드로 연결합니다.' : `헤드리스 연동 모드가 꺼져 있습니다. 켜려면: node ${SELF} headless '<로그인 주소>' (사이트의 기기 → "화면 없는 기기 연결")`}\n`)
+  else if (asService) console.log(`\n127.0.0.1:${config.port} 에서 듣는 중. 이 맥의 브라우저(Chrome)에 ${config.site}/bridge 를 열어 두세요.\n처음 연동하는 브라우저라면 터미널에서: node ${path.join(STATE_DIR, 'agent.mjs')} link\n`)
   else console.log(`\n127.0.0.1:${config.port} 에서 듣는 중. 이 맥의 브라우저(Chrome)에 아래 연동 페이지를 열어 두세요:\n\n  ${link}\n`)
   if (!noOpen && !asService && process.platform === 'darwin') {
     // The person's own default browser, where they are signed in to the site, unless that is Safari,

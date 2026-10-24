@@ -3801,6 +3801,13 @@ async function auth(req, res, url) {
     // in let anyone sign another person in as themselves. Saying yes is a form post from this page; the code is used
     // up only then. The headless browser's code (given only to the agent) signs in on the GET.
     const current = whoami(req)
+    // A code made for a host with no screen of its own (REQ-F-798) is pasted into its terminal and opened by its headless
+    // browser, with no one there to press a button. Any other browser only learns what it is for: such a code signing
+    // in an ordinary browser would hand that browser's Mac to whoever made the code.
+    if (entry && entry.server && !/HeadlessChrome\//.test(req.headers['user-agent'] ?? ''))
+      return res
+        .writeHead(200, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+        .end(page('서버에 붙여 넣는 주소예요', '이 주소는 화면 없는 기기의 터미널에서 <code>node ~/.claude-bridge/agent.mjs headless \'주소\'</code> 로 넘기는 주소예요. 브라우저로는 로그인되지 않아요.'))
     if (entry && entry.exp >= Date.now() && users[entry.uid] && !entry.headless && current !== entry.uid) {
       if (req.method !== 'POST') {
         const who = escHtml(users[entry.uid].login)
@@ -3886,7 +3893,9 @@ async function api(req, res, url, uid) {
     const b = await body(req, 4096)
     for (const [k, v] of qrCodes) if (v.exp < Date.now()) qrCodes.delete(k)
     const code = crypto.randomBytes(16).toString('hex')
-    qrCodes.set(sha256(code), { uid, exp: Date.now() + QR_MS, sid: safeId(b.sid) && sessions.get(b.sid)?.uid === uid ? b.sid : null })
+    // headless: a sign-in for a host with no screen (REQ-F-798), only for its headless browser, landing on /bridge.
+    if (b.headless === true) qrCodes.set(sha256(code), { uid, exp: Date.now() + QR_MS, sid: null, next: '/bridge', headless: true, server: true })
+    else qrCodes.set(sha256(code), { uid, exp: Date.now() + QR_MS, sid: safeId(b.sid) && sessions.get(b.sid)?.uid === uid ? b.sid : null })
     return json(res, 200, { url: `${originOf(req)}/api/auth/qr/${code}`, exp: Date.now() + QR_MS })
   }
   // 계정 삭제 (REQ-F-770): the person types their login name to say they mean it. The demo account goes back to its start.

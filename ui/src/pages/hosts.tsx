@@ -72,6 +72,61 @@ function PhoneLogin() {
   )
 }
 
+/**
+ * A host with no browser of its own (a Linux server, REQ-F-798): a one-time sign-in address for its headless browser,
+ * handed over in that host's terminal. It signs in only a headless browser, so opening it here does nothing.
+ */
+function ServerLink() {
+  const [code, setCode] = useState<{ url: string; exp: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!code) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [code])
+  const make = async () => {
+    setBusy(true)
+    try {
+      setCode(await post<{ url: string; exp: number }>('/api/qr', { headless: true }))
+      setNow(Date.now())
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const left = code ? Math.max(0, Math.ceil((code.exp - now) / 1000)) : 0
+  return (
+    <section className="card-box">
+      <CardHead title="화면 없는 기기 연결" medium help="리눅스 서버처럼 브라우저 탭을 열어 둘 수 없는 기기는 에이전트가 헤드리스 브라우저(Chrome 또는 Chromium)로 연동해요. 그 브라우저를 이 계정으로 로그인시키는 주소예요. 5분 동안 한 번 쓸 수 있어요." />
+      <ol style={{ paddingLeft: 20, margin: 0 }} className="stack">
+        <li>
+          그 기기의 터미널에서 설치해요. 리눅스는 systemd 사용자 서비스로 설치돼요.
+          <Copy text={`curl -fsSL ${location.origin}/install.sh | bash`} />
+        </li>
+        <li>
+          로그인 주소를 만들어 그 기기의 터미널에서 넘겨요.
+          {code && left ? (
+            <>
+              <Copy text={`node ~/.claude-bridge/agent.mjs headless '${code.url}'`} />
+              <span className="muted" style={{ fontSize: 'var(--fs-small)', fontVariantNumeric: 'tabular-nums' }}>
+                {`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} 남음`}
+              </span>
+            </>
+          ) : (
+            <div>
+              <Button size="sm" icon="key" busy={busy} onClick={make}>
+                {code ? '새 주소 만들기' : '로그인 주소 만들기'}
+              </Button>
+            </div>
+          )}
+        </li>
+      </ol>
+    </section>
+  )
+}
+
 // A session's state in words (the raw phase was shown: "ended", "busy").
 const PHASE: Record<string, string> = { starting: '뜨는 중', busy: '작업 중', waiting: '응답 대기', idle: '쉬는 중', ended: '끝남', dead: '멈춤' }
 
@@ -125,6 +180,9 @@ export function HostsPage({ me }: { me: Me | null }) {
               문제가 생기면 <a href="/recovery">문제가 생겼을 때</a> · <a href="/bridge">연동 상태 페이지</a>
             </p>
           </section>
+          </PhoneFold>
+          <PhoneFold icon="key" title="화면 없는 기기 연결" hint="리눅스 서버">
+            <ServerLink />
           </PhoneFold>
           <PhoneFold icon="qr" title="폰에서 열기" hint="QR 로그인">
             <PhoneLogin />
@@ -455,6 +513,8 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
     return () => ((live = false), clearInterval(t))
   }, [id, sid, level])
   const h = detail?.host
+  // A Linux host (REQ-F-798): what only macOS has is not offered for it.
+  const linux = !!h?.info?.os?.startsWith('Linux')
   // Not one of mine: an operator looking at (and switching) someone else's Mac. Its owner is shown instead of its kind.
   const others = useStore((s) => !!s.state && !s.state.hosts.some((x) => x.id === id))
   return (
@@ -491,9 +551,17 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                 // An agent too old to report its parts: the switches in their own boxes, as before.
                 <>
                   <BackgroundBox key={`bg-${h.id}`} hostId={h.id} state={detail.health?.background} online={h.online} />
-                  <AwakeBox key={`awake-${h.id}`} hostId={h.id} kind={h.kind} awake={detail.health?.awake} online={h.online} />
+                  {linux ? null : <AwakeBox key={`awake-${h.id}`} hostId={h.id} kind={h.kind} awake={detail.health?.awake} online={h.online} />}
                   <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} />
                 </>
+              ) : null}
+              {linux ? (
+                <div className="banner">
+                  <Icon name="info" />
+                  <div className="banner-body">
+                    리눅스 기기예요. 맥에서만 되는 기능은 여기서 꺼져 있어요: 잠자기 막기, 덮개를 닫아도 켜 두기, macOS 허락 창 알림. 브라우저 탭 대신 헤드리스 연동 모드로 연결돼요.
+                  </div>
+                </div>
               ) : null}
               {h ? <CompactBox key={`cw-${h.id}`} hostId={h.id} window={detail.health?.compactWindow ?? null} online={h.online} /> : null}
               {h?.outdated ? (

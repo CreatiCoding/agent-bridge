@@ -7,31 +7,40 @@ import crypto from 'node:crypto'
 import { execFile } from 'node:child_process'
 
 /**
- * The zeropty release the agent uses. Fixed here, in a signed agent file (REQ-S-067): what is fetched is trusted
- * because its hash is part of what the operator signed, not because of where it came from.
+ * The zeropty release the agent uses on each system, keyed by `process.platform` (macOS, one universal build) or
+ * `platform-arch`. Fixed here, in a signed agent file (REQ-S-067): what is fetched is trusted because its hash is
+ * part of what the operator signed, not because of where it came from. A system with no entry has no zeropty yet:
+ * its sessions run in tmux. `shim` is the library zeropty-tty preloads (DYLD_INSERT_LIBRARIES or LD_PRELOAD).
  */
-export const ZEROPTY = Object.freeze({
-  version: '0.1.3',
-  sha256: '6fe2331e9d22ef9298640d7cfa5d59e1ca55caced8d36be66ce76acc3c739f80',
-  url: 'https://github.com/CreatiCoding/zeropty/releases/download/v0.1.3/zeropty-0.1.3-darwin-universal.tar.gz',
-  top: 'zeropty-0.1.3-darwin-universal',
+export const ZEROPTY_RELEASES = Object.freeze({
+  darwin: Object.freeze({
+    version: '0.1.3',
+    sha256: '6fe2331e9d22ef9298640d7cfa5d59e1ca55caced8d36be66ce76acc3c739f80',
+    url: 'https://github.com/CreatiCoding/zeropty/releases/download/v0.1.3/zeropty-0.1.3-darwin-universal.tar.gz',
+    top: 'zeropty-0.1.3-darwin-universal',
+    shim: 'shim.dylib',
+  }),
 })
-/** The files a usable install has. */
-const NEEDED = ['zeropty', 'zeropty-tty', 'shim.dylib']
+/** The release for a system, or null where zeropty has none. */
+export const zeroptyFor = (platform, arch) => ZEROPTY_RELEASES[platform] ?? ZEROPTY_RELEASES[`${platform}-${arch}`] ?? null
+/** This system's release, or null. */
+export const ZEROPTY = zeroptyFor(process.platform, process.arch)
 const MAX_BYTES = 64 * 1024 * 1024
 
-/** Where a version lives under the agent's folder: `<state>/zeropty/<version>/`. */
+/** Where a version lives under the agent's folder: `<state>/zeropty/<version>/`. All null where there is no release. */
 export function zeroptyPaths(stateDir, z = ZEROPTY) {
+  if (!z) return { dir: null, bin: null, tty: null, shim: null }
   const dir = path.join(stateDir, 'zeropty', z.version)
-  return { dir, bin: path.join(dir, 'zeropty'), tty: path.join(dir, 'zeropty-tty') }
+  return { dir, bin: path.join(dir, 'zeropty'), tty: path.join(dir, 'zeropty-tty'), shim: path.join(dir, z.shim ?? 'shim.dylib') }
 }
 
 /** Whether that version is unpacked and runnable. */
 export function zeroptyInstalled(p) {
+  if (!p.dir) return false
   try {
     fs.accessSync(p.bin, fs.constants.X_OK)
     fs.accessSync(p.tty, fs.constants.X_OK)
-    return fs.statSync(path.join(p.dir, 'shim.dylib')).isFile()
+    return fs.statSync(p.shim).isFile()
   } catch {
     return false
   }
@@ -47,6 +56,7 @@ const tar = (argv) => new Promise((resolve, reject) => execFile('/usr/bin/tar', 
  * @returns {Promise<{ ok: boolean, already?: boolean, error?: string }>}
  */
 export async function installZeropty(stateDir, { fetch: get = globalThis.fetch, z = ZEROPTY, log = () => {} } = {}) {
+  if (!z) return { ok: false, unsupported: true, error: '이 시스템용 zeropty 가 없음' }
   const p = zeroptyPaths(stateDir, z)
   if (zeroptyInstalled(p)) return { ok: true, already: true }
   const root = path.dirname(p.dir)
@@ -65,7 +75,7 @@ export async function installZeropty(stateDir, { fetch: get = globalThis.fetch, 
     fs.mkdirSync(out)
     await tar(['-xzf', file, '-C', out])
     const top = path.join(out, z.top)
-    for (const f of NEEDED) if (!fs.statSync(path.join(top, f)).isFile()) throw new Error(`묶음에 ${f} 가 없음`)
+    for (const f of ['zeropty', 'zeropty-tty', z.shim ?? 'shim.dylib']) if (!fs.statSync(path.join(top, f)).isFile()) throw new Error(`묶음에 ${f} 가 없음`)
     fs.chmodSync(path.join(top, 'zeropty'), 0o755)
     fs.chmodSync(path.join(top, 'zeropty-tty'), 0o755)
     // Renamed into place whole, so a half-unpacked folder is never taken for an install.

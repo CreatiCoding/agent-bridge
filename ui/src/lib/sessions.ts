@@ -21,7 +21,7 @@ export function look(s: Session, host?: Host): Look {
 
 export const titleOf = (s: Session) => s.title || s.preview || '새 세션'
 
-export const KINDS: Record<string, string> = { imac: '아이맥', macbook: '맥북', macmini: '맥 미니', macstudio: '맥 스튜디오', other: '기타' }
+export const KINDS: Record<string, string> = { imac: '아이맥', macbook: '맥북', macmini: '맥 미니', macstudio: '맥 스튜디오', server: '서버', other: '기타' }
 export const hostIcon = (kind: string) => (kind === 'macbook' ? 'laptop' : 'desktop')
 
 /** The model's short name: claude-fable-5-1[1m] → Fable 5.1 (1M). */

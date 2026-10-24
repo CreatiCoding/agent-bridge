@@ -26,7 +26,18 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.314',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent'], text: 'Linux(systemd) 호스트: 설치 스크립트가 Linux 를 받고, node 가 없으면 Node.js 22 를 ~/.claude-bridge/node 에 받음(SHA-256 확인, root 불필요). 백그라운드 서비스는 systemd 사용자 서비스(Restart=always, KillMode=process), linger 가 꺼져 있으면 안내. 기기 종류 서버', refs: ['REQ-F-798', 'CON-006', 'CON-011'] },
+      { kind: 'added', scope: ['agent', 'server', 'ui'], text: '화면 없는 기기 연결: 기기 화면에서 만든 로그인 주소(5분·한 번)를 그 기기 터미널에서 `agent.mjs headless` 로 넘기면 헤드리스 연동 모드가 켜지고 Chrome·Chromium 이 로그인해 연결', refs: ['REQ-F-798', 'IF-007', 'IF-164'] },
+      { kind: 'security', scope: ['server'], text: '화면 없는 기기용 로그인 주소는 헤드리스 브라우저(UA HeadlessChrome)만 로그인되고, 보통 브라우저는 안내만 봄(남이 만든 주소로 내 맥이 그 계정에 붙지 않게)', refs: ['REQ-F-798', 'IF-007'] },
+      { kind: 'changed', scope: ['agent', 'ui'], text: 'Linux 에서는 잠자기 막기·덮개·macOS 허락 창 감시를 하지 않고 기기 화면에 그렇다고 표시. zeropty 는 시스템별 판을 두고, Linux 판이 나오기 전까지 Linux 세션은 tmux', refs: ['REQ-F-798', 'REQ-F-794'] },
+    ],
+  },
+  {
     version: '1.313',
+    commit: '5f6571e',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['server'], text: '권한 요청 푸시 알림에 허용·거부 버튼: 알림에서 바로 답한다(그 카드가 아직 열려 있을 때만 눌림). Safari·iOS 웹 앱은 버튼 없이 예전처럼 누르면 세션이 열림', refs: ['REQ-F-797', 'IF-018'] },
