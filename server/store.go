@@ -301,7 +301,7 @@ func turnOnAutoAllow(meta *Sess, all bool) {
 	toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoAllow": true, "allowAll": all})
 }
 
-// allowModeOf: a session's permission policy as a launch mode ('' when it asks as the terminal does).
+// allowModeOf: a session's permission policy as a launch mode ("" when it asks as the terminal does).
 func allowModeOf(meta *Sess) string {
 	if !truthy(meta.get("autoAllow")) {
 		return ""

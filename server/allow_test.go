@@ -17,6 +17,10 @@ func TestStartModeAllowAll(t *testing.T) {
 
 func TestInheritAllow(t *testing.T) {
 	uid := "allow-test-user"
+	was := hosts
+	defer func() { hosts = was }()
+	hosts = newOMap[M]()
+	defer delete(prefsCache, uid)
 	orig := newMeta(uid, "allow-orig", "no-host", M{})
 	defer sessions.Delete("allow-orig")
 	mk := func(id string) *Sess {
