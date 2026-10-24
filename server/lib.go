@@ -26,6 +26,8 @@ var (
 	credSSH  = regexp.MustCompile(`(?i)\b((?:ssh|git\+ssh)://)([^\s/:@]*):[^\s/@]*@`)
 	pathAbs  = regexp.MustCompile("(?:~|file://)?/(?:Users|home|private|var|tmp|Volumes|opt|Library|usr|Applications|etc)/[^\n'\"`)\\]]*")
 	pathHome = regexp.MustCompile("(?:~|\\$HOME|\\$\\{HOME\\})/[^\n'\"`)\\]]*")
+	linkKey  = regexp.MustCompile(`([#&]key=)[A-Za-z0-9_%-]{16,}`)
+	hookKeyH = regexp.MustCompile(`(?i)(x-bridge-key:\s*)[A-Za-z0-9_-]{16,}`)
 )
 
 // stripCreds: a remote address without the credentials written into it.
@@ -46,6 +48,33 @@ func textOf(v any) string {
 
 // hideRemotes: every remote address in a text without its credentials.
 func hideRemotes(text any) string { return stripCreds(textOf(text)).(string) }
+
+// hideKeys: a text without an agent's link key in a link address (`#port=…&key=…`) or a hook header (`x-bridge-key:`).
+// The server knows no agent's key, so only these two forms; the agent also hides its own key values before sending.
+func hideKeys(s string) string {
+	return hookKeyH.ReplaceAllString(linkKey.ReplaceAllString(s, "${1}***"), "${1}***")
+}
+
+// hideKeysDeep: every string in a message (maps and arrays walked) through hideKeys.
+func hideKeysDeep(v any) any {
+	switch x := v.(type) {
+	case string:
+		return hideKeys(x)
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = hideKeysDeep(e)
+		}
+		return out
+	case M:
+		out := make(M, len(x))
+		for k, e := range x {
+			out[k] = hideKeysDeep(e)
+		}
+		return out
+	}
+	return v
+}
 
 // hidePaths: a text with home folder paths replaced by "(경로)".
 func hidePaths(text any) string {

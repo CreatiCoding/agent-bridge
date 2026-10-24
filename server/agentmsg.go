@@ -942,7 +942,8 @@ var notBackRe = regexp.MustCompile(`돌아오지 않았습니다`)
 // fromBridge: what a host's bridge tab passed up (/api/bridge/up), or the demo Mac in its place.
 func fromBridge(uid, hostID string, msgs []any, origin string) {
 	for _, mv := range msgs {
-		msg := asM(mv)
+		// An agent's link key never gets stored or passed on, from an older agent either (REQ-S-081).
+		msg := asM(hideKeysDeep(mv))
 		if msg["t"] == "got" {
 			if p := pending[jsString(msg["reqId"])]; p != nil && p.hostID == hostID {
 				clearTimeout(p.gotTimer)

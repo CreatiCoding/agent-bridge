@@ -1,4 +1,5 @@
-// What must not leave a Mac as it is: sign-in parts of git remote addresses and home folder paths. Both the agent
+// What must not leave a Mac as it is: sign-in parts of git remote addresses, home folder paths and the agent's link
+// keys. Both the agent
 // (before it sends) and the server (before it stores) run these, so an older agent on the other end changes nothing.
 
 /**
@@ -13,6 +14,25 @@ export function stripCreds(url) {
 
 /** Every remote address in a text (an error from git, a log line) without its credentials. */
 export const hideRemotes = (text) => stripCreds(String(text ?? ''))
+
+/**
+ * A text without the agent's link keys: the key in a link address (`…/bridge#port=4317&key=…`, as on a headless
+ * Chrome's command line, which `ps` shows), in a hook header (`x-bridge-key: …`), and any of `secrets` (this Mac's
+ * own keys) wherever they are. The server runs it without secrets: only the two forms are hidden there.
+ */
+export function hideKeys(text, secrets = []) {
+  let s = String(text ?? '')
+  for (const k of secrets) if (typeof k === 'string' && k.length >= 16) s = s.split(k).join('***')
+  return s.replace(/([#&]key=)[A-Za-z0-9_%-]{16,}/g, '$1***').replace(/(x-bridge-key:\s*)[A-Za-z0-9_-]{16,}/gi, '$1***')
+}
+
+/** Every string in a message (objects and arrays walked) through hideKeys. */
+export function hideKeysDeep(v, secrets = []) {
+  if (typeof v === 'string') return hideKeys(v, secrets)
+  if (Array.isArray(v)) return v.map((x) => hideKeysDeep(x, secrets))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, hideKeysDeep(x, secrets)]))
+  return v
+}
 
 /** A text with home folder paths replaced by "(경로)", so a log or a problem shown to others does not name a person's files. */
 export const hidePaths = (text) =>

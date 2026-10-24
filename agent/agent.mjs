@@ -21,7 +21,7 @@ import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, G
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
-import { stripCreds, hideRemotes } from './scrub.mjs'
+import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, muxEnv, targetName } from './mux.mjs'
@@ -171,6 +171,8 @@ if (!config.key) Object.assign(config, { key: crypto.randomBytes(24).toString('b
 // /statusline, and it is read by curl from a file, so it is on no command line and in no environment (`ps` shows
 // both, and their output gets pasted).
 config.hookKey ||= crypto.randomBytes(24).toString('base64url')
+/** This Mac's keys, which nothing sent to the site may carry (REQ-S-081): a session that ran `ps` or read a file could quote one. */
+const ownKeys = () => [config.key, config.oldKey?.key, config.hookKey]
 // A key changed before retired keys were remembered is still in oldKey: remembered too, so its browsers find their way back.
 if (config.oldKey?.key && !(config.retiredKeys ?? []).includes(keyPrint(config.oldKey.key))) config.retiredKeys = retireKey(config.retiredKeys, config.oldKey.key)
 config.site = (siteArg || config.site || '').replace(/\/+$/, '')
@@ -377,7 +379,7 @@ const pendingLogs = []
  */
 function log(level, area, text, sid) {
   // A git error quotes the remote address as written, a token with it: never kept or sent that way.
-  const entry = { ts: Date.now(), level, area, text: hideRemotes(text).slice(0, 2000), sid }
+  const entry = { ts: Date.now(), level, area, text: hideKeys(hideRemotes(text), ownKeys()).slice(0, 2000), sid }
   if (level === 'error') stats.lastError = { ts: entry.ts, area, sid, text: entry.text.slice(0, 300) }
   console.log(`${new Date(entry.ts).toISOString().slice(11, 19)} ${level.toUpperCase().padEnd(5)} [${area}]${sid ? ` ${sid.slice(0, 8)}` : ''} ${entry.text}`)
   pendingLogs.push(entry)
@@ -566,7 +568,8 @@ let welcomed = false
 function emit(msg) {
   if (!client) return
   stats.sent++
-  client.write(`data: ${JSON.stringify(msg)}\n\n`)
+  // The new key itself goes by client.write in rotateKey, not here.
+  client.write(`data: ${hideKeys(JSON.stringify(msg), ownKeys())}\n\n`)
 }
 
 async function hello() {
@@ -3820,6 +3823,16 @@ function adoptBackground() {
   log('info', 'background', `앞선 에이전트의 헤드리스 브라우저를 이어받음 (pid ${pid})`)
   return child
 }
+/** The address the headless browser is sent on to, once, from /bg-open (startBackground). */
+let bgOpen = null
+const BG_OPEN_MS = 2 * 60_000
+/** Where /bg-open?t= goes: the address once and only with its token, else null. */
+function takeBgOpen(t) {
+  const o = bgOpen
+  if (!o || Date.now() > o.until || typeof t !== 'string' || t.length !== o.t.length || !crypto.timingSafeEqual(Buffer.from(t), Buffer.from(o.t))) return null
+  bgOpen = null
+  return o.to
+}
 function startBackground() {
   if (bg.child || !config.background || doctorOnly || serviceCmd || linkOnly || awakeCmd) return
   if (!CHROME_BIN) return void (bg.error = IS_MAC ? 'Chrome 이 없습니다. https://www.google.com/chrome 에서 설치해 주세요' : `Chrome 이나 Chromium 이 없습니다. ${CHROME_FIX}`)
@@ -3830,6 +3843,10 @@ function startBackground() {
   const fragment = `#port=${config.port}${withKey ? `&key=${encodeURIComponent(config.key)}` : ''}&bg=1`
   const target = `${bg.login ?? `${config.site}/bridge`}${fragment}`
   bg.login = null
+  // Chrome's command line is for anyone on the machine to see (`ps`, /proc): it gets a one-time address of this agent,
+  // which sends it on to the real one with the key (REQ-S-081).
+  const t = crypto.randomBytes(16).toString('hex')
+  bgOpen = { t, to: target, until: Date.now() + BG_OPEN_MS }
   fs.mkdirSync(BG_PROFILE, { recursive: true, mode: 0o700 })
   const child = spawn(CHROME_BIN, [
     '--headless=new',
@@ -3846,7 +3863,7 @@ function startBackground() {
     '--disable-renderer-backgrounding',
     '--disable-backgrounding-occluded-windows',
     '--mute-audio',
-    target,
+    `http://127.0.0.1:${config.port}/bg-open?t=${t}`,
   ], { stdio: 'ignore', detached: true })
   if (withKey) fs.writeFileSync(path.join(BG_PROFILE, '.linked'), String(Date.now()))
   if (child.pid) fs.writeFileSync(BG_PID, String(child.pid))
@@ -4372,6 +4389,11 @@ const server = http.createServer(async (req, res) => {
   // A hook may also come with the agent's key: a session started before the hook key keeps sending that until it ends.
   const hookPath = req.method === 'POST' && (url.pathname === '/hook' || url.pathname === '/statusline' || url.pathname === '/delegate' || url.pathname === '/askpass')
   const keyOk = same(config.key) || (config.oldKey && Date.now() < config.oldKey.until && same(config.oldKey.key)) || (hookPath && same(config.hookKey))
+  // The headless browser's first address (startBackground): no key with it, its one-time token is the proof.
+  if (req.method === 'GET' && url.pathname === '/bg-open') {
+    const to = takeBgOpen(url.searchParams.get('t'))
+    return to ? res.writeHead(302, { Location: to, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }).end() : res.writeHead(404).end()
+  }
   // Lets a second agent started on the same port recognise this one. Says nothing else.
   if (req.method === 'GET' && url.pathname === '/ping') return res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"agent":"claude-bridge"}')
   if (!keyOk) {

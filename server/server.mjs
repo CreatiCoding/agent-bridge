@@ -19,7 +19,7 @@ import { clipClient, fixPrompt } from './report-prompt.mjs'
 import { loadPins, claimLogin, heldBy } from './login-pin.mjs'
 import { dropRoot, tightenTree } from './drop-root.mjs'
 import { manifestSigned } from '../agent/guard.mjs'
-import { cleanFolder, hidePaths, hideRemotes } from '../agent/scrub.mjs'
+import { cleanFolder, hidePaths, hideRemotes, hideKeysDeep } from '../agent/scrub.mjs'
 import { cleanStats, addStats, sessionStats } from '../agent/stats.mjs'
 import { cleanFolderBase, defaultFolder, folderPart, FOLDER_BASE, FOLDER_NO_GROUP } from './folder.mjs'
 import { createDemoMac, demoHostOf, demoPrefs, DEMO_LOGIN_NAME, DEMO_REFUSED, isDemoHost, isDemoUid, newDemoUid } from './demo.mjs'
@@ -2605,7 +2605,8 @@ const fromAgent = {
 
 /** What a host's bridge tab passed up (/api/bridge/up), or the demo Mac (server/demo.mjs) in its place. */
 function fromBridge(uid, hostId, msgs, origin = ORIGIN) {
-  for (const msg of msgs) {
+  // An agent's link key never gets stored or passed on, from an older agent either (REQ-S-081).
+  for (const msg of msgs.map((m) => hideKeysDeep(m))) {
     if (msg.t === 'got') {
       const p = pending.get(msg.reqId)
       if (p && p.hostId === hostId) (clearTimeout(p.gotTimer), (p.got = true))

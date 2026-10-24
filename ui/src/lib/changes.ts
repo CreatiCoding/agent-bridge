@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.316',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: '헤드리스 Chrome 명령줄(ps 로 누구나 보임)에 연동 키 대신 에이전트의 한 번 쓰는 주소(127.0.0.1/bg-open, 2분)를 싣고, 에이전트가 키가 든 연동 주소로 넘김', refs: ['REQ-S-081', 'REQ-F-277'] },
+      { kind: 'security', scope: ['agent', 'server'], text: '사이트로 가는 대화·도구 출력·로그에서 연동 키(#…&key=…, x-bridge-key, 이 기기의 키 값)를 *** 로 가림. 서버도 저장하기 전에 가려 옛 에이전트 것까지 막음', refs: ['REQ-S-081'] },
+    ],
+  },
+  {
     version: '1.315',
+    commit: '2d8b7d0',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent'], text: 'Linux x86_64 에서도 zeropty 0.1.6 을 받아 새 세션을 zeropty 에서 엶(고정 주소·SHA-256, preload shim.so). tmux 는 대비가 되고, 설치 스크립트는 tmux 가 없어도 멈추지 않음', refs: ['REQ-F-798', 'REQ-F-794'] },
