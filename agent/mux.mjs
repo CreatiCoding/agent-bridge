@@ -20,6 +20,13 @@ export const ZEROPTY_RELEASES = Object.freeze({
     top: 'zeropty-0.1.3-darwin-universal',
     shim: 'shim.dylib',
   }),
+  'linux-x64': Object.freeze({
+    version: '0.1.6',
+    sha256: 'f2ba31ebb70cacdbd06b58439bea91c4a55197f9ec6ad1baaf2fdab0f930cff9',
+    url: 'https://github.com/CreatiCoding/zeropty/releases/download/v0.1.6/zeropty-0.1.6-linux-x86_64.tar.gz',
+    top: 'zeropty-0.1.6-linux-x86_64',
+    shim: 'shim.so',
+  }),
 })
 /** The release for a system, or null where zeropty has none. */
 export const zeroptyFor = (platform, arch) => ZEROPTY_RELEASES[platform] ?? ZEROPTY_RELEASES[`${platform}-${arch}`] ?? null

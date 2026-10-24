@@ -32,10 +32,12 @@ test('systemd 유닛: %·$·따옴표는 systemd 가 읽는 대로 막고, 줄�
   assert.throws(() => unit({ env: { 'A B': 'x' } }), /환경 변수 이름/)
 })
 
-test('zeropty: macOS 판만 있고, 판이 없는 시스템은 받지도 설치됐다고 하지도 않는다', async () => {
+test('zeropty: macOS 와 Linux x86_64 판이 있고, 판이 없는 시스템은 받지도 설치됐다고 하지도 않는다', async () => {
   assert.equal(zeroptyFor('darwin', 'arm64'), ZEROPTY_RELEASES.darwin)
   assert.equal(zeroptyFor('darwin', 'x64'), ZEROPTY_RELEASES.darwin)
-  assert.equal(zeroptyFor('linux', 'x64'), null)
+  assert.equal(zeroptyFor('linux', 'x64'), ZEROPTY_RELEASES['linux-x64'])
+  assert.equal(ZEROPTY_RELEASES['linux-x64'].shim, 'shim.so')
+  assert.equal(zeroptyFor('linux', 'arm64'), null)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-none-'))
   assert.equal(zeroptyInstalled(zeroptyPaths(dir, null)), false)
   let fetched = 0

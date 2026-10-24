@@ -84,8 +84,10 @@ if [ "$OS" = Linux ] && ! have node; then
 fi
 need node node "https://nodejs.org 에서 설치하거나 $([ "$OS" = Darwin ] && echo 'brew install node' || echo '이 스크립트를 터미널에서 다시 실행해 받기')"
 # tmux is the fallback (REQ-F-794): sessions run in zeropty, which the agent fetches itself at a fixed version and hash.
-if [ "$OS" = Linux ]; then
-  # zeropty has no Linux build in this agent yet: sessions need tmux there (REQ-F-798).
+if [ "$OS" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
+  if have tmux; then say "  ✓ tmux (zeropty 가 안 될 때의 대비)"; else say "  - tmux 없음 (없어도 zeropty 로 세션을 엽니다. 대비로 두려면: sudo apt install tmux)"; fi
+elif [ "$OS" = Linux ]; then
+  # zeropty has a Linux build only for x86_64 (REQ-F-798): elsewhere sessions need tmux.
   if have tmux; then say "  ✓ tmux"; else
     say "  ✗ tmux 없음 — 직접 설치: sudo apt install tmux  (이 기기에서는 세션이 tmux 에서 돕니다)"
     MISSING="$MISSING tmux"

@@ -3578,8 +3578,8 @@ async function runChecks() {
     } catch {}
     if (info?.projectsDirectory) projectsDir = info.projectsDirectory
     if (info?.loggedIn === true) add('claude-login', 'ok', 'claude 로그인', `로그인됨 (${info.authMethod ?? '확인됨'})`)
-    else if (info?.loggedIn === false) add('claude-login', 'fail', 'claude 로그인', '로그인돼 있지 않습니다. 세션을 열면 로그인 화면에서 멈춥니다', '이 맥의 터미널에서 claude 를 실행하고 /login', true)
-    else add('claude-login', 'warn', 'claude 로그인', '로그인 상태를 확인하지 못했습니다 (이 버전은 `claude auth status` 가 없을 수 있음)', '이 맥의 터미널에서 claude 를 한 번 실행해 로그인돼 있는지 확인')
+    else if (info?.loggedIn === false) add('claude-login', 'fail', 'claude 로그인', '로그인돼 있지 않습니다. 세션을 열면 로그인 화면에서 멈춥니다', '이 기기의 터미널에서 claude 를 실행하고 /login', true)
+    else add('claude-login', 'warn', 'claude 로그인', '로그인 상태를 확인하지 못했습니다 (이 버전은 `claude auth status` 가 없을 수 있음)', '이 기기의 터미널에서 claude 를 한 번 실행해 로그인돼 있는지 확인')
   }
 
   for (const [id, title, dir] of [['state-dir', '에이전트 폴더', STATE_DIR], ['claude-dir', 'claude 기록 폴더', projectsDir]]) {

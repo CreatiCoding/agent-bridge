@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.315',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent'], text: 'Linux x86_64 에서도 zeropty 0.1.6 을 받아 새 세션을 zeropty 에서 엶(고정 주소·SHA-256, preload shim.so). tmux 는 대비가 되고, 설치 스크립트는 tmux 가 없어도 멈추지 않음', refs: ['REQ-F-798', 'REQ-F-794'] },
+      { kind: 'changed', scope: ['agent'], text: '점검의 claude 로그인 안내를 "이 맥의 터미널" 대신 "이 기기의 터미널"로', refs: ['REQ-F-798'] },
+    ],
+  },
+  {
     version: '1.314',
+    commit: 'a76e7dc',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent'], text: 'Linux(systemd) 호스트: 설치 스크립트가 Linux 를 받고, node 가 없으면 Node.js 22 를 ~/.claude-bridge/node 에 받음(SHA-256 확인, root 불필요). 백그라운드 서비스는 systemd 사용자 서비스(Restart=always, KillMode=process), linger 가 꺼져 있으면 안내. 기기 종류 서버', refs: ['REQ-F-798', 'CON-006', 'CON-011'] },
