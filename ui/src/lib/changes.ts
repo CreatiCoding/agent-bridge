@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.318',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '키를 바꾼 직후 헤드리스 Chrome 을 다시 띄우면 옛 키로 붙어 15분 뒤 끊길 수 있던 것: 헤드리스 Chrome 은 늘 현재 키로 뜨고, 예전 키로 오면 에이전트가 다시 띄움', refs: ['REQ-S-081', 'REQ-F-277'] },
+    ],
+  },
+  {
     version: '1.317',
+    commit: 'c25d93c',
     date: '2026-10-25',
     changes: [
       { kind: 'security', scope: ['server'], text: 'https 사이트의 모든 응답에 Strict-Transport-Security(max-age 1년, 하위 도메인 제외): 첫 접속이나 http:// 로 친 주소도 브라우저가 https 로만 오게', refs: ['REQ-S-082'] },

@@ -34,7 +34,9 @@ test('the browser a request came from, for `open -b`; never the headless browser
 
 test('agent.mjs reopens the link page only for a retired key, and keeps the old key of an earlier change', () => {
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
-  assert.match(src, /if \(key && \(config\.retiredKeys \?\? \[\]\)\.includes\(keyPrint\(key\)\)\) reopenLink\(req\.headers\['user-agent'\]\)\n\s*return res\.writeHead\(401/)
+  assert.match(src, /if \(key && \(config\.retiredKeys \?\? \[\]\)\.includes\(keyPrint\(key\)\)\) \{\n\s*if \(url\.searchParams\.get\('bg'\) === '1' && config\.background\) restartBgForKey\(\)\n\s*else reopenLink\(req\.headers\['user-agent'\]\)\n\s*\}\n\s*return res\.writeHead\(401/)
+  // The headless browser is started again at most once per REOPEN_MS (REQ-S-081 ④).
+  assert.match(src, /function restartBgForKey\(\) \{\n\s*if \(Date\.now\(\) - \(reopened\.get\('headless'\) \?\? 0\) < REOPEN_MS\) return/)
   assert.match(src, /config\.retiredKeys = retireKey\(config\.retiredKeys, config\.key\)/)
   assert.match(src, /if \(config\.oldKey\?\.key && /)
 })

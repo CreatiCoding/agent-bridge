@@ -3265,7 +3265,6 @@ function rotateKey(reason) {
   clientOldKey = false
   log('info', 'link', `에이전트 키를 바꿈 (${reason})`)
   if (config.background && !clientBg) {
-    fs.rmSync(path.join(BG_PROFILE, '.linked'), { force: true })
     bg.restarts = 0
     stopBackground()
     setTimeout(startBackground, 2000)
@@ -3293,6 +3292,18 @@ const REOPEN_MS = 10 * 60_000
  * by itself. The link page opens in that browser with the current key, on this Mac only (the key never goes through
  * the server), and every tab of that browser takes it from there. At most once per REOPEN_MS per browser.
  */
+/**
+ * The headless browser came with a retired key (it lost the new one): started again, it opens with the current key.
+ * At most once per REOPEN_MS, so a request that only says bg=1 cannot keep restarting it.
+ */
+function restartBgForKey() {
+  if (Date.now() - (reopened.get('headless') ?? 0) < REOPEN_MS) return
+  reopened.set('headless', Date.now())
+  log('info', 'link', '헤드리스 브라우저가 예전 키로 와서 새 키로 다시 띄움')
+  bg.restarts = 0
+  stopBackground()
+  setTimeout(startBackground, 2000)
+}
 function reopenLink(ua) {
   const app = browserApp(ua)
   stats.staleKey = { at: Date.now(), app }
@@ -3838,9 +3849,9 @@ function startBackground() {
   if (!CHROME_BIN) return void (bg.error = IS_MAC ? 'Chrome 이 없습니다. https://www.google.com/chrome 에서 설치해 주세요' : `Chrome 이나 Chromium 이 없습니다. ${CHROME_FIX}`)
   const kept = bg.login ? null : adoptBackground()
   if (kept) return watchBackground(kept)
-  // The key goes on the command line only while the profile does not have it yet (first start, or a new sign-in).
-  const withKey = bg.login || !fs.existsSync(path.join(BG_PROFILE, '.linked'))
-  const fragment = `#port=${config.port}${withKey ? `&key=${encodeURIComponent(config.key)}` : ''}&bg=1`
+  // Always the current key: it is on no command line (/bg-open below), and a key the page took just before its
+  // browser was closed may never have reached the profile on disk.
+  const fragment = `#port=${config.port}&key=${encodeURIComponent(config.key)}&bg=1`
   const target = `${bg.login ?? `${config.site}/bridge`}${fragment}`
   bg.login = null
   // Chrome's command line is for anyone on the machine to see (`ps`, /proc): it gets a one-time address of this agent,
@@ -3865,7 +3876,6 @@ function startBackground() {
     '--mute-audio',
     `http://127.0.0.1:${config.port}/bg-open?t=${t}`,
   ], { stdio: 'ignore', detached: true })
-  if (withKey) fs.writeFileSync(path.join(BG_PROFILE, '.linked'), String(Date.now()))
   if (child.pid) fs.writeFileSync(BG_PID, String(child.pid))
   log('info', 'background', `헤드리스 브라우저를 띄움 (pid ${child.pid})`)
   child.on('error', (e) => (bg.error = `Chrome 을 띄우지 못했습니다: ${e.message}`))
@@ -4397,7 +4407,10 @@ const server = http.createServer(async (req, res) => {
   // Lets a second agent started on the same port recognise this one. Says nothing else.
   if (req.method === 'GET' && url.pathname === '/ping') return res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"agent":"claude-bridge"}')
   if (!keyOk) {
-    if (key && (config.retiredKeys ?? []).includes(keyPrint(key))) reopenLink(req.headers['user-agent'])
+    if (key && (config.retiredKeys ?? []).includes(keyPrint(key))) {
+      if (url.searchParams.get('bg') === '1' && config.background) restartBgForKey()
+      else reopenLink(req.headers['user-agent'])
+    }
     return res.writeHead(401, cors).end()
   }
   // Which host this is, for a page of the site on this Mac: it opens a session's localhost server directly.
