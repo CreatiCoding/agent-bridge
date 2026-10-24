@@ -835,7 +835,22 @@ func permissionNotice(meta *Sess, hostID string, c M, key, lead string) M {
 	if truthy(meta.get("title")) {
 		title = meta.str("title")
 	}
-	return M{"sid": meta.id(), "key": key, "title": "🔐 권한 요청 · " + title, "text": strings.Join(parts, " · "), "tone": "warn", "push": "always"}
+	n := M{"sid": meta.id(), "key": key, "title": "🔐 권한 요청 · " + title, "text": strings.Join(parts, " · "), "tone": "warn", "push": "always"}
+	// The notification's 허용·거부 buttons (REQ-F-797): the card and the numbers of its allow-once and deny options.
+	// The agent presses nothing once that card has closed, so a late tap cannot answer another dialog.
+	act := M{"card": c["id"]}
+	for _, o := range asArr(c["options"]) {
+		switch k := mstr(asM(o), "kind"); {
+		case k == "allow-once" && act["allow"] == nil:
+			act["allow"] = mget(o, "n")
+		case k == "deny" && act["deny"] == nil:
+			act["deny"] = mget(o, "n")
+		}
+	}
+	if safeId(c["id"]) && act["allow"] != nil && act["deny"] != nil {
+		n["act"] = act
+	}
+	return n
 }
 
 // cardFromAgent: a decision the terminal is waiting for, as a card with buttons; or the same card, answered.

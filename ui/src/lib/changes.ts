@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.313',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '권한 요청 푸시 알림에 허용·거부 버튼: 알림에서 바로 답한다(그 카드가 아직 열려 있을 때만 눌림). Safari·iOS 웹 앱은 버튼 없이 예전처럼 누르면 세션이 열림', refs: ['REQ-F-797', 'IF-018'] },
+    ],
+  },
+  {
     version: '1.312',
+    commit: 'f9101f2',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['ui', 'server', 'agent'], text: '권한 모드에 빨간 "전부 허용"을 더함: 위험한 호출(폴더 밖 삭제·강제 push·sudo·비밀 파일)까지 묻지 않고 바로 허용. 세션 칩·선택칸·목록의 점이 빨갛게 보임', refs: ['REQ-F-796'] },

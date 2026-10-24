@@ -170,6 +170,8 @@ func addNotice(uid string, n M) {
 			n = shallow(n)
 			n["title"] = "잠긴 세션"
 			n["text"] = "확인할 것이 있어요"
+			// Answering a locked session takes its unlock; a notification button has none.
+			delete(n, "act")
 		}
 	}
 	list := noticesOf(uid, nil)
@@ -179,6 +181,9 @@ func addNotice(uid string, n M) {
 		}
 	}
 	kept := M{"id": randHex(6), "at": float64(nowMs()), "sid": n["sid"], "key": n["key"], "title": jsSliceTo(jsString(n["title"]), 80), "text": jsSliceTo(jsString(n["text"]), 200), "tone": n["tone"]}
+	if n["act"] != nil {
+		kept["act"] = n["act"]
+	}
 	list = append([]any{kept}, list...)
 	if len(list) > 30 {
 		list = list[:30]
