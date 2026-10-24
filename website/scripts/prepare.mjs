@@ -55,6 +55,8 @@ const lines = [
   ...Object.entries(highlights).map(([v, text]) => `- **[${v}](#${v.replace('.', '')})**: ${text}`),
   ':::',
   '',
+  '<ChangelogFilter />',
+  '',
 ]
 CHANGES.slice(0, RECENT).forEach((r, i) => lines.push(...release(r, i === 0)))
 
