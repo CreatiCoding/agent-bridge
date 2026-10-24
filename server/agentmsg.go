@@ -808,6 +808,36 @@ func statusFromAgent(uid, hostID string, msg M) {
 	closeWhenReportDone(meta)
 }
 
+// permissionNotice: "🔐 권한 요청 · <session>" over "<Mac> · Bash: git push origin main", the call itself rather than
+// Claude Code's "Do you want to proceed?". Pushed even while a desk's tab is in front: the session stands still
+// until someone answers (REQ-F-795).
+func permissionNotice(meta *Sess, hostID string, c M, key, lead string) M {
+	name := ""
+	if v := mget(c["tool"], "name"); truthy(v) {
+		name = jsString(v)
+	}
+	what := strOr(c["title"], "권한 요청")
+	if name != "" {
+		what = name
+		for _, x := range toolSummary(name, mget(c["tool"], "input"), nil, toolCtx{cwd: meta.str("cwd")}) {
+			if l, _ := x.V.(string); x.K == "label" && l != "" {
+				what = name + ": " + l
+			}
+		}
+	}
+	parts := []string{}
+	for _, p := range []string{lead, strOr(hostName(hostID), ""), what} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	title := "세션"
+	if truthy(meta.get("title")) {
+		title = meta.str("title")
+	}
+	return M{"sid": meta.id(), "key": key, "title": "🔐 권한 요청 · " + title, "text": strings.Join(parts, " · "), "tone": "warn", "push": "always"}
+}
+
 // cardFromAgent: a decision the terminal is waiting for, as a card with buttons; or the same card, answered.
 func cardFromAgent(uid, hostID string, msg M) {
 	meta := sessOf(msg)
@@ -841,7 +871,9 @@ func cardFromAgent(uid, hostID string, msg M) {
 		}
 		logEvents(meta, []any{M{"k": "card", "card": c, "at": at}})
 		// Someone has that conversation open: the card is in front of them, a notice on top of it is noise.
-		if !isViewing(uid, meta.id()) {
+		if !isViewing(uid, meta.id()) && c["kind"] == "permission" {
+			addNotice(uid, permissionNotice(meta, hostID, c, "card|"+cid, ""))
+		} else if !isViewing(uid, meta.id()) {
 			tn := ""
 			if truthy(mget(c["tool"], "name")) {
 				tn = jsString(mget(c["tool"], "name")) + ": "
@@ -856,21 +888,16 @@ func cardFromAgent(uid, hostID string, msg M) {
 				if mget(meta.get("card"), "id") != cid {
 					return
 				}
-				var text string
+				key := "remind|" + cid + "|" + itoa(n)
 				if c["kind"] == "permission" {
-					tn := "도구"
-					if v := mget(c["tool"], "name"); v != nil {
-						tn = jsString(v)
-					}
-					text = "⏰ " + itoa(n*5) + "분째 *" + tn + "* 권한 응답을 기다리고 있습니다. 세션이 그동안 멈춰 있습니다."
+					addNotice(uid, permissionNotice(meta, hostID, c, key, "⏰ "+itoa(n*5)+"분째 기다리는 중"))
 				} else {
 					l, ok := remindLabels[mstr(c, "kind")]
 					if !ok {
 						l = "터미널 확인 대기"
 					}
-					text = "⏰ " + itoa(n*5) + "분째 " + l + " 중입니다. 세션이 그동안 멈춰 있습니다."
+					addNotice(uid, M{"sid": meta.id(), "key": key, "title": title(), "text": "⏰ " + itoa(n*5) + "분째 " + l + " 중입니다. 세션이 그동안 멈춰 있습니다.", "tone": "info", "push": true})
 				}
-				addNotice(uid, M{"sid": meta.id(), "key": "remind|" + cid + "|" + itoa(n), "title": title(), "text": text, "tone": "info", "push": true})
 				if n < 2 && c["kind"] == "permission" {
 					remind(n + 1)
 				}

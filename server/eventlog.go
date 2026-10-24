@@ -680,7 +680,8 @@ func trackBackgroundLine(meta *Sess, line string) {
 			if ok {
 				tone = "ok"
 			}
-			addNotice(meta.uid(), M{"sid": meta.id(), "key": key + "|" + status, "title": title, "text": summary, "tone": tone, "push": true})
+			// Kept in the notice list only: a finished job is no reason to buzz a phone (REQ-F-519, REQ-F-795).
+			addNotice(meta.uid(), M{"sid": meta.id(), "key": key + "|" + status, "title": title, "text": summary, "tone": tone})
 		}
 	}
 	list, ok := content.([]any)

@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.311',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '권한 허용이 필요하면 푸시 알림에 어느 세션(제목)·어느 맥·무슨 호출(예: Bash: git push origin main)인지 담아 보내고, 조작 페이지가 다른 기기에서 앞에 떠 있어도 보냄. 5·10분 다시 알리기도 같은 형식', refs: ['REQ-F-795', 'REQ-F-482', 'REQ-F-483', 'REQ-F-517'] },
+      { kind: 'removed', scope: ['server'], text: '백그라운드 작업이 끝났을 때의 푸시 알림: 알림 목록에만 남김', refs: ['REQ-F-519'] },
+    ],
+  },
+  {
     version: '1.310',
+    commit: '1cbcec7',
     date: '2026-10-25',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: '세션 입력칸이 여러 줄이 돼도 한 줄 높이에 머물던 것: 글에 맞춰 늘어나고, 창 높이의 30% 안에 드는 줄 수까지 커진 뒤로는 상자 안에서 스크롤', refs: ['REQ-F-150'] },
