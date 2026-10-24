@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -21,9 +22,21 @@ var SECURITY M
 func initSecurity() {
 	SECURITY = M{
 		// Inline styles are allowed for the HTML previews (a sandboxed frame that inherits this policy).
-		"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https://avatars.githubusercontent.com; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*; frame-src 'self' " + strings.Join(preview.ORIGINS, " ") + "; frame-ancestors 'self'",
+		// base-uri and object-src are not covered by default-src: a <base> or a plugin object stays off (REQ-S-011).
+		"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https://avatars.githubusercontent.com; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*; frame-src 'self' " + strings.Join(preview.ORIGINS, " ") + "; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "no-referrer",
+	}
+}
+
+// HSTS: a site served over https tells the browser to come back only over https (REQ-S-082). Not includeSubDomains:
+// the other names under the same domain are not this server's.
+const HSTS = "max-age=31536000"
+
+// transportHeaders: headers every answer of an https site carries, the event streams and the previews' too.
+func transportHeaders(h http.Header, req *Req) {
+	if strings.HasPrefix(originOf(req), "https://") {
+		h.Set("Strict-Transport-Security", HSTS)
 	}
 }
 

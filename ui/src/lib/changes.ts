@@ -26,7 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.317',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'security', scope: ['server'], text: 'https 사이트의 모든 응답에 Strict-Transport-Security(max-age 1년, 하위 도메인 제외): 첫 접속이나 http:// 로 친 주소도 브라우저가 https 로만 오게', refs: ['REQ-S-082'] },
+      { kind: 'security', scope: ['server'], text: "페이지 CSP 에 base-uri 'self'·object-src 'none' 을 더함", refs: ['REQ-S-011'] },
+      { kind: 'security', scope: ['server'], text: '데모 계정의 :sudo·/root 글 막기가 글 앞의 유니코드 공백(U+3000 등)으로 지나가던 것: JavaScript 와 같은 공백 규칙으로 막음', refs: ['REQ-S-068'] },
+    ],
+  },
+  {
     version: '1.316',
+    commit: '9b0357f',
     date: '2026-10-25',
     changes: [
       { kind: 'security', scope: ['agent'], text: '헤드리스 Chrome 명령줄(ps 로 누구나 보임)에 연동 키 대신 에이전트의 한 번 쓰는 주소(127.0.0.1/bg-open, 2분)를 싣고, 에이전트가 키가 든 연동 주소로 넘김', refs: ['REQ-S-081', 'REQ-F-277'] },

@@ -624,7 +624,7 @@ var (
 	demoSent      = map[string][]int64{}
 	demoSidRe     = regexp.MustCompile(`^/api/sessions/([^/]+)`)
 	demoHidRe     = regexp.MustCompile(`^/api/hosts/([^/]+)`)
-	demoSudoText  = regexp.MustCompile(`(?i)^\s*[:/](sudo|root)\b`)
+	demoSudoText  = re(`(?i)^\s*[:/](sudo|root)\b`) // JavaScript's \s: csSend trims U+3000 and the like before reading `:sudo`
 	demoSudoCmd   = regexp.MustCompile(`(?i)^(sudo|root)$`)
 	demoSendShape = regexp.MustCompile(`^/api/sessions/S/(say|send|btw|voice|fork|resume)$`)
 )

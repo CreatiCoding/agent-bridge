@@ -364,10 +364,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	req := newReq(r)
+	transportHeaders(w.Header(), req)
 	if handover.intercept(w, r) {
 		return
 	}
-	req := newReq(r)
 	res := newRes(req)
 	mu.Lock()
 	route(req, res)
