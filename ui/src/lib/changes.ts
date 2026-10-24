@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.310',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '세션 입력칸이 여러 줄이 돼도 한 줄 높이에 머물던 것: 글에 맞춰 늘어나고, 창 높이의 30% 안에 드는 줄 수까지 커진 뒤로는 상자 안에서 스크롤', refs: ['REQ-F-150'] },
+    ],
+  },
+  {
     version: '1.309',
+    commit: 'd6f3c1e',
     date: '2026-10-23',
     changes: [
       { kind: 'changed', scope: ['server'], text: '서버를 Node 에서 Go 로 다시 작성: 표준 라이브러리만 쓰는 바이너리 하나. 경로·메시지·쿠키·플러그인 API·데이터 파일 형식·환경 변수·포트·오류 문구는 그대로이고, 실행 이미지에 node 가 없음(HEALTHCHECK 는 wget). JSON 키 순서와 압축(gzip 만)만 달라짐', refs: ['REQ-M-016', 'CON-014', 'CON-015'] },

@@ -90,13 +90,25 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
     const now = document.activeElement
     if (el && (!now || now === document.body)) el.focus()
   }, [disabled])
-  // The box grows with what is written, up to a limit (then it scrolls).
+  // The box grows with what is written, up to as many whole lines as fit in 30% of the window (then it scrolls).
+  // Whole lines, so the last visible one is never cut in half. Counted again when the window changes size.
+  const [winH, setWinH] = useState(() => window.innerHeight)
+  useEffect(() => {
+    const onResize = () => setWinH(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   useEffect(() => {
     const el = box.current
     if (!el) return
+    const cs = getComputedStyle(el)
+    const line = parseFloat(cs.lineHeight) || 24
+    const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+    const lines = Math.max(1, Math.floor((winH * 0.3 - pad) / line))
+    el.style.maxHeight = `${Math.ceil(lines * line + pad)}px`
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
-  }, [text])
+  }, [text, winH])
 
   const slash = /^\/([\w:-]*)$/.exec(text)
   useEffect(() => {
