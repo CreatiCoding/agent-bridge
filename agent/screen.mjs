@@ -92,6 +92,20 @@ export function screenDigest(screen, n = 12) {
 }
 
 /**
+ * How long a transcript has not been written to, in ms (Infinity when it cannot be read). A turn the transcript
+ * calls open but that stopped (a dialog's key cut the request off, 2026-10-25) writes nothing more.
+ */
+export function transcriptQuietMs(file, now = Date.now()) {
+  try {
+    return now - fs.statSync(file).mtimeMs
+  } catch {
+    return Infinity
+  }
+}
+/** How long the screen may sit idle on a turn the transcript still calls open before it is closed anyway. */
+export const TURN_STALE_MS = 60_000
+
+/**
  * Whether a turn is still open, read from the transcript alone, for the moment a screen-only judgement (the
  * input box looks idle) would otherwise close it. The screen can read as idle while Claude Code is between
  * steps, so the last thing actually written settles it: a tool call with no result yet, or a result/message

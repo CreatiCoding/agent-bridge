@@ -393,3 +393,25 @@ ${RULE}
   2. 저렇게
 `), null)
 })
+
+test('a turn the transcript leaves open is closed after a quiet minute on an idle screen (2026-10-25)', async () => {
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS } = await import('../../agent/screen.mjs')
+  // As the cut-off turn left it: a tool result Claude never answered.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-stale-'))
+  const f = path.join(dir, 't.jsonl')
+  fs.writeFileSync(f, `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'x' }] } })}\n${JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'x' }] } })}\n`)
+  try {
+    assert.equal(transcriptTurnLooksOpen(f), true)
+    const at = fs.statSync(f).mtimeMs
+    assert.ok(transcriptQuietMs(f, at + TURN_STALE_MS - 1) < TURN_STALE_MS)
+    assert.ok(transcriptQuietMs(f, at + TURN_STALE_MS) >= TURN_STALE_MS)
+    assert.equal(transcriptQuietMs(path.join(dir, 'none.jsonl')), Infinity)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  // The screen it sat on: no working line, an empty input box.
+  assert.equal(stuckState(`● 임시 컨테이너로 du 만 실행하겠습니다.\n  Ran 2 shell commands\n  ⎿  Allowed by PermissionRequest hook\n\n${RULE}\n❯ \n${RULE}\n  Opus 5.5 · $0.45 · ctx 7%\n  ⏸ manual mode on\n`), 'idle')
+})

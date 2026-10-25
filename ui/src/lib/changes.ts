@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.332',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '중간에 끊긴 턴이 일하는 중으로 남아 보낸 메시지가 붙잡히던 것: 화면이 비어 있고 1분 동안 아무것도 쓰이지 않으면 턴을 닫고, 끊겼다고 알리고, 붙잡힌 메시지를 보냄', refs: ['REQ-F-418'] },
+    ],
+  },
+  {
     version: '1.331',
+    commit: '8e73a21',
     date: '2026-10-25',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: 'Claude Code 의 "Try the new fullscreen renderer?" 권유 창이 보낸 지시문 줄까지 버튼으로 담긴 터미널 확인 카드가 되던 것: 창을 바르게 읽고, 일하는 도중에도 자동으로 "Not now" 로 넘김', refs: ['REQ-F-033'] },

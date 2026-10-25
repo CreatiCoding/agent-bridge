@@ -25,7 +25,7 @@ import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, muxEnv, targetName } from './mux.mjs'
-import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
+import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
@@ -1793,9 +1793,20 @@ async function watch(sid, s) {
     } else {
       if (s.card?.open && s.card.kind === 'stuck') foldCard(sid, s, '이어서 진행')
       if (s.card?.sig === 'stuck|interrupted') s.card = null
-      if (s.turn && stuck === 'idle' && Date.now() - s.activityAt >= IDLE_CLOSE_MS && !transcriptTurnLooksOpen(transcriptPath(s, sid))) {
-        log('warn', 'turn', 'idle prompt with an open turn; closing it (Stop hook missed?)', sid)
-        endTurn(sid, s)
+      if (s.turn && stuck === 'idle' && Date.now() - s.activityAt >= IDLE_CLOSE_MS) {
+        const file = transcriptPath(s, sid)
+        if (!transcriptTurnLooksOpen(file)) {
+          log('warn', 'turn', 'idle prompt with an open turn; closing it (Stop hook missed?)', sid)
+          endTurn(sid, s)
+        } else if (Date.now() - s.activityAt >= TURN_STALE_MS && transcriptQuietMs(file) >= TURN_STALE_MS) {
+          // The transcript ends on a result Claude never answered, and nothing has moved for a minute with no
+          // working line on screen: the turn was cut off without a Stop hook. Left open, it held every message sent
+          // after it ("held while the turn runs"), and the session looked busy while it waited (2026-10-25).
+          log('warn', 'turn', 'idle prompt for a minute on a turn the transcript left open; closing it as cut off', sid)
+          // A line, not the interrupted card: the screen reads idle, not interrupted, and the card would fold on the next look.
+          note(sid, '⚠️ 작업이 중간에 끊겨 멈춰 있었어요. 기다리던 메시지가 있으면 지금 보내고, 없으면 이어서 할 일을 보내 주세요.', 'warn')
+          endTurn(sid, s, 'cut off (read off the screen)')
+        }
       }
     }
     publish(sid, s)
