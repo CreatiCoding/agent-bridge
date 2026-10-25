@@ -255,6 +255,21 @@ export function retireKey(prints, key) {
 /** How old a key gets before it changes by itself (1.319, REQ-S-083). */
 export const KEY_ROTATE_MS = 24 * 3600_000
 
+/** How many key changes the agent remembers (1.321, REQ-S-084). */
+export const KEY_LOG_MAX = 5
+
+/** A key change, newest first: when, why (`auto` · `site` · `gen`), and when a tab first came with the new key (`took`). */
+export const noteRekey = (log, at, why) => [{ at, why, took: null }, ...(Array.isArray(log) ? log : [])].slice(0, KEY_LOG_MAX)
+
+/** A request came with the current key: the newest change is taken up, once. Returns the same array when nothing changes. */
+export function noteTook(log, now) {
+  if (!Array.isArray(log) || !log[0] || log[0].took) return log
+  return [{ ...log[0], took: now }, ...log.slice(1)]
+}
+
+/** What became of a change: taken up, still waiting (within the old key's grace), or missed (grace over, no tab came). */
+export const rekeyResult = (e, now, graceMs) => (e?.took ? 'took' : now - (e?.at ?? 0) < graceMs ? 'waiting' : 'missed')
+
 /**
  * Whether the key should change by itself now: it is KEY_ROTATE_MS old (no keyAt: older still), the linked tab can
  * take a new key and came with the current one, and the previous key is not still in its grace (changing again then

@@ -2111,12 +2111,18 @@ function cleanVoiceStatus(v) {
 }
 
 /** What an agent says about its key (agent keyState), kept to known fields: times, counts and browser ids only. */
+// The key changes (REQ-S-084): times and two short words only, at most five.
+const keyLog = (arr) =>
+  (Array.isArray(arr) ? arr : [])
+    .filter((e) => e && typeof e === 'object' && Number.isFinite(e.at) && e.at)
+    .slice(0, 5)
+    .map((e) => ({ at: e.at, why: ['auto', 'site', 'gen'].includes(e.why) ? e.why : null, took: Number.isFinite(e.took) ? e.took : null, result: ['took', 'waiting', 'missed'].includes(e.result) ? e.result : null }))
 function cleanKeyState(k) {
   if (!k || typeof k !== 'object') return null
   const num = (v) => (Number.isFinite(v) ? v : null)
   const app = (v) => (typeof v === 'string' && /^[\w.-]{1,64}$/.test(v) ? v : null)
   const event = (e) => (e && typeof e === 'object' && num(e.at) ? { at: e.at, app: app(e.app), ...(typeof e.ok === 'boolean' ? { ok: e.ok } : {}) } : null)
-  return { gen: num(k.gen), latest: num(k.latest), at: num(k.at), oldUntil: num(k.oldUntil), next: num(k.next), retired: num(k.retired) ?? 0, linked: ['current', 'old'].includes(k.linked) ? k.linked : null, stale: event(k.stale), reopen: event(k.reopen) }
+  return { gen: num(k.gen), latest: num(k.latest), at: num(k.at), oldUntil: num(k.oldUntil), next: num(k.next), retired: num(k.retired) ?? 0, linked: ['current', 'old'].includes(k.linked) ? k.linked : null, stale: event(k.stale), reopen: event(k.reopen), log: keyLog(k.log) }
 }
 
 function hostSummary(id, h, masked = false) {

@@ -26,6 +26,8 @@ interface KeyState {
   oldUntil: number | null
   /** When the key changes by itself (1.319); absent from older agents. */
   next?: number | null
+  /** The last key changes, newest first (1.321); absent from older agents. */
+  log?: { at: number; why: 'auto' | 'site' | 'gen' | null; took: number | null; result: 'took' | 'waiting' | 'missed' | null }[]
   retired: number
   linked: 'current' | 'old' | null
   stale: { at: number; app: string | null } | null
@@ -45,11 +47,16 @@ function keyView(k: KeyState | null | undefined, online: boolean): { tone: 'gree
   const parts = [old ? '1.140 이전에 만든 키' : k.at ? `${ago(k.at)} 바꿈` : '처음 키']
   if (k.next && !old) parts.push(k.next <= Date.now() ? '자동 교체 대기' : `${Math.max(1, Math.round((k.next - Date.now()) / 3_600_000))}시간 뒤 자동 교체`)
   parts.push(!online ? '연동 탭 모름' : k.linked === 'current' ? '연동 탭이 지금 키' : k.linked === 'old' ? '연동 탭이 이전 키' : '연동 탭 없음')
+  const last = k.log?.[0]
+  if (last) {
+    const why = last.why === 'auto' ? '자동' : last.why === 'site' ? '사이트' : last.why === 'gen' ? '옛 세대' : ''
+    parts.push(`${why} 교체 ${ago(last.at)}: ${last.result === 'took' && last.took ? `탭이 ${Math.max(1, Math.round((last.took - last.at) / 1000))}초 뒤 새 키로 옴` : last.result === 'missed' ? '탭이 새 키로 오지 않음' : '탭을 기다리는 중'}`)
+  }
   if (k.oldUntil) parts.push(`이전 키는 ${Math.max(1, Math.round((k.oldUntil - Date.now()) / 60_000))}분 뒤 끝남`)
   if (k.retired) parts.push(`예전 키 ${k.retired}개 기억`)
   if (k.stale) parts.push(`예전 키로 온 탭 ${ago(k.stale.at)} (${browserName(k.stale.app)})`)
   if (k.reopen) parts.push(`${browserName(k.reopen.app)} 에 연동 페이지 ${k.reopen.ok === false ? '다시 열지 못함' : '다시 엶'} ${ago(k.reopen.at)}`)
-  const stuck = keyStuck(k)
+  const stuck = keyStuck(k) || last?.result === 'missed'
   const tone = !online || !k.linked ? 'grey' : old || k.linked === 'old' || stuck ? 'amber' : 'green'
   const badge = old ? '키 옛것' : stuck ? '키 확인' : !online || !k.linked ? '키 —' : k.linked === 'old' ? '키 바꾸는 중' : '키 정상'
   return { tone, badge, line: parts.join(' · ') }

@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.321',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent', 'server', 'ui'], text: '키 교체 기록: 기기마다 최근 5번의 키 교체(자동·사이트·옛 세대)와 연동 탭이 새 키로 온 시각을 서버로 알리고, 운영 페이지 키 줄에 마지막 교체 결과를 보임. 탭이 끝내 오지 않으면 키 확인 배지와 점검 경고', refs: ['REQ-S-084'] },
+    ],
+  },
+  {
     version: '1.320',
+    commit: 'f0facd7',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['server'], text: '서비스 API: 믿을 수 있는 서버(예: 자동 수정)가 쿠키 대신 Bearer 토큰(BRIDGE_SERVICE_TOKEN, 32자 이상)으로 정해진 한 사람(BRIDGE_SERVICE_UID)의 맥에 무인 세션(안전한 전부 허용)을 열고, 자기가 연 세션의 상태·답만 읽음. 두 환경변수가 없으면 꺼짐', refs: ['REQ-F-799', 'IF-249', 'IF-250', 'ERR-340', 'ERR-341', 'ERR-342', 'ERR-343', 'ERR-344'] },

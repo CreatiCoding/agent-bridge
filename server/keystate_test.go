@@ -14,8 +14,8 @@ import (
 
 func TestCleanKeyState(t *testing.T) {
 	now := float64(time.Now().UnixMilli())
-	out := cleanKeyState(M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "next": now, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome", "key": "K"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}, "key": "SECRET", "print": "abc"})
-	want := M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "next": now, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}}
+	out := cleanKeyState(M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "next": now, "log": []any{M{"at": now, "why": "auto", "took": now, "result": "took", "key": "K"}, M{"at": now, "why": "evil", "result": "<b>"}, "x"}, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome", "key": "K"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}, "key": "SECRET", "print": "abc"})
+	want := M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "next": now, "log": []any{M{"at": now, "why": "auto", "took": now, "result": "took"}, M{"at": now, "why": nil, "took": nil, "result": nil}}, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}}
 	if !reflect.DeepEqual(roundTrip(out), roundTrip(want)) {
 		t.Fatal(jsonStr(out))
 	}

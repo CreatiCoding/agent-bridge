@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { keyPrint, retireKey, RETIRED_KEYS_MAX, browserApp, keyRotateDue, KEY_ROTATE_MS } from '../../agent/guard.mjs'
+import { keyPrint, retireKey, RETIRED_KEYS_MAX, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, KEY_LOG_MAX } from '../../agent/guard.mjs'
 
 test('retired keys are kept as prints, newest first, without repeats, at most RETIRED_KEYS_MAX', () => {
   assert.equal(keyPrint('a'), keyPrint('a'))
@@ -63,4 +63,23 @@ test('the key changes by itself after a day, only while the linked tab can take 
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(src, /setInterval\(autoRotateKey, KEY_ROTATE_CHECK_MS\)/)
   assert.match(src, /keyGen: KEY_GEN, keyAt: Date\.now\(\) \}/)
+})
+
+test('key changes are remembered with when a tab took the new key (REQ-S-084)', () => {
+  let l = noteRekey(undefined, 1000, 'auto')
+  assert.deepEqual(l, [{ at: 1000, why: 'auto', took: null }])
+  for (let i = 0; i < 6; i++) l = noteRekey(l, 2000 + i, 'site')
+  assert.equal(l.length, KEY_LOG_MAX)
+  assert.equal(l[0].at, 2005)
+  const t = noteTook(l, 3000)
+  assert.equal(t[0].took, 3000)
+  assert.equal(t[1].took, null)
+  assert.equal(noteTook(t, 4000), t, '한 번만')
+  assert.equal(noteTook(undefined, 1), undefined)
+  assert.equal(rekeyResult(t[0], 9e9, 900_000), 'took')
+  assert.equal(rekeyResult({ at: 0, took: null }, 1000, 900_000), 'waiting')
+  assert.equal(rekeyResult({ at: 0, took: null }, 900_000, 900_000), 'missed')
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(src, /if \(same\(config\.key\)\) \{\n\s*const kl = noteTook\(config\.keyLog, Date\.now\(\)\)/)
+  assert.match(src, /config\.keyLog = noteRekey\(config\.keyLog, config\.keyAt, why\)/)
 })

@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -3177,7 +3177,7 @@ const commands = {
         text = '에이전트를 다시 시작해요(일하는 세션은 그대로 이어져요)'
       }
     } else if (action === 'rekey') {
-      const why = rotateKey('사이트에서 요청')
+      const why = rotateKey('사이트에서 요청', 'site')
       if (why) return emit({ t: 'heal', reqId, ok: false, error: why })
       text = '에이전트 키를 새로 만들어 연동 탭에 넘겼어요. 다른 브라우저의 연동 탭은 15분 안에 새로고침하거나 연동 링크를 다시 열어 주세요'
     } else return emit({ t: 'heal', reqId, ok: false, error: '모르는 복구 동작이에요' })
@@ -3254,7 +3254,7 @@ const commands = {
  * agent for OLD_KEY_MS, for tabs of other browsers on this Mac. The headless browser, when it is not the linked tab,
  * is started again with the new key on its address. Returns why it could not, or null.
  */
-function rotateKey(reason) {
+function rotateKey(reason, why) {
   if (!client || !clientRekey) return '키를 넘겨받을 수 있는 연동 탭이 연결돼 있지 않아요(연동 페이지를 새로고침한 뒤 다시 해 주세요)'
   const key = crypto.randomBytes(24).toString('base64url')
   config.oldKey = { key: config.key, until: Date.now() + OLD_KEY_MS }
@@ -3262,6 +3262,7 @@ function rotateKey(reason) {
   config.key = key
   config.keyGen = KEY_GEN
   config.keyAt = Date.now()
+  config.keyLog = noteRekey(config.keyLog, config.keyAt, why)
   writeJson(configPath, config)
   client.write(`data: ${JSON.stringify({ t: 'rekey', key })}\n\n`)
   clientOldKey = false
@@ -3281,7 +3282,7 @@ function rotateKey(reason) {
 function autoRotateKey() {
   if (!client) return
   if (!keyRotateDue({ now: Date.now(), keyAt: config.keyAt, oldUntil: config.oldKey?.until, linked: clientOldKey ? 'old' : 'current', rekey: clientRekey })) return
-  rotateKey('하루가 지나 자동으로 바꿈')
+  rotateKey('하루가 지나 자동으로 바꿈', 'auto')
 }
 
 /** The key's state for the operator page: no key or key print, only when it changed and how the tabs follow it. */
@@ -3291,6 +3292,7 @@ const keyState = () => ({
   at: config.keyAt ?? null,
   oldUntil: config.oldKey && Date.now() < config.oldKey.until ? config.oldKey.until : null,
   next: (config.keyAt ?? 0) + KEY_ROTATE_MS,
+  log: (config.keyLog ?? []).map((e) => ({ at: e.at, why: e.why, took: e.took ?? null, result: rekeyResult(e, Date.now(), OLD_KEY_MS) })),
   retired: (config.retiredKeys ?? []).length,
   linked: client ? (clientOldKey ? 'old' : 'current') : null,
   stale: stats.staleKey ?? null,
@@ -4041,7 +4043,9 @@ async function features() {
   add('checks', '도구·환경 점검', bad.some((c) => c.level === 'fail') ? 'fail' : bad.length ? 'warn' : 'ok', bad.length ? bad.map((c) => `${c.title}: ${c.detail}`).join(' / ') : `모두 정상 (${checks.length}개)`, { action: 'check', ...(bad.find((c) => c.fix) ? { fix: bad.find((c) => c.fix).fix } : {}) })
   add('update', '자동 업데이트', noAutoUpdate ? 'off' : pendingUpdate ? 'warn' : 'ok', noAutoUpdate ? '꺼짐 (--no-auto-update)' : pendingUpdate ? `새 버전 ${pendingUpdate.build ?? ''} 을 받음 · 곧 바꿈` : `build ${BUILD}`)
   // The key that opens this agent to the site's pages: when it was made, and a button to change it (R1-M8).
-  add('key', '에이전트 키', (config.keyGen ?? 1) < KEY_GEN ? 'warn' : 'ok', (config.keyGen ?? 1) < KEY_GEN ? '1.140 이전에 만든 키 · 연동 탭이 이어지면 한 번 바꿔요' : `${config.keyAt ? `${new Date(config.keyAt).toLocaleString('sv-SE').slice(0, 16)} 에 바꿈` : '새 키'} · 하루마다 스스로 바꿈${config.oldKey && Date.now() < config.oldKey.until ? ' · 이전 키는 곧 끝남' : ''}`, { action: 'rekey' })
+  const lastKey = config.keyLog?.[0]
+  const lastKeyResult = lastKey ? rekeyResult(lastKey, Date.now(), OLD_KEY_MS) : null
+  add('key', '에이전트 키', (config.keyGen ?? 1) < KEY_GEN || lastKeyResult === 'missed' ? 'warn' : 'ok', (config.keyGen ?? 1) < KEY_GEN ? '1.140 이전에 만든 키 · 연동 탭이 이어지면 한 번 바꿔요' : `${config.keyAt ? `${new Date(config.keyAt).toLocaleString('sv-SE').slice(0, 16)} 에 바꿈` : '새 키'}${lastKeyResult === 'took' ? ' · 연동 탭이 새 키를 받음' : lastKeyResult === 'missed' ? ' · 연동 탭이 새 키로 오지 않음(키 바꾸기를 다시 눌러 주세요)' : lastKeyResult === 'waiting' ? ' · 연동 탭이 새 키를 받는 중' : ''} · 하루마다 스스로 바꿈${config.oldKey && Date.now() < config.oldKey.until ? ' · 이전 키는 곧 끝남' : ''}`, { action: 'rekey' })
   add('agent', '에이전트', 'ok', `${asService ? '백그라운드 서비스' : '터미널에서 실행'} · 켜진 지 ${Math.round((Date.now() - STARTED) / 60_000)}분 · 메모리 ${Math.round(process.memoryUsage().rss / 1e6)}MB${restartWanted ? ' · 세션이 쉬면 다시 시작함' : ''}`, asService ? { action: 'restart' } : {})
   return out
 }
@@ -4420,6 +4424,15 @@ const server = http.createServer(async (req, res) => {
   }
   // Lets a second agent started on the same port recognise this one. Says nothing else.
   if (req.method === 'GET' && url.pathname === '/ping') return res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"agent":"claude-bridge"}')
+  // The first request on the new key after a change: the change is taken up (REQ-S-084). Hooks use their own key.
+  if (same(config.key)) {
+    const kl = noteTook(config.keyLog, Date.now())
+    if (kl !== config.keyLog) {
+      config.keyLog = kl
+      writeJson(configPath, config)
+      log('info', 'link', `연동 탭이 새 키로 옴 (바꾸고 ${Math.round((kl[0].took - kl[0].at) / 1000)}초 뒤)`)
+    }
+  }
   if (!keyOk) {
     if (key && (config.retiredKeys ?? []).includes(keyPrint(key))) {
       if (url.searchParams.get('bg') === '1' && config.background) restartBgForKey()
@@ -4552,7 +4565,7 @@ const server = http.createServer(async (req, res) => {
     clientOldKey = !same(config.key)
     // Asked again when the timer fires: two tabs linking within those 3 s would otherwise change the key twice, and
     // the second change drops the first key at once instead of letting it work OLD_KEY_MS longer.
-    if ((config.keyGen ?? 1) < KEY_GEN && clientRekey) setTimeout(() => (config.keyGen ?? 1) < KEY_GEN && rotateKey('1.140 이전에 만든 키라 한 번 바꿈'), 3000).unref?.()
+    if ((config.keyGen ?? 1) < KEY_GEN && clientRekey) setTimeout(() => (config.keyGen ?? 1) < KEY_GEN && rotateKey('1.140 이전에 만든 키라 한 번 바꿈', 'gen'), 3000).unref?.()
     // The headless browser keeps the page it opened, so its relay can be older than the site's and never offer to
     // take a new key. Started again (once per agent build) it loads the current page, and the key changes then.
     else if ((config.keyGen ?? 1) < KEY_GEN && isBg && config.background && config.bgRelayRestart !== BUILD) {

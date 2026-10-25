@@ -419,7 +419,32 @@ func cleanKeyState(k any) any {
 	if s, ok := m["linked"].(string); ok && (s == "current" || s == "old") {
 		linked = s
 	}
-	return M{"gen": num(m["gen"]), "latest": num(m["latest"]), "at": num(m["at"]), "oldUntil": num(m["oldUntil"]), "next": num(m["next"]), "retired": retired, "linked": linked, "stale": event(m["stale"]), "reopen": event(m["reopen"])}
+	// The key changes (REQ-S-084): times and two short words only, at most five.
+	orNil := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	changes := []any{}
+	if arr, ok := m["log"].([]any); ok {
+		for _, e := range arr {
+			em, ok := e.(M)
+			if !ok || em == nil || !truthy(num(em["at"])) || len(changes) >= 5 {
+				continue
+			}
+			why, _ := em["why"].(string)
+			if !contains([]string{"auto", "site", "gen"}, why) {
+				why = ""
+			}
+			result, _ := em["result"].(string)
+			if !contains([]string{"took", "waiting", "missed"}, result) {
+				result = ""
+			}
+			changes = append(changes, M{"at": em["at"], "why": orNil(why), "took": num(em["took"]), "result": orNil(result)})
+		}
+	}
+	return M{"gen": num(m["gen"]), "latest": num(m["latest"]), "at": num(m["at"]), "oldUntil": num(m["oldUntil"]), "next": num(m["next"]), "retired": retired, "linked": linked, "stale": event(m["stale"]), "reopen": event(m["reopen"]), "log": changes}
 }
 
 // hostSummary: a Mac at a glance. `masked`: for an operator on someone else's Mac, the error texts lose their paths.
