@@ -441,3 +441,31 @@ export const duBytes = (out) => {
   const n = Number(/^(\d+)/.exec(String(out ?? '').trim())?.[1])
   return Number.isFinite(n) ? n * 1024 : null
 }
+
+/** `git worktree list --porcelain`, without the main checkout (the first entry): path, HEAD, branch (short) or null. */
+export function parseWorktrees(text) {
+  const out = []
+  for (const block of String(text ?? '').split(/\n\s*\n/)) {
+    const path_ = /^worktree (.+)$/m.exec(block)?.[1]
+    if (!path_) continue
+    out.push({ path: path_, head: /^HEAD ([0-9a-f]{7,64})$/m.exec(block)?.[1] ?? null, branch: /^branch refs\/heads\/(.+)$/m.exec(block)?.[1] ?? null, prunable: /^prunable\b/m.test(block), locked: /^locked\b/m.test(block) })
+  }
+  return out.slice(1)
+}
+
+/** How long a worktree touched recently is left alone: another Claude, not a bridge session, may be working in it. */
+export const WORKTREE_QUIET_MS = 60 * 60_000
+
+/**
+ * Why a worktree is not removed by 머지된 worktree 정리 (REQ-F-802), or null when it is: its commits are all in the
+ * default branch, nothing is changed or untracked in it, it is not locked, no open session works in it, and it was
+ * not touched in WORKTREE_QUIET_MS.
+ */
+export function worktreeWhy({ merged, dirty, locked, active, touched, now }) {
+  if (active) return '열린 세션이 쓰는 중'
+  if (locked) return '잠겨 있음(git worktree lock)'
+  if (dirty) return '고친 것·새 파일이 남아 있음'
+  if (!merged) return '기본 브랜치에 머지되지 않음'
+  if (touched && now - touched < WORKTREE_QUIET_MS) return '최근 1시간 안에 쓰임'
+  return null
+}

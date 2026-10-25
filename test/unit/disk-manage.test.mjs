@@ -73,3 +73,22 @@ test('서버: 기기 주인만, 정해진 동작만, 답에서 reqId 를 빼고 
     await srv.stop()
   }
 })
+
+test('머지된 worktree: porcelain 을 읽고(본 체크아웃 빼고), 머지·깨끗·잠기지 않음·세션 없음·1시간 조용할 때만 정리', async () => {
+  const { parseWorktrees, worktreeWhy, WORKTREE_QUIET_MS } = await import('../../agent/guard.mjs')
+  const text = 'worktree /r\nHEAD 1111111111111111111111111111111111111111\nbranch refs/heads/main\n\nworktree /r/.claude/worktrees/a\nHEAD 2222222222222222222222222222222222222222\nbranch refs/heads/feat/a\n\nworktree /r/w/b\nHEAD 3333333333333333333333333333333333333333\ndetached\nlocked\n\nworktree /r/w/c\nHEAD 4444444444444444444444444444444444444444\nbranch refs/heads/c\nprunable gitdir file points to non-existent location\n'
+  assert.deepEqual(parseWorktrees(text), [
+    { path: '/r/.claude/worktrees/a', head: '2222222222222222222222222222222222222222', branch: 'feat/a', prunable: false, locked: false },
+    { path: '/r/w/b', head: '3333333333333333333333333333333333333333', branch: null, prunable: false, locked: true },
+    { path: '/r/w/c', head: '4444444444444444444444444444444444444444', branch: 'c', prunable: true, locked: false },
+  ])
+  assert.deepEqual(parseWorktrees(''), [])
+  const now = 10 * WORKTREE_QUIET_MS
+  const ok = { merged: true, dirty: false, locked: false, active: false, touched: now - WORKTREE_QUIET_MS, now }
+  assert.equal(worktreeWhy(ok), null)
+  assert.equal(worktreeWhy({ ...ok, merged: false }), '기본 브랜치에 머지되지 않음')
+  assert.equal(worktreeWhy({ ...ok, dirty: true }), '고친 것·새 파일이 남아 있음')
+  assert.equal(worktreeWhy({ ...ok, locked: true }), '잠겨 있음(git worktree lock)')
+  assert.equal(worktreeWhy({ ...ok, active: true }), '열린 세션이 쓰는 중')
+  assert.equal(worktreeWhy({ ...ok, touched: now - 1000 }), '최근 1시간 안에 쓰임')
+})

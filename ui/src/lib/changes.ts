@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.324',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent', 'server', 'ui'], text: '디스크 관리에 머지된 worktree 한 번에 정리: 기본 브랜치에 머지됐고 고친 것이 없고 열린 세션·최근 1시간 사용이 없는 worktree 를 찾아 git worktree remove 와 머지된 브랜치 지우기를 한 번에', refs: ['REQ-F-802', 'IF-251'] },
+    ],
+  },
+  {
     version: '1.323',
+    commit: 'd99953c',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent', 'server', 'ui'], text: '디스크 관리: 기기 화면에서 다시 만들어지는 캐시(npm·Yarn·pnpm·Homebrew·Go·pip·Playwright·Xcode·시뮬레이터)와 휴지통을 크기와 함께 보고 비우고, 홈 폴더를 크기순으로 열어 큰 항목을 휴지통으로 옮김. 설정·비밀값 폴더, macOS 보호 폴더, 열린 세션 폴더는 막음. 기기 주인만', refs: ['REQ-F-801', 'IF-251'] },

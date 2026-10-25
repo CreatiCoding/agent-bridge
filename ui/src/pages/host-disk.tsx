@@ -29,6 +29,15 @@ interface Item {
   guarded?: boolean
   partial?: boolean
 }
+interface Worktree {
+  repo: string
+  path: string
+  branch: string | null
+  size: number | null
+  removable: boolean
+  why?: string
+  gone?: boolean
+}
 interface Scan {
   path: string
   parent: string | null
@@ -52,6 +61,7 @@ export function DiskBox({ hostId, online, sys }: { hostId: string; online: boole
   const [info, setInfo] = useState<Info | null>(null)
   const [scan, setScan] = useState<Scan | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [wts, setWts] = useState<Worktree[] | null>(null)
   const raw = info?.disk ?? sys?.disk ?? null
   const d = raw && raw.pct != null && raw.total != null ? { pct: raw.pct, total: raw.total, avail: raw.avail ?? 0 } : null
 
@@ -109,6 +119,37 @@ export function DiskBox({ hostId, online, sys }: { hostId: string; online: boole
     setBusy(null)
   }
 
+  async function findWorktrees() {
+    setBusy('wt')
+    try {
+      setWts(((await disk(hostId, { op: 'worktrees' })) as { worktrees: Worktree[] }).worktrees)
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setBusy(null)
+  }
+  async function pruneAll() {
+    const list = (wts ?? []).filter((w) => w.removable)
+    const size = list.reduce((a, w) => a + (w.size ?? 0), 0)
+    const ok = await confirmDialog(`머지된 worktree ${list.length}개를 정리할까요?${size ? ` (${bytes(size)})` : ''}`, {
+      text: '커밋이 모두 기본 브랜치에 들어가 있고 고친 것이 없는 것만 지우고(git worktree remove), 머지된 브랜치도 지워요. 커밋은 저장소에 남아요.',
+      ok: '정리',
+      danger: true,
+    })
+    if (!ok) return
+    setBusy('prune')
+    try {
+      const r = (await disk(hostId, { op: 'prune', paths: list.map((w) => w.path) })) as { results: { path: string; ok: boolean; error?: string }[]; freed: number }
+      const done = r.results.filter((x) => x.ok).length
+      const failed = r.results.filter((x) => !x.ok)
+      toast(`worktree ${done}개 정리 · ${bytes(r.freed)}${failed.length ? ` · ${failed.length}개 못 함: ${failed[0].error ?? ''}` : ''}`, failed.length ? { tone: 'bad' } : undefined)
+      setWts((cur) => (cur ?? []).filter((w) => !r.results.some((x) => x.ok && x.path === w.path)))
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setBusy(null)
+  }
+
   const top = Math.max(1, ...(scan?.items ?? []).map((x) => x.size ?? 0))
   const cacheTotal = (info?.caches ?? []).filter((c) => !c.irreversible).reduce((a, c) => a + (c.size ?? 0), 0)
   return (
@@ -153,6 +194,33 @@ export function DiskBox({ hostId, online, sys }: { hostId: string; online: boole
           ) : (
             <p className="muted" style={{ margin: 0 }}>비울 캐시가 없어요.</p>
           )}
+          <div className="hstack" style={{ justifyContent: 'space-between', marginTop: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 'var(--fs-medium)' }}>머지된 worktree</h3>
+            {!wts ? (
+              <Button size="sm" icon="search" busy={busy === 'wt'} disabled={!!busy} onClick={findWorktrees}>
+                {busy === 'wt' ? '찾는 중' : '찾기'}
+              </Button>
+            ) : (wts.some((w) => w.removable) ? (
+              <Button size="sm" tone="danger" busy={busy === 'prune'} disabled={!!busy} onClick={pruneAll}>
+                머지된 {wts.filter((w) => w.removable).length}개 모두 정리
+              </Button>
+            ) : null)}
+          </div>
+          {wts ? (
+            wts.length ? (
+              wts.map((w) => (
+                <Row
+                  key={w.path}
+                  left={<Icon name="fork" />}
+                  title={w.path.split('/').pop() ?? w.path}
+                  sub={`${w.branch ?? '브랜치 없음'} · ${w.repo}${w.size != null ? ` · ${bytes(w.size)}` : ''} · ${w.gone ? '폴더가 없어 목록에서만 지움' : w.removable ? '정리할 수 있음' : (w.why ?? '')}`}
+                  right={w.removable ? <Icon name="check" /> : null}
+                />
+              ))
+            ) : (
+              <p className="muted" style={{ margin: 0 }}>worktree 가 없어요.</p>
+            )
+          ) : null}
           <div className="hstack" style={{ justifyContent: 'space-between', marginTop: 8 }}>
             <h3 style={{ margin: 0, fontSize: 'var(--fs-medium)' }}>큰 폴더</h3>
             {!scan ? (

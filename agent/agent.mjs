@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, parseWorktrees, worktreeWhy, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -2723,9 +2723,9 @@ const commands = {
     }
   },
   /** 디스크 관리 (REQ-F-801): `info` · `scan` · `clean` · `trash`. Only the owner's page asks (server ownHost). */
-  async disk({ reqId, op, id, path: where }) {
+  async disk({ reqId, op, id, path: where, paths }) {
     try {
-      emit({ t: 'disk', reqId, ok: true, ...(await diskOp(op, id, where)) })
+      emit({ t: 'disk', reqId, ok: true, ...(await diskOp(op, id, where, paths)) })
     } catch (e) {
       log('warn', 'disk', e.message)
       emit({ t: 'disk', reqId, ok: false, error: e.message })
@@ -3384,7 +3384,74 @@ const keptDirs = () => [CLAUDE_DIR, STATE_DIR, AGENT_DIR].map((d) => (fs.existsS
 const sessionDirs = () => [...sessions.values()].map((s) => (s.cwd && fs.existsSync(s.cwd) ? fs.realpathSync(s.cwd) : s.cwd)).filter(Boolean)
 const DISK_SCAN_MAX = 100
 
-async function diskOp(op, id, where) {
+/**
+ * The git repositories under the home folder (REQ-F-802): folders holding a `.git` folder, four levels down at most,
+ * not inside dot folders, node_modules, ~/Library or a guarded folder, plus those of the open sessions. Not inside a
+ * repository found (its worktrees come from git itself).
+ */
+async function findRepos(home) {
+  const guarded = new Set(guardedDirs(home, process.platform))
+  const found = new Set()
+  let seen = 0
+  const walk = (dir, depth) => {
+    if (depth > 4 || seen > 20_000) return
+    seen++
+    let ents
+    try {
+      ents = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    if (ents.some((e) => e.name === '.git' && e.isDirectory())) return void found.add(dir)
+    for (const e of ents) {
+      if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue
+      const p = path.join(dir, e.name)
+      if (guarded.has(p) || p === path.join(home, 'Library')) continue
+      walk(p, depth + 1)
+    }
+  }
+  walk(home, 0)
+  for (const cwd of sessionDirs()) {
+    const r = await git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    if (r.ok && r.out.endsWith('/.git')) found.add(path.dirname(r.out))
+  }
+  return [...found]
+}
+/** The branch a repository merges into: origin's HEAD, else origin/main · origin/master · main · master. */
+async function baseRef(repo) {
+  const r = await git(repo, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
+  if (r.ok && r.out) return r.out
+  for (const ref of ['origin/main', 'origin/master', 'main', 'master']) if ((await git(repo, 'rev-parse', '--verify', '--quiet', ref)).ok) return ref
+  return null
+}
+/** One repository's worktrees with whether each can go (worktreeWhy). `fetch`: bring the default branch up to date first. */
+async function repoWorktrees(repo, fetch) {
+  const list = await git(repo, 'worktree', 'list', '--porcelain')
+  if (!list.ok) return []
+  const wts = parseWorktrees(list.out)
+  if (!wts.length) return []
+  if (fetch) await run('git', [...GIT_SAFE, '-C', repo, 'fetch', '--quiet', 'origin'], { timeout: 30_000 })
+  const base = await baseRef(repo)
+  const active = sessionDirs()
+  return inTurns(wts, 4, async (w) => {
+    const item = { repo: tilde(repo), path: tilde(w.path), branch: w.branch, base, size: null }
+    if (w.prunable || !fs.existsSync(w.path)) return { ...item, gone: true, removable: true }
+    const merged = !!base && !!w.head && (await git(repo, 'merge-base', '--is-ancestor', w.head, base)).ok
+    const st = await git(w.path, 'status', '--porcelain', '--untracked-files=normal')
+    let touched = 0
+    const gd = await git(w.path, 'rev-parse', '--path-format=absolute', '--git-dir')
+    for (const f of ['index', 'HEAD', 'logs/HEAD']) {
+      try {
+        touched = Math.max(touched, fs.statSync(path.join(gd.out, f)).mtimeMs)
+      } catch {}
+    }
+    const real = fs.realpathSync(w.path)
+    const why = worktreeWhy({ merged, dirty: !st.ok || !!st.out, locked: w.locked, active: active.some((a) => a === real || a.startsWith(`${real}/`)), touched, now: Date.now() })
+    return { ...item, size: await diskSize(w.path), merged, removable: !why, ...(why ? { why } : {}) }
+  })
+}
+
+async function diskOp(op, id, where, paths) {
   const home = fs.realpathSync(HOME)
   if (op === 'info') {
     let disk = null
@@ -3422,6 +3489,38 @@ async function diskOp(op, id, where) {
     })
     items.sort((a, b) => (b.size ?? -1) - (a.size ?? -1))
     return { path: tilde(dir), parent: dir === home ? null : tilde(path.dirname(dir)), count: items.length, items: items.slice(0, DISK_SCAN_MAX) }
+  }
+  if (op === 'worktrees') {
+    const repos = await findRepos(home)
+    const lists = await inTurns(repos, 3, (r) => repoWorktrees(r, true))
+    return { repos: repos.length, worktrees: lists.flat() }
+  }
+  // Removes the worktrees named, each judged again here: `git worktree remove` (never forced, so git itself refuses
+  // one with changes), then its branch with `git branch -d` (only when merged), then `git worktree prune`.
+  if (op === 'prune') {
+    const want = new Set((Array.isArray(paths) ? paths : []).filter((x) => typeof x === 'string').slice(0, 200))
+    if (!want.size) throw new Error('정리할 worktree 가 없어요')
+    const repos = await findRepos(home)
+    const results = []
+    for (const repo of repos) {
+      const wts = (await repoWorktrees(repo, false)).filter((w) => want.has(w.path))
+      if (!wts.length) continue
+      for (const w of wts) {
+        if (!w.removable) {
+          results.push({ path: w.path, ok: false, error: w.why })
+          continue
+        }
+        const abs = path.join(home, w.path.slice(2))
+        const r = w.gone ? { ok: true } : await git(repo, 'worktree', 'remove', abs)
+        if (r.ok && w.branch) await git(repo, 'branch', '-d', w.branch)
+        results.push({ path: w.path, ok: r.ok, freed: r.ok ? (w.size ?? 0) : 0, ...(r.ok ? {} : { error: r.err.slice(0, 300) }) })
+      }
+      await git(repo, 'worktree', 'prune')
+    }
+    for (const x of want) if (!results.some((r) => r.path === x)) results.push({ path: x, ok: false, error: '그 worktree 를 찾지 못했어요' })
+    const freed = results.reduce((a, r) => a + (r.freed ?? 0), 0)
+    log('info', 'disk', `머지된 worktree ${results.filter((r) => r.ok).length}개 정리: ${(freed / 1e9).toFixed(2)}GB`)
+    return { results, freed }
   }
   if (op === 'clean') {
     const c = diskCaches(home, process.platform).find((x) => x.id === id)
