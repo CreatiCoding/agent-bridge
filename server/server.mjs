@@ -4312,6 +4312,26 @@ async function api(req, res, url, uid) {
     if (!r.ok) throw new Refuse(409, r.error || '복구하지 못했습니다')
     return json(res, 200, { ok: true, note: r.note })
   }
+  // 디스크 관리 (REQ-F-801). Its owner only: an operator never clears or moves someone else's files.
+  const hdisk = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/disk$/.exec(p)
+  if (post && hdisk) {
+    const b = await body(req, 8192)
+    ownHost(uid, hdisk[1])
+    const wait = { info: 240_000, scan: 240_000, clean: 600_000, trash: 180_000 }[b.op]
+    if (!wait || !Object.hasOwn({ info: 1, scan: 1, clean: 1, trash: 1 }, b.op)) throw new Refuse(400, '모르는 동작이에요')
+    if (!online(hdisk[1])) throw new Refuse(409, '호스트가 연결돼 있지 않습니다')
+    const cmd = { t: 'disk', op: b.op }
+    if (typeof b.id === 'string' && b.id.length <= 64) cmd.id = b.id
+    if (typeof b.path === 'string' && b.path.length <= 4096) cmd.path = b.path
+    const r = await ask(hdisk[1], cmd, wait)
+    if (b.op === 'clean' || b.op === 'trash') {
+      const text = `${b.op === 'clean' ? `디스크: ${cmd.id ?? ''} 비움` : '디스크: 휴지통으로 옮김'}${r.ok ? '' : ` 실패: ${r.error ?? ''}`}`
+      record(uid, hdisk[1], { level: r.ok ? 'info' : 'warn', area: 'disk', text })
+    }
+    if (!r.ok) throw new Refuse(409, r.error || '디스크 정보를 받지 못했어요')
+    const { reqId: _r, t: _t, ...out } = r
+    return json(res, 200, out)
+  }
   // 관리자 권한 (REQ-F-764): the password typed in the window opens root on that Mac for 5 minutes; 닫기 closes it,
   // 취소 turns away who was waiting. Its owner only: an operator never types a password into someone else's Mac.
   const hsu = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/sudo$/.exec(p)

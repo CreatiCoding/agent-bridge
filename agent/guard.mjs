@@ -363,3 +363,81 @@ export function sessionPrompt(bridge, s) {
     : ''
   return [bridge, String(s?.sysPrompt ?? '').trim(), fork].filter(Boolean).join('\n\n')
 }
+
+// ---------- 디스크 관리 (REQ-F-801) ----------
+
+/**
+ * The caches the disk page offers to clear: each is made again by its own tool when next needed, so clearing loses
+ * nothing but a download. Only these fixed places are ever cleared; the site names an id, never a path. `how`:
+ * `contents` empties the folders, `readonly` does too after making them writable (Go's module cache is read-only),
+ * `trash` empties the Trash, which is the one that cannot be undone.
+ */
+export function diskCaches(home, platform) {
+  const mac = platform === 'darwin'
+  const c = (p) => path.join(home, p)
+  const lib = (p) => c(path.join('Library', p))
+  const xdg = (p) => c(path.join('.cache', p))
+  return [
+    { id: 'npm', title: 'npm 캐시', paths: [c('.npm/_cacache')], how: 'contents' },
+    { id: 'yarn', title: 'Yarn 캐시', paths: [mac ? lib('Caches/Yarn') : xdg('yarn'), c('.yarn/berry/cache')], how: 'contents' },
+    { id: 'pnpm', title: 'pnpm 캐시', paths: [mac ? lib('Caches/pnpm') : xdg('pnpm')], how: 'contents' },
+    { id: 'homebrew', title: 'Homebrew 내려받기', paths: [mac ? lib('Caches/Homebrew') : xdg('Homebrew')], how: 'contents' },
+    { id: 'go-build', title: 'Go 빌드 캐시', paths: [mac ? lib('Caches/go-build') : xdg('go-build')], how: 'contents' },
+    { id: 'go-mod', title: 'Go 모듈 캐시', paths: [c('go/pkg/mod')], how: 'readonly' },
+    { id: 'pip', title: 'pip 캐시', paths: [mac ? lib('Caches/pip') : xdg('pip')], how: 'contents' },
+    { id: 'playwright', title: 'Playwright 브라우저', paths: [mac ? lib('Caches/ms-playwright') : xdg('ms-playwright')], how: 'contents' },
+    ...(mac
+      ? [
+          { id: 'xcode-derived', title: 'Xcode 빌드 산출물(DerivedData)', paths: [lib('Developer/Xcode/DerivedData')], how: 'contents' },
+          { id: 'simulator-caches', title: '시뮬레이터 캐시', paths: [lib('Developer/CoreSimulator/Caches')], how: 'contents' },
+        ]
+      : []),
+    { id: 'trash', title: '휴지통', paths: mac ? [c('.Trash')] : [c('.local/share/Trash/files'), c('.local/share/Trash/info')], how: 'trash', irreversible: true },
+  ]
+}
+
+/** Where a folder moved out of the way goes: the Trash, from which it can be put back. */
+export const trashDir = (home, platform) => (platform === 'darwin' ? path.join(home, '.Trash') : path.join(home, '.local/share/Trash/files'))
+
+/**
+ * Folders macOS guards with a permission prompt (TCC). Measuring them from the agent could put up a dialog no one is
+ * there to answer and hang the measuring, so the disk page leaves them unmeasured, and the folders holding them are
+ * measured only by opening them.
+ */
+export function guardedDirs(home, platform) {
+  if (platform !== 'darwin') return []
+  const c = (p) => path.join(home, p)
+  return ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', '.Trash', 'Library/Mail', 'Library/Messages', 'Library/Safari', 'Library/Containers', 'Library/Group Containers', 'Library/Calendars', 'Library/Reminders', 'Library/Photos', 'Library/Mobile Documents', 'Library/Application Support/AddressBook', 'Library/Application Support/CallHistoryDB', 'Library/Application Support/com.apple.TCC', 'Library/Cookies', 'Library/HomeKit', 'Library/IdentityServices', 'Library/Metadata', 'Library/Suggestions', 'Library/Accounts'].map(c)
+}
+
+/** Names under the home folder whose insides are secrets or the system's own: never moved by the disk page. */
+const KEEP_UNDER_HOME = ['.ssh', '.gnupg', '.aws', '.kube', '.docker', '.config', '.local', '.password-store', 'Library']
+
+/**
+ * Why a path cannot be moved to the Trash from the disk page, or null when it can. `real`: the path with its parent
+ * folders resolved (the item itself may be a link, which is moved as a link). Inside the home folder only, never a
+ * folder right under it, nothing inside KEEP_UNDER_HOME but caches two levels into ~/Library (~/Library/Caches/<x>),
+ * not the Trash itself, and not a folder that holds (or is inside) what the agent and Claude keep or a session's folder.
+ */
+export function diskTrashable(real, { home, keep = [], sessions = [], platform }) {
+  const rel = path.relative(home, real)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return '홈 폴더 안만 옮길 수 있어요'
+  const parts = rel.split(path.sep)
+  if (parts.length < 2) return '홈 바로 아래 폴더는 옮길 수 없어요'
+  const bin = trashDir(home, platform)
+  if (real === bin || real.startsWith(`${bin}${path.sep}`)) return '이미 휴지통 안에 있어요'
+  if (KEEP_UNDER_HOME.includes(parts[0])) {
+    const cacheItem = parts[0] === 'Library' && parts[1] === 'Caches' && parts.length >= 3
+    if (!cacheItem) return `~/${parts[0]} 안은 설정·비밀값이 있어 옮길 수 없어요(~/Library/Caches 안은 돼요)`
+  }
+  for (const d of guardedDirs(home, platform)) if (real === d || d.startsWith(`${real}${path.sep}`) || real.startsWith(`${d}${path.sep}`)) return 'macOS 가 지키는 폴더라 옮길 수 없어요'
+  for (const k of keep) if (k && (real === k || k.startsWith(`${real}${path.sep}`) || real.startsWith(`${k}${path.sep}`))) return '에이전트·Claude 가 쓰는 폴더라 옮길 수 없어요'
+  for (const s of sessions) if (s && (real === s || s.startsWith(`${real}${path.sep}`))) return '열린 세션의 작업 폴더가 들어 있어 옮길 수 없어요(세션을 먼저 끝내 주세요)'
+  return null
+}
+
+/** `du -sk` output's first number, in bytes, or null. */
+export const duBytes = (out) => {
+  const n = Number(/^(\d+)/.exec(String(out ?? '').trim())?.[1])
+  return Number.isFinite(n) ? n * 1024 : null
+}

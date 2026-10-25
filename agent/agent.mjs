@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -2722,6 +2722,15 @@ const commands = {
       emit({ t: 'trashed', reqId, ok: false, error: e.message })
     }
   },
+  /** 디스크 관리 (REQ-F-801): `info` · `scan` · `clean` · `trash`. Only the owner's page asks (server ownHost). */
+  async disk({ reqId, op, id, path: where }) {
+    try {
+      emit({ t: 'disk', reqId, ok: true, ...(await diskOp(op, id, where)) })
+    } catch (e) {
+      log('warn', 'disk', e.message)
+      emit({ t: 'disk', reqId, ok: false, error: e.message })
+    }
+  },
   /** AGENTS.md (or CLAUDE.md) of the working folder: what the session was told to follow. */
   /** The person's own pull requests (created, and merged), for the usage statistics. Read only; 100 at a time, ten pages at most. */
   async prsearch({ reqId }) {
@@ -3329,6 +3338,135 @@ function reopenLink(ua) {
     stats.reopen = { at: Date.now(), app, ok: !err }
     log(err ? 'warn' : 'info', 'link', err ? `예전 키로 온 ${app} 에 연동 페이지를 다시 열지 못함` : `예전 키로 온 ${app} 에 연동 페이지를 새 키로 다시 엶`)
   })
+}
+
+// ---------- 디스크 관리 (REQ-F-801) ----------
+
+const tilde = (p) => (p === HOME ? '~' : p.startsWith(`${HOME}/`) ? `~${p.slice(HOME.length)}` : p)
+/** A path the page sent (`~/…` or absolute), inside the home folder, with its parent folders resolved. */
+function diskPath(where) {
+  const raw = String(where ?? '~')
+  if (raw.includes('\0') || raw.length > 4096) throw new Error('경로가 올바르지 않아요')
+  const abs = path.resolve(raw === '~' ? HOME : raw.startsWith('~/') ? path.join(HOME, raw.slice(2)) : raw)
+  const home = fs.realpathSync(HOME)
+  if (abs === HOME || abs === home) return home
+  if (!fs.existsSync(path.dirname(abs))) throw new Error('그 폴더가 없어요')
+  const real = path.join(fs.realpathSync(path.dirname(abs)), path.basename(abs))
+  if (real !== home && !real.startsWith(`${home}/`)) throw new Error('홈 폴더 안만 볼 수 있어요')
+  return real
+}
+/** How much a folder takes (du, one filesystem), or null when it could not be read in DISK_DU_MS. */
+const DISK_DU_MS = 120_000
+async function diskSize(p) {
+  if (!fs.existsSync(p)) return null
+  const r = await run('du', ['-skx', p], { timeout: DISK_DU_MS })
+  return duBytes(r.out)
+}
+/** Runs `fn` over `list`, `n` at a time. */
+async function inTurns(list, n, fn) {
+  const out = new Array(list.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => {
+    while (next < list.length) {
+      const i = next++
+      out[i] = await fn(list[i], i)
+    }
+  }))
+  return out
+}
+/** Empties a folder, leaving the folder. `writable`: make it writable first (Go's module cache is read-only). */
+async function emptyDir(dir, writable) {
+  if (!fs.existsSync(dir)) return
+  if (writable) await run('chmod', ['-R', 'u+w', dir], { timeout: DISK_DU_MS })
+  for (const e of fs.readdirSync(dir)) fs.rmSync(path.join(dir, e), { recursive: true, force: true })
+}
+const keptDirs = () => [CLAUDE_DIR, STATE_DIR, AGENT_DIR].map((d) => (fs.existsSync(d) ? fs.realpathSync(d) : d))
+const sessionDirs = () => [...sessions.values()].map((s) => (s.cwd && fs.existsSync(s.cwd) ? fs.realpathSync(s.cwd) : s.cwd)).filter(Boolean)
+const DISK_SCAN_MAX = 100
+
+async function diskOp(op, id, where) {
+  const home = fs.realpathSync(HOME)
+  if (op === 'info') {
+    let disk = null
+    try {
+      disk = diskUse(fs.statfsSync(HOME))
+    } catch {}
+    const caches = await inTurns(diskCaches(home, process.platform), 4, async (c) => {
+      const there = c.paths.filter((p) => fs.existsSync(p))
+      if (!there.length) return null
+      const sizes = await Promise.all(there.map(diskSize))
+      return { id: c.id, title: c.title, where: there.map(tilde), size: sizes.every((x) => x == null) ? null : sizes.reduce((a, b) => a + (b ?? 0), 0), irreversible: !!c.irreversible }
+    })
+    return { disk, caches: caches.filter(Boolean), trash: tilde(trashDir(home, process.platform)) }
+  }
+  if (op === 'scan') {
+    const dir = diskPath(where)
+    if (!fs.statSync(dir).isDirectory()) throw new Error('폴더가 아니에요')
+    const guarded = guardedDirs(home, process.platform)
+    if (guarded.includes(dir)) throw new Error('macOS 가 지키는 폴더라 열지 않아요')
+    const ents = fs.readdirSync(dir, { withFileTypes: true }).slice(0, 5000)
+    const opts = { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform }
+    const items = await inTurns(ents, 6, async (e) => {
+      const p = path.join(dir, e.name)
+      const item = { name: e.name, path: tilde(p), kind: e.isSymbolicLink() ? 'link' : e.isDirectory() ? 'dir' : 'file', size: null }
+      const why = diskTrashable(p, opts)
+      item.trashable = !why
+      if (why) item.why = why
+      try {
+        if (item.kind !== 'dir') item.size = fs.lstatSync(p).blocks * 512
+        else if (guarded.includes(p)) item.guarded = true
+        else if (guarded.some((g) => g.startsWith(`${p}/`))) item.partial = true
+        else item.size = await diskSize(p)
+      } catch {}
+      return item
+    })
+    items.sort((a, b) => (b.size ?? -1) - (a.size ?? -1))
+    return { path: tilde(dir), parent: dir === home ? null : tilde(path.dirname(dir)), count: items.length, items: items.slice(0, DISK_SCAN_MAX) }
+  }
+  if (op === 'clean') {
+    const c = diskCaches(home, process.platform).find((x) => x.id === id)
+    if (!c) throw new Error('모르는 항목이에요')
+    const size = async () => (await Promise.all(c.paths.map(diskSize))).reduce((a, b) => a + (b ?? 0), 0)
+    const before = await size()
+    for (const p of c.paths) {
+      try {
+        await emptyDir(p, c.how === 'readonly')
+      } catch (e) {
+        if (e.code === 'EPERM' || e.code === 'EACCES') throw new Error(`${c.title} 을 비울 권한이 없어요${c.how === 'trash' && process.platform === 'darwin' ? '(시스템 설정 → 개인정보 보호 → 전체 디스크 접근 권한에 node 를 더해 주세요)' : ''}`)
+        throw e
+      }
+    }
+    const after = await size()
+    const freed = Math.max(0, before - after)
+    log('info', 'disk', `${c.title} 비움: ${(freed / 1e9).toFixed(2)}GB`)
+    return { id: c.id, freed, size: after }
+  }
+  if (op === 'trash') {
+    const real = diskPath(where)
+    try {
+      fs.lstatSync(real)
+    } catch {
+      throw new Error('그 항목이 없어요')
+    }
+    const why = diskTrashable(real, { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
+    if (why) throw new Error(why)
+    const st = fs.lstatSync(real)
+    const size = st.isDirectory() && !st.isSymbolicLink() ? await diskSize(real) : st.blocks * 512
+    const bin = trashDir(home, process.platform)
+    fs.mkdirSync(bin, { recursive: true })
+    let to = path.join(bin, path.basename(real))
+    if (fs.existsSync(to)) to = `${to} ${new Date().toISOString().replace(/[:.]/g, '-')}`
+    fs.renameSync(real, to)
+    // The freedesktop Trash wants a note of where each item came from, so a file manager can put it back.
+    if (process.platform !== 'darwin') {
+      const info = path.join(path.dirname(bin), 'info')
+      fs.mkdirSync(info, { recursive: true })
+      fs.writeFileSync(path.join(info, `${path.basename(to)}.trashinfo`), `[Trash Info]\nPath=${encodeURI(real)}\nDeletionDate=${new Date().toISOString().slice(0, 19)}\n`)
+    }
+    log('info', 'disk', `휴지통으로 옮김(${real.length}자, ${((size ?? 0) / 1e9).toFixed(2)}GB)`)
+    return { to: tilde(to), size }
+  }
+  throw new Error('모르는 동작이에요')
 }
 
 /** Folders that are never thrown away: the home folder, anything above it, and where Claude and this agent keep their own files. */
@@ -4630,7 +4768,7 @@ const server = http.createServer(async (req, res) => {
     if ((url.searchParams.get('tab') || clientTab) === clientTab) clientSeen = Date.now()
     const fn = commands[cmd.t]
     if (!fn) return
-    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export'].includes(cmd.t)
+    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export'].includes(cmd.t)
     if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
     if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)
     try {

@@ -16,6 +16,7 @@ var (
 	hostAccountsRe = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/accounts$`)
 	hostHealRe     = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/heal$`)
 	hostSudoRe     = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/sudo$`)
+	hostDiskRe     = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/disk$`)
 	hostBgRe       = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/background$`)
 	hostAwakeRe    = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/awake$`)
 	hostCompactRe  = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/compact$`)
@@ -215,6 +216,46 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			refuse(409, orStr(r["error"], "복구하지 못했습니다"))
 		}
 		jsonRes(res, 200, M{"ok": true, "note": r["note"]})
+		return true
+	}
+	// 디스크 관리 (REQ-F-801). Its owner only: an operator never clears or moves someone else's files.
+	if m := hostDiskRe.FindStringSubmatch(p); post && m != nil {
+		b := body(req, 8192)
+		ownHost(uid, m[1])
+		op := jsString(b["op"])
+		timeouts := map[string]int64{"info": 240_000, "scan": 240_000, "clean": 600_000, "trash": 180_000}
+		wait, known := timeouts[op]
+		if !known {
+			refuse(400, "모르는 동작이에요")
+		}
+		if !online(m[1]) {
+			refuse(409, NOT_CONNECTED)
+		}
+		cmd := M{"t": "disk", "op": op}
+		if s, ok := b["id"].(string); ok && len(s) <= 64 {
+			cmd["id"] = s
+		}
+		if s, ok := b["path"].(string); ok && len(s) <= 4096 {
+			cmd["path"] = s
+		}
+		r := ask(m[1], cmd, wait)
+		if op == "clean" || op == "trash" {
+			text := "디스크: 휴지통으로 옮김"
+			if op == "clean" {
+				text = "디스크: " + jsString(cmd["id"]) + " 비움"
+			}
+			if !truthy(r["ok"]) {
+				text += " 실패: " + jsStringU(r["error"])
+			}
+			record(uid, m[1], M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text})
+		}
+		if !truthy(r["ok"]) {
+			refuse(409, orStr(r["error"], "디스크 정보를 받지 못했어요"))
+		}
+		out := shallow(r)
+		delete(out, "reqId")
+		delete(out, "t")
+		jsonRes(res, 200, out)
 		return true
 	}
 	// 관리자 권한 (REQ-F-764). Its owner only.

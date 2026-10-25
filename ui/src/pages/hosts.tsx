@@ -10,6 +10,7 @@ import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmen
 import { toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
+import { DiskBox } from './host-disk'
 
 export function Copy({ text }: { text: string }) {
   return (
@@ -555,6 +556,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} />
                 </>
               ) : null}
+              {h && !others ? <DiskBox key={`disk-${h.id}`} hostId={h.id} online={h.online} sys={detail.health?.sys} /> : null}
               {linux ? (
                 <div className="banner">
                   <Icon name="info" />

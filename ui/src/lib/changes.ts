@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.323',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent', 'server', 'ui'], text: '디스크 관리: 기기 화면에서 다시 만들어지는 캐시(npm·Yarn·pnpm·Homebrew·Go·pip·Playwright·Xcode·시뮬레이터)와 휴지통을 크기와 함께 보고 비우고, 홈 폴더를 크기순으로 열어 큰 항목을 휴지통으로 옮김. 설정·비밀값 폴더, macOS 보호 폴더, 열린 세션 폴더는 막음. 기기 주인만', refs: ['REQ-F-801', 'IF-251'] },
+    ],
+  },
+  {
     version: '1.322',
+    commit: '892d3e5',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent', 'server', 'ui'], text: '기기의 CPU·메모리·디스크 사용률: 기기 화면과 운영 페이지 기기 줄에 CPU %, 쓰는 메모리 / 전체, 디스크 % 와 남은 공간. macOS 메모리는 활성 상태 보기와 같은 셈', refs: ['REQ-F-800'] },
