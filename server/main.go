@@ -130,6 +130,11 @@ func route(req *Req, res *Res) {
 		auth(req, res, u)
 		return
 	}
+	// Bearer token only, no cookie: kept apart from the browser routes below.
+	if strings.HasPrefix(p, "/api/service/") {
+		serviceAPI(req, res, p)
+		return
+	}
 	if strings.HasPrefix(p, "/api/") {
 		form := req.Method == "POST" && p == "/api/plugins/slack/link"
 		upload := req.Method == "POST" && (uploadPathRe.MatchString(p) || p == "/api/reports/upload")

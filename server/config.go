@@ -176,6 +176,12 @@ func configure() bool {
 	ADMINS = splitList(env("BRIDGE_ADMIN_LOGINS"))
 	SKILLS_REPO_ENV = strings.TrimSpace(env("SKILLS_REPO"))
 	SKILLS_TOKEN = env("SKILLS_GITHUB_TOKEN")
+	SERVICE_TOKEN = strings.TrimSpace(env("BRIDGE_SERVICE_TOKEN"))
+	SERVICE_UID = strings.TrimSpace(env("BRIDGE_SERVICE_UID"))
+	if SERVICE_TOKEN != "" && len(SERVICE_TOKEN) < 32 {
+		errorLine("BRIDGE_SERVICE_TOKEN 은 32자 이상이어야 합니다.")
+		return false
+	}
 	if env("SKILLS_GITHUB_APP_ID") != "" && env("SKILLS_GITHUB_APP_KEY") != "" {
 		if err := try(func() {
 			SKILLS_APP = &skillsApp{id: strings.TrimSpace(env("SKILLS_GITHUB_APP_ID")), key: appKey(env("SKILLS_GITHUB_APP_KEY"))}

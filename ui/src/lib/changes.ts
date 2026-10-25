@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.320',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '서비스 API: 믿을 수 있는 서버(예: 자동 수정)가 쿠키 대신 Bearer 토큰(BRIDGE_SERVICE_TOKEN, 32자 이상)으로 정해진 한 사람(BRIDGE_SERVICE_UID)의 맥에 무인 세션(안전한 전부 허용)을 열고, 자기가 연 세션의 상태·답만 읽음. 두 환경변수가 없으면 꺼짐', refs: ['REQ-F-799', 'IF-249', 'IF-250', 'ERR-340', 'ERR-341', 'ERR-342', 'ERR-343', 'ERR-344'] },
+    ],
+  },
+  {
     version: '1.319',
+    commit: 'e21986d',
     date: '2026-10-25',
     changes: [
       { kind: 'security', scope: ['agent'], text: '에이전트 연동 키가 하루마다 스스로 바뀐다. 연동 탭이 지금 키로 붙어 있을 때만 바꾸고, 이전 키는 15분 더 통한다', refs: ['REQ-S-083'] },
@@ -35,6 +43,7 @@ export const CHANGES: Release[] = [
   },
   {
     version: '1.318',
+    commit: '28f1e8a',
     date: '2026-10-25',
     commit: '28f1e8a',
     changes: [
