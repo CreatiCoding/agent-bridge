@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.325',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '머지된 worktree 찾기가 검사하면서 index 를 다시 써서 모든 worktree 가 최근 1시간 안에 쓰인 것으로 보이던 것: 사용 시각을 먼저 읽고 git status 는 --no-optional-locks 로', refs: ['REQ-F-802'] },
+    ],
+  },
+  {
     version: '1.324',
+    commit: '5e6951b',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent', 'server', 'ui'], text: '디스크 관리에 머지된 worktree 한 번에 정리: 기본 브랜치에 머지됐고 고친 것이 없고 열린 세션·최근 1시간 사용이 없는 worktree 를 찾아 git worktree remove 와 머지된 브랜치 지우기를 한 번에', refs: ['REQ-F-802', 'IF-251'] },

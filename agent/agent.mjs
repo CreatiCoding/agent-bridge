@@ -3436,8 +3436,8 @@ async function repoWorktrees(repo, fetch) {
   return inTurns(wts, 4, async (w) => {
     const item = { repo: tilde(repo), path: tilde(w.path), branch: w.branch, base, size: null }
     if (w.prunable || !fs.existsSync(w.path)) return { ...item, gone: true, removable: true }
-    const merged = !!base && !!w.head && (await git(repo, 'merge-base', '--is-ancestor', w.head, base)).ok
-    const st = await git(w.path, 'status', '--porcelain', '--untracked-files=normal')
+    // When it was last used, read before anything below: a plain `git status` rewrites the index and would make
+    // every worktree look just used. Hence `--no-optional-locks` too.
     let touched = 0
     const gd = await git(w.path, 'rev-parse', '--path-format=absolute', '--git-dir')
     for (const f of ['index', 'HEAD', 'logs/HEAD']) {
@@ -3445,6 +3445,8 @@ async function repoWorktrees(repo, fetch) {
         touched = Math.max(touched, fs.statSync(path.join(gd.out, f)).mtimeMs)
       } catch {}
     }
+    const merged = !!base && !!w.head && (await git(repo, 'merge-base', '--is-ancestor', w.head, base)).ok
+    const st = await run('git', [...GIT_SAFE, '--no-optional-locks', '-C', w.path, 'status', '--porcelain', '--untracked-files=normal'])
     const real = fs.realpathSync(w.path)
     const why = worktreeWhy({ merged, dirty: !st.ok || !!st.out, locked: w.locked, active: active.some((a) => a === real || a.startsWith(`${real}/`)), touched, now: Date.now() })
     return { ...item, size: await diskSize(w.path), merged, removable: !why, ...(why ? { why } : {}) }
