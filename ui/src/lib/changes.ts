@@ -26,8 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.319',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: '에이전트 연동 키가 하루마다 스스로 바뀐다. 연동 탭이 지금 키로 붙어 있을 때만 바꾸고, 이전 키는 15분 더 통한다', refs: ['REQ-S-083'] },
+      { kind: 'changed', scope: ['ui'], text: '운영 페이지 기기 키 줄에 다음 자동 교체까지 남은 시간', refs: ['REQ-S-083'] },
+    ],
+  },
+  {
     version: '1.318',
     date: '2026-10-25',
+    commit: '28f1e8a',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '키를 바꾼 직후 헤드리스 Chrome 을 다시 띄우면 옛 키로 붙어 15분 뒤 끊길 수 있던 것: 헤드리스 Chrome 은 늘 현재 키로 뜨고, 예전 키로 오면 에이전트가 다시 띄움', refs: ['REQ-S-081', 'REQ-F-277'] },
     ],

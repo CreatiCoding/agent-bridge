@@ -252,6 +252,20 @@ export function retireKey(prints, key) {
  * Which app on this Mac a request's User-Agent came from, as a bundle id for `open -b`, so the link page opens in the
  * browser that holds the old key. null for the agent's own headless browser and for what cannot be told apart.
  */
+/** How old a key gets before it changes by itself (1.319, REQ-S-083). */
+export const KEY_ROTATE_MS = 24 * 3600_000
+
+/**
+ * Whether the key should change by itself now: it is KEY_ROTATE_MS old (no keyAt: older still), the linked tab can
+ * take a new key and came with the current one, and the previous key is not still in its grace (changing again then
+ * would drop it at once, before other browsers caught up).
+ */
+export function keyRotateDue({ now, keyAt, oldUntil, linked, rekey }) {
+  if (!rekey || linked !== 'current') return false
+  if (oldUntil && now < oldUntil) return false
+  return now - (keyAt ?? 0) >= KEY_ROTATE_MS
+}
+
 export function browserApp(ua) {
   const s = String(ua ?? '')
   if (!/Macintosh/.test(s) || /HeadlessChrome/.test(s)) return null

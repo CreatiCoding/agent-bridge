@@ -2116,7 +2116,7 @@ function cleanKeyState(k) {
   const num = (v) => (Number.isFinite(v) ? v : null)
   const app = (v) => (typeof v === 'string' && /^[\w.-]{1,64}$/.test(v) ? v : null)
   const event = (e) => (e && typeof e === 'object' && num(e.at) ? { at: e.at, app: app(e.app), ...(typeof e.ok === 'boolean' ? { ok: e.ok } : {}) } : null)
-  return { gen: num(k.gen), latest: num(k.latest), at: num(k.at), oldUntil: num(k.oldUntil), retired: num(k.retired) ?? 0, linked: ['current', 'old'].includes(k.linked) ? k.linked : null, stale: event(k.stale), reopen: event(k.reopen) }
+  return { gen: num(k.gen), latest: num(k.latest), at: num(k.at), oldUntil: num(k.oldUntil), next: num(k.next), retired: num(k.retired) ?? 0, linked: ['current', 'old'].includes(k.linked) ? k.linked : null, stale: event(k.stale), reopen: event(k.reopen) }
 }
 
 function hostSummary(id, h, masked = false) {

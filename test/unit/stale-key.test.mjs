@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { keyPrint, retireKey, RETIRED_KEYS_MAX, browserApp } from '../../agent/guard.mjs'
+import { keyPrint, retireKey, RETIRED_KEYS_MAX, browserApp, keyRotateDue, KEY_ROTATE_MS } from '../../agent/guard.mjs'
 
 test('retired keys are kept as prints, newest first, without repeats, at most RETIRED_KEYS_MAX', () => {
   assert.equal(keyPrint('a'), keyPrint('a'))
@@ -47,4 +47,20 @@ test('agent.mjs reports the key state in health without the key itself', () => {
   assert.doesNotMatch(body, /config\.key\b|oldKey\.key|retiredKeys\)/)
   assert.match(src, /keyState: keyState\(\),/)
   assert.match(src, /clientOldKey = !same\(config\.key\)/)
+})
+
+test('the key changes by itself after a day, only while the linked tab can take it on the current key (REQ-S-083)', () => {
+  const now = 10 * KEY_ROTATE_MS
+  const due = (o) => keyRotateDue({ now, keyAt: now - KEY_ROTATE_MS, oldUntil: null, linked: 'current', rekey: true, ...o })
+  assert.equal(due({}), true)
+  assert.equal(due({ keyAt: now - KEY_ROTATE_MS + 60_000 }), false, '하루가 안 됨')
+  assert.equal(due({ keyAt: undefined }), true, 'keyAt 없는 옛 키')
+  assert.equal(due({ rekey: false }), false, '새 키를 못 받는 옛 릴레이')
+  assert.equal(due({ linked: 'old' }), false, '이전 키로 붙은 탭')
+  assert.equal(due({ linked: null }), false, '연동 탭 없음')
+  assert.equal(due({ oldUntil: now + 1000 }), false, '이전 키 유예 중')
+  assert.equal(due({ oldUntil: now - 1000 }), true)
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(src, /setInterval\(autoRotateKey, KEY_ROTATE_CHECK_MS\)/)
+  assert.match(src, /keyGen: KEY_GEN, keyAt: Date\.now\(\) \}/)
 })

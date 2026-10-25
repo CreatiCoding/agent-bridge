@@ -24,6 +24,8 @@ interface KeyState {
   latest: number | null
   at: number | null
   oldUntil: number | null
+  /** When the key changes by itself (1.319); absent from older agents. */
+  next?: number | null
   retired: number
   linked: 'current' | 'old' | null
   stale: { at: number; app: string | null } | null
@@ -40,7 +42,8 @@ const keyStuck = (k: KeyState) => !!k.stale && Date.now() - k.stale.at < 3_600_0
 function keyView(k: KeyState | null | undefined, online: boolean): { tone: 'green' | 'amber' | 'grey'; badge: string; line: string } | null {
   if (!k) return null
   const old = (k.gen ?? 1) < (k.latest ?? 1)
-  const parts = [old ? '1.140 이전에 만든 키' : k.at ? `${new Date(k.at).toLocaleDateString('sv-SE')} 에 바꿈` : '처음 키']
+  const parts = [old ? '1.140 이전에 만든 키' : k.at ? `${ago(k.at)} 바꿈` : '처음 키']
+  if (k.next && !old) parts.push(k.next <= Date.now() ? '자동 교체 대기' : `${Math.max(1, Math.round((k.next - Date.now()) / 3_600_000))}시간 뒤 자동 교체`)
   parts.push(!online ? '연동 탭 모름' : k.linked === 'current' ? '연동 탭이 지금 키' : k.linked === 'old' ? '연동 탭이 이전 키' : '연동 탭 없음')
   if (k.oldUntil) parts.push(`이전 키는 ${Math.max(1, Math.round((k.oldUntil - Date.now()) / 60_000))}분 뒤 끝남`)
   if (k.retired) parts.push(`예전 키 ${k.retired}개 기억`)

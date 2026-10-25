@@ -419,7 +419,7 @@ func cleanKeyState(k any) any {
 	if s, ok := m["linked"].(string); ok && (s == "current" || s == "old") {
 		linked = s
 	}
-	return M{"gen": num(m["gen"]), "latest": num(m["latest"]), "at": num(m["at"]), "oldUntil": num(m["oldUntil"]), "retired": retired, "linked": linked, "stale": event(m["stale"]), "reopen": event(m["reopen"])}
+	return M{"gen": num(m["gen"]), "latest": num(m["latest"]), "at": num(m["at"]), "oldUntil": num(m["oldUntil"]), "next": num(m["next"]), "retired": retired, "linked": linked, "stale": event(m["stale"]), "reopen": event(m["reopen"])}
 }
 
 // hostSummary: a Mac at a glance. `masked`: for an operator on someone else's Mac, the error texts lose their paths.

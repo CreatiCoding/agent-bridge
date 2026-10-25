@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -163,10 +163,12 @@ const writeJson = (p, v) => {
 const KEY_GEN = 2
 /** How long the key before a change still opens the agent: the tabs of other browsers on this Mac catch up meanwhile. */
 const OLD_KEY_MS = 15 * 60_000
+/** How often the key's age is looked at; it changes by itself at KEY_ROTATE_MS (guard.mjs). */
+const KEY_ROTATE_CHECK_MS = 10 * 60_000
 const config = readJson(configPath, {})
 config.hostId ||= crypto.randomBytes(16).toString('hex')
 // A key made here is already of this generation: it has never been on a command line, so it is not changed again.
-if (!config.key) Object.assign(config, { key: crypto.randomBytes(24).toString('base64url'), keyGen: KEY_GEN })
+if (!config.key) Object.assign(config, { key: crypto.randomBytes(24).toString('base64url'), keyGen: KEY_GEN, keyAt: Date.now() })
 // What Claude Code's hooks in a bridge session prove themselves with. Not the key above: it opens only /hook and
 // /statusline, and it is read by curl from a file, so it is on no command line and in no environment (`ps` shows
 // both, and their output gets pasted).
@@ -3272,12 +3274,23 @@ function rotateKey(reason) {
   return null
 }
 
+/**
+ * The key changes by itself once it is KEY_ROTATE_MS old (1.319, REQ-S-083), the same way as `rekey`: one that got
+ * copied somewhere (a pasted `ps`, a transcript) stops working within a day. When is keyRotateDue's to say.
+ */
+function autoRotateKey() {
+  if (!client) return
+  if (!keyRotateDue({ now: Date.now(), keyAt: config.keyAt, oldUntil: config.oldKey?.until, linked: clientOldKey ? 'old' : 'current', rekey: clientRekey })) return
+  rotateKey('하루가 지나 자동으로 바꿈')
+}
+
 /** The key's state for the operator page: no key or key print, only when it changed and how the tabs follow it. */
 const keyState = () => ({
   gen: config.keyGen ?? 1,
   latest: KEY_GEN,
   at: config.keyAt ?? null,
   oldUntil: config.oldKey && Date.now() < config.oldKey.until ? config.oldKey.until : null,
+  next: (config.keyAt ?? 0) + KEY_ROTATE_MS,
   retired: (config.retiredKeys ?? []).length,
   linked: client ? (clientOldKey ? 'old' : 'current') : null,
   stale: stats.staleKey ?? null,
@@ -3997,6 +4010,7 @@ async function heal() {
   }
 }
 if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd) setInterval(() => heal().catch((e) => log('error', 'heal', e.message)), HEAL_MS).unref()
+if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd) setInterval(autoRotateKey, KEY_ROTATE_CHECK_MS).unref()
 
 /**
  * Each part of the agent, where it stands, and what fixes it. state: ok | warn | fail | off.
@@ -4027,7 +4041,7 @@ async function features() {
   add('checks', '도구·환경 점검', bad.some((c) => c.level === 'fail') ? 'fail' : bad.length ? 'warn' : 'ok', bad.length ? bad.map((c) => `${c.title}: ${c.detail}`).join(' / ') : `모두 정상 (${checks.length}개)`, { action: 'check', ...(bad.find((c) => c.fix) ? { fix: bad.find((c) => c.fix).fix } : {}) })
   add('update', '자동 업데이트', noAutoUpdate ? 'off' : pendingUpdate ? 'warn' : 'ok', noAutoUpdate ? '꺼짐 (--no-auto-update)' : pendingUpdate ? `새 버전 ${pendingUpdate.build ?? ''} 을 받음 · 곧 바꿈` : `build ${BUILD}`)
   // The key that opens this agent to the site's pages: when it was made, and a button to change it (R1-M8).
-  add('key', '에이전트 키', (config.keyGen ?? 1) < KEY_GEN ? 'warn' : 'ok', (config.keyGen ?? 1) < KEY_GEN ? '1.140 이전에 만든 키 · 연동 탭이 이어지면 한 번 바꿔요' : `${config.keyAt ? `${new Date(config.keyAt).toLocaleDateString('sv-SE')} 에 바꿈` : '새 키'}${config.oldKey && Date.now() < config.oldKey.until ? ' · 이전 키는 곧 끝남' : ''}`, { action: 'rekey' })
+  add('key', '에이전트 키', (config.keyGen ?? 1) < KEY_GEN ? 'warn' : 'ok', (config.keyGen ?? 1) < KEY_GEN ? '1.140 이전에 만든 키 · 연동 탭이 이어지면 한 번 바꿔요' : `${config.keyAt ? `${new Date(config.keyAt).toLocaleString('sv-SE').slice(0, 16)} 에 바꿈` : '새 키'} · 하루마다 스스로 바꿈${config.oldKey && Date.now() < config.oldKey.until ? ' · 이전 키는 곧 끝남' : ''}`, { action: 'rekey' })
   add('agent', '에이전트', 'ok', `${asService ? '백그라운드 서비스' : '터미널에서 실행'} · 켜진 지 ${Math.round((Date.now() - STARTED) / 60_000)}분 · 메모리 ${Math.round(process.memoryUsage().rss / 1e6)}MB${restartWanted ? ' · 세션이 쉬면 다시 시작함' : ''}`, asService ? { action: 'restart' } : {})
   return out
 }

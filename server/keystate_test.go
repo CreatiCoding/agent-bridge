@@ -14,8 +14,8 @@ import (
 
 func TestCleanKeyState(t *testing.T) {
 	now := float64(time.Now().UnixMilli())
-	out := cleanKeyState(M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome", "key": "K"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}, "key": "SECRET", "print": "abc"})
-	want := M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}}
+	out := cleanKeyState(M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "next": now, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome", "key": "K"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}, "key": "SECRET", "print": "abc"})
+	want := M{"gen": 2.0, "latest": 2.0, "at": now, "oldUntil": nil, "next": now, "retired": 1.0, "linked": "current", "stale": M{"at": now, "app": "com.google.Chrome"}, "reopen": M{"at": now, "app": "com.google.Chrome", "ok": true}}
 	if !reflect.DeepEqual(roundTrip(out), roundTrip(want)) {
 		t.Fatal(jsonStr(out))
 	}
