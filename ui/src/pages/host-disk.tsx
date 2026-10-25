@@ -168,6 +168,7 @@ export function DiskBox({ hostId, online, sys }: { hostId: string; online: boole
                 <code style={{ fontSize: 'var(--fs-small)', wordBreak: 'break-all' }}>{scan.path}</code>
                 {busy?.startsWith('scan:') ? <Spinner /> : null}
               </div>
+              {!scan.parent ? <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-small)' }}>홈 바로 아래 폴더는 옮길 수 없어요. 폴더를 눌러 안으로 들어가 골라 주세요.</p> : null}
               {scan.items.map((it) => (
                 <Row
                   key={it.path}
@@ -177,7 +178,8 @@ export function DiskBox({ hostId, online, sys }: { hostId: string; online: boole
                     <span className="stack" style={{ gap: 4 }}>
                       <span>
                         {it.guarded ? 'macOS 가 지키는 폴더 · 재지 않음' : it.partial ? '안에 보호 폴더가 있어 열어서 봐요' : it.size == null ? '크기를 읽지 못함' : bytes(it.size)}
-                        {!it.trashable && it.why && !it.guarded ? ` · ${it.why}` : ''}
+                        {/* At the home folder itself every item says the same "right under home" reason: said once above instead. */}
+                        {!it.trashable && it.why && !it.guarded && scan.parent ? ` · ${it.why}` : ''}
                       </span>
                       {it.size ? <Bar pct={(100 * it.size) / top} /> : null}
                     </span>
