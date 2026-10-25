@@ -1,7 +1,7 @@
 // For operators: who may sign in, and how every user's Macs are doing. Conversations are not visible here.
 import { useEffect, useState } from 'react'
 import { del, errorText, get, post } from '../lib/api'
-import { ago, bytes, duration } from '../lib/format'
+import { ago, bytes, duration, sysLine, type SysUse } from '../lib/format'
 import { getPref, setPref } from '../lib/local'
 import { back, go } from '../lib/router'
 import { NONE, useStore } from '../lib/store'
@@ -15,7 +15,7 @@ interface Access {
 interface Overview {
   pending: number
   server: { version: string; agentBuild: string; github?: boolean; originSet?: boolean; root?: boolean; agentSigned?: boolean; agentSeqBack?: boolean; uptime: number; rss: number; bridges: number; controls: number; sessions: number }
-  users: { login: string; allowed: boolean; hosts: { id: string; name: string; online: boolean; agent: string | null; build: string | null; outdated: boolean; updateBlocked?: boolean; key?: KeyState | null; sessions: number; problem: string | null }[] }[]
+  users: { login: string; allowed: boolean; hosts: { id: string; name: string; online: boolean; agent: string | null; build: string | null; outdated: boolean; updateBlocked?: boolean; key?: KeyState | null; sys?: SysUse | null; sessions: number; problem: string | null }[] }[]
 }
 
 /** The agent key as the agent reports it (REQ-S-065): no key, only when it changed and how the link tabs follow it. */
@@ -613,6 +613,12 @@ export function AdminPanel() {
                             <>
                               <br />
                               {kv ? `키: ${kv.line}` : '키: 이 에이전트는 키 상태를 보내지 않아요(1.224 이전)'}
+                            </>
+                          ) : null}
+                          {h.online && h.sys && sysLine(h.sys) ? (
+                            <>
+                              <br />
+                              {sysLine(h.sys)}
                             </>
                           ) : null}
                         </>

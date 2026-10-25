@@ -252,6 +252,47 @@ export function retireKey(prints, key) {
  * Which app on this Mac a request's User-Agent came from, as a bundle id for `open -b`, so the link page opens in the
  * browser that holds the old key. null for the agent's own headless browser and for what cannot be told apart.
  */
+/** CPU in use between two `os.cpus()` readings, 0–100, or null without a first reading (1.322, REQ-F-800). */
+export function cpuBusy(prev, cur) {
+  if (!Array.isArray(prev) || !Array.isArray(cur) || prev.length !== cur.length) return null
+  let idle = 0
+  let total = 0
+  cur.forEach((c, i) => {
+    const p = prev[i]?.times ?? {}
+    const t = c?.times ?? {}
+    const d = (k) => Math.max(0, (t[k] ?? 0) - (p[k] ?? 0))
+    idle += d('idle')
+    total += d('user') + d('nice') + d('sys') + d('irq') + d('idle')
+  })
+  return total > 0 ? Math.round((1000 * (total - idle)) / total) / 10 : null
+}
+
+/**
+ * Memory in use on a Mac from `vm_stat`, as Activity Monitor counts it: app memory (anonymous less purgeable), wired
+ * and compressed. `os.freemem()` there counts only free pages, so a Mac using its spare memory as cache looks full.
+ */
+export function macMemUsed(text) {
+  const page = Number(/page size of (\d+) bytes/.exec(text)?.[1])
+  const n = (label) => Number(new RegExp(`^${label}:\\s+(\\d+)`, 'm').exec(text)?.[1])
+  const used = n('Anonymous pages') - n('Pages purgeable') + n('Pages wired down') + n('Pages occupied by compressor')
+  return Number.isFinite(page) && Number.isFinite(used) && used >= 0 ? used * page : null
+}
+
+/** Memory in use on Linux: MemTotal less MemAvailable from /proc/meminfo (bytes), or null. */
+export function linuxMemUsed(text) {
+  const kb = (label) => Number(new RegExp(`^${label}:\\s+(\\d+) kB`, 'm').exec(text)?.[1])
+  const used = kb('MemTotal') - kb('MemAvailable')
+  return Number.isFinite(used) && used >= 0 ? used * 1024 : null
+}
+
+/** A disk's size and use from `fs.statfsSync`, counted like `df`: used / (used + available to a user). */
+export function diskUse(st) {
+  if (!st || !(st.blocks > 0)) return null
+  const used = (st.blocks - st.bfree) * st.bsize
+  const avail = st.bavail * st.bsize
+  return { total: st.blocks * st.bsize, used, avail, pct: Math.round((1000 * used) / (used + avail)) / 10 }
+}
+
 /** How old a key gets before it changes by itself (1.319, REQ-S-083). */
 export const KEY_ROTATE_MS = 24 * 3600_000
 

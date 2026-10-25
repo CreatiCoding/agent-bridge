@@ -75,3 +75,14 @@ func TestTrackTodosTool(t *testing.T) {
 		t.Fatal("bridgeTools 를 배열일 때만 받지 않음")
 	}
 }
+
+func TestCleanSys(t *testing.T) {
+	out := cleanSys(M{"cpu": 19.3, "cores": 8.0, "memUsed": 1.0, "memTotal": 2.0, "disk": M{"total": 10.0, "used": 8.0, "avail": 2.0, "pct": 80.0, "path": "/Users/x"}, "extra": "x"})
+	want := M{"cpu": 19.3, "cores": 8.0, "memUsed": 1.0, "memTotal": 2.0, "disk": M{"total": 10.0, "used": 8.0, "avail": 2.0, "pct": 80.0}}
+	if jsonStr(out) != jsonStr(want) {
+		t.Fatal(jsonStr(out))
+	}
+	if cleanSys(nil) != nil || mget(cleanSys(M{"cpu": "x", "disk": "y"}), "cpu") != nil || mget(cleanSys(M{"cpu": -1.0}), "cpu") != nil {
+		t.Fatal("bad values")
+	}
+}

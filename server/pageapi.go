@@ -383,6 +383,25 @@ func cleanVoiceStatus(v any) any {
 	return M{"whisper": m["whisper"] == true, "models": names(m["models"]), "vadModel": m["vadModel"] == true, "vad": vad, "ffmpeg": m["ffmpeg"] == true}
 }
 
+// cleanSys: what an agent says about its CPU, memory and disk (REQ-F-800), numbers only.
+func cleanSys(v any) any {
+	m, ok := v.(M)
+	if !ok || m == nil {
+		return nil
+	}
+	num := func(v any) any {
+		if f, ok := v.(float64); ok && !math.IsInf(f, 0) && f == f && f >= 0 {
+			return f
+		}
+		return nil
+	}
+	var disk any
+	if d, ok := m["disk"].(M); ok && d != nil {
+		disk = M{"total": num(d["total"]), "used": num(d["used"]), "avail": num(d["avail"]), "pct": num(d["pct"])}
+	}
+	return M{"cpu": num(m["cpu"]), "cores": num(m["cores"]), "memUsed": num(m["memUsed"]), "memTotal": num(m["memTotal"]), "disk": disk}
+}
+
 func cleanKeyState(k any) any {
 	m, ok := k.(M)
 	if !ok || m == nil {
@@ -499,7 +518,7 @@ func hostSummary(id string, h M, masked bool) M {
 		// Behind, and this server will hand it the new one: not when it sends none (R9-I1).
 		"outdated": behind && AGENT_SIGNED,
 		// Behind, but this server sends no update (R10-I2).
-		"updateBlocked": behind && !AGENT_SIGNED, "key": cleanKeyState(health["keyState"]), "problems": float64(len(failing)), "problem": problem, "online": online(id), "stale": online(id) && truthy(st["stale"]), "lastSeen": h["lastSeen"], "healthAt": st["healthAt"], "rtt": st["rtt"], "errors": st["errors"], "lastError": lastError, "accounts": accts}
+		"updateBlocked": behind && !AGENT_SIGNED, "key": cleanKeyState(health["keyState"]), "sys": cleanSys(health["sys"]), "problems": float64(len(failing)), "problem": problem, "online": online(id), "stale": online(id) && truthy(st["stale"]), "lastSeen": h["lastSeen"], "healthAt": st["healthAt"], "rtt": st["rtt"], "errors": st["errors"], "lastError": lastError, "accounts": accts}
 }
 
 // hostDetail: a Mac's state for its owner, or for an operator looking at someone else's Mac (R1-M5).

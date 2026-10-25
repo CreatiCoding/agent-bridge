@@ -72,3 +72,21 @@ export function folderPath(p: string, home?: string) {
   // No home known (an older session copy): a macOS home is /Users/<name>.
   return p.replace(/^\/Users\/[^/]+(?=\/|$)/, '~')
 }
+
+/** A host's CPU, memory and disk in use, as its agent reports it (REQ-F-800). */
+export interface SysUse {
+  cpu: number | null
+  cores: number | null
+  memUsed: number | null
+  memTotal: number | null
+  disk: { total: number | null; used: number | null; avail: number | null; pct: number | null } | null
+}
+
+/** One line: `CPU 19% · 메모리 14.2GB / 16GB (83%) · 디스크 85% (35GB 남음)`. Missing parts are left out. */
+export function sysLine(s: SysUse) {
+  const parts: string[] = []
+  if (s.cpu != null) parts.push(`CPU ${Math.round(s.cpu)}%${s.cores ? ` (${s.cores}코어)` : ''}`)
+  if (s.memUsed != null && s.memTotal) parts.push(`메모리 ${bytes(s.memUsed)} / ${bytes(s.memTotal)} (${Math.round((100 * s.memUsed) / s.memTotal)}%)`)
+  if (s.disk?.pct != null) parts.push(`디스크 ${Math.round(s.disk.pct)}%${s.disk.avail != null ? ` (${bytes(s.disk.avail)} 남음)` : ''}`)
+  return parts.join(' · ')
+}

@@ -2111,6 +2111,13 @@ function cleanVoiceStatus(v) {
 }
 
 /** What an agent says about its key (agent keyState), kept to known fields: times, counts and browser ids only. */
+/** What an agent says about its CPU, memory and disk (REQ-F-800), numbers only. */
+function cleanSys(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
+  const num = (x) => (Number.isFinite(x) && x >= 0 ? x : null)
+  const d = v.disk && typeof v.disk === 'object' && !Array.isArray(v.disk) ? v.disk : null
+  return { cpu: num(v.cpu), cores: num(v.cores), memUsed: num(v.memUsed), memTotal: num(v.memTotal), disk: d ? { total: num(d.total), used: num(d.used), avail: num(d.avail), pct: num(d.pct) } : null }
+}
 // The key changes (REQ-S-084): times and two short words only, at most five.
 const keyLog = (arr) =>
   (Array.isArray(arr) ? arr : [])
@@ -2134,7 +2141,7 @@ function hostSummary(id, h, masked = false) {
   return { id, name: h.name, kind: h.kind ?? 'other', info: h.info ?? null, awake: st.health?.awake ?? null, voice: masked ? null : cleanVoiceStatus(st.health?.voice), takesWork: !delegateOff(h.uid).has(id), sudo: masked ? null : sudoView(id), background: masked && background?.error ? { ...background, error: hidePaths(background.error) } : background, // Behind, and this server will hand it the new one: not when it sends none (unsigned, seq went back, R9-I1).
     outdated: !!h.info && h.info.build !== AGENT_BUILD && AGENT_SIGNED,
     // Behind, but this server sends no update (R10-I2): said as such, not as "최신".
-    updateBlocked: !!h.info && h.info.build !== AGENT_BUILD && !AGENT_SIGNED, key: cleanKeyState(st.health?.keyState), problems: failing.length, problem: masked && problem ? hidePaths(problem) : problem, online: online(id), stale: online(id) && st.stale, lastSeen: h.lastSeen, healthAt: st.healthAt, rtt: st.rtt, errors: st.errors, lastError, accounts: masked ? accountsBrief(h).map(({ name: _n, ...a }) => a) : accountsBrief(h) }
+    updateBlocked: !!h.info && h.info.build !== AGENT_BUILD && !AGENT_SIGNED, key: cleanKeyState(st.health?.keyState), sys: cleanSys(st.health?.sys), problems: failing.length, problem: masked && problem ? hidePaths(problem) : problem, online: online(id), stale: online(id) && st.stale, lastSeen: h.lastSeen, healthAt: st.healthAt, rtt: st.rtt, errors: st.errors, lastError, accounts: masked ? accountsBrief(h).map(({ name: _n, ...a }) => a) : accountsBrief(h) }
 }
 
 /** Everything known about one host, for the host screen and for the operator. */

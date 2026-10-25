@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -3382,6 +3382,7 @@ async function health() {
     load: os.loadavg()[0],
     memFree: os.freemem(),
     memTotal: os.totalmem(),
+    sys: await sysUse(),
     rss: process.memoryUsage().rss,
     sent: stats.sent,
     commands: stats.commands,
@@ -3396,6 +3397,23 @@ async function health() {
   })
 }
 setInterval(() => client && welcomed && health().catch((e) => log('error', 'health', e.message)), HEALTH_MS)
+
+/** The last `os.cpus()` reading, so each health report says how busy the CPU was since the one before. */
+let cpuPrev = os.cpus()
+/** This machine's CPU, memory and disk in use (1.322, REQ-F-800), for the site's host page and the operator page. */
+async function sysUse() {
+  const cur = os.cpus()
+  const cpu = cpuBusy(cpuPrev, cur)
+  cpuPrev = cur
+  let memUsed = null
+  if (process.platform === 'darwin') memUsed = macMemUsed((await run('/usr/bin/vm_stat', [])).out)
+  else if (process.platform === 'linux') memUsed = linuxMemUsed(readPlain('/proc/meminfo', 64_000) ?? '')
+  let disk = null
+  try {
+    disk = diskUse(fs.statfsSync(HOME))
+  } catch {}
+  return { cpu, cores: cur.length, memUsed: memUsed ?? os.totalmem() - os.freemem(), memTotal: os.totalmem(), disk }
+}
 
 // ---------- TestFlight (REQ-F-781) ----------
 

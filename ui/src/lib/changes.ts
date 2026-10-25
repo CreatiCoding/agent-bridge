@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.322',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent', 'server', 'ui'], text: '기기의 CPU·메모리·디스크 사용률: 기기 화면과 운영 페이지 기기 줄에 CPU %, 쓰는 메모리 / 전체, 디스크 % 와 남은 공간. macOS 메모리는 활성 상태 보기와 같은 셈', refs: ['REQ-F-800'] },
+    ],
+  },
+  {
     version: '1.321',
+    commit: '417e10f',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent', 'server', 'ui'], text: '키 교체 기록: 기기마다 최근 5번의 키 교체(자동·사이트·옛 세대)와 연동 탭이 새 키로 온 시각을 서버로 알리고, 운영 페이지 키 줄에 마지막 교체 결과를 보임. 탭이 끝내 오지 않으면 키 확인 배지와 점검 경고', refs: ['REQ-S-084'] },

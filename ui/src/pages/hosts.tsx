@@ -1,7 +1,7 @@
 // The Macs: how to connect one, how each is doing (checks, link, agent), and its log.
 import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
-import { ago, bytes, clock, duration, shortPath } from '../lib/format'
+import { ago, bytes, clock, duration, shortPath, sysLine, type SysUse } from '../lib/format'
 import { back, go } from '../lib/router'
 import { hostIcon, KINDS } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
@@ -483,7 +483,7 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
 interface Detail {
   host: { id: string; name: string; kind: string; online: boolean; user: string; home: string; info: { version: string; build: string; node: string; os: string } | null; updateBlocked?: boolean; outdated: boolean; latest?: string; takesWork?: boolean }
   link: { connectedAt: number | null; disconnectedAt: number | null; connects: number; rtt: number | null }
-  health: null | { version: string; uptime: number; tools?: { zeropty?: string | null; tmux?: string | null }; checks: { id: string; level: string; title: string; detail: string; fix?: string }[]; load: number; memFree: number; memTotal: number; rss: number; keepAwake: boolean; compactWindow?: number | null; awake?: Awake; background?: Background; features?: Feature[]; repairs?: { at: number; id: string; text: string; ok: boolean }[]; at: number; lastCommand?: { t: string; at: number } | null }
+  health: null | { version: string; uptime: number; tools?: { zeropty?: string | null; tmux?: string | null }; checks: { id: string; level: string; title: string; detail: string; fix?: string }[]; load: number; memFree: number; memTotal: number; sys?: SysUse | null; rss: number; keepAwake: boolean; compactWindow?: number | null; awake?: Awake; background?: Background; features?: Feature[]; repairs?: { at: number; id: string; text: string; ok: boolean }[]; at: number; lastCommand?: { t: string; at: number } | null }
   page: null | { visible: string; queue: number; ua: string; upFail: number; agentReconnects: number; at: number }
   sessions: { id: string; title: string; cwd: string; state: Session['state']; mux?: 'zeropty' | 'tmux' | null; serverLines: number; agentLines: number | null; behind: number | null; syncedAt: number | null; pushError: string | null }[]
 }
@@ -586,7 +586,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                     <>
                       <dt>맥</dt>
                       <dd>
-                        부하 {detail.health.load.toFixed(2)} · 여유 메모리 {bytes(detail.health.memFree)} / {bytes(detail.health.memTotal)}
+                        {detail.health.sys ? sysLine(detail.health.sys) : `부하 ${detail.health.load.toFixed(2)} · 여유 메모리 ${bytes(detail.health.memFree)} / ${bytes(detail.health.memTotal)}`}
                         {detail.health.keepAwake ? ' · 잠들지 않게 함' : ''}
                       </dd>
                       <dt>점검</dt>
