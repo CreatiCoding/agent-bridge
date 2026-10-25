@@ -2141,7 +2141,7 @@ function hostSummary(id, h, masked = false) {
   return { id, name: h.name, kind: h.kind ?? 'other', info: h.info ?? null, awake: st.health?.awake ?? null, voice: masked ? null : cleanVoiceStatus(st.health?.voice), takesWork: !delegateOff(h.uid).has(id), sudo: masked ? null : sudoView(id), background: masked && background?.error ? { ...background, error: hidePaths(background.error) } : background, // Behind, and this server will hand it the new one: not when it sends none (unsigned, seq went back, R9-I1).
     outdated: !!h.info && h.info.build !== AGENT_BUILD && AGENT_SIGNED,
     // Behind, but this server sends no update (R10-I2): said as such, not as "최신".
-    updateBlocked: !!h.info && h.info.build !== AGENT_BUILD && !AGENT_SIGNED, key: cleanKeyState(st.health?.keyState), sys: cleanSys(st.health?.sys), problems: failing.length, problem: masked && problem ? hidePaths(problem) : problem, online: online(id), stale: online(id) && st.stale, lastSeen: h.lastSeen, healthAt: st.healthAt, rtt: st.rtt, errors: st.errors, lastError, accounts: masked ? accountsBrief(h).map(({ name: _n, ...a }) => a) : accountsBrief(h) }
+    updateBlocked: !!h.info && h.info.build !== AGENT_BUILD && !AGENT_SIGNED, key: cleanKeyState(st.health?.keyState), sys: cleanSys(st.health?.sys), diskHelp: diskHelpView(h.diskHelp), problems: failing.length, problem: masked && problem ? hidePaths(problem) : problem, online: online(id), stale: online(id) && st.stale, lastSeen: h.lastSeen, healthAt: st.healthAt, rtt: st.rtt, errors: st.errors, lastError, accounts: masked ? accountsBrief(h).map(({ name: _n, ...a }) => a) : accountsBrief(h) }
 }
 
 /** Everything known about one host, for the host screen and for the operator. */
@@ -3292,6 +3292,17 @@ async function startSession(uid, b, req = {}) {
   return sid
 }
 
+/** How long an owner's 디스크 정리 도움 grant lasts (REQ-F-804). */
+const DISK_HELP_MS = 24 * 3600_000
+/** A host's disk may be managed by its owner, and by the operator the owner granted it to until it ends. */
+function diskHost(uid, hostId) {
+  const h = hosts[hostId]
+  if (h && h.uid === uid) return h
+  if (h && isAdmin(uid) && h.diskHelp?.by === uid && h.diskHelp.until > Date.now()) return h
+  throw new Refuse(404, '호스트가 없습니다')
+}
+/** Who asked to help with a host's disk and until when it was granted (0: asked, not granted), no uid. */
+const diskHelpView = (v) => (v ? { login: v.login, askedAt: v.askedAt, until: v.until } : null)
 function ownHost(uid, hostId) {
   if (!hosts[hostId] || hosts[hostId].uid !== uid) throw new Refuse(404, '호스트가 없습니다')
   return hosts[hostId]
@@ -4312,11 +4323,38 @@ async function api(req, res, url, uid) {
     if (!r.ok) throw new Refuse(409, r.error || '복구하지 못했습니다')
     return json(res, 200, { ok: true, note: r.note })
   }
+  // 디스크 정리 도움 (REQ-F-804): an operator asks, the owner grants for DISK_HELP_MS or turns it down, and either
+  // the owner or the operator who asked takes it back.
+  const hdh = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/disk-help$/.exec(p)
+  if (post && hdh) {
+    const b = await body(req, 1024)
+    const h = readableHost(uid, hdh[1])
+    const owner = h.uid
+    const help = h.diskHelp ?? null
+    const login = users[uid]?.login ?? ''
+    if (b.op === 'ask') {
+      if (owner === uid || !isAdmin(uid)) throw new Refuse(403, '운영자만 다른 사람의 기기에 요청할 수 있어요')
+      h.diskHelp = { by: uid, login, askedAt: Date.now(), until: 0 }
+      record(owner, hdh[1], { area: 'disk', text: `운영자 ${login} 이 디스크 정리를 도울 권한을 요청함` })
+    } else if (b.op === 'grant') {
+      if (owner !== uid) throw new Refuse(404, '호스트가 없습니다')
+      if (!help) throw new Refuse(409, '받은 요청이 없어요')
+      h.diskHelp = { ...help, until: Date.now() + DISK_HELP_MS }
+      record(owner, hdh[1], { area: 'disk', text: `운영자 ${help.login} 에게 디스크 정리 권한을 24시간 줌` })
+    } else if (b.op === 'end') {
+      if (owner !== uid && help?.by !== uid) throw new Refuse(404, '호스트가 없습니다')
+      delete h.diskHelp
+      record(owner, hdh[1], { area: 'disk', text: `${owner === uid ? '주인이' : `운영자 ${login} 이`} 디스크 정리 도움 권한을 거둠` })
+    } else throw new Refuse(400, '모르는 동작이에요')
+    touchGlobals()
+    broadcastState(owner)
+    return json(res, 200, { ok: true })
+  }
   // 디스크 관리 (REQ-F-801). Its owner only: an operator never clears or moves someone else's files.
   const hdisk = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/disk$/.exec(p)
   if (post && hdisk) {
     const b = await body(req, 262_144)
-    ownHost(uid, hdisk[1])
+    const h = diskHost(uid, hdisk[1])
     const wait = { info: 240_000, scan: 240_000, clean: 600_000, trash: 180_000, worktrees: 300_000, prune: 600_000 }[b.op]
     if (!wait || !Object.hasOwn({ info: 1, scan: 1, clean: 1, trash: 1, worktrees: 1, prune: 1 }, b.op)) throw new Refuse(400, '모르는 동작이에요')
     if (!online(hdisk[1])) throw new Refuse(409, '호스트가 연결돼 있지 않습니다')
@@ -4327,7 +4365,7 @@ async function api(req, res, url, uid) {
     const r = await ask(hdisk[1], cmd, wait)
     if (b.op === 'clean' || b.op === 'trash' || b.op === 'prune') {
       const text = `${b.op === 'clean' ? `디스크: ${cmd.id ?? ''} 비움` : b.op === 'prune' ? '디스크: 머지된 worktree 정리' : '디스크: 휴지통으로 옮김'}${r.ok ? '' : ` 실패: ${r.error ?? ''}`}`
-      record(uid, hdisk[1], { level: r.ok ? 'info' : 'warn', area: 'disk', text })
+      record(h.uid, hdisk[1], { level: r.ok ? 'info' : 'warn', area: 'disk', text: text + byOperator(uid, h) })
     }
     if (!r.ok) throw new Refuse(409, r.error || '디스크 정보를 받지 못했어요')
     const { reqId: _r, t: _t, ...out } = r

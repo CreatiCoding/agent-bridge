@@ -105,3 +105,39 @@ test('디스크 관리 메뉴 /disk: 조작 페이지 주소로 열린다 (REQ-F
     await srv.stop()
   }
 })
+
+test('디스크 정리 도움: 운영자가 요청하고 주인이 허용해야 운영자가 정리, 거두면 다시 막힘 (REQ-F-804)', async () => {
+  const srv = await startServer()
+  try {
+    for (const who of ['alice', 'bob', 'boss']) await srv.login(who)
+    const id = 'aaaaaaaa-0000-4000-8000-0000000000d2'
+    const m = await mac(srv, 'alice', id, 'help')
+    const disk = (who, body) => srv.api(who, `/api/hosts/${id}/disk`, { method: 'POST', body })
+    const help = (who, op) => srv.api(who, `/api/hosts/${id}/disk-help`, { method: 'POST', body: { op } })
+    const view = async () => (await srv.api('boss', '/api/admin/overview')).json.users.flatMap((u) => u.hosts).find((h) => h.id === id).diskHelp
+    assert.equal((await disk('boss', { op: 'info' })).status, 404, '허용 전')
+    assert.equal((await help('alice', 'ask')).status, 403, '주인은 요청하지 않음')
+    assert.equal((await help('bob', 'ask')).status, 404, '운영자 아닌 남')
+    assert.equal((await help('alice', 'grant')).status, 409, '요청 없음')
+    assert.equal((await help('boss', 'ask')).status, 200)
+    const asked = await view()
+    assert.equal(asked.login, 'boss')
+    assert.equal(asked.until, 0)
+    assert.equal(asked.by, undefined, 'uid 는 싣지 않음')
+    assert.equal((await disk('boss', { op: 'info' })).status, 404, '요청만으로는 안 됨')
+    assert.equal((await help('boss', 'grant')).status, 404, '운영자가 스스로 허용 못 함')
+    assert.equal((await help('alice', 'grant')).status, 200)
+    assert.ok((await view()).until > Date.now() + 23 * 3600_000)
+    const call = disk('boss', { op: 'scan', path: '~' })
+    const cmd = await m.next((x) => x.t === 'disk')
+    await m.up({ t: 'disk', reqId: cmd.reqId, ok: true, path: '~', items: [] })
+    assert.equal((await call).status, 200, '허용 뒤 운영자 정리')
+    assert.equal((await disk('bob', { op: 'info' })).status, 404, '허용받지 않은 남')
+    assert.equal((await help('alice', 'end')).status, 200)
+    assert.equal(await view(), null)
+    assert.equal((await disk('boss', { op: 'info' })).status, 404, '거둔 뒤')
+    m.close()
+  } finally {
+    await srv.stop()
+  }
+})

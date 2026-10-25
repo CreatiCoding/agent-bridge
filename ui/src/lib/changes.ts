@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.327',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['server', 'ui'], text: '디스크 정리 도움: 운영자가 다른 사용자의 기기에 정리 권한을 요청하고, 주인이 디스크 관리 메뉴에서 24시간 허용하면 그 운영자만 그 기기의 캐시·worktree·큰 폴더를 정리. 주인은 언제든 거두고, 요청·허용·운영자가 한 정리는 기기 기록에 남음', refs: ['REQ-F-804', 'IF-252', 'IF-251'] },
+    ],
+  },
+  {
     version: '1.326',
+    commit: '89b926e',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['ui', 'server'], text: '디스크 관리 메뉴(/disk, 설정 → 더 보기): 모든 기기를 디스크가 많이 찬 순서로 한 목록에 보이고, 누르면 그 자리에서 캐시·머지된 worktree·큰 폴더를 관리. 기기 화면에는 이 메뉴로 가는 줄', refs: ['REQ-F-803'] },

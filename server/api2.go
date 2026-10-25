@@ -17,6 +17,7 @@ var (
 	hostHealRe     = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/heal$`)
 	hostSudoRe     = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/sudo$`)
 	hostDiskRe     = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/disk$`)
+	hostDiskHelpRe = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/disk-help$`)
 	hostBgRe       = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/background$`)
 	hostAwakeRe    = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/awake$`)
 	hostCompactRe  = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/compact$`)
@@ -221,7 +222,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	// 디스크 관리 (REQ-F-801). Its owner only: an operator never clears or moves someone else's files.
 	if m := hostDiskRe.FindStringSubmatch(p); post && m != nil {
 		b := body(req, 262_144)
-		ownHost(uid, m[1])
+		h := diskHost(uid, m[1])
 		op := jsString(b["op"])
 		timeouts := map[string]int64{"info": 240_000, "scan": 240_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000}
 		wait, known := timeouts[op]
@@ -258,7 +259,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			if !truthy(r["ok"]) {
 				text += " 실패: " + jsStringU(r["error"])
 			}
-			record(uid, m[1], M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text})
+			record(mstr(h, "uid"), m[1], M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text + byOperator(uid, h)})
 		}
 		if !truthy(r["ok"]) {
 			refuse(409, orStr(r["error"], "디스크 정보를 받지 못했어요"))
@@ -267,6 +268,50 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		delete(out, "reqId")
 		delete(out, "t")
 		jsonRes(res, 200, out)
+		return true
+	}
+	// 디스크 정리 도움 (REQ-F-804): an operator asks, the owner grants for DISK_HELP_MS or turns it down, and either
+	// the owner or the operator who asked takes it back.
+	if m := hostDiskHelpRe.FindStringSubmatch(p); post && m != nil {
+		b := body(req, 1024)
+		h := readableHost(uid, m[1])
+		owner := mstr(h, "uid")
+		help, _ := h["diskHelp"].(M)
+		login := jsString(users.Val(uid)["login"])
+		switch jsString(b["op"]) {
+		case "ask":
+			if owner == uid || !isAdmin(uid) {
+				refuse(403, "운영자만 다른 사람의 기기에 요청할 수 있어요")
+			}
+			h["diskHelp"] = M{"by": uid, "login": login, "askedAt": float64(nowMs()), "until": 0.0}
+			record(owner, m[1], M{"area": "disk", "text": "운영자 " + login + " 이 디스크 정리를 도울 권한을 요청함"})
+		case "grant":
+			if owner != uid {
+				refuse(404, "호스트가 없습니다")
+			}
+			if help == nil {
+				refuse(409, "받은 요청이 없어요")
+			}
+			g := shallow(help)
+			g["until"] = float64(nowMs() + DISK_HELP_MS)
+			h["diskHelp"] = g
+			record(owner, m[1], M{"area": "disk", "text": "운영자 " + jsString(help["login"]) + " 에게 디스크 정리 권한을 24시간 줌"})
+		case "end":
+			if owner != uid && (help == nil || mstr(help, "by") != uid) {
+				refuse(404, "호스트가 없습니다")
+			}
+			delete(h, "diskHelp")
+			who := "주인이"
+			if owner != uid {
+				who = "운영자 " + login + " 이"
+			}
+			record(owner, m[1], M{"area": "disk", "text": who + " 디스크 정리 도움 권한을 거둠"})
+		default:
+			refuse(400, "모르는 동작이에요")
+		}
+		touchGlobals()
+		broadcastState(owner)
+		jsonRes(res, 200, M{"ok": true})
 		return true
 	}
 	// 관리자 권한 (REQ-F-764). Its owner only.

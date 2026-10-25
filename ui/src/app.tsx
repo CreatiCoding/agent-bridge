@@ -191,7 +191,7 @@ function Main({ route, me }: { route: Route; me: Me | null }) {
     case 'hosts':
       return <HostsPage me={me} />
     case 'disk':
-      return <DiskPage />
+      return <DiskPage me={me} />
     case 'host':
       return <HostPage id={route.id} sid={route.sid} />
     case 'report':

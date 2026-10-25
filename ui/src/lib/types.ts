@@ -168,10 +168,18 @@ export interface Account {
   signingIn: boolean
 }
 
+export interface DiskHelp {
+  login: string
+  askedAt: number
+  until: number
+}
+
 export interface Host {
   id: string
   /** CPU, memory and disk in use (REQ-F-800); absent from older agents. */
   sys?: import('./format').SysUse | null
+  /** 디스크 정리 도움 (REQ-F-804): the operator who asked, and until when it was granted (0: not yet). */
+  diskHelp?: DiskHelp | null
   name: string
   kind: string
   info: { version: string; build: string; node: string; os: string; hostname: string } | null

@@ -185,6 +185,35 @@ func ownHost(uid string, hostID any) M {
 	return h
 }
 
+// DISK_HELP_MS: how long an owner's 디스크 정리 도움 grant lasts (REQ-F-804).
+const DISK_HELP_MS = 24 * 3600_000
+
+// diskHost: a host's disk may be managed by its owner, and by the operator the owner granted it to until it ends.
+func diskHost(uid string, hostID string) M {
+	h, ok := hosts.Get(hostID)
+	if ok && mstr(h, "uid") == uid {
+		return h
+	}
+	if ok && isAdmin(uid) {
+		if help, _ := h["diskHelp"].(M); help != nil && mstr(help, "by") == uid {
+			if until, _ := help["until"].(float64); until > float64(nowMs()) {
+				return h
+			}
+		}
+	}
+	refuse(404, "호스트가 없습니다")
+	return nil
+}
+
+// diskHelpView: who asked to help with a host's disk and until when it was granted (0: asked, not granted), no uid.
+func diskHelpView(v any) any {
+	help, _ := v.(M)
+	if help == nil {
+		return nil
+	}
+	return M{"login": help["login"], "askedAt": help["askedAt"], "until": help["until"]}
+}
+
 // readableHost: a host's status and log may be read by its owner and by an operator.
 func readableHost(uid string, hostID string) M {
 	h, ok := hosts.Get(hostID)
