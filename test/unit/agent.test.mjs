@@ -354,3 +354,42 @@ test('a digit pressed after the dialog closed by itself is taken back, not count
   assert.equal(await driver.answerNumber('p', '1'), 'gone')
   assert.deepEqual(sent, [['1'], ['BSpace']])
 })
+
+test('the fullscreen offer under a sent message is read as its own dialog and declined (2026-10-25)', () => {
+  // As a delegated session on Linux drew it: the banner, the message it was sent (with a numbered list), then the
+  // offer. Its bullet list sits right above its options, and its `·` is not a working line.
+  const screen = `
+ ▐▛███▜▌   Claude Code v2.1.310
+▝▜█████▛▘  Opus 5.5 with medium effort · Claude Max
+
+❯ 이 서버의 디스크 사용 현황을 조사해서 보고해 주세요.
+  확인할 것:
+  1. df -h
+  2. docker system df
+
+${RULE}
+  Try the new fullscreen renderer?
+
+  · Flicker-free output — fixes the flashing you see during long responses
+  · Mouse support — click to move your cursor or expand results
+  · Selected text auto-copies to your clipboard
+
+  ❯ 1. Yes, try it
+    2. Not now
+
+  Enter to confirm · Esc to cancel
+`
+  const d = parseDialog(screen)
+  assert.deepEqual(d.options.map((o) => o.label), ['Yes, try it', 'Not now'])
+  assert.match(d.context, /Try the new fullscreen renderer\?/)
+  // Not the message: the cursor nearest the key hints is the dialog's.
+  assert.deepEqual(parseKeyedDialog(screen).options, ['1. Yes, try it', '2. Not now'])
+  assert.deepEqual(detectKnown(screen), { name: 'fullscreen-upsell', moves: 1 })
+  // A working line with `·` still ends a sent list: `· Pondering…` above `❯ 1.` is the conversation.
+  assert.equal(parseDialog(`
+· Pondering… (esc to interrupt)
+
+❯ 1. 이렇게
+  2. 저렇게
+`), null)
+})

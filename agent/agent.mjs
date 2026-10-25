@@ -11,7 +11,7 @@ import crypto from 'node:crypto'
 import readline from 'node:readline/promises'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys } from './dialog.mjs'
+import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN } from './dialog.mjs'
 import { writingPreview } from './preview.mjs'
 import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
@@ -1748,7 +1748,7 @@ async function watch(sid, s) {
     // server is not accepted here: its dialog becomes a card (R1-M1).
     // Only when such a dialog is expected: while the session starts (folder trust, the Chrome and channel notices),
     // and for a model switch the person just asked for. At any other time a dialog-shaped answer is not one (R1-H2).
-    const expected = s.starting ? null : Date.now() - (s.modelAskAt ?? 0) < 30_000 ? ['model-switch'] : []
+    const expected = s.starting ? null : [...ANYTIME_KNOWN, ...(Date.now() - (s.modelAskAt ?? 0) < 30_000 ? ['model-switch'] : [])]
     const known = await driver.confirmKnown(pane(s), screen, expected)
     if (known) {
       log('info', 'dialog', `auto-confirmed ${known}`, sid)

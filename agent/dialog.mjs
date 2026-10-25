@@ -29,7 +29,13 @@ const KNOWN = [
   // passes `--chrome` for real sessions, so this only shows up where browser tools are meant to stay off.
   // Found by the QA sweep on 2026-09-23: the session sat here and never attached.
   { name: 'chrome-extension', present: /Claude in Chrome extension detected/i, choose: /^No, keep browser tools off/i },
+  // An offer Claude Code 2.1.310 draws at any moment, mid-turn too: nobody may be at the terminal, and the bridge
+  // reads the ordinary screen, so it is always declined. Found 2026-10-25: a delegated session on Linux showed it
+  // as a card, and the session's turn stopped there.
+  { name: 'fullscreen-upsell', present: /Try the new fullscreen renderer\?/i, choose: /^Not now/i },
 ]
+/** The known dialogs answered whenever they are drawn, not only while a session starts: declining loses nothing. */
+export const ANYTIME_KNOWN = ['fullscreen-upsell']
 
 const SEPARATOR_RE = /^[\s─▔━═_╌╍-]+$/
 const OPTION_RE = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/
@@ -133,7 +139,9 @@ export function parseDialog(screen) {
  *   end-of-turn line (`✻ Churned for 13m 28s · done 5:27 PM`), a working line (`✢ Thinking…`) or another message (`❯`).
  * Found 2026-10-10: a two-point list sent from the page became a "터미널 확인" card with the list as buttons.
  */
-const TURN_LINE_RE = /^\s*[✻✶✳✢✽✺·*⏺●❯]/
+// `·` and `*` begin a working or end-of-turn line only with a verb and `…` or `for <time>` after them: a dialog's
+// own bullet list ("· Mouse support — …") sits right above its options (2026-10-25, the fullscreen offer).
+const TURN_LINE_RE = /^\s*(?:[✻✶✳✢✽✺⏺●❯]|[·*]\s+\S+(?:…|\.\.\.|\s+for\s+\d))/
 function isEchoedPrompt(lines, run) {
   const last = run[run.length - 1].i
   if (lines.slice(last + 1).some((l) => /^\s*[⏺●]\s/.test(l))) return true
@@ -173,8 +181,10 @@ export function parseKeyedDialog(screen) {
   const lines = screen.split('\n')
   const foot = lines.findIndex((l) => KEYED_FOOTER_RE.test(l))
   if (foot < 0) return null
-  // The prompt line is `❯ ` with nothing on it; a dialog's cursor sits on a choice.
-  const cursor = lines.findIndex((l, i) => i < foot && /^\s*❯\s*\S/.test(l))
+  // The prompt line is `❯ ` with nothing on it; a dialog's cursor sits on a choice. The one nearest the hints: a
+  // message the person sent is drawn with `❯` too, higher up, and taken for the cursor it made every line of the
+  // message and the dialog one choice (2026-10-25).
+  const cursor = lines.findLastIndex((l, i) => i < foot && /^\s*❯\s*\S/.test(l))
   if (cursor < 0) return null
 
   // Every non-blank, non-separator line from the cursor down to the footer is a choice — the cursor's own
@@ -227,7 +237,9 @@ export function detectKnown(screen) {
   const dialog = numbered ?? parseKeyedDialog(screen)
   if (!dialog || TOOL_PERMISSION_RE.test(dialog.question ?? '')) return null
   const labels = numbered ? numbered.options.map((o) => o.label) : dialog.options
-  const words = [dialog.question, dialog.description, dialog.body, ...labels].filter(Boolean).join('\n')
+  // The context is the dialog's own paragraphs above the question, inside its border: the fullscreen offer's title
+  // sits there, over its bullet list.
+  const words = [dialog.context, dialog.question, dialog.description, dialog.body, ...labels].filter(Boolean).join('\n')
   for (const d of KNOWN) {
     if (!d.present.test(words)) continue
     const target = labels.findIndex((l) => d.choose.test(l))

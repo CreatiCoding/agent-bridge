@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.331',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: 'Claude Code 의 "Try the new fullscreen renderer?" 권유 창이 보낸 지시문 줄까지 버튼으로 담긴 터미널 확인 카드가 되던 것: 창을 바르게 읽고, 일하는 도중에도 자동으로 "Not now" 로 넘김', refs: ['REQ-F-033'] },
+    ],
+  },
+  {
     version: '1.330',
+    commit: 'c7fa6e7',
     date: '2026-10-25',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '예전 키로 오는 탭이 하나 남아 있으면 에이전트가 10분마다 연동 페이지를 새 탭으로 열어 탭이 쌓이던 것: 연동 탭이 붙어 있으면 열지 않고, 같은 예전 키·브라우저로는 한 번만 엶', refs: ['REQ-S-065'] },
