@@ -34,7 +34,11 @@ test('the browser a request came from, for `open -b`; never the headless browser
 
 test('agent.mjs reopens the link page only for a retired key, and keeps the old key of an earlier change', () => {
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
-  assert.match(src, /if \(key && \(config\.retiredKeys \?\? \[\]\)\.includes\(keyPrint\(key\)\)\) \{\n\s*if \(url\.searchParams\.get\('bg'\) === '1' && config\.background\) restartBgForKey\(\)\n\s*else reopenLink\(req\.headers\['user-agent'\]\)\n\s*\}\n\s*return res\.writeHead\(401/)
+  assert.match(src, /if \(key && \(config\.retiredKeys \?\? \[\]\)\.includes\(keyPrint\(key\)\)\) \{\n\s*if \(url\.searchParams\.get\('bg'\) === '1' && config\.background\) restartBgForKey\(\)\n\s*else reopenLink\(req\.headers\['user-agent'\], key\)\n\s*\}\n\s*return res\.writeHead\(401/)
+  // Never while a tab is linked, and once per retired key and browser (1.330: a stale tab piled up link pages).
+  assert.match(src, /const once = `\$\{app\} \$\{keyPrint\(key\)\}`\n\s*if \(client \|\| reopened\.has\(once\) \|\| Date\.now\(\) - \(reopened\.get\(app\) \?\? 0\) < REOPEN_MS\) return/)
+  // The relay reads the stored key again on each reconnect, for a tab that missed the storage event.
+  assert.match(fs.readFileSync(new URL('../../web/relay.js', import.meta.url), 'utf8'), /function connectAgent\(takeover\) \{\n\s*agentStream\?\.close\(\)\n(\s*\/\/.*\n)*\s*const now = agentInfo\(\)\n\s*if \(now\?\.key\) Object\.assign\(agent, now\)/)
   // The headless browser is started again at most once per REOPEN_MS (REQ-S-081 ④).
   assert.match(src, /function restartBgForKey\(\) \{\n\s*if \(Date\.now\(\) - \(reopened\.get\('headless'\) \?\? 0\) < REOPEN_MS\) return/)
   assert.match(src, /config\.retiredKeys = retireKey\(config\.retiredKeys, config\.key\)/)

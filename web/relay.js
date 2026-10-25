@@ -274,6 +274,10 @@ export function startRelay(ui = {}, opts = {}) {
 
   function connectAgent(takeover) {
     agentStream?.close()
+    // The key this browser has now: another tab may have taken a new one while this tab missed the storage event
+    // (frozen or asleep), and would otherwise keep coming with the retired key.
+    const now = agentInfo()
+    if (now?.key) Object.assign(agent, now)
     // rekey=1: this relay takes a new key over the stream (R1-M8); an older one would pass it on to the server.
     const es = (agentStream = new EventSource(agentUrl(`/events?tab=${TAB}&rekey=1${takeover ? '&takeover=1' : ''}${opts.background ? '&bg=1' : ''}`)))
     es.onopen = () => {

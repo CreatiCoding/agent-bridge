@@ -3322,7 +3322,9 @@ const REOPEN_MS = 10 * 60_000
 /**
  * A tab came with a key this agent retired: its browser was closed while the key changed and cannot get the new one
  * by itself. The link page opens in that browser with the current key, on this Mac only (the key never goes through
- * the server), and every tab of that browser takes it from there. At most once per REOPEN_MS per browser.
+ * the server), and every tab of that browser takes it from there. At most once per REOPEN_MS per browser, never
+ * while a tab is linked (it already has the current key; another page would not help the stale tab, 1.330: one tab
+ * that kept coming with a retired key opened the page every 10 minutes, a pile of tabs), and once per retired key.
  */
 /**
  * The headless browser came with a retired key (it lost the new one): started again, it opens with the current key.
@@ -3336,12 +3338,14 @@ function restartBgForKey() {
   stopBackground()
   setTimeout(startBackground, 2000)
 }
-function reopenLink(ua) {
+function reopenLink(ua, key) {
   const app = browserApp(ua)
   stats.staleKey = { at: Date.now(), app }
   if (!app || process.platform !== 'darwin' || !config.site) return
-  if (Date.now() - (reopened.get(app) ?? 0) < REOPEN_MS) return
+  const once = `${app} ${keyPrint(key)}`
+  if (client || reopened.has(once) || Date.now() - (reopened.get(app) ?? 0) < REOPEN_MS) return
   reopened.set(app, Date.now())
+  reopened.set(once, Date.now())
   execFile('open', ['-b', app, bridgeLink()], (err) => {
     stats.reopen = { at: Date.now(), app, ok: !err }
     log(err ? 'warn' : 'info', 'link', err ? `예전 키로 온 ${app} 에 연동 페이지를 다시 열지 못함` : `예전 키로 온 ${app} 에 연동 페이지를 새 키로 다시 엶`)
@@ -4743,7 +4747,7 @@ const server = http.createServer(async (req, res) => {
   if (!keyOk) {
     if (key && (config.retiredKeys ?? []).includes(keyPrint(key))) {
       if (url.searchParams.get('bg') === '1' && config.background) restartBgForKey()
-      else reopenLink(req.headers['user-agent'])
+      else reopenLink(req.headers['user-agent'], key)
     }
     return res.writeHead(401, cors).end()
   }

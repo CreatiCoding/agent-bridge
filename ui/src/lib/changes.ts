@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.330',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: '예전 키로 오는 탭이 하나 남아 있으면 에이전트가 10분마다 연동 페이지를 새 탭으로 열어 탭이 쌓이던 것: 연동 탭이 붙어 있으면 열지 않고, 같은 예전 키·브라우저로는 한 번만 엶', refs: ['REQ-S-065'] },
+      { kind: 'fixed', scope: ['ui'], text: '중계가 에이전트에 다시 붙을 때마다 이 브라우저에 저장된 새 키를 다시 읽음: 다른 탭이 받은 새 키를 놓친 탭도 스스로 돌아옴', refs: ['REQ-S-065'] },
+    ],
+  },
+  {
     version: '1.329',
+    commit: '75c8253',
     date: '2026-10-25',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: 'EnterWorktree 로 worktree 에 들어간 세션이 그 worktree 의 연결된 세션으로 잡히지 않던 것: 훅의 지금 폴더(없으면 대화 기록 끝의 폴더)로도 이음', refs: ['REQ-F-805'] },
