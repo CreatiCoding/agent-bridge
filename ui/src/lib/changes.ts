@@ -45,7 +45,6 @@ export const CHANGES: Release[] = [
     version: '1.318',
     commit: '28f1e8a',
     date: '2026-10-25',
-    commit: '28f1e8a',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '키를 바꾼 직후 헤드리스 Chrome 을 다시 띄우면 옛 키로 붙어 15분 뒤 끊길 수 있던 것: 헤드리스 Chrome 은 늘 현재 키로 뜨고, 예전 키로 오면 에이전트가 다시 띄움', refs: ['REQ-S-081', 'REQ-F-277'] },
     ],
