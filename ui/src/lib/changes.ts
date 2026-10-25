@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.329',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: 'EnterWorktree 로 worktree 에 들어간 세션이 그 worktree 의 연결된 세션으로 잡히지 않던 것: 훅의 지금 폴더(없으면 대화 기록 끝의 폴더)로도 이음', refs: ['REQ-F-805'] },
+    ],
+  },
+  {
     version: '1.328',
+    commit: '6336778',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['agent', 'ui'], text: '머지된 worktree: 정리하면 얼마나 확보되는지 머리와 단추에 보이고, worktree 마다 연결된 세션이 살아 있는지·끝났는지 표시. 끝난 세션은 정리를 막지 않음', refs: ['REQ-F-805', 'REQ-F-802'] },

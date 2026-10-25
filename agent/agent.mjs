@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -366,7 +366,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -1308,6 +1308,11 @@ async function onHook(sid, ev) {
   s.activityAt = Date.now()
   const name = ev.hook_event_name
   if (ev.transcript_path && ev.session_id === (s.conv || sid)) s.transcript = ev.transcript_path
+  // The folder it works in now: a session that entered a worktree (EnterWorktree) keeps `cwd` (REQ-F-805).
+  if (typeof ev.cwd === 'string' && ev.cwd.startsWith('/') && ev.cwd.length < 1024 && ev.cwd !== s.here) {
+    s.here = ev.cwd
+    saveSessions()
+  }
   if (name === 'SessionStart') {
     s.starting = false
     setTimeout(() => releaseHeld(sid, s, 'started'), 1500)
@@ -3385,8 +3390,28 @@ async function emptyDir(dir, writable) {
 }
 const keptDirs = () => [CLAUDE_DIR, STATE_DIR, AGENT_DIR].map((d) => (fs.existsSync(d) ? fs.realpathSync(d) : d))
 const sessionDirs = () => [...sessions.values()].map((s) => (s.cwd && fs.existsSync(s.cwd) ? fs.realpathSync(s.cwd) : s.cwd)).filter(Boolean)
-/** Every session with its real folder and whether its claude still runs (REQ-F-805). */
-const sessionPlaces = () => [...sessions].filter(([, s]) => s.cwd).map(([sid, s]) => ({ sid, dir: fs.existsSync(s.cwd) ? fs.realpathSync(s.cwd) : s.cwd, alive: s.alive !== false }))
+/**
+ * Every session with the folders it is in and whether its claude still runs (REQ-F-805): the one it started in and
+ * the one it works in now, from its hooks or, for one that has not sent any since, the end of its transcript.
+ */
+function sessionPlaces() {
+  const real = (d) => (fs.existsSync(d) ? fs.realpathSync(d) : d)
+  return [...sessions].filter(([, s]) => s.cwd).map(([sid, s]) => {
+    let here = s.here
+    if (!here) {
+      try {
+        const f = s.transcript || path.join(projectDir(s.cwd, s.account ?? ''), `${s.conv || sid}.jsonl`)
+        const fd = fs.openSync(f, 'r')
+        const size = fs.fstatSync(fd).size
+        const buf = Buffer.alloc(Math.min(size, 65_536))
+        fs.readSync(fd, buf, 0, buf.length, size - buf.length)
+        fs.closeSync(fd)
+        here = lastCwd(buf.toString('utf8'))
+      } catch {}
+    }
+    return { sid, dirs: [...new Set([s.cwd, here].filter(Boolean).map(real))], alive: s.alive !== false }
+  })
+}
 const DISK_SCAN_MAX = 100
 
 /**
@@ -3469,6 +3494,7 @@ function worktreeGone(w, repo) {
   for (const x of w.sessions ?? []) {
     const s = sessions.get(x.sid)
     if (!s) continue
+    delete s.here
     s.worktreeGone = { path: w.path, repo: tilde(repo), ...(w.branch ? { branch: w.branch } : {}), ...(w.base ? { base: w.base } : {}), at: Date.now() }
     note(x.sid, `🧹 이 세션이 쓰던 worktree ${w.path.split('/').pop()} 는 머지돼서 디스크 관리에서 정리됐어요. 다시 열면 빈 폴더에서 이어지고, 세션에게도 그렇게 알려요.`, 'warn')
   }

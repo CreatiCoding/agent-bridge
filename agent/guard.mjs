@@ -377,9 +377,26 @@ export function worktreeGoneNote(g) {
   return `[정리된 worktree] 이 세션이 쓰던 worktree ${g.path} 는${branch}${base} 머지된 뒤 디스크 관리에서 정리(git worktree remove)됐습니다. 지금 작업 폴더는 대화를 이어 가려고 다시 만든 빈 폴더입니다. 그 안의 파일이나 브랜치를 찾지 말고, 이어서 할 일이 있으면 저장소 ${g.repo} 에서 기본 브랜치를 받은 뒤 새 worktree 를 만들어 하세요.`
 }
 
-/** The sessions in a worktree (REQ-F-805): each `{sid, alive}`, a live one being any whose claude has not exited. */
+/**
+ * The sessions in a worktree (REQ-F-805): each `{sid, alive}`, a live one being any whose claude has not exited.
+ * A session is in it when the folder it started in or the one it works in now (`dirs`) is the worktree or inside it:
+ * a session that moved into a worktree (EnterWorktree) keeps the folder it started in.
+ */
 export function worktreeSessions(real, list) {
-  return list.filter((x) => x.dir === real || String(x.dir).startsWith(`${real}/`)).map((x) => ({ sid: x.sid, alive: x.alive }))
+  const inside = (d) => typeof d === 'string' && (d === real || d.startsWith(`${real}/`))
+  return list.filter((x) => (x.dirs ?? []).some(inside)).map((x) => ({ sid: x.sid, alive: x.alive }))
+}
+
+/** The folder a transcript's last lines say the conversation was in, or null: each line carries its `cwd`. */
+export function lastCwd(tail) {
+  const all = [...String(tail).matchAll(/"cwd":"((?:[^"\\]|\\.)*)"/g)]
+  if (!all.length) return null
+  try {
+    const v = JSON.parse(`"${all[all.length - 1][1]}"`)
+    return v.startsWith('/') ? v : null
+  } catch {
+    return null
+  }
 }
 
 // ---------- 디스크 관리 (REQ-F-801) ----------

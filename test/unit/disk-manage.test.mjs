@@ -94,14 +94,19 @@ test('머지된 worktree: porcelain 을 읽고(본 체크아웃 빼고), 머지�
 })
 
 test('worktree 의 세션: 안쪽 폴더만 잇고, 정리된 worktree 는 세션 프롬프트에 알린다 (REQ-F-805)', async () => {
-  const { worktreeSessions, worktreeGoneNote, sessionPrompt } = await import('../../agent/guard.mjs')
+  const { worktreeSessions, worktreeGoneNote, sessionPrompt, lastCwd } = await import('../../agent/guard.mjs')
   const places = [
-    { sid: 'a', dir: '/r/w/a', alive: true },
-    { sid: 'b', dir: '/r/w/a/sub', alive: false },
-    { sid: 'c', dir: '/r/w/ab', alive: true },
-    { sid: 'd', dir: '/r', alive: true },
+    { sid: 'a', dirs: ['/r/w/a'], alive: true },
+    { sid: 'b', dirs: ['/r/w/a/sub'], alive: false },
+    { sid: 'c', dirs: ['/r/w/ab'], alive: true },
+    { sid: 'd', dirs: ['/r'], alive: true },
+    { sid: 'e', dirs: ['/r', '/r/w/a'], alive: true },
   ]
-  assert.deepEqual(worktreeSessions('/r/w/a', places), [{ sid: 'a', alive: true }, { sid: 'b', alive: false }])
+  assert.deepEqual(worktreeSessions('/r/w/a', places), [{ sid: 'a', alive: true }, { sid: 'b', alive: false }, { sid: 'e', alive: true }])
+  assert.equal(lastCwd('{"cwd":"/r"}\n{"x":1,"cwd":"/r/w/a"}\n{"type":"x"'), '/r/w/a')
+  assert.equal(lastCwd('{"cwd":"/r/\\"q"}'), '/r/"q')
+  assert.equal(lastCwd('{"cwd":"rel"}'), null)
+  assert.equal(lastCwd(''), null)
   assert.deepEqual(worktreeSessions('/r/w/z', places), [])
   const g = { path: '~/r/w/a', repo: '~/r', branch: 'feat/a', base: 'origin/main', at: 1 }
   const n = worktreeGoneNote(g)
