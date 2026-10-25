@@ -87,6 +87,12 @@ export interface SysUse {
 /** A host's battery (REQ-F-806). `remain` is minutes to empty, or to full while charging. */
 export type Battery = { present: false; ac: boolean } | { present: true; ac: boolean; pct: number | null; state: 'charging' | 'discharging' | 'full' | 'idle' | null; remain: number | null; cycles: number | null; health: number | null }
 
+/** The battery to show for a host: the live one while it is connected, else the last one kept, with when (REQ-F-807). */
+export function hostBattery(h: { online: boolean; sys?: SysUse | null; battery?: (Battery & { at: number }) | null }): { b: Battery; at: number | null } | null {
+  if (h.online && h.sys?.battery) return { b: h.sys.battery, at: null }
+  return h.battery ? { b: h.battery, at: h.battery.at } : null
+}
+
 /** Low: at or under 20% and not on power (REQ-F-806, BATTERY_LOW_PCT). */
 export function batteryLow(b: Battery | null | undefined) {
   return !!b?.present && !b.ac && b.pct != null && b.pct <= 20

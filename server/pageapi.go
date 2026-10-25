@@ -402,6 +402,30 @@ func cleanSys(v any) any {
 	return M{"cpu": num(m["cpu"]), "cores": num(m["cores"]), "memUsed": num(m["memUsed"]), "memTotal": num(m["memTotal"]), "disk": disk, "battery": cleanBattery(m["battery"], num)}
 }
 
+// BATTERY_KEEP_MS: how often an unchanged battery is written to the host record again (REQ-F-807).
+const BATTERY_KEEP_MS = 600_000
+
+// keepBattery keeps the last battery a host reported, and when, on its record (saved with the hosts), so the
+// operator page still shows it after the host goes away or the server restarts (REQ-F-807). Written when it
+// changes, else at most every BATTERY_KEEP_MS.
+func keepBattery(h M, health M, now int64) {
+	b, ok := mget(cleanSys(health["sys"]), "battery").(M)
+	if !ok || h == nil {
+		return
+	}
+	if prev, ok := h["battery"].(M); ok {
+		same := shallow(prev)
+		delete(same, "at")
+		if jsonStr(same) == jsonStr(b) && float64(now)-numOr0(prev["at"]) < BATTERY_KEEP_MS {
+			return
+		}
+	}
+	kept := shallow(b)
+	kept["at"] = float64(now)
+	h["battery"] = kept
+	touchGlobals()
+}
+
 // batteryStates are the words an agent may use for a battery (REQ-F-806).
 var batteryStates = map[string]bool{"charging": true, "discharging": true, "full": true, "idle": true}
 
@@ -543,7 +567,7 @@ func hostSummary(id string, h M, masked bool) M {
 		// Behind, and this server will hand it the new one: not when it sends none (R9-I1).
 		"outdated": behind && AGENT_SIGNED,
 		// Behind, but this server sends no update (R10-I2).
-		"updateBlocked": behind && !AGENT_SIGNED, "key": cleanKeyState(health["keyState"]), "sys": cleanSys(health["sys"]), "diskHelp": diskHelpView(h["diskHelp"]), "problems": float64(len(failing)), "problem": problem, "online": online(id), "stale": online(id) && truthy(st["stale"]), "lastSeen": h["lastSeen"], "healthAt": st["healthAt"], "rtt": st["rtt"], "errors": st["errors"], "lastError": lastError, "accounts": accts}
+		"updateBlocked": behind && !AGENT_SIGNED, "key": cleanKeyState(health["keyState"]), "sys": cleanSys(health["sys"]), "battery": h["battery"], "diskHelp": diskHelpView(h["diskHelp"]), "problems": float64(len(failing)), "problem": problem, "online": online(id), "stale": online(id) && truthy(st["stale"]), "lastSeen": h["lastSeen"], "healthAt": st["healthAt"], "rtt": st["rtt"], "errors": st["errors"], "lastError": lastError, "accounts": accts}
 }
 
 // hostDetail: a Mac's state for its owner, or for an operator looking at someone else's Mac (R1-M5).

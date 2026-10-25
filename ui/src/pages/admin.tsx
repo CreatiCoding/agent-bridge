@@ -1,7 +1,7 @@
 // For operators: who may sign in, and how every user's Macs are doing. Conversations are not visible here.
 import { useEffect, useState } from 'react'
 import { del, errorText, get, post } from '../lib/api'
-import { ago, batteryLine, batteryLow, bytes, duration, sysLine, type SysUse } from '../lib/format'
+import { ago, batteryLine, batteryLow, bytes, duration, hostBattery, sysLine, type Battery, type SysUse } from '../lib/format'
 import { getPref, setPref } from '../lib/local'
 import { back, go } from '../lib/router'
 import { NONE, useStore } from '../lib/store'
@@ -15,7 +15,7 @@ interface Access {
 interface Overview {
   pending: number
   server: { version: string; agentBuild: string; github?: boolean; originSet?: boolean; root?: boolean; agentSigned?: boolean; agentSeqBack?: boolean; uptime: number; rss: number; bridges: number; controls: number; sessions: number }
-  users: { login: string; allowed: boolean; hosts: { id: string; name: string; online: boolean; agent: string | null; build: string | null; outdated: boolean; updateBlocked?: boolean; key?: KeyState | null; sys?: SysUse | null; sessions: number; problem: string | null }[] }[]
+  users: { login: string; allowed: boolean; hosts: { id: string; name: string; online: boolean; agent: string | null; build: string | null; outdated: boolean; updateBlocked?: boolean; key?: KeyState | null; sys?: SysUse | null; battery?: (Battery & { at: number }) | null; sessions: number; problem: string | null }[] }[]
 }
 
 /** The agent key as the agent reports it (REQ-S-065): no key, only when it changed and how the link tabs follow it. */
@@ -596,6 +596,7 @@ export function AdminPanel() {
               {u.hosts.length ? (
                 u.hosts.map((h) => {
                   const kv = keyView(h.key, h.online)
+                  const bat = hostBattery(h)
                   return (
                     <Row
                       key={h.id}
@@ -621,10 +622,10 @@ export function AdminPanel() {
                               {sysLine(h.sys)}
                             </>
                           ) : null}
-                          {h.online && h.sys?.battery ? (
+                          {bat ? (
                             <>
                               <br />
-                              <span style={batteryLow(h.sys.battery) ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{batteryLine(h.sys.battery)}</span>
+                              <span style={batteryLow(bat.b) && !bat.at ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{`${batteryLine(bat.b, true)}${bat.at ? ` · 마지막 값 ${ago(bat.at)}` : ''}`}</span>
                             </>
                           ) : null}
                         </>

@@ -258,6 +258,9 @@ func init() {
 			}
 			st["health"] = health
 			st["healthAt"] = float64(nowMs())
+			if h, ok := hosts.Get(hostID); ok {
+				keepBattery(h, health, nowMs())
+			}
 			st["stale"] = false
 			broadcastState(uid)
 		},

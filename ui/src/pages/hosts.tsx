@@ -1,7 +1,7 @@
 // The Macs: how to connect one, how each is doing (checks, link, agent), and its log.
 import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
-import { ago, batteryLine, batteryLow, bytes, clock, duration, shortPath, sysLine, type SysUse } from '../lib/format'
+import { ago, batteryLine, batteryLow, bytes, hostBattery, clock, duration, shortPath, sysLine, type SysUse } from '../lib/format'
 import { back, go } from '../lib/router'
 import { hostIcon, KINDS } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
@@ -155,12 +155,15 @@ export function HostsPage({ me }: { me: Me | null }) {
                   sub={
                     <>
                       {`${KINDS[h.kind] ?? '기타'} · ${h.online ? (h.stale ? '응답 없음' : `연결됨${h.rtt ? ` · ${h.rtt}ms` : ''}`) : `끊김 · ${ago(h.lastSeen)}`}${h.problem ? ` · ${h.problem}` : ''}`}
-                      {h.online && h.sys?.battery ? (
-                        <>
-                          {' · '}
-                          <span style={batteryLow(h.sys.battery) ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{batteryLine(h.sys.battery)}</span>
-                        </>
-                      ) : null}
+                      {(() => {
+                        const bat = hostBattery(h)
+                        return bat ? (
+                          <>
+                            {' · '}
+                            <span style={batteryLow(bat.b) && !bat.at ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{`${batteryLine(bat.b)}${bat.at ? ` (${ago(bat.at)})` : ''}`}</span>
+                          </>
+                        ) : null
+                      })()}
                     </>
                   }
                   right={<span className={`dot dot-${h.online ? (h.stale || h.problems ? 'amber' : 'green') : 'grey'}`} />}

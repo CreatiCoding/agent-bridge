@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.335',
+    date: '2026-10-26',
+    changes: [
+      { kind: 'added', scope: ['server', 'ui'], text: '운영 페이지에서 다른 사용자 기기의 배터리도 보임(사이클·최대 용량 포함). 꺼져 있거나 끊긴 기기는 마지막으로 받은 값과 그 시각을 보이고, 서버가 다시 떠도 남음. 기기 목록도 끊긴 내 기기의 마지막 값을 보임', refs: ['REQ-F-807'] },
+    ],
+  },
+  {
     version: '1.334',
+    commit: 'fee4d4c',
     date: '2026-10-26',
     changes: [
       { kind: 'added', scope: ['agent', 'server', 'ui'], text: '기기별 배터리: 잔량, 충전 중·배터리 사용·전원 연결, 남은 시간, 사이클·최대 용량을 기기 목록·기기 화면·운영 페이지에 보임. 배터리 없는 기기는 "배터리 없음 · 전원 연결", 20% 이하로 전원 없이 쓰면 빨갛게', refs: ['REQ-F-806'] },

@@ -57,3 +57,35 @@ test('linuxBattery: /sys/class/power_supply entries (REQ-F-806)', () => {
   assert.deepEqual(linuxBattery([{ type: 'Mains', online: '1' }, charging]), { present: true, ac: true, pct: 50, state: 'charging', remain: 120, cycles: null, health: 100 })
   assert.equal(linuxBattery([{ type: 'Battery', status: 'Not charging', capacity: '80' }, { type: 'Mains', online: '1' }]).state, 'idle')
 })
+
+test('다른 사람 기기 배터리: 운영자만 모든 기기의 마지막 값과 시각을 보고, 끊긴 뒤에도 남는다 (REQ-F-807)', async () => {
+  const { startServer } = await import('./server-harness.mjs')
+  const { mac } = await import('./fake-mac.mjs')
+  const srv = await startServer()
+  try {
+    for (const who of ['alice', 'bob', 'boss']) await srv.login(who)
+    const id = 'aaaaaaaa-0000-4000-8000-0000000000b7'
+    const m = await mac(srv, 'alice', id, 'alice-book')
+    const battery = { present: true, ac: false, pct: 18, state: 'discharging', remain: 95, cycles: 226, health: 87, serial: 'x' }
+    const before = Date.now()
+    await m.up({ t: 'health', version: '0.2.0', checks: [], sys: { cpu: 1, battery } })
+    const row = async (who) => (await srv.api(who, '/api/admin/overview')).json.users?.flatMap((u) => u.hosts.map((h) => ({ ...h, login: u.login }))).find((h) => h.id === id)
+    const seen = await row('boss')
+    assert.equal(seen.login, 'alice', '주인 계정이 함께')
+    const { at, ...kept } = seen.battery
+    assert.deepEqual(kept, { present: true, ac: false, pct: 18, state: 'discharging', remain: 95, cycles: 226, health: 87 }, '모르는 칸은 빠짐')
+    assert.ok(at >= before && at <= Date.now())
+    assert.equal(seen.sys.battery.pct, 18)
+    assert.equal((await srv.api('bob', '/api/admin/overview')).status, 403, '운영자 아닌 사람')
+    assert.equal((await srv.api('bob', `/api/hosts/${id}/status`)).status, 404, '남의 기기')
+    assert.equal((await srv.api('alice', `/api/hosts/${id}/status`)).status, 200, '자기 기기')
+    m.close()
+    for (let i = 0; i < 50 && (await row('boss')).online; i++) await new Promise((r) => setTimeout(r, 100))
+    const gone = await row('boss')
+    assert.equal(gone.online, false)
+    assert.equal(gone.battery.pct, 18, '끊긴 뒤에도 마지막 값')
+    assert.equal(gone.battery.at, at)
+  } finally {
+    await srv.stop()
+  }
+})

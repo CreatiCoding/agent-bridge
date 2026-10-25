@@ -178,6 +178,8 @@ export interface Host {
   id: string
   /** CPU, memory and disk in use (REQ-F-800); absent from older agents. */
   sys?: import('./format').SysUse | null
+  /** The last battery the host reported and when, kept after it goes away (REQ-F-807). */
+  battery?: (import('./format').Battery & { at: number }) | null
   /** 디스크 정리 도움 (REQ-F-804): the operator who asked, and until when it was granted (0: not yet). */
   diskHelp?: DiskHelp | null
   name: string
