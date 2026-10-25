@@ -1,7 +1,7 @@
 # agent-bridge.pubdoc.dev: build the docs site, serve it with nginx.
 # Build with the repository root as the context (docker build -f website/Dockerfile .): the changelog page is
 # made from ui/src/lib/changes.ts and the icon comes from web/.
-FROM node:22.23.2-alpine AS build
+FROM node:22.23.4-alpine AS build
 WORKDIR /repo/website
 RUN corepack enable
 COPY website/package.json website/yarn.lock website/.yarnrc.yml ./
