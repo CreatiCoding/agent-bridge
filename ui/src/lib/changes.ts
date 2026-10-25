@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.333',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '답의 선택지 글을 드래그로 골라 복사할 수 있음. 끌어서 글을 잡으면 보내지 않고, 그냥 누르거나 Enter·Space 는 그대로 보냄', refs: ['REQ-F-709'] },
+    ],
+  },
+  {
     version: '1.332',
+    commit: '900aff7',
     date: '2026-10-25',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '중간에 끊긴 턴이 일하는 중으로 남아 보낸 메시지가 붙잡히던 것: 화면이 비어 있고 1분 동안 아무것도 쓰이지 않으면 턴을 닫고, 끊겼다고 알리고, 붙잡힌 메시지를 보냄', refs: ['REQ-F-418'] },

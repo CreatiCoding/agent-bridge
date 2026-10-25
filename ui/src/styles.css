@@ -1817,6 +1817,12 @@ select.input {
   gap: 6px;
   margin-top: 8px;
 }
+/* A reply's choice is text a drag can pick up (REQ-F-709), still pressed like a button. */
+.choice {
+  cursor: pointer;
+  user-select: text;
+  -webkit-user-select: text;
+}
 .tools {
   display: flex;
   flex-direction: column;

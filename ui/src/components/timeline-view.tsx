@@ -180,13 +180,38 @@ function TextMsgView({ it, session, last, onSend, onImage }: { it: Extract<Item,
       {it.choices?.length && last && !session.closed && session.seat?.where !== 'slack' ? (
         <div className="choices">
           {it.choices.map((c) => (
-            <Button key={c} size="sm" onClick={() => onSend(c)}>
-              {c}
-            </Button>
+            <Choice key={c} text={c} onSend={onSend} />
           ))}
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * One of a reply's choices (REQ-F-709). Not a <button>: Chrome never starts a text selection inside one, and a drag
+ * there ends as a click that sends the choice. A drag that leaves text selected on it copies, it does not send.
+ */
+function Choice({ text, onSend }: { text: string; onSend: (text: string) => void }) {
+  const send = (el: HTMLElement) => {
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed && sel.containsNode(el, true)) return
+    onSend(text)
+  }
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className="btn btn-plain btn-sm choice"
+      onClick={(e) => send(e.currentTarget)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        onSend(text)
+      }}
+    >
+      {text}
+    </span>
   )
 }
 
