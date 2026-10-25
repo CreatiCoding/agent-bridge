@@ -2116,7 +2116,15 @@ function cleanSys(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null
   const num = (x) => (Number.isFinite(x) && x >= 0 ? x : null)
   const d = v.disk && typeof v.disk === 'object' && !Array.isArray(v.disk) ? v.disk : null
-  return { cpu: num(v.cpu), cores: num(v.cores), memUsed: num(v.memUsed), memTotal: num(v.memTotal), disk: d ? { total: num(d.total), used: num(d.used), avail: num(d.avail), pct: num(d.pct) } : null }
+  return { cpu: num(v.cpu), cores: num(v.cores), memUsed: num(v.memUsed), memTotal: num(v.memTotal), disk: d ? { total: num(d.total), used: num(d.used), avail: num(d.avail), pct: num(d.pct) } : null, battery: cleanBattery(v.battery, num) }
+}
+/** A battery report kept to its known fields (REQ-F-806): two flags, a state word and numbers. */
+function cleanBattery(b, num) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return null
+  const ac = b.ac === true
+  if (b.present !== true) return { present: false, ac }
+  const pct = num(b.pct)
+  return { present: true, ac, pct: pct != null && pct <= 100 ? pct : null, state: ['charging', 'discharging', 'full', 'idle'].includes(b.state) ? b.state : null, remain: num(b.remain), cycles: num(b.cycles), health: num(b.health) }
 }
 // The key changes (REQ-S-084): times and two short words only, at most five.
 const keyLog = (arr) =>

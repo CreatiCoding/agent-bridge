@@ -1,7 +1,7 @@
 // The Macs: how to connect one, how each is doing (checks, link, agent), and its log.
 import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
-import { ago, bytes, clock, duration, shortPath, sysLine, type SysUse } from '../lib/format'
+import { ago, batteryLine, batteryLow, bytes, clock, duration, shortPath, sysLine, type SysUse } from '../lib/format'
 import { back, go } from '../lib/router'
 import { hostIcon, KINDS } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
@@ -152,7 +152,17 @@ export function HostsPage({ me }: { me: Me | null }) {
                   key={h.id}
                   left={<Icon name={hostIcon(h.kind)} />}
                   title={h.name}
-                  sub={`${KINDS[h.kind] ?? '기타'} · ${h.online ? (h.stale ? '응답 없음' : `연결됨${h.rtt ? ` · ${h.rtt}ms` : ''}`) : `끊김 · ${ago(h.lastSeen)}`}${h.problem ? ` · ${h.problem}` : ''}`}
+                  sub={
+                    <>
+                      {`${KINDS[h.kind] ?? '기타'} · ${h.online ? (h.stale ? '응답 없음' : `연결됨${h.rtt ? ` · ${h.rtt}ms` : ''}`) : `끊김 · ${ago(h.lastSeen)}`}${h.problem ? ` · ${h.problem}` : ''}`}
+                      {h.online && h.sys?.battery ? (
+                        <>
+                          {' · '}
+                          <span style={batteryLow(h.sys.battery) ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{batteryLine(h.sys.battery)}</span>
+                        </>
+                      ) : null}
+                    </>
+                  }
                   right={<span className={`dot dot-${h.online ? (h.stale || h.problems ? 'amber' : 'green') : 'grey'}`} />}
                   onClick={() => go({ name: 'host', id: h.id })}
                   chevron
@@ -590,6 +600,12 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                         {detail.health.sys ? sysLine(detail.health.sys) : `부하 ${detail.health.load.toFixed(2)} · 여유 메모리 ${bytes(detail.health.memFree)} / ${bytes(detail.health.memTotal)}`}
                         {detail.health.keepAwake ? ' · 잠들지 않게 함' : ''}
                       </dd>
+                      {detail.health.sys?.battery ? (
+                        <>
+                          <dt>배터리</dt>
+                          <dd style={batteryLow(detail.health.sys.battery) ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{batteryLine(detail.health.sys.battery, true)}</dd>
+                        </>
+                      ) : null}
                       <dt>점검</dt>
                       <dd>
                         {detail.health.checks.map((c) => (

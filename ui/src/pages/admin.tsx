@@ -1,7 +1,7 @@
 // For operators: who may sign in, and how every user's Macs are doing. Conversations are not visible here.
 import { useEffect, useState } from 'react'
 import { del, errorText, get, post } from '../lib/api'
-import { ago, bytes, duration, sysLine, type SysUse } from '../lib/format'
+import { ago, batteryLine, batteryLow, bytes, duration, sysLine, type SysUse } from '../lib/format'
 import { getPref, setPref } from '../lib/local'
 import { back, go } from '../lib/router'
 import { NONE, useStore } from '../lib/store'
@@ -619,6 +619,12 @@ export function AdminPanel() {
                             <>
                               <br />
                               {sysLine(h.sys)}
+                            </>
+                          ) : null}
+                          {h.online && h.sys?.battery ? (
+                            <>
+                              <br />
+                              <span style={batteryLow(h.sys.battery) ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{batteryLine(h.sys.battery)}</span>
                             </>
                           ) : null}
                         </>

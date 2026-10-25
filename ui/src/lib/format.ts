@@ -80,6 +80,29 @@ export interface SysUse {
   memUsed: number | null
   memTotal: number | null
   disk: { total: number | null; used: number | null; avail: number | null; pct: number | null } | null
+  /** Absent from agents before 1.334; null when it could not be read (REQ-F-806). */
+  battery?: Battery | null
+}
+
+/** A host's battery (REQ-F-806). `remain` is minutes to empty, or to full while charging. */
+export type Battery = { present: false; ac: boolean } | { present: true; ac: boolean; pct: number | null; state: 'charging' | 'discharging' | 'full' | 'idle' | null; remain: number | null; cycles: number | null; health: number | null }
+
+/** Low: at or under 20% and not on power (REQ-F-806, BATTERY_LOW_PCT). */
+export function batteryLow(b: Battery | null | undefined) {
+  return !!b?.present && !b.ac && b.pct != null && b.pct <= 20
+}
+
+const BATTERY_STATE = { charging: '충전 중', discharging: '배터리 사용', full: '완충', idle: '전원 연결 · 충전 안 함' }
+
+/** `배터리 76% · 배터리 사용 · 3시간 12분 남음`; `long` adds wear: `· 사이클 123 · 최대 용량 91%`. */
+export function batteryLine(b: Battery, long = false) {
+  if (!b.present) return `배터리 없음${b.ac ? ' · 전원 연결' : ''}`
+  const parts = [`배터리 ${b.pct != null ? `${Math.round(b.pct)}%` : '?'}`]
+  if (b.state) parts.push(BATTERY_STATE[b.state])
+  if (b.remain != null) parts.push(`${b.remain >= 60 ? `${Math.floor(b.remain / 60)}시간 ` : ''}${b.remain % 60}분 ${b.state === 'charging' ? '뒤 완충' : '남음'}`)
+  if (long && b.cycles != null) parts.push(`사이클 ${b.cycles}`)
+  if (long && b.health != null) parts.push(`최대 용량 ${b.health}%`)
+  return parts.join(' · ')
 }
 
 /** One line: `CPU 19% · 메모리 14.2GB / 16GB (83%) · 디스크 85% (35GB 남음)`. Missing parts are left out. */

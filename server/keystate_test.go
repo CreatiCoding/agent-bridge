@@ -78,11 +78,25 @@ func TestTrackTodosTool(t *testing.T) {
 
 func TestCleanSys(t *testing.T) {
 	out := cleanSys(M{"cpu": 19.3, "cores": 8.0, "memUsed": 1.0, "memTotal": 2.0, "disk": M{"total": 10.0, "used": 8.0, "avail": 2.0, "pct": 80.0, "path": "/Users/x"}, "extra": "x"})
-	want := M{"cpu": 19.3, "cores": 8.0, "memUsed": 1.0, "memTotal": 2.0, "disk": M{"total": 10.0, "used": 8.0, "avail": 2.0, "pct": 80.0}}
+	want := M{"cpu": 19.3, "cores": 8.0, "memUsed": 1.0, "memTotal": 2.0, "disk": M{"total": 10.0, "used": 8.0, "avail": 2.0, "pct": 80.0}, "battery": nil}
 	if jsonStr(out) != jsonStr(want) {
 		t.Fatal(jsonStr(out))
 	}
 	if cleanSys(nil) != nil || mget(cleanSys(M{"cpu": "x", "disk": "y"}), "cpu") != nil || mget(cleanSys(M{"cpu": -1.0}), "cpu") != nil {
 		t.Fatal("bad values")
+	}
+}
+
+func TestCleanBattery(t *testing.T) {
+	out := mget(cleanSys(M{"battery": M{"present": true, "ac": false, "pct": 18.0, "state": "discharging", "remain": 95.0, "cycles": 123.0, "health": 91.0, "name": "x"}}), "battery")
+	if jsonStr(out) != `{"ac":false,"cycles":123,"health":91,"pct":18,"present":true,"remain":95,"state":"discharging"}` {
+		t.Fatal(jsonStr(out))
+	}
+	if jsonStr(mget(cleanSys(M{"battery": M{"present": false, "ac": true, "pct": 3.0}}), "battery")) != `{"ac":true,"present":false}` {
+		t.Fatal("no battery")
+	}
+	bad := mget(cleanSys(M{"battery": M{"present": true, "pct": 140.0, "state": "<b>", "remain": -1.0}}), "battery").(M)
+	if bad["pct"] != nil || bad["state"] != nil || bad["remain"] != nil || bad["ac"] != false {
+		t.Fatal(jsonStr(bad))
 	}
 }

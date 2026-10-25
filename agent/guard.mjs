@@ -285,6 +285,52 @@ export function linuxMemUsed(text) {
   return Number.isFinite(used) && used >= 0 ? used * 1024 : null
 }
 
+/** At or under this charge, off power, a battery shows as low (REQ-F-806). */
+export const BATTERY_LOW_PCT = 20
+
+/**
+ * A Mac's battery from `pmset -g batt`, with wear from `ioreg -rn AppleSmartBattery` when given (REQ-F-806):
+ * { present, ac, pct, state, remain (minutes), cycles, health (% of design capacity) }, or { present: false, ac } on a
+ * Mac with no battery (a Mac mini prints only its power source). null when pmset said nothing readable.
+ */
+export function macBattery(pmset, ioreg = '') {
+  const src = /Now drawing from '([^']+)'/.exec(String(pmset))?.[1]
+  if (!src) return null
+  const ac = src !== 'Battery Power'
+  const m = /InternalBattery[^\n]*?\s(\d{1,3})%;\s*([^;\n]+?)\s*;\s*(?:(\d+):(\d\d) remaining)?/.exec(String(pmset))
+  if (!m) return { present: false, ac }
+  const word = m[2].toLowerCase()
+  const state = word === 'charged' ? 'full' : /^(charging|finishing charge)$/.test(word) ? 'charging' : word === 'discharging' ? 'discharging' : ac ? 'idle' : 'discharging'
+  const remain = m[3] != null ? Number(m[3]) * 60 + Number(m[4]) : null
+  const n = (key) => Number(new RegExp(`"${key}" = (\\d+)`).exec(String(ioreg))?.[1])
+  const cycles = n('CycleCount')
+  const health = n('AppleRawMaxCapacity') / n('DesignCapacity')
+  return { present: true, ac, pct: Math.min(100, Number(m[1])), state, remain: remain > 0 && state !== 'full' ? remain : null, cycles: Number.isFinite(cycles) ? cycles : null, health: health > 0 && Number.isFinite(health) ? Math.round(100 * health) : null }
+}
+
+/**
+ * A Linux machine's battery from /sys/class/power_supply (REQ-F-806): `supplies` is one { file: text } per entry
+ * (type, online, capacity, status, cycle_count, energy_* or charge_*, power_now or current_now). Without a battery
+ * it runs off the mains, so { present: false, ac: true }.
+ */
+export function linuxBattery(supplies) {
+  const v = (s, k) => String(s?.[k] ?? '').trim()
+  const num = (s, k) => (v(s, k) === '' ? NaN : Number(v(s, k)))
+  const bat = supplies.find((s) => v(s, 'type') === 'Battery' && v(s, 'present') !== '0')
+  const mains = supplies.filter((s) => v(s, 'type') === 'Mains' || v(s, 'type') === 'USB')
+  if (!bat) return { present: false, ac: true }
+  const status = v(bat, 'status')
+  const ac = mains.length ? mains.some((s) => v(s, 'online') === '1') : status !== 'Discharging'
+  const state = status === 'Full' ? 'full' : status === 'Charging' ? 'charging' : status === 'Discharging' ? 'discharging' : ac ? 'idle' : 'discharging'
+  const [now, full, design, rate] = Number.isFinite(num(bat, 'energy_now'))
+    ? [num(bat, 'energy_now'), num(bat, 'energy_full'), num(bat, 'energy_full_design'), num(bat, 'power_now')]
+    : [num(bat, 'charge_now'), num(bat, 'charge_full'), num(bat, 'charge_full_design'), num(bat, 'current_now')]
+  const hours = rate > 0 ? (state === 'discharging' ? now / rate : state === 'charging' ? (full - now) / rate : NaN) : NaN
+  const pct = Number.isFinite(num(bat, 'capacity')) ? num(bat, 'capacity') : full > 0 ? Math.round((100 * now) / full) : NaN
+  const cycles = num(bat, 'cycle_count')
+  return { present: true, ac, pct: Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : null, state, remain: hours > 0 && hours < 100 ? Math.round(hours * 60) : null, cycles: cycles > 0 ? cycles : null, health: full > 0 && design > 0 ? Math.round((100 * full) / design) : null }
+}
+
 /** A disk's size and use from `fs.statfsSync`, counted like `df`: used / (used + available to a user). */
 export function diskUse(st) {
   if (!st || !(st.blocks > 0)) return null

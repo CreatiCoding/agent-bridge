@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -3716,7 +3716,27 @@ async function sysUse() {
   try {
     disk = diskUse(fs.statfsSync(HOME))
   } catch {}
-  return { cpu, cores: cur.length, memUsed: memUsed ?? os.totalmem() - os.freemem(), memTotal: os.totalmem(), disk }
+  return { cpu, cores: cur.length, memUsed: memUsed ?? os.totalmem() - os.freemem(), memTotal: os.totalmem(), disk, battery: await batteryUse() }
+}
+
+/** The last `ioreg` battery reading and when: wear changes over weeks, so it is read again only every 10 minutes. */
+let ioregBattery = { at: 0, text: '' }
+/** This machine's battery (REQ-F-806): charge, power, time left and wear; null when it cannot be read. */
+async function batteryUse() {
+  try {
+    if (process.platform === 'darwin') {
+      const pmset = (await run('/usr/bin/pmset', ['-g', 'batt'])).out
+      if (/InternalBattery/.test(pmset) && Date.now() - ioregBattery.at > 600_000) ioregBattery = { at: Date.now(), text: (await run('/usr/sbin/ioreg', ['-rn', 'AppleSmartBattery'])).out }
+      return macBattery(pmset, ioregBattery.text)
+    }
+    if (process.platform === 'linux') {
+      const root = '/sys/class/power_supply'
+      const files = ['type', 'present', 'online', 'capacity', 'status', 'cycle_count', 'energy_now', 'energy_full', 'energy_full_design', 'power_now', 'charge_now', 'charge_full', 'charge_full_design', 'current_now']
+      const supplies = (fs.existsSync(root) ? fs.readdirSync(root) : []).map((name) => Object.fromEntries(files.map((f) => [f, readPlain(path.join(root, name, f), 4096)]).filter(([, v]) => v != null)))
+      return linuxBattery(supplies)
+    }
+  } catch {}
+  return null
 }
 
 // ---------- TestFlight (REQ-F-781) ----------

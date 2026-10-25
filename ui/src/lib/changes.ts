@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.334',
+    date: '2026-10-26',
+    changes: [
+      { kind: 'added', scope: ['agent', 'server', 'ui'], text: '기기별 배터리: 잔량, 충전 중·배터리 사용·전원 연결, 남은 시간, 사이클·최대 용량을 기기 목록·기기 화면·운영 페이지에 보임. 배터리 없는 기기는 "배터리 없음 · 전원 연결", 20% 이하로 전원 없이 쓰면 빨갛게', refs: ['REQ-F-806'] },
+    ],
+  },
+  {
     version: '1.333',
+    commit: '0f59814',
     date: '2026-10-25',
     changes: [
       { kind: 'changed', scope: ['ui'], text: '답의 선택지 글을 드래그로 골라 복사할 수 있음. 끌어서 글을 잡으면 보내지 않고, 그냥 누르거나 Enter·Space 는 그대로 보냄', refs: ['REQ-F-709'] },

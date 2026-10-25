@@ -399,7 +399,32 @@ func cleanSys(v any) any {
 	if d, ok := m["disk"].(M); ok && d != nil {
 		disk = M{"total": num(d["total"]), "used": num(d["used"]), "avail": num(d["avail"]), "pct": num(d["pct"])}
 	}
-	return M{"cpu": num(m["cpu"]), "cores": num(m["cores"]), "memUsed": num(m["memUsed"]), "memTotal": num(m["memTotal"]), "disk": disk}
+	return M{"cpu": num(m["cpu"]), "cores": num(m["cores"]), "memUsed": num(m["memUsed"]), "memTotal": num(m["memTotal"]), "disk": disk, "battery": cleanBattery(m["battery"], num)}
+}
+
+// batteryStates are the words an agent may use for a battery (REQ-F-806).
+var batteryStates = map[string]bool{"charging": true, "discharging": true, "full": true, "idle": true}
+
+// cleanBattery keeps a battery report to its known fields (REQ-F-806): two flags, a state word and numbers.
+func cleanBattery(v any, num func(any) any) any {
+	b, ok := v.(M)
+	if !ok || b == nil {
+		return nil
+	}
+	present, _ := b["present"].(bool)
+	ac, _ := b["ac"].(bool)
+	if !present {
+		return M{"present": false, "ac": ac}
+	}
+	var state any
+	if s, ok := b["state"].(string); ok && batteryStates[s] {
+		state = s
+	}
+	pct := num(b["pct"])
+	if f, ok := pct.(float64); ok && f > 100 {
+		pct = nil
+	}
+	return M{"present": true, "ac": ac, "pct": pct, "state": state, "remain": num(b["remain"]), "cycles": num(b["cycles"]), "health": num(b["health"])}
 }
 
 func cleanKeyState(k any) any {
