@@ -27,6 +27,7 @@ const pageFiles = {
   stats: () => import('./pages/stats'),
   quality: () => import('./pages/quality'),
   hosts: () => import('./pages/hosts'),
+  disk: () => import('./pages/disk'),
   admin: () => import('./pages/admin'),
   settings: () => import('./pages/settings'),
   guide: () => import('./pages/guide'),
@@ -35,6 +36,7 @@ const NewSessionPage = lazy(() => pageFiles.newSession().then((m) => ({ default:
 const StatsPage = lazy(() => pageFiles.stats().then((m) => ({ default: m.StatsPage })))
 const QualityPage = lazy(() => pageFiles.quality().then((m) => ({ default: m.QualityPage })))
 const HostsPage = lazy(() => pageFiles.hosts().then((m) => ({ default: m.HostsPage })))
+const DiskPage = lazy(() => pageFiles.disk().then((m) => ({ default: m.DiskPage })))
 const HostPage = lazy(() => pageFiles.hosts().then((m) => ({ default: m.HostPage })))
 const ReportPage = lazy(() => pageFiles.admin().then((m) => ({ default: m.ReportPage })))
 const SettingsPage = lazy(() => pageFiles.settings().then((m) => ({ default: m.SettingsPage })))
@@ -188,6 +190,8 @@ function Main({ route, me }: { route: Route; me: Me | null }) {
       return <StatsPage />
     case 'hosts':
       return <HostsPage me={me} />
+    case 'disk':
+      return <DiskPage />
     case 'host':
       return <HostPage id={route.id} sid={route.sid} />
     case 'report':

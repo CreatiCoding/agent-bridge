@@ -527,7 +527,7 @@ func safeNext(n any) string {
 }
 
 // APP_PATH: the control page's own addresses (ui/src/lib/router.ts matchRoute): each is served the same page.
-var APP_PATH = regexp.MustCompile(`^/(?:s/[\w-]+|new|stats|quality|hosts(?:/[\w-]+)?|admin(?:/reports/[\w-]+)?|settings(?:/[a-z]+)?|split|guide(?:/(?:move|accounts))?)$`)
+var APP_PATH = regexp.MustCompile(`^/(?:s/[\w-]+|new|stats|quality|disk|hosts(?:/[\w-]+)?|admin(?:/reports/[\w-]+)?|settings(?:/[a-z]+)?|split|guide(?:/(?:move|accounts))?)$`)
 
 const FONT_TOKENS = ":root{--fs-xsmall:12px;--fs-small:13px;--fs-medium:14px;--fs-large:16px;--fs-xlarge:20px}"
 

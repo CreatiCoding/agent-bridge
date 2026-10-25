@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.326',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server'], text: '디스크 관리 메뉴(/disk, 설정 → 더 보기): 모든 기기를 디스크가 많이 찬 순서로 한 목록에 보이고, 누르면 그 자리에서 캐시·머지된 worktree·큰 폴더를 관리. 기기 화면에는 이 메뉴로 가는 줄', refs: ['REQ-F-803'] },
+    ],
+  },
+  {
     version: '1.325',
+    commit: '260c48e',
     date: '2026-10-25',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: '머지된 worktree 찾기가 검사하면서 index 를 다시 써서 모든 worktree 가 최근 1시간 안에 쓰인 것으로 보이던 것: 사용 시각을 먼저 읽고 git status 는 --no-optional-locks 로', refs: ['REQ-F-802'] },

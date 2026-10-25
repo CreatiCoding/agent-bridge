@@ -11,6 +11,7 @@ export type Route =
   | { name: 'quality' }
   | { name: 'host'; id: string; sid?: string }
   | { name: 'hosts' }
+  | { name: 'disk' }
   | { name: 'report'; id: string }
   | { name: 'settings'; tab?: SettingsTab }
   | { name: 'guide'; path: GuidePath }
@@ -42,6 +43,7 @@ export function matchRoute(url: string): Route | null {
   if (p === '/stats') return { name: 'stats' }
   if (p === '/quality') return { name: 'quality' }
   if (p === '/hosts') return { name: 'hosts' }
+  if (p === '/disk') return { name: 'disk' }
   // The admin page of before is now the settings page's 운영 tab; /admin (bookmarks, links) opens that tab.
   if (p === '/admin') return { name: 'settings', tab: 'admin' }
   if ((m = /^\/admin\/reports\/([\w-]+)$/.exec(p))) return { name: 'report', id: m[1] }
@@ -57,7 +59,7 @@ export function matchRoute(url: string): Route | null {
 export const parseRoute = (url: string): Route => matchRoute(url) ?? { name: 'home' }
 
 export const href = (r: Route) =>
-  ({ home: '/', session: `/s/${(r as { id?: string }).id}`, new: '/new', stats: '/stats', quality: '/quality', host: `/hosts/${(r as { id?: string }).id}${(r as { sid?: string }).sid ? `?sid=${(r as { sid?: string }).sid}` : ''}`, hosts: '/hosts', report: `/admin/reports/${(r as { id?: string }).id}`, settings: `/settings${(r as { tab?: string }).tab && (r as { tab?: string }).tab !== 'launch' ? `/${(r as { tab?: string }).tab}` : ''}`, split: `/split?s=${((r as { ids?: string[] }).ids ?? []).join(',')}`, guide: `/guide${(r as { path?: string }).path && (r as { path?: string }).path !== 'start' ? `/${(r as { path?: string }).path}` : ''}` })[r.name]
+  ({ home: '/', session: `/s/${(r as { id?: string }).id}`, new: '/new', stats: '/stats', quality: '/quality', host: `/hosts/${(r as { id?: string }).id}${(r as { sid?: string }).sid ? `?sid=${(r as { sid?: string }).sid}` : ''}`, hosts: '/hosts', disk: '/disk', report: `/admin/reports/${(r as { id?: string }).id}`, settings: `/settings${(r as { tab?: string }).tab && (r as { tab?: string }).tab !== 'launch' ? `/${(r as { tab?: string }).tab}` : ''}`, split: `/split?s=${((r as { ids?: string[] }).ids ?? []).join(',')}`, guide: `/guide${(r as { path?: string }).path && (r as { path?: string }).path !== 'start' ? `/${(r as { path?: string }).path}` : ''}` })[r.name]
 
 const ROUTE_EVENT = 'cb-route'
 

@@ -10,7 +10,6 @@ import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmen
 import { toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
-import { DiskBox } from './host-disk'
 
 export function Copy({ text }: { text: string }) {
   return (
@@ -556,7 +555,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} />
                 </>
               ) : null}
-              {h && !others ? <DiskBox key={`disk-${h.id}`} hostId={h.id} online={h.online} sys={detail.health?.sys} /> : null}
+              {h && !others ? <Row left={<Icon name="folder" />} title="디스크 관리" sub="캐시·머지된 worktree·큰 폴더 정리는 디스크 관리 메뉴에서 기기별로 한 번에 봐요" onClick={() => go({ name: 'disk' })} chevron /> : null}
               {linux ? (
                 <div className="banner">
                   <Icon name="info" />

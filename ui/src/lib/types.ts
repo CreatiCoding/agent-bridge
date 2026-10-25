@@ -170,6 +170,8 @@ export interface Account {
 
 export interface Host {
   id: string
+  /** CPU, memory and disk in use (REQ-F-800); absent from older agents. */
+  sys?: import('./format').SysUse | null
   name: string
   kind: string
   info: { version: string; build: string; node: string; os: string; hostname: string } | null

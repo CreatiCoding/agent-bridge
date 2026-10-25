@@ -754,6 +754,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             <nav className="link-list" aria-label="다른 화면">
               {[
                 { icon: 'laptop', label: '기기', hint: '맥 연결·상태·로그', to: href({ name: 'hosts' }) },
+                { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더', to: href({ name: 'disk' }) },
                 { icon: 'chart', label: '사용 통계', hint: '일한 시간·PR', to: href({ name: 'stats' }) },
                 { icon: 'chart', label: '성능 리포트', hint: '화면별 점수·개선 기록', to: href({ name: 'quality' }) },
                 { icon: 'sparkle', label: '스킬', hint: '골라서 설치', to: '/skills' },

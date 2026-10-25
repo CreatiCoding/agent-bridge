@@ -3689,7 +3689,7 @@ async function body(req, limit) {
 // A path on this site only: "//host/…" would be read by the browser as another site.
 const safeNext = (n) => (typeof n === 'string' && /^\/(?!\/)[a-zA-Z0-9/_-]*(?:\?[\w=&,-]*)?$/.test(n) ? n : '/')
 /** The control page's own addresses (ui/src/lib/router.ts matchRoute): each is served the same page. */
-const APP_PATH = /^\/(?:s\/[\w-]+|new|stats|quality|hosts(?:\/[\w-]+)?|admin(?:\/reports\/[\w-]+)?|settings(?:\/[a-z]+)?|split|guide(?:\/(?:move|accounts))?)$/
+const APP_PATH = /^\/(?:s\/[\w-]+|new|stats|quality|disk|hosts(?:\/[\w-]+)?|admin(?:\/reports\/[\w-]+)?|settings(?:\/[a-z]+)?|split|guide(?:\/(?:move|accounts))?)$/
 /** The five font sizes of the app (ui/src/styles.css), for the small pages the server writes itself. */
 const FONT_TOKENS = ':root{--fs-xsmall:12px;--fs-small:13px;--fs-medium:14px;--fs-large:16px;--fs-xlarge:20px}'
 const page = (title, text) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>${FONT_TOKENS}</style><body style="font:var(--fs-large) system-ui;max-width:32rem;margin:15vh auto;padding:0 16px"><h1 style="font-size:var(--fs-xlarge)">${title}</h1><p>${text}</p><p><a href="/">처음으로</a></p>`

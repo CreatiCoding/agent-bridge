@@ -92,3 +92,16 @@ test('머지된 worktree: porcelain 을 읽고(본 체크아웃 빼고), 머지�
   assert.equal(worktreeWhy({ ...ok, active: true }), '열린 세션이 쓰는 중')
   assert.equal(worktreeWhy({ ...ok, touched: now - 1000 }), '최근 1시간 안에 쓰임')
 })
+
+test('디스크 관리 메뉴 /disk: 조작 페이지 주소로 열린다 (REQ-F-803)', async () => {
+  const srv = await startServer()
+  try {
+    await srv.login('alice')
+    const r = await srv.api('alice', '/disk')
+    assert.equal(r.status, 200)
+    const src = (await import('node:fs')).readFileSync(new URL('../../ui/src/lib/router.ts', import.meta.url), 'utf8')
+    assert.match(src, /if \(p === '\/disk'\) return \{ name: 'disk' \}/)
+  } finally {
+    await srv.stop()
+  }
+})

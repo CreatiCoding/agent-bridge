@@ -57,7 +57,7 @@ function Bar({ pct, tone }: { pct: number; tone?: 'amber' | 'red' }) {
   )
 }
 
-export function DiskBox({ hostId, online, sys }: { hostId: string; online: boolean; sys?: SysUse | null }) {
+export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { hostId: string; online: boolean; sys?: SysUse | null; title?: string }) {
   const [info, setInfo] = useState<Info | null>(null)
   const [scan, setScan] = useState<Scan | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -154,7 +154,7 @@ export function DiskBox({ hostId, online, sys }: { hostId: string; online: boole
   const cacheTotal = (info?.caches ?? []).filter((c) => !c.irreversible).reduce((a, c) => a + (c.size ?? 0), 0)
   return (
     <section className="card-box">
-      <CardHead title="디스크 관리" help="비워도 다시 만들어지는 캐시를 비우고, 홈 폴더에서 큰 것을 찾아 휴지통으로 옮겨요. 휴지통으로 옮긴 것은 되살릴 수 있고, 휴지통을 비워야 공간이 늘어요." />
+      <CardHead title={title} help="비워도 다시 만들어지는 캐시를 비우고, 홈 폴더에서 큰 것을 찾아 휴지통으로 옮겨요. 휴지통으로 옮긴 것은 되살릴 수 있고, 휴지통을 비워야 공간이 늘어요." />
       {d ? (
         <div className="stack" style={{ gap: 6 }}>
           <div className="hstack" style={{ justifyContent: 'space-between' }}>
