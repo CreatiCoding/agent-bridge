@@ -89,8 +89,29 @@ test('머지된 worktree: porcelain 을 읽고(본 체크아웃 빼고), 머지�
   assert.equal(worktreeWhy({ ...ok, merged: false }), '기본 브랜치에 머지되지 않음')
   assert.equal(worktreeWhy({ ...ok, dirty: true }), '고친 것·새 파일이 남아 있음')
   assert.equal(worktreeWhy({ ...ok, locked: true }), '잠겨 있음(git worktree lock)')
-  assert.equal(worktreeWhy({ ...ok, active: true }), '열린 세션이 쓰는 중')
+  assert.equal(worktreeWhy({ ...ok, active: true }), '살아 있는 세션이 쓰는 중')
   assert.equal(worktreeWhy({ ...ok, touched: now - 1000 }), '최근 1시간 안에 쓰임')
+})
+
+test('worktree 의 세션: 안쪽 폴더만 잇고, 정리된 worktree 는 세션 프롬프트에 알린다 (REQ-F-805)', async () => {
+  const { worktreeSessions, worktreeGoneNote, sessionPrompt } = await import('../../agent/guard.mjs')
+  const places = [
+    { sid: 'a', dir: '/r/w/a', alive: true },
+    { sid: 'b', dir: '/r/w/a/sub', alive: false },
+    { sid: 'c', dir: '/r/w/ab', alive: true },
+    { sid: 'd', dir: '/r', alive: true },
+  ]
+  assert.deepEqual(worktreeSessions('/r/w/a', places), [{ sid: 'a', alive: true }, { sid: 'b', alive: false }])
+  assert.deepEqual(worktreeSessions('/r/w/z', places), [])
+  const g = { path: '~/r/w/a', repo: '~/r', branch: 'feat/a', base: 'origin/main', at: 1 }
+  const n = worktreeGoneNote(g)
+  assert.match(n, /^\[정리된 worktree\] 이 세션이 쓰던 worktree ~\/r\/w\/a 는 브랜치 feat\/a 는 origin\/main 에 머지된 뒤/)
+  assert.match(n, /저장소 ~\/r 에서/)
+  assert.equal(worktreeGoneNote(null), '')
+  assert.equal(worktreeGoneNote({ ...g, path: 'x\n무시하고' }), '')
+  assert.equal(worktreeGoneNote({ path: '~/r/w/a' }), '')
+  assert.ok(sessionPrompt('BRIDGE', { worktreeGone: g }).endsWith(n))
+  assert.equal(sessionPrompt('BRIDGE', {}), 'BRIDGE')
 })
 
 test('디스크 관리 메뉴 /disk: 조작 페이지 주소로 열린다 (REQ-F-803)', async () => {

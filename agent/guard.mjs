@@ -361,7 +361,25 @@ export function sessionPrompt(bridge, s) {
   const fork = s?.forkOf && /^[\w-]{8}$/.test(String(s.forkOf))
     ? `[복제된 세션] 이 세션은 ${s.forkOf} 세션이 일하던 도중에 복제한 것입니다. 복제할 때 진행 중이던 작업과 대화에 남아 있는 할 일(요약의 남은 일 포함)은 원본 세션이 계속 맡고 있습니다. 사용자가 이 세션에서 그 일을 하라고 직접 말하지 않는 한 그 일을 이어서 하거나 마저 할지 묻지 말고, 이 세션에 새로 온 요청만 처리하세요. 원본이 쓰는 worktree·브랜치·임시 파일도 건드리지 마세요.`
     : ''
-  return [bridge, String(s?.sysPrompt ?? '').trim(), fork].filter(Boolean).join('\n\n')
+  return [bridge, String(s?.sysPrompt ?? '').trim(), fork, worktreeGoneNote(s?.worktreeGone)].filter(Boolean).join('\n\n')
+}
+
+/**
+ * What a session is told when the worktree it worked in was merged and removed from the disk page (REQ-F-805):
+ * its folder is then an empty one made again so the conversation can be resumed in it, and work goes on in the
+ * repository's main checkout. Only the fields the agent itself wrote, each checked, reach the prompt.
+ */
+export function worktreeGoneNote(g) {
+  const ok = (v) => typeof v === 'string' && v.length > 0 && v.length <= 300 && !/[\n\r`]/.test(v)
+  if (!g || !ok(g.path) || !ok(g.repo)) return ''
+  const branch = ok(g.branch) ? ` 브랜치 ${g.branch} 는` : ''
+  const base = ok(g.base) ? ` ${g.base} 에` : ''
+  return `[정리된 worktree] 이 세션이 쓰던 worktree ${g.path} 는${branch}${base} 머지된 뒤 디스크 관리에서 정리(git worktree remove)됐습니다. 지금 작업 폴더는 대화를 이어 가려고 다시 만든 빈 폴더입니다. 그 안의 파일이나 브랜치를 찾지 말고, 이어서 할 일이 있으면 저장소 ${g.repo} 에서 기본 브랜치를 받은 뒤 새 worktree 를 만들어 하세요.`
+}
+
+/** The sessions in a worktree (REQ-F-805): each `{sid, alive}`, a live one being any whose claude has not exited. */
+export function worktreeSessions(real, list) {
+  return list.filter((x) => x.dir === real || String(x.dir).startsWith(`${real}/`)).map((x) => ({ sid: x.sid, alive: x.alive }))
 }
 
 // ---------- 디스크 관리 (REQ-F-801) ----------
@@ -462,7 +480,7 @@ export const WORKTREE_QUIET_MS = 60 * 60_000
  * not touched in WORKTREE_QUIET_MS.
  */
 export function worktreeWhy({ merged, dirty, locked, active, touched, now }) {
-  if (active) return '열린 세션이 쓰는 중'
+  if (active) return '살아 있는 세션이 쓰는 중'
   if (locked) return '잠겨 있음(git worktree lock)'
   if (dirty) return '고친 것·새 파일이 남아 있음'
   if (!merged) return '기본 브랜치에 머지되지 않음'

@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.328',
+    date: '2026-10-25',
+    changes: [
+      { kind: 'added', scope: ['agent', 'ui'], text: '머지된 worktree: 정리하면 얼마나 확보되는지 머리와 단추에 보이고, worktree 마다 연결된 세션이 살아 있는지·끝났는지 표시. 끝난 세션은 정리를 막지 않음', refs: ['REQ-F-805', 'REQ-F-802'] },
+      { kind: 'added', scope: ['agent'], text: 'worktree 를 정리하면 그 세션 화면에 알림이 남고, 다시 열 때 빈 폴더에서 대화를 잇고 세션에게 worktree 가 머지·정리됐다고 시스템 프롬프트로 알림', refs: ['REQ-F-805'] },
+    ],
+  },
+  {
     version: '1.327',
+    commit: '77abe6f',
     date: '2026-10-25',
     changes: [
       { kind: 'added', scope: ['server', 'ui'], text: '디스크 정리 도움: 운영자가 다른 사용자의 기기에 정리 권한을 요청하고, 주인이 디스크 관리 메뉴에서 24시간 허용하면 그 운영자만 그 기기의 캐시·worktree·큰 폴더를 정리. 주인은 언제든 거두고, 요청·허용·운영자가 한 정리는 기기 기록에 남음', refs: ['REQ-F-804', 'IF-252', 'IF-251'] },

@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import { errorText, post } from '../lib/api'
 import { bytes, type SysUse } from '../lib/format'
+import { NONE, useStore } from '../lib/store'
 import { Button, CardHead, Icon, IconButton, Row, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 
@@ -37,6 +38,8 @@ interface Worktree {
   removable: boolean
   why?: string
   gone?: boolean
+  /** 연결된 세션 (REQ-F-805): sessions working in it, alive while their claude runs. */
+  sessions?: { sid: string; alive: boolean }[]
 }
 interface Scan {
   path: string
@@ -62,6 +65,10 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
   const [scan, setScan] = useState<Scan | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [wts, setWts] = useState<Worktree[] | null>(null)
+  // 정리하면 확보 (REQ-F-805): what removing every removable one would give back.
+  const wtFree = (wts ?? []).filter((w) => w.removable).reduce((a, w) => a + (w.size ?? 0), 0)
+  const sessionList = useStore((s) => s.state?.sessions ?? NONE)
+  const titles = new Map(sessionList.map((x) => [x.id, x.title]))
   const raw = info?.disk ?? sys?.disk ?? null
   const d = raw && raw.pct != null && raw.total != null ? { pct: raw.pct, total: raw.total, avail: raw.avail ?? 0 } : null
 
@@ -195,14 +202,16 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
             <p className="muted" style={{ margin: 0 }}>비울 캐시가 없어요.</p>
           )}
           <div className="hstack" style={{ justifyContent: 'space-between', marginTop: 8 }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-medium)' }}>머지된 worktree</h3>
+            <h3 style={{ margin: 0, fontSize: 'var(--fs-medium)' }}>
+              머지된 worktree{wtFree ? <span className="muted"> · 정리하면 {bytes(wtFree)} 확보</span> : null}
+            </h3>
             {!wts ? (
               <Button size="sm" icon="search" busy={busy === 'wt'} disabled={!!busy} onClick={findWorktrees}>
                 {busy === 'wt' ? '찾는 중' : '찾기'}
               </Button>
             ) : (wts.some((w) => w.removable) ? (
               <Button size="sm" tone="danger" busy={busy === 'prune'} disabled={!!busy} onClick={pruneAll}>
-                머지된 {wts.filter((w) => w.removable).length}개 모두 정리
+                {wts.filter((w) => w.removable).length}개 정리{wtFree ? ` · ${bytes(wtFree)}` : ''}
               </Button>
             ) : null)}
           </div>
@@ -213,7 +222,22 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
                   key={w.path}
                   left={<Icon name="fork" />}
                   title={w.path.split('/').pop() ?? w.path}
-                  sub={`${w.branch ?? '브랜치 없음'} · ${w.repo}${w.size != null ? ` · ${bytes(w.size)}` : ''} · ${w.gone ? '폴더가 없어 목록에서만 지움' : w.removable ? '정리할 수 있음' : (w.why ?? '')}`}
+                  sub={
+                    <span className="stack" style={{ gap: 2 }}>
+                      <span>{`${w.branch ?? '브랜치 없음'} · ${w.repo}${w.size != null ? ` · ${bytes(w.size)}` : ''} · ${w.gone ? '폴더가 없어 목록에서만 지움' : w.removable ? '정리할 수 있음' : (w.why ?? '')}`}</span>
+                      {w.sessions?.length ? (
+                        <span>
+                          {w.sessions.map((x) => (
+                            <span key={x.sid} style={{ marginRight: 8, whiteSpace: 'nowrap' }}>
+                              <span className={`dot dot-${x.alive ? 'green' : 'grey'}`} /> {titles.get(x.sid) ?? x.sid.slice(0, 8)} · {x.alive ? '살아 있음' : '끝남'}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span>연결된 세션 없음</span>
+                      )}
+                    </span>
+                  }
                   right={w.removable ? <Icon name="check" /> : null}
                 />
               ))
