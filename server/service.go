@@ -32,11 +32,22 @@ func serviceAuthOk(req *Req) bool {
 	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
 }
 
+// serviceUidActive: the account the token acts as still exists and is still allowed, as whoami asks of a sign-in.
+func serviceUidActive(uid string) bool {
+	u, ok := users.Get(uid)
+	return ok && !isDemoUid(uid) && isAllowed(mstr(u, "login"))
+}
+
 func serviceAPI(req *Req, res *Res, p string) {
 	if !serviceAuthOk(req) {
 		refuse(401, "서비스 토큰이 맞지 않아요")
 	}
 	uid := SERVICE_UID
+	// The token acts as this person, so it stops with them: removed from the allow-list or the account gone, the
+	// browser sign-in ends at once (whoami) and so does this (REQ-S-085).
+	if !serviceUidActive(uid) {
+		refuse(403, "서비스 토큰의 계정이 허용돼 있지 않아요")
+	}
 	if p == "/api/service/sessions" && req.Method == "POST" {
 		if !strings.HasPrefix(ctype(req), "application/json") {
 			refuse(415, "application/json 만 받습니다")

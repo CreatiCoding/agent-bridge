@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -3536,7 +3536,9 @@ async function diskOp(op, id, where, paths) {
     const dir = diskPath(where)
     if (!fs.statSync(dir).isDirectory()) throw new Error('폴더가 아니에요')
     const guarded = guardedDirs(home, process.platform)
-    if (guarded.includes(dir)) throw new Error('macOS 가 지키는 폴더라 열지 않아요')
+    // diskPath resolves the parent folders only: the folder itself may be a link out of the home folder.
+    const scanWhy = diskScanWhy(fs.realpathSync(dir), { home, platform: process.platform })
+    if (scanWhy) throw new Error(scanWhy)
     const ents = fs.readdirSync(dir, { withFileTypes: true }).slice(0, 5000)
     const opts = { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform }
     const items = await inTurns(ents, 6, async (e) => {

@@ -292,6 +292,10 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			if help == nil {
 				refuse(409, "받은 요청이 없어요")
 			}
+			// The grant names the operator the owner was shown: another operator's request in between is not granted (REQ-F-804).
+			if l, ok := b["login"].(string); !ok || strings.ToLower(l) != strings.ToLower(mstr(help, "login")) {
+				refuse(409, "요청한 운영자가 바뀌었어요. 화면을 새로고침해 다시 확인해 주세요")
+			}
 			g := shallow(help)
 			g["until"] = float64(nowMs() + DISK_HELP_MS)
 			h["diskHelp"] = g

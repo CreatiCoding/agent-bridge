@@ -13,7 +13,8 @@ import { confirmDialog, toast } from '../kit/overlay'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { DiskBox } from './host-disk'
 
-const helpCall = (hostId: string, op: 'ask' | 'grant' | 'end') => post(`/api/hosts/${hostId}/disk-help`, { op })
+// A grant names the operator it is for (the one shown), so another operator's request in between is not granted.
+const helpCall = (hostId: string, op: 'ask' | 'grant' | 'end', login?: string) => post(`/api/hosts/${hostId}/disk-help`, { op, ...(login ? { login } : {}) })
 const granted = (h?: DiskHelp | null) => !!h && h.until > Date.now()
 
 /** How full a disk is: the line and its bar. */
@@ -40,7 +41,7 @@ function HelpBanner({ hostId, help }: { hostId: string; help: DiskHelp }) {
     if (op === 'grant' && !(await confirmDialog(`운영자 ${help.login} 에게 24시간 동안 이 기기의 디스크 정리를 맡길까요?`, { text: '그 운영자가 이 기기의 캐시를 비우고, 머지된 worktree 를 정리하고, 홈 폴더의 항목을 휴지통으로 옮길 수 있어요. 언제든 거둘 수 있어요.', ok: '24시간 허용' }))) return
     setBusy(true)
     try {
-      await helpCall(hostId, op)
+      await helpCall(hostId, op, op === 'grant' ? help.login : undefined)
       toast(op === 'grant' ? '24시간 동안 허용했어요' : '권한을 거뒀어요')
     } catch (e) {
       toast(errorText(e), { tone: 'bad' })

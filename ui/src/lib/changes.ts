@@ -26,7 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.336',
+    date: '2026-10-26',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '서비스 API 는 토큰이 맞아도 BRIDGE_SERVICE_UID 의 계정이 없거나 허용 목록에서 빠졌으면 403. 계정을 막으면 토큰도 바로 막힘', refs: ['REQ-S-085', 'REQ-F-799'] },
+      { kind: 'security', scope: ['server', 'ui'], text: '디스크 정리 도움의 허용은 주인이 본 운영자(login)에게만 감. 그사이 다른 운영자가 요청을 덮어썼으면 409', refs: ['REQ-F-804', 'IF-252'] },
+      { kind: 'security', scope: ['agent'], text: '디스크 관리의 폴더 보기는 홈 밖이나 macOS 가 지키는 폴더를 가리키는 링크를 따라가지 않음', refs: ['REQ-F-804', 'IF-251'] },
+    ],
+  },
+  {
     version: '1.335',
+    commit: '6b27dad',
     date: '2026-10-26',
     changes: [
       { kind: 'added', scope: ['server', 'ui'], text: '운영 페이지에서 다른 사용자 기기의 배터리도 보임(사이클·최대 용량 포함). 꺼져 있거나 끊긴 기기는 마지막으로 받은 값과 그 시각을 보이고, 서버가 다시 떠도 남음. 기기 목록도 끊긴 내 기기의 마지막 값을 보임', refs: ['REQ-F-807'] },

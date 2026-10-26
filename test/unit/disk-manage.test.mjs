@@ -2,7 +2,7 @@
 // owner reaches it. The agent decides; the page only names a cache id or a path inside the home folder.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { diskCaches, diskTrashable, guardedDirs, trashDir, duBytes } from '../../agent/guard.mjs'
+import { diskCaches, diskTrashable, diskScanWhy, guardedDirs, trashDir, duBytes } from '../../agent/guard.mjs'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
 
@@ -133,26 +133,32 @@ test('디스크 관리 메뉴 /disk: 조작 페이지 주소로 열린다 (REQ-F
 })
 
 test('디스크 정리 도움: 운영자가 요청하고 주인이 허용해야 운영자가 정리, 거두면 다시 막힘 (REQ-F-804)', async () => {
-  const srv = await startServer()
+  const srv = await startServer({ env: { BRIDGE_ADMIN_LOGINS: 'boss,boss2' } })
   try {
-    for (const who of ['alice', 'bob', 'boss']) await srv.login(who)
+    for (const who of ['alice', 'bob', 'boss', 'boss2']) await srv.login(who)
     const id = 'aaaaaaaa-0000-4000-8000-0000000000d2'
     const m = await mac(srv, 'alice', id, 'help')
     const disk = (who, body) => srv.api(who, `/api/hosts/${id}/disk`, { method: 'POST', body })
-    const help = (who, op) => srv.api(who, `/api/hosts/${id}/disk-help`, { method: 'POST', body: { op } })
+    const help = (who, op, login) => srv.api(who, `/api/hosts/${id}/disk-help`, { method: 'POST', body: { op, ...(login ? { login } : {}) } })
     const view = async () => (await srv.api('boss', '/api/admin/overview')).json.users.flatMap((u) => u.hosts).find((h) => h.id === id).diskHelp
     assert.equal((await disk('boss', { op: 'info' })).status, 404, '허용 전')
     assert.equal((await help('alice', 'ask')).status, 403, '주인은 요청하지 않음')
     assert.equal((await help('bob', 'ask')).status, 404, '운영자 아닌 남')
-    assert.equal((await help('alice', 'grant')).status, 409, '요청 없음')
+    assert.equal((await help('alice', 'grant', 'boss')).status, 409, '요청 없음')
     assert.equal((await help('boss', 'ask')).status, 200)
     const asked = await view()
     assert.equal(asked.login, 'boss')
     assert.equal(asked.until, 0)
     assert.equal(asked.by, undefined, 'uid 는 싣지 않음')
     assert.equal((await disk('boss', { op: 'info' })).status, 404, '요청만으로는 안 됨')
-    assert.equal((await help('boss', 'grant')).status, 404, '운영자가 스스로 허용 못 함')
-    assert.equal((await help('alice', 'grant')).status, 200)
+    assert.equal((await help('boss', 'grant', 'boss')).status, 404, '운영자가 스스로 허용 못 함')
+    assert.equal((await help('alice', 'grant')).status, 409, '누구에게 주는지 없이는 허용하지 않음')
+    // 주인이 boss 의 요청을 보는 사이 boss2 가 요청을 덮어써도, boss 에게 주려던 허용이 boss2 에게 가지 않는다.
+    assert.equal((await help('boss2', 'ask')).status, 200)
+    assert.equal((await help('alice', 'grant', 'boss')).status, 409, '보여준 운영자와 다르면 허용하지 않음')
+    assert.equal((await disk('boss2', { op: 'info' })).status, 404, 'boss2 는 허용받지 않음')
+    assert.equal((await help('boss', 'ask')).status, 200)
+    assert.equal((await help('alice', 'grant', 'boss')).status, 200)
     assert.ok((await view()).until > Date.now() + 23 * 3600_000)
     const call = disk('boss', { op: 'scan', path: '~' })
     const cmd = await m.next((x) => x.t === 'disk')
@@ -166,4 +172,15 @@ test('디스크 정리 도움: 운영자가 요청하고 주인이 허용해야 
   } finally {
     await srv.stop()
   }
+})
+
+test('diskScanWhy: 홈 밖이나 macOS 가 지키는 폴더를 가리키는 링크는 따라가 열지 않음 (REQ-F-804)', () => {
+  const o = { home: H, platform: 'darwin' }
+  assert.equal(diskScanWhy(H, o), null)
+  assert.equal(diskScanWhy(`${H}/projects`, o), null)
+  assert.match(diskScanWhy('/etc', o), /홈 폴더 밖/)
+  assert.match(diskScanWhy('/Users/other', o), /홈 폴더 밖/)
+  assert.match(diskScanWhy('/Users/u2/x', o), /홈 폴더 밖/, '이름이 홈으로 시작하는 다른 폴더')
+  assert.match(diskScanWhy(`${H}/Library/Messages`, o), /지키는/)
+  assert.match(diskScanWhy(`${H}/Documents/a`, o), /지키는/)
 })

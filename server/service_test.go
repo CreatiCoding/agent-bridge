@@ -50,5 +50,35 @@ func TestServiceAuth(t *testing.T) {
 		return status(r)
 	}
 	eq(t, got(req("Bearer nope")), 401, "wrong token")
-	withLock(func() { eq(t, got(req("Bearer "+tok)), 404, "a session it did not start is not found") })
+	keepA, keepUsers, keepAccess := ALLOWED, users, access
+	defer func() { ALLOWED, users, access = keepA, keepUsers, keepAccess }()
+	users, access = newOMap[M](), newOMap[M]()
+	withLock(func() {
+		ALLOWED = []string{"svc-one"}
+		eq(t, got(req("Bearer "+tok)), 403, "right token, but its account does not exist")
+		users.Set("gh1", M{"login": "svc-one", "name": "svc-one", "avatar": ""})
+		eq(t, got(req("Bearer "+tok)), 404, "a session it did not start is not found")
+		ALLOWED = nil
+		eq(t, got(req("Bearer "+tok)), 403, "its account taken off the allow-list")
+	})
+}
+
+// The token acts as BRIDGE_SERVICE_UID only while that account exists and is allowed (REQ-S-085).
+func TestServiceUidActive(t *testing.T) {
+	keepA, keepAd, keepUsers, keepAccess := ALLOWED, ADMINS, users, access
+	defer func() { ALLOWED, ADMINS, users, access = keepA, keepAd, keepUsers, keepAccess }()
+	users, access = newOMap[M](), newOMap[M]()
+	withLock(func() {
+		ADMINS = nil
+		ALLOWED = []string{"svc-user"}
+		uid := "gh-svc-test-1"
+		ok(t, !serviceUidActive(uid), "no such account")
+		users.Set(uid, M{"login": "svc-user", "name": "svc-user", "avatar": ""})
+		ok(t, serviceUidActive(uid), "allowed account")
+		ALLOWED = []string{"someone-else"}
+		ok(t, !serviceUidActive(uid), "taken off the allow-list")
+		ALLOWED = []string{"*"}
+		access.Set("svc-user", M{"login": "svc-user", "status": "denied"})
+		ok(t, !serviceUidActive(uid), "denied by an operator")
+	})
 }

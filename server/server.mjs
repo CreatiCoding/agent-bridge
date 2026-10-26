@@ -4359,6 +4359,8 @@ async function api(req, res, url, uid) {
     } else if (b.op === 'grant') {
       if (owner !== uid) throw new Refuse(404, '호스트가 없습니다')
       if (!help) throw new Refuse(409, '받은 요청이 없어요')
+      // The grant names the operator the owner was shown: another operator's request in between is not granted (REQ-F-804).
+      if (typeof b.login !== 'string' || b.login.toLowerCase() !== String(help.login ?? '').toLowerCase()) throw new Refuse(409, '요청한 운영자가 바뀌었어요. 화면을 새로고침해 다시 확인해 주세요')
       h.diskHelp = { ...help, until: Date.now() + DISK_HELP_MS }
       record(owner, hdh[1], { area: 'disk', text: `운영자 ${help.login} 에게 디스크 정리 권한을 24시간 줌` })
     } else if (b.op === 'end') {

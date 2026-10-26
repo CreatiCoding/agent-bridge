@@ -517,6 +517,18 @@ export function diskTrashable(real, { home, keep = [], sessions = [], platform }
   return null
 }
 
+/**
+ * Why a folder cannot be listed by the disk page's scan, or null when it can. `real`: the folder with every link
+ * resolved, the item itself too: a link inside the home folder that points outside it, or into a folder macOS guards,
+ * is not followed (an operator granted 디스크 정리 도움 sees the home folder only, REQ-F-804).
+ */
+export function diskScanWhy(real, { home, platform }) {
+  const rel = path.relative(home, real)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return '홈 폴더 밖을 가리키는 링크라 열지 않아요'
+  for (const d of guardedDirs(home, platform)) if (real === d || real.startsWith(`${d}${path.sep}`)) return 'macOS 가 지키는 폴더라 열지 않아요'
+  return null
+}
+
 /** `du -sk` output's first number, in bytes, or null. */
 export const duBytes = (out) => {
   const n = Number(/^(\d+)/.exec(String(out ?? '').trim())?.[1])
