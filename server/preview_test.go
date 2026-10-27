@@ -4,6 +4,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/binary"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -279,4 +281,51 @@ func TestPreviewTombstone(t *testing.T) {
 	three := clockPV(t, dir, &clock)
 	pvProbe(three)
 	eq(t, status(three, b), 403, "사용만으로는 묘비가 되살아나지 않음")
+}
+
+// A message of the previewed app's WebSocket is at most PREVIEW_BODY_MAX in all, not only per frame: fragments that
+// add up past it close the socket (1009) instead of being kept in memory without end.
+func TestPreviewWebSocketFragmentsLimit(t *testing.T) {
+	s := newPV(t, nil)
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	c := &wsConn{conn: a, out: make(chan []byte, 16), hostID: "h1", opened: true}
+	withLock(func() { s.p.sockets["w1"] = c })
+	const part = 1 << 20
+	frames := 3 * PREVIEW_BODY_MAX / part
+	rd := &fragReader{left: frames, size: part}
+	s.p.readFrames("w1", c, bufio.NewReader(rd))
+	ok(t, rd.left > 0)
+	withLock(func() {
+		_, still := s.p.sockets["w1"]
+		ok(t, !still)
+	})
+	ok(t, c.closed)
+}
+
+// fragReader: one text frame that does not end, then continuation frames, each `size` bytes, unmasked.
+type fragReader struct {
+	left, size int
+	cur        []byte
+	first      bool
+}
+
+func (r *fragReader) Read(p []byte) (int, error) {
+	if len(r.cur) == 0 {
+		if r.left == 0 {
+			return 0, io.EOF
+		}
+		r.left--
+		op := byte(0x0)
+		if !r.first {
+			op, r.first = 0x1, true
+		}
+		h := []byte{op, 127, 0, 0, 0, 0, 0, 0, 0, 0}
+		binary.BigEndian.PutUint64(h[2:], uint64(r.size))
+		r.cur = append(h, make([]byte, r.size)...)
+	}
+	n := copy(p, r.cur)
+	r.cur = r.cur[n:]
+	return n, nil
 }

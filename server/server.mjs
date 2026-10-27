@@ -806,9 +806,42 @@ const uploadsDir = (uid) => path.join(DATA, 'u', uid, 'uploads')
 const uploadId = (s) => typeof s === 'string' && /^[0-9a-f]{40}\.(mp4|mov|webm|m4v)$/.test(s)
 const uploadName = (s) => String(s ?? '').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'video'
 
-/** The request's body straight into a file (not held in memory), up to UPLOAD_MAX. */
+/** What one person's videos may take on the server at once (REQ-S-086): uploads kept, in progress, and their reports'. */
+const UPLOAD_USER_MAX = 2 * 1024 * 1024 * 1024
+/** Bytes each person's uploads in progress may still write. */
+const uploadsHeld = new Map()
+const fileSize = (f) => {
+  try {
+    return fs.statSync(f).size
+  } catch {
+    return 0
+  }
+}
+/** The bytes of a person's videos on the server: uploads still kept, and their reports' videos. */
+function uploadsUsed(uid) {
+  const dir = uploadsDir(uid)
+  let n = 0
+  for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) if (uploadId(f)) n += fileSize(path.join(dir, f))
+  for (const r of readReports()) if (r.uid === uid) for (const v of Array.isArray(r.videos) ? r.videos : []) if (uploadId(v?.id)) n += fileSize(reportVideoFile(v.id))
+  return n
+}
+const TOO_MANY_UPLOADS = '올려 둔 영상이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요'
+
+/** The request's body straight into a file (not held in memory), up to UPLOAD_MAX and what is left of UPLOAD_USER_MAX. */
 async function saveUpload(uid, req, url) {
   const type = String(req.headers['content-type']).split(';')[0].trim()
+  const left = UPLOAD_USER_MAX - uploadsUsed(uid) - (uploadsHeld.get(uid) ?? 0)
+  if (left <= 0) throw new Refuse(413, TOO_MANY_UPLOADS)
+  const max = Math.min(UPLOAD_MAX, left)
+  uploadsHeld.set(uid, (uploadsHeld.get(uid) ?? 0) + max)
+  try {
+    return await saveUploadUpTo(uid, req, url, type, max)
+  } finally {
+    const n = (uploadsHeld.get(uid) ?? 0) - max
+    n > 0 ? uploadsHeld.set(uid, n) : uploadsHeld.delete(uid)
+  }
+}
+async function saveUploadUpTo(uid, req, url, type, max) {
   const id = `${crypto.randomBytes(20).toString('hex')}.${VIDEO_EXT[type]}`
   const dir = uploadsDir(uid)
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -818,7 +851,7 @@ async function saveUpload(uid, req, url) {
   try {
     for await (const c of req) {
       size += c.length
-      if (size > UPLOAD_MAX) throw new Refuse(413, `영상은 ${UPLOAD_MAX / 1024 / 1024}MB 까지 보낼 수 있어요`)
+      if (size > max) throw new Refuse(413, max < UPLOAD_MAX ? TOO_MANY_UPLOADS : `영상은 ${UPLOAD_MAX / 1024 / 1024}MB 까지 보낼 수 있어요`)
       if (!out.write(c)) await new Promise((r) => out.once('drain', r))
     }
     await new Promise((ok, bad) => out.end((e) => (e ? bad(e) : ok())))

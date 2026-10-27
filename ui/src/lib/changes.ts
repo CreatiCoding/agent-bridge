@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.337',
+    date: '2026-10-27',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '미리보기 웹소켓은 조각(continuation)을 합친 메시지가 16 MB 를 넘으면 1009 로 닫음. 프레임 하나만 막고 합친 크기는 보지 않았음', refs: ['REQ-S-086', 'IF-201'] },
+      { kind: 'security', scope: ['server'], text: '영상 올리기는 한 사람의 영상(남은 올린 영상·올리는 중·제보에 붙은 영상)을 합쳐 2 GiB 까지. 넘으면 413', refs: ['REQ-S-086', 'REQ-F-761'] },
+    ],
+  },
+  {
     version: '1.336',
+    commit: '86a4231',
     date: '2026-10-26',
     changes: [
       { kind: 'security', scope: ['server'], text: '서비스 API 는 토큰이 맞아도 BRIDGE_SERVICE_UID 의 계정이 없거나 허용 목록에서 빠졌으면 403. 계정을 막으면 토큰도 바로 막힘', refs: ['REQ-S-085', 'REQ-F-799'] },

@@ -505,9 +505,58 @@ func uploadName(s any) string {
 	return out
 }
 
-// saveUpload: the request's body straight into a file (not held in memory), up to UPLOAD_MAX.
+// UPLOAD_USER_MAX: what one person's videos may take on the server at once (REQ-S-086): uploads not yet sent, being
+// sent, and kept with their reports. Each upload is still at most UPLOAD_MAX.
+const UPLOAD_USER_MAX = 2 * 1024 * 1024 * 1024
+
+// uploadsHeld: bytes each person's uploads in progress may still write (with the lock).
+var uploadsHeld = map[string]int64{}
+
+// uploadsUsed: the bytes of a person's videos on the server: uploads still kept, and their reports' videos.
+func uploadsUsed(uid string) int64 {
+	var n int64
+	dir := uploadsDir(uid)
+	fs, _ := os.ReadDir(dir)
+	for _, f := range fs {
+		if uploadId(f.Name()) {
+			if st, err := os.Stat(filepath.Join(dir, f.Name())); err == nil {
+				n += st.Size()
+			}
+		}
+	}
+	for _, r := range readReports() {
+		if mstr(r, "uid") != uid {
+			continue
+		}
+		for _, v := range asArr(r["videos"]) {
+			if id := mstr(v, "id"); uploadId(id) {
+				if st, err := os.Stat(reportVideoFile(id)); err == nil {
+					n += st.Size()
+				}
+			}
+		}
+	}
+	return n
+}
+
+// saveUpload: the request's body straight into a file (not held in memory), up to UPLOAD_MAX, and up to what is
+// left of the person's UPLOAD_USER_MAX.
 func saveUpload(uid string, req *Req, u *url.URL) M {
 	typ := jsTrim(strings.Split(req.H("content-type"), ";")[0])
+	left := int64(UPLOAD_USER_MAX) - uploadsUsed(uid) - uploadsHeld[uid]
+	if left <= 0 {
+		refuse(413, "올려 둔 영상이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요")
+	}
+	max := int64(UPLOAD_MAX)
+	if left < max {
+		max = left
+	}
+	uploadsHeld[uid] += max
+	defer func() {
+		if uploadsHeld[uid] -= max; uploadsHeld[uid] <= 0 {
+			delete(uploadsHeld, uid)
+		}
+	}()
 	id := randHex(20) + "." + VIDEO_EXT[typ]
 	dir := uploadsDir(uid)
 	_ = os.MkdirAll(dir, 0o700)
@@ -525,13 +574,16 @@ func saveUpload(uid string, req *Req, u *url.URL) M {
 		if req.body == nil {
 			return
 		}
-		size, werr = io.Copy(out, io.LimitReader(req.body, UPLOAD_MAX+1))
-		if size > UPLOAD_MAX {
+		size, werr = io.Copy(out, io.LimitReader(req.body, max+1))
+		if size > max {
 			tooBig = true
 		}
 	})
 	if tooBig {
 		_ = os.Remove(file)
+		if max < UPLOAD_MAX {
+			refuse(413, "올려 둔 영상이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요")
+		}
 		refuse(413, "영상은 "+itoa(UPLOAD_MAX/1024/1024)+"MB 까지 보낼 수 있어요")
 	}
 	if werr != nil {

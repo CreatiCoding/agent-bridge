@@ -4,6 +4,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,4 +52,47 @@ func TestDemoSudoTextUnicodeSpace(t *testing.T) {
 	for _, s := range []string{"sudo 가 뭐야?", ":sudoku", "x :sudo"} {
 		ok(t, !demoSudoText.MatchString(s), "allowed: "+s)
 	}
+}
+
+// REQ-S-086: one person's videos on the server are at most UPLOAD_USER_MAX together (uploads kept, and their reports').
+func TestUploadUserMax(t *testing.T) {
+	oldData, oldReports := DATA, REPORTS
+	DATA = t.TempDir()
+	REPORTS = filepath.Join(DATA, "reports")
+	defer func() { DATA, REPORTS = oldData, oldReports }()
+	dir := uploadsDir("u1")
+	_ = os.MkdirAll(dir, 0o700)
+	big := filepath.Join(dir, strings.Repeat("a", 40)+".mp4")
+	f, _ := os.Create(big)
+	_ = f.Truncate(UPLOAD_USER_MAX - 10)
+	f.Close()
+	save := func(uid string, n int) (status int) {
+		r := httptest.NewRequest("POST", "/api/reports/upload?name=v", strings.NewReader(strings.Repeat("x", n)))
+		r.Header.Set("content-type", "video/mp4")
+		withLock(func() {
+			defer func() {
+				if e, ok := recover().(*Refuse); ok {
+					status = e.Status
+				}
+			}()
+			saveUpload(uid, newReq(r), r.URL)
+			status = 200
+		})
+		return
+	}
+	eq(t, save("u1", 20), 413)
+	eq(t, save("u1", 5), 200)
+	eq(t, save("u1", 10), 413)
+	// Someone else's uploads do not count.
+	eq(t, save("u2", 20), 200)
+	// A report's videos count for the one who sent it.
+	_ = os.Remove(big)
+	_ = os.MkdirAll(filepath.Join(REPORTS, "video"), 0o700)
+	vid := strings.Repeat("b", 40) + ".mp4"
+	f, _ = os.Create(reportVideoFile(vid))
+	_ = f.Truncate(UPLOAD_USER_MAX)
+	f.Close()
+	writeJson(reportFile("r1"), M{"id": "r1", "uid": "u1", "videos": []any{M{"id": vid}}})
+	eq(t, save("u1", 1), 413)
+	eq(t, len(uploadsHeld), 0)
 }

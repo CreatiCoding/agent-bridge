@@ -873,6 +873,11 @@ func (p *Preview) readFrames(id string, c *wsConn, rd *bufio.Reader) {
 			parts = data
 			partOp = op
 		case 0x0:
+			// A message is at most PREVIEW_BODY_MAX in all, its fragments together (REQ-S-086).
+			if uint64(len(parts))+n > PREVIEW_BODY_MAX {
+				locked("ws", func() { p.finish(id, 1009, "too big", true) })
+				return
+			}
 			parts = append(parts, data...)
 		}
 		if !fin {

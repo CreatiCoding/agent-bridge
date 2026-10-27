@@ -384,7 +384,11 @@ export function createPreview({ dataDir, origin, port, ask, toHost, canUse, log 
         }
         if (op === 0xa) continue
         if (op === 0x1 || op === 0x2) (parts = [data]), (partOp = op)
-        else if (op === 0x0) parts.push(data)
+        else if (op === 0x0) {
+          // A message is at most BODY_MAX in all, its fragments together (REQ-S-086).
+          if (parts.reduce((n, x) => n + x.length, 0) + data.length > BODY_MAX) return finish(id, 1009, 'too big', true)
+          parts.push(data)
+        }
         if (!fin) continue
         const whole = Buffer.concat(parts)
         parts = []
