@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.339',
+    date: '2026-10-28',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '서비스 API 로 연 세션을 닫는 POST /api/service/sessions/<sid>/close. 자동 수정 서버가 끝난 세션을 닫아 맥의 CPU·메모리를 돌려받음. 이미 닫혔으면 그대로 200, 사람이 연 세션·남의 세션은 404', refs: ['REQ-F-799', 'IF-253'] },
+    ],
+  },
+  {
     version: '1.338',
+    commit: 'efc710e',
     date: '2026-10-28',
     changes: [
       { kind: 'security', scope: ['agent'], text: "안전한 전부 허용은 따옴표 안(bash -c 'sudo …')·백틱·경로(/usr/bin/sudo)·\\sudo 로 쓴 sudo 도 물음. 관리자 비밀번호가 열린 동안 묻지 않고 root 로 돌 수 있었음", refs: ['REQ-F-759', 'REQ-F-764'] },

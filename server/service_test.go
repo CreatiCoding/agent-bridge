@@ -82,3 +82,52 @@ func TestServiceUidActive(t *testing.T) {
 		ok(t, !serviceUidActive(uid), "denied by an operator")
 	})
 }
+
+// IF-253: the token closes only the sessions it opened for that person, and closing twice is fine.
+func TestServiceClose(t *testing.T) {
+	keepT, keepU, keepA, keepUsers, keepAccess, keepS, keepData := SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, sessions, DATA
+	defer func() {
+		SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, sessions, DATA = keepT, keepU, keepA, keepUsers, keepAccess, keepS, keepData
+	}()
+	tok := "0123456789abcdef0123456789abcdef"
+	SERVICE_TOKEN, SERVICE_UID, DATA = tok, "gh1", t.TempDir()
+	users, access, sessions = newOMap[M](), newOMap[M](), newOMap[*Sess]()
+	post := func(sid string) (status int) {
+		r := httptest.NewRequest("POST", "/api/service/sessions/"+sid+"/close", nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		req := newReq(r)
+		res := newRes(req)
+		withLock(func() {
+			defer func() {
+				if e, isRefuse := recover().(*Refuse); isRefuse {
+					status = e.Status
+				}
+			}()
+			serviceAPI(req, res, r.URL.Path)
+			status = res.status
+		})
+		return status
+	}
+	withLock(func() {
+		ALLOWED = []string{"svc-one"}
+		users.Set("gh1", M{"login": "svc-one", "name": "svc-one", "avatar": ""})
+		sessions.Set("svc", newSess(M{"id": "svc", "uid": "gh1", "host": "h1", "service": true}))
+		sessions.Set("own", newSess(M{"id": "own", "uid": "gh1", "host": "h1"}))
+		sessions.Set("other", newSess(M{"id": "other", "uid": "gh2", "host": "h2", "service": true}))
+	})
+	eq(t, post("svc"), 200, "a session it opened")
+	withLock(func() {
+		c, _ := sessions.Get("svc")
+		ok(t, truthy(c.get("closed")), "closed after the call")
+	})
+	eq(t, post("svc"), 200, "closing again")
+	eq(t, post("own"), 404, "the person's own session")
+	eq(t, post("other"), 404, "someone else's session")
+	eq(t, post("nope"), 404, "no such session")
+	withLock(func() {
+		for _, sid := range []string{"own", "other"} {
+			c, _ := sessions.Get(sid)
+			ok(t, !truthy(c.get("closed")), sid+" left open")
+		}
+	})
+}

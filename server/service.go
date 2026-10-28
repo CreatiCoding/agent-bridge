@@ -7,17 +7,21 @@ import (
 )
 
 // Service API (REQ-F-799): lets a trusted server (autofix) start unattended sessions for one person
-// with a static bearer token instead of the browser sign-in. It can do only two things:
-// start a session and read the state of the sessions it started itself.
+// with a static bearer token instead of the browser sign-in. It can do only three things:
+// start a session, read the state of the sessions it started itself, and close those.
 //
-//	POST /api/service/sessions      {host, cwd?, prompt, title?}  -> {ok, id}
-//	GET  /api/service/sessions/:id  -> {id, host, state, phase, waitingOn?, answer}
+//	POST /api/service/sessions            {host, cwd?, prompt, title?}  -> {ok, id}
+//	GET  /api/service/sessions/:id        -> {id, host, state, phase, waitingOn?, answer}
+//	POST /api/service/sessions/:id/close  -> {ok, id, state: "closed"}
 var (
 	SERVICE_TOKEN string // BRIDGE_SERVICE_TOKEN
 	SERVICE_UID   string // BRIDGE_SERVICE_UID: whose Macs and sessions the token acts as (e.g. gh12345)
 )
 
-var serviceSessionRe = re(`^/api/service/sessions/([a-zA-Z0-9-]+)$`)
+var (
+	serviceSessionRe = re(`^/api/service/sessions/([a-zA-Z0-9-]+)$`)
+	serviceCloseRe   = re(`^/api/service/sessions/([a-zA-Z0-9-]+)/close$`)
+)
 
 // serviceAuthOk compares hashes so the check takes the same time whatever the length.
 func serviceAuthOk(req *Req) bool {
@@ -89,11 +93,16 @@ func serviceAPI(req *Req, res *Res, p string) {
 		jsonRes(res, 200, M{"ok": true, "id": sid})
 		return
 	}
-	if m := serviceSessionRe.FindStringSubmatch(p); m != nil && req.Method == "GET" {
-		c, ok := sessions.Get(m[1])
+	// Only the sessions this API opened for that person, never the person's own.
+	own := func(sid string) *Sess {
+		c, ok := sessions.Get(sid)
 		if !ok || c.uid() != uid || !truthy(c.get("service")) {
 			refuse(404, "세션이 없습니다")
 		}
+		return c
+	}
+	if m := serviceSessionRe.FindStringSubmatch(p); m != nil && req.Method == "GET" {
+		c := own(m[1])
 		out := M{"id": c.id(), "host": ""}
 		if h, ok := hosts.Get(c.host()); ok && h["name"] != nil {
 			out["host"] = h["name"]
@@ -102,6 +111,16 @@ func serviceAPI(req *Req, res *Res, p string) {
 			out[k] = v
 		}
 		jsonRes(res, 200, out)
+		return
+	}
+	// The caller is done with it: claude stops on the Mac and frees its memory (REQ-F-799, IF-253). Closing twice is fine.
+	if m := serviceCloseRe.FindStringSubmatch(p); m != nil && req.Method == "POST" {
+		c := own(m[1])
+		if !truthy(c.get("closed")) {
+			closeSession(c, "종료(서비스 API)")
+			broadcastState(uid)
+		}
+		jsonRes(res, 200, M{"ok": true, "id": c.id(), "state": "closed"})
 		return
 	}
 	refuse(404, "없는 경로예요")
