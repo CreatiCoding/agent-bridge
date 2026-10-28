@@ -67,3 +67,14 @@ test('전부 허용이어도 묻는 것: 폴더 밖 삭제, git 강제 push·res
   assert.equal(riskyCall({ name: 'Read', input: { file_path: '/Users/u/.claude/settings.json' } }, at), null)
   assert.equal(riskyCall({ name: 'Read', input: { file_path: '/Users/u/p/src/a.ts' } }, at), null)
 })
+
+test('안전한 전부 허용이 놓치던 sudo·강제 push 쓰는 법도 묻는다 (1.338)', async () => {
+  const { riskyCall } = await import('../../agent/guard.mjs')
+  const bash = (command) => riskyCall({ name: 'Bash', input: { command } }, { cwd: '/Users/u/p', home: '/Users/u' })
+  for (const c of ["bash -c 'sudo id'", 'sh -c "sudo id"', '`sudo id`', '/usr/bin/sudo id', '\\sudo id', 'echo x;sudo'])
+    assert.equal(bash(c), '관리자 권한(sudo)', c)
+  for (const c of ['git push -fu origin main', 'git push -uf origin main', 'git push --mirror', 'git push origin :main', 'git push --delete origin main', 'git push -d origin x', 'git push --prune origin', 'git push --force-if-includes'])
+    assert.equal(bash(c), 'git 강제 push', c)
+  for (const c of ['cat /etc/sudoers', 'echo pseudo', 'git push -u origin feat', 'git push origin feat:main', 'git push --tags', 'git push origin main --dry-run', 'git push --no-verify'])
+    assert.equal(bash(c), null, c)
+})

@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.338',
+    date: '2026-10-28',
+    changes: [
+      { kind: 'security', scope: ['agent'], text: "안전한 전부 허용은 따옴표 안(bash -c 'sudo …')·백틱·경로(/usr/bin/sudo)·\\sudo 로 쓴 sudo 도 물음. 관리자 비밀번호가 열린 동안 묻지 않고 root 로 돌 수 있었음", refs: ['REQ-F-759', 'REQ-F-764'] },
+      { kind: 'security', scope: ['agent'], text: 'git push 의 붙여 쓴 옵션(-fu), --mirror, 원격 브랜치 지우기(--delete·-d·:ref·--prune), --force-if-includes 도 강제 push 로 물음', refs: ['REQ-F-759'] },
+    ],
+  },
+  {
     version: '1.337',
+    commit: '6577f9a',
     date: '2026-10-27',
     changes: [
       { kind: 'security', scope: ['server'], text: '미리보기 웹소켓은 조각(continuation)을 합친 메시지가 16 MB 를 넘으면 1009 로 닫음. 프레임 하나만 막고 합친 크기는 보지 않았음', refs: ['REQ-S-086', 'IF-201'] },

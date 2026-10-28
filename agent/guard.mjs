@@ -140,8 +140,12 @@ export function riskyCall(tool, { cwd = '', home = '' } = {}) {
   const settings = /\.claude\/(settings(\.local)?\.json|hooks\b)|Library\/LaunchAgents|Library\/LaunchDaemons|\blaunchctl\s+(load|bootstrap|enable|submit)\b/
   if (name === 'Bash') {
     const c = String(input.command ?? '')
-    if (/(^|[\s;&|(])sudo\s/.test(c)) return '관리자 권한(sudo)'
-    if (/\bgit\b[^;&|\n]*\spush\b[^;&|\n]*(\s(--force|-f|--force-with-lease)\b|\s\+[\w./-]+)/.test(c)) return 'git 강제 push'
+    // sudo as a word of its own, also inside quotes (`bash -c 'sudo …'`), backticks, by path (`/usr/bin/sudo`) or
+    // escaped (`\sudo`): with the admin password open (REQ-F-764) each of these runs as root without asking (1.338).
+    if (/(^|[\s;&|(`'"/\\])sudo($|[\s'"`;&|)])/.test(c)) return '관리자 권한(sudo)'
+    // Short flags run together (`-fu`), a mirror push, and a push that deletes a remote branch (`--delete`, `-d`,
+    // `:<ref>`, `--prune`) rewrite the remote as much as `-f` does (1.338).
+    if (/\bgit\b[^;&|\n]*\spush\b[^;&|\n]*(\s(--force(-with-lease|-if-includes)?|--mirror|--delete|--prune|-[a-zA-Z]*[fd][a-zA-Z]*)\b|\s\+[\w./-]+|\s:[\w./-]+)/.test(c)) return 'git 강제 push'
     if (/\bgit\b[^;&|\n]*\sreset\b[^;&|\n]*\s--hard\b/.test(c)) return 'git reset --hard'
     if (secret.test(c)) return '비밀 파일'
     if (settings.test(c)) return 'Claude 설정·로그인 항목 바꾸기'
