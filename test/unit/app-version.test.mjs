@@ -18,3 +18,9 @@ test('iOS 앱이 User-Agent 에 AgentBridge/<버전> (<빌드>) 를 붙이고, �
   assert.equal('Mozilla/5.0 (iPhone; CPU iPhone OS 26_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'.match(re), null)
   assert.match(read('ui/src/pages/settings.tsx'), /appVersion\(\)/)
 })
+
+// 1.343: in the app, a long press on a session row showed WebKit's blank link preview instead of the page's menu.
+test('iOS 앱 웹뷰는 링크 미리보기를 끄고, 길게 누르기는 페이지 메뉴가 받는다 (1.343)', () => {
+  assert.match(read('ios/Bridge/BridgeApp.swift'), /v\.allowsLinkPreview = false/)
+  assert.match(read('ui/src/components/session-list.tsx'), /longPressed\.current = true/)
+})

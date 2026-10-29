@@ -48,6 +48,9 @@ struct Web: UIViewRepresentable {
     v.uiDelegate = context.coordinator
     v.navigationDelegate = context.coordinator
     v.allowsBackForwardNavigationGestures = true
+    // A long press opens the page's own menu (a session row's, for one). WebKit's link preview took it over,
+    // showing a blank bridge.creco.dev card with 링크 열기·복사·공유; -webkit-touch-callout: none does not stop that.
+    v.allowsLinkPreview = false
     v.scrollView.contentInsetAdjustmentBehavior = .never
     // Safari's web inspector only for a debug build from Xcode, not for TestFlight and App Store builds.
     #if DEBUG

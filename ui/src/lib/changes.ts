@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.343',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: 'iOS 앱에서 세션 줄을 길게 누르면 빈 링크 미리보기(링크 열기·복사·공유)가 뜨던 것을 고쳐, 원래 세션 메뉴가 뜸', refs: ['REQ-F-756'] },
+    ],
+  },
+  {
     version: '1.342',
+    commit: '75fbc2a',
     date: '2026-10-29',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: 'iOS 앱 TestFlight 자동 올리기가 Xcode 로그인 없이 App Store Connect API 키와 배포 프로필로 서명함. Xcode 계정이 풀려 1.341 이 올라가지 못했음', refs: ['REQ-F-762'] },
