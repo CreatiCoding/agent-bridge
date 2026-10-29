@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.342',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: 'iOS 앱 TestFlight 자동 올리기가 Xcode 로그인 없이 App Store Connect API 키와 배포 프로필로 서명함. Xcode 계정이 풀려 1.341 이 올라가지 못했음', refs: ['REQ-F-762'] },
+    ],
+  },
+  {
     version: '1.341',
+    commit: '6c86736',
     date: '2026-10-29',
     changes: [
       { kind: 'added', scope: ['ui'], text: 'iOS 앱 카메라 번역(시험): 앱 아이콘을 길게 눌러 "카메라 번역 (시험)" 을 고르면 카메라에 비친 일본어를 바로 한국어로 얹어 보임. 읽기·번역 모두 기기 안에서 해서, 처음 한 번 언어를 받으면 인터넷 없이 됨(iOS 18 이상)', refs: ['REQ-F-808'] },

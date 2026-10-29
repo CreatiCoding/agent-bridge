@@ -65,3 +65,23 @@ test('scripts/testflight.sh: 빌드 번호는 커밋 수가 아니라 2026 년�
   assert.equal(run(ahead), 9000001, 'build 파일이 있으면 그것을 본다')
   assert.ok(run(empty) < 1e7, '서버의 앱 빌드 한도(REQ-F-781) 아래')
 })
+
+// 1.342: an App Manager API key cannot use cloud signing, so api.env can name a profile to sign with.
+test('scripts/testflight.sh: api.env 의 ASC_PROFILE 이 있으면 그 프로필과 Apple Distribution 으로 직접 서명한다 (1.342)', () => {
+  const sh = readFileSync(new URL('scripts/testflight.sh', root), 'utf8')
+  const block = sh.slice(sh.indexOf("  local signing="), sh.indexOf('\nPLIST\n', sh.indexOf('cat > "$out/export.plist"')) + 7)
+  const out = mkdtempSync(path.join(tmpdir(), 'cb-tf-'))
+  const plist = (profile) => {
+    execFileSync('bash', ['-c', `out='${out}'\n${block.replace(/^  local /m, '  ')}`], { env: { ...process.env, ASC_PROFILE: profile } })
+    return readFileSync(path.join(out, 'export.plist'), 'utf8')
+  }
+  const manual = plist('Agent Bridge TestFlight')
+  assert.match(manual, /<key>signingStyle<\/key><string>manual<\/string>/)
+  assert.match(manual, /<key>signingCertificate<\/key><string>Apple Distribution<\/string>/)
+  assert.match(manual, /<key>provisioningProfiles<\/key><dict><key>dev\.creco\.bridge<\/key><string>Agent Bridge TestFlight<\/string><\/dict>/)
+  assert.match(manual, /<key>method<\/key><string>app-store-connect<\/string>/)
+  const auto = plist('')
+  assert.match(auto, /<key>signingStyle<\/key><string>automatic<\/string>/)
+  assert.doesNotMatch(auto, /provisioningProfiles/)
+  if (process.platform === 'darwin') execFileSync('plutil', ['-lint', path.join(out, 'export.plist')])
+})

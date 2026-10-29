@@ -65,7 +65,15 @@ main() {
     source "$dir/api.env"
     auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
   fi
-  cat > "$out/export.plist" <<'PLIST'
+  # An API key without the Admin role cannot use Xcode's cloud signing, so api.env may name an App Store profile
+  # (ASC_PROFILE) made for a distribution certificate in this Mac's keychain, and the export signs with those.
+  local signing='<key>signingStyle</key><string>automatic</string>'
+  if [ -n "${ASC_PROFILE:-}" ]; then
+    signing="<key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution</string>
+  <key>provisioningProfiles</key><dict><key>dev.creco.bridge</key><string>$ASC_PROFILE</string></dict>"
+  fi
+  cat > "$out/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -73,7 +81,7 @@ main() {
   <key>method</key><string>app-store-connect</string>
   <key>destination</key><string>upload</string>
   <key>teamID</key><string>26THSK9ZBX</string>
-  <key>signingStyle</key><string>automatic</string>
+  $signing
 </dict>
 </plist>
 PLIST
