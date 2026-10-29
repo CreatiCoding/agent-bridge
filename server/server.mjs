@@ -1559,7 +1559,17 @@ const pending = new Map()
 const online = (hostId) => bridges.has(hostId)
 /** The connected Macs that are real: the demo Mac (REQ-F-766) is never asked anything for the whole server. */
 const realBridges = () => [...bridges.keys()].filter((h) => !isDemoHost(h))
-const sse = (res, obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`)
+// What may wait for a client that stopped reading (REQ-S-087): past it the stream is cut and the page opens a fresh one.
+const STREAM_BACKLOG_MAX = 64 * 1024 * 1024
+const CONTROLS_MAX = 32
+function sse(res, obj) {
+  const chunk = `data: ${JSON.stringify(obj)}\n\n`
+  if (res.writableLength > 0 && res.writableLength + chunk.length > STREAM_BACKLOG_MAX) {
+    res.destroy()
+    return false
+  }
+  return res.write(chunk)
+}
 
 function toHost(hostId, cmd) {
   const res = bridges.get(hostId)
@@ -4104,6 +4114,12 @@ async function api(req, res, url, uid) {
   if (get && p === '/api/classic/stream') {
     if (!controls.has(uid)) controls.set(uid, new Set())
     openStream(req, res, () => controls.get(uid)?.delete(res))
+    // One person's open pages are capped: one more closes the oldest (REQ-S-087).
+    for (const old of controls.get(uid)) {
+      if (controls.get(uid).size < CONTROLS_MAX) break
+      controls.get(uid).delete(old)
+      old.end()
+    }
     controls.get(uid).add(res)
     // Only a page that says it can merge them gets deltas; any other stream is sent the whole state each time.
     res.wantsDelta = url.searchParams.get('delta') === '1'

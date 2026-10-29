@@ -410,7 +410,12 @@ type Stream struct {
 	lastState  *stateSnap
 	wantsDelta bool
 	pingEvery  time.Duration
+	cut        func() // makes a write that is stuck on a client that stopped reading give up
 }
+
+// STREAM_BACKLOG_MAX: what may wait for a client that stopped reading (REQ-S-087). Past it the stream is closed and
+// the page's EventSource opens a fresh one, which starts from the whole state again.
+const STREAM_BACKLOG_MAX = 64 << 20
 
 func newStream(onClose func()) *Stream {
 	s := &Stream{onClose: onClose, pingEvery: 20 * time.Second}
@@ -422,6 +427,16 @@ func (s *Stream) Write(chunk string) bool {
 	s.smu.Lock()
 	defer s.smu.Unlock()
 	if s.ended || s.gone {
+		return false
+	}
+	if s.queued > 0 && s.queued+len(chunk) > STREAM_BACKLOG_MAX {
+		s.queue = nil
+		s.queued = 0
+		s.gone = true
+		if s.cut != nil {
+			s.cut()
+		}
+		s.cond.Signal()
 		return false
 	}
 	s.queue = append(s.queue, chunk)
@@ -454,6 +469,9 @@ func (s *Stream) End(chunk string) {
 // 'close' event did.
 func (s *Stream) run(w http.ResponseWriter, hr *http.Request, status int) {
 	rc := http.NewResponseController(w)
+	s.smu.Lock()
+	s.cut = func() { _ = rc.SetWriteDeadline(time.Now()) }
+	s.smu.Unlock()
 	w.WriteHeader(status)
 	_ = rc.Flush()
 	done := make(chan struct{})

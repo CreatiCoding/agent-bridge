@@ -331,6 +331,25 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 	return false
 }
 
+// CONTROLS_MAX: one person's open pages (REQ-S-087). One more closes the oldest, whose page opens it again if it is
+// still there.
+const CONTROLS_MAX = 32
+
+func addControl(uid, key string, s *Stream) {
+	if controls[uid] == nil {
+		controls[uid] = newOMap[*Stream]()
+	}
+	c := controls[uid]
+	for c.Len() >= CONTROLS_MAX {
+		old := c.Keys()[0]
+		if o, ok := c.Get(old); ok {
+			o.End("")
+		}
+		c.Delete(old)
+	}
+	c.Set(key, s)
+}
+
 func headerOrNil(req *Req, k string) any {
 	if !req.Has(k) {
 		return nil
@@ -354,16 +373,13 @@ func apiControl(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if get && p == "/api/classic/stream" {
-		if controls[uid] == nil {
-			controls[uid] = newOMap[*Stream]()
-		}
 		key := randHex(8)
 		s := openStream(req, res, func() {
 			if c := controls[uid]; c != nil {
 				c.Delete(key)
 			}
 		})
-		controls[uid].Set(key, s)
+		addControl(uid, key, s)
 		// Only a page that says it can merge them gets deltas.
 		s.wantsDelta = qstr(u, "delta") == "1"
 		sendState(s, stateOf(uid))

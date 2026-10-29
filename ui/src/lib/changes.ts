@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.340',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'security', scope: ['server'], text: '조작 페이지·연동 탭의 이벤트 스트림은 받는 쪽이 읽지 않아 보내지 못한 것이 64 MiB 를 넘게 되면 끊음. 지금까지는 서버 메모리에 끝없이 쌓였음. 페이지는 다시 연결해 전체 상태를 받음', refs: ['REQ-S-087', 'IF-015', 'IF-075'] },
+      { kind: 'security', scope: ['server'], text: '한 사람이 여는 조작 페이지 스트림은 32 개까지, 하나 더 열면 가장 오래된 것을 닫음', refs: ['REQ-S-087', 'IF-015'] },
+    ],
+  },
+  {
     version: '1.339',
+    commit: '58c432b',
     date: '2026-10-28',
     changes: [
       { kind: 'added', scope: ['server'], text: '서비스 API 로 연 세션을 닫는 POST /api/service/sessions/<sid>/close. 자동 수정 서버가 끝난 세션을 닫아 맥의 CPU·메모리를 돌려받음. 이미 닫혔으면 그대로 200, 사람이 연 세션·남의 세션은 404', refs: ['REQ-F-799', 'IF-253'] },
