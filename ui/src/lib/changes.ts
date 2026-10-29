@@ -26,7 +26,18 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.349',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['agent'], text: 'node agent.mjs start: 에이전트가 없을 때만 백그라운드로 띄우고 종료 0(이미 있으면 아무것도 안 함). cron·Raycast 같은 바깥 주기 실행에서 부르면 됨. 로그는 ~/.claude-bridge/detached.log', refs: ['REQ-F-813'] },
+      { kind: 'added', scope: ['agent'], text: 'start 로 띄운 에이전트는 사이트에서 다시 시작할 수 있고, 업데이트·다시 시작 뒤 스스로 이어 뜸. 포트가 쓰이는 중이면 옆 포트로 옮기지 않고 끝남', refs: ['REQ-F-813'] },
+      { kind: 'added', scope: ['agent'], text: 'start 로 띄웠는데 tmux·claude 를 못 찾으면 점검이 "start 의 PATH" 경고와 함께 터미널에서 한 번 실행해 PATH 를 저장하라고 안내', refs: ['REQ-F-813'] },
+      { kind: 'added', scope: ['agent'], text: 'agent.json supervisor: none(--supervisor none): 서비스가 설치돼 있으면 점검이 경고하고 service uninstall 을 권함', refs: ['REQ-F-813'] },
+    ],
+  },
+  {
     version: '1.348',
+    commit: '72068f0',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['ui', 'server'], text: 'bridge.yaml 의 features 로 다른 맥으로 옮기기·위임, 웹 알림, 음성, 서버 미리보기, 스킬, Slack, 키 입력을 끌 수 있음. 꺼진 기능의 API 는 403 "이 서버에서 꺼진 기능이에요", 화면은 그 입구를 숨김', refs: ['REQ-F-812'] },
