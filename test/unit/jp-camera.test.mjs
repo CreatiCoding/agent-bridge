@@ -23,6 +23,9 @@ test('아이콘 길게 누르기 메뉴의 카메라 번역이 화면을 열고,
   assert.match(swift, /prepareTranslation\(\)/)
   // 1.344: prepareTranslation returns before the pack is downloaded; translating then waited on the system sheet.
   assert.match(swift, /prepareTranslation\(\)[\s\S]*while await LanguageAvailability\(\)\.status\([^)]*\)[^{]*!= \.installed[\s\S]*언어 받는 중[\s\S]*for await lines in texts\.stream/)
+  // 1.345: a download that does not end gets a hint and 다시 받기 after 60 s.
+  assert.match(swift, /let late = waited >= 60/)
+  assert.match(swift, /Button\("다시 받기"\)[\s\S]*config\.invalidate\(\)/)
   // Nothing leaves the phone: no network calls in the screen.
   assert.doesNotMatch(swift, /URLSession|URLRequest|https:\/\//)
 })

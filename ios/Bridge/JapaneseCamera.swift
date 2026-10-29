@@ -126,6 +126,8 @@ struct JapaneseCamera: View {
   @State private var held = false
   @State private var status = "번역 준비 중…"
   @State private var failed = false
+  /// The language pack has been downloading for a minute: offer to ask again and say where else to get it.
+  @State private var slow = false
   @State private var config = TranslationSession.Configuration(source: Locale.Language(identifier: "ja"), target: Locale.Language(identifier: "ko"))
   // Only the newest lines wait: a frame read while the last one was being translated is already old.
   @State private var texts = AsyncStream.makeStream(of: [String].self, bufferingPolicy: .bufferingNewest(1))
@@ -166,12 +168,20 @@ struct JapaneseCamera: View {
       }
       // prepareTranslation returns once the download is agreed to, not when it is done. Translating before then
       // waits on the system's download sheet, and the screen looked stuck; so wait until the pack is on the phone.
+      // It keeps waiting after a minute too: a slow download still ends here, and 다시 받기 starts this task again.
+      var waited = 0
       while await LanguageAvailability().status(from: Locale.Language(identifier: "ja"), to: Locale.Language(identifier: "ko")) != .installed {
-        await MainActor.run { status = "언어 받는 중… 끝나면 바로 번역해요"; failed = false }
+        let late = waited >= 60
+        await MainActor.run {
+          status = late ? "언어 받기가 오래 걸려요" : "언어 받는 중… 끝나면 바로 번역해요"
+          failed = late
+          slow = late
+        }
         try? await Task.sleep(for: .seconds(2))
         if Task.isCancelled { return }
+        waited += 2
       }
-      await MainActor.run { status = "오프라인으로 번역해요 · 일본어 → 한국어"; failed = false }
+      await MainActor.run { status = "오프라인으로 번역해요 · 일본어 → 한국어"; failed = false; slow = false }
       for await lines in texts.stream {
         let known = await MainActor.run { korean }
         let todo = Array(Set(lines)).filter { known[$0] == nil }
@@ -193,6 +203,20 @@ struct JapaneseCamera: View {
 
   private var list: some View {
     VStack(spacing: 10) {
+      if slow {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("일본어·한국어 언어팩이 1분 넘게 받아지고 있어요. 인터넷 연결을 확인하고 다시 받거나, 설정 → 앱 → 번역 → 다운로드한 언어에서 일본어·한국어를 받아 주세요. 그동안 원문은 계속 보여요.")
+            .font(.footnote)
+          Button("다시 받기") {
+            slow = false
+            // Runs the translation task again from the start, so the system asks to download again.
+            config.invalidate()
+          }
+          .font(.subheadline.weight(.semibold))
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+      }
       if !reader.lines.isEmpty {
         ScrollView {
           VStack(alignment: .leading, spacing: 8) {

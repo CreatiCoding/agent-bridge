@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.345',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: 'iOS 카메라 번역: 언어 받기가 1분 넘게 안 끝나면 안내(인터넷 확인, 설정 → 앱 → 번역)와 "다시 받기" 단추를 보임', refs: ['REQ-F-808'] },
+    ],
+  },
+  {
     version: '1.344',
+    commit: '5ce6fec',
     date: '2026-10-29',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: 'iOS 카메라 번역: 처음 언어팩을 받는 동안 멈춘 것처럼 보이던 것을 고침. 받는 동안은 "언어 받는 중…" 을 보이고, 다 받으면 바로 번역함', refs: ['REQ-F-808'] },
