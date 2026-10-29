@@ -120,6 +120,9 @@ func loadStore() {
 			if noNameRe.MatchString(strOr(meta["preview"], "")) {
 				meta["preview"] = ""
 			}
+			if !cfgOn("retention.previews") { // turned off: the words kept before go too (REQ-F-812)
+				meta["preview"], meta["last"] = "", ""
+			}
 			// A remote address kept with a token in it loses the token at once (REQ-S-073); note contents an older
 			// server kept wait aside for the operator (REQ-S-075).
 			if f, ok := meta["folder"].(M); ok {
@@ -289,13 +292,58 @@ var LAUNCH_MODES = []string{"default", "acceptEdits", "plan", "auto", "autoAllow
 // startMode: the mode claude is started with, and whether 전부 허용 is turned on once it is up. autoAllow is
 // 안전한 전부 허용 (risky calls still asked, REQ-F-759); allowAll is 전부 허용 that asks nothing (REQ-F-796).
 func startMode(mode string) (string, bool) {
+	if !modeOk(mode) {
+		logLine("features.permissionModes 밖의 모드 " + mode + " 를 default 로 낮춤")
+		mode = "default"
+	}
 	if mode == "autoAllow" || mode == "allowAll" {
 		return "default", true
 	}
 	return mode, false
 }
 
+// modeOk: the mode is in features.permissionModes (REQ-F-812). "" is the Mac's own default, taken as default.
+func modeOk(mode string) bool {
+	return mode == "" || contains(cfgGet("features.permissionModes").([]string), mode)
+}
+
+// allowMode: the launch mode that 전부 허용 with or without asking stands for.
+func allowMode(all bool) string {
+	if all {
+		return "allowAll"
+	}
+	return "autoAllow"
+}
+
+// featuresOf: the feature flags as /api/me gives them (REQ-F-812). background is read-only here (step 3 turns it
+// off with auth.headerOnly); it is not a bridge.yaml key.
+func featuresOf() M {
+	out := M{"background": true}
+	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys"} {
+		out[f] = cfgOn("features." + f)
+	}
+	modes := []any{}
+	for _, m := range cfgGet("features.permissionModes").([]string) {
+		modes = append(modes, m)
+	}
+	out["permissionModes"] = modes
+	return out
+}
+
+// FEATURE_OFF: the refusal of an API whose feature bridge.yaml turned off (REQ-F-812).
+const FEATURE_OFF = "이 서버에서 꺼진 기능이에요"
+
+// needFeature refuses with 403 when features.<name> is off.
+func needFeature(name string) {
+	if !cfgOn("features." + name) {
+		refuse(403, FEATURE_OFF)
+	}
+}
+
 func turnOnAutoAllow(meta *Sess, all bool) {
+	if !modeOk(allowMode(all)) {
+		return // outside permissionModes: lowered to default, which asks (REQ-F-812)
+	}
 	meta.set("autoAllow", true)
 	meta.set("allowAll", all)
 	toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoAllow": true, "allowAll": all})
@@ -342,7 +390,7 @@ func cleanLaunch(v any) M {
 	if !contains(LAUNCH_EFFORTS, effort) {
 		effort = ""
 	}
-	if !contains(LAUNCH_MODES, mode) {
+	if !contains(LAUNCH_MODES, mode) || !modeOk(mode) {
 		mode = ""
 	}
 	fb := cleanFolderBase(mget(v, "folderBase"))

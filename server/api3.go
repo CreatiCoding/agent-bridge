@@ -94,6 +94,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if post && op == "voice" {
+		needFeature("voice")
 		b := body(req, 4*1024*1024)
 		prefs := cleanVoice(prefsOf(uid)["voice"])
 		if !truthy(prefs["on"]) {
@@ -123,6 +124,9 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		jsonRes(res, 200, orderedObj{{"ok", true}, {"raw", strField(r, "raw")}, {"text", strField(r, "text")}, {"sec", r["sec"]}, {"backend", r["backend"]}, {"model", r["model"]}, {"denoise", r["denoise"]}, {"ms", r["ms"]}}.dropNil())
 		return true
+	}
+	if post && op == "preview" {
+		needFeature("preview")
 	}
 	if post && (op == "preview" || op == "killserver") {
 		b := body(req, 4096)
@@ -565,6 +569,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if !containsAny([]any{"model", "effort", "mode"}, b["kind"]) {
 			refuse(400, "없는 설정입니다")
 		}
+		if b["kind"] == "mode" && !modeOk(strField(b, "value")) {
+			refuse(403, FEATURE_OFF)
+		}
 		toHost(liveHost(meta), M{"t": "setting", "sid": meta.id(), "kind": b["kind"], "value": jsSliceTo(strField(b, "value"), 60)})
 	case "refresh":
 		when := "now"
@@ -606,6 +613,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			target = s
 		}
 		ownHost(uid, target)
+		if target != meta.host() {
+			needFeature("sessionMove")
+		}
 		meta.set("closed", false)
 		meta.set("resting", false)
 		same := target == meta.host()
@@ -712,6 +722,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		forkOp(res, uid, meta)
 		return true
 	case "key":
+		needFeature("remoteKeys")
 		keys := []any{}
 		for _, k := range asArr(b["keys"]) {
 			if len(keys) < 20 {
@@ -740,6 +751,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if hostID == nil {
 			hostID = meta.host()
 		}
+		if hostID != meta.host() {
+			needFeature("sessionMove") // another account on the same Mac stays
+		}
 		ownHost(uid, hostID)
 		if v, has := b["account"]; has && !safeAccount(v) {
 			refuse(400, "계정 id 가 올바르지 않습니다")
@@ -751,6 +765,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		_, ap := b["autoPush"].(bool)
 		if !req.internal && (aa || ap) {
 			seatGuard(meta, "web")
+		}
+		if v, _ := b["autoAllow"].(bool); v && !modeOk(allowMode(b["allowAll"] == true)) {
+			refuse(403, FEATURE_OFF)
 		}
 		if v, ok := b["autoPush"].(bool); ok {
 			meta.set("autoPush", v)

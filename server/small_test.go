@@ -185,3 +185,18 @@ func TestTightenTree(t *testing.T) {
 	eq(t, after.Mode().Perm(), before.Mode().Perm(), "링크가 가리키는 파일은 그대로")
 	eq(t, tightenTree(d), 0)
 }
+
+// REQ-F-811: the last background.on stays on the host record, written when it changes or every BATTERY_KEEP_MS.
+func TestKeepBackground(t *testing.T) {
+	h := M{}
+	keepBackground(h, M{"cpu": 1.0}, 1000)
+	ok(t, h["lastBackground"] == nil, "보고가 없으면 쓰지 않음")
+	keepBackground(h, M{"background": M{"on": true, "running": true}}, 1000)
+	jeq(t, h["lastBackground"], `{"at":1000,"on":true}`)
+	keepBackground(h, M{"background": M{"on": true}}, 2000)
+	jeq(t, h["lastBackground"], `{"at":1000,"on":true}`, "같은 값은 다시 쓰지 않음")
+	keepBackground(h, M{"background": M{"on": false}}, 3000)
+	jeq(t, h["lastBackground"], `{"at":3000,"on":false}`, "바뀌면 바로")
+	keepBackground(h, M{"background": M{"on": false}}, 3000+BATTERY_KEEP_MS)
+	jeq(t, h["lastBackground"], `{"at":603000,"on":false}`, "같아도 주기마다")
+}

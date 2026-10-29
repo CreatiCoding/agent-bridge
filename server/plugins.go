@@ -92,6 +92,13 @@ type pluginDef struct {
 
 var ALL_PLUGINS []*pluginDef
 
+// needPlugin: a plugin whose feature flag is off answers 403 (only slack has one).
+func needPlugin(id string) {
+	if id == "slack" {
+		needFeature("slack")
+	}
+}
+
 func pluginByID(id string) *pluginDef {
 	for _, p := range ALL_PLUGINS {
 		if p.id == id {
@@ -136,6 +143,9 @@ func (p *Plugins) stopOne(uid, id string) {
 func (p *Plugins) startOne(uid, id string) {
 	p.stopOne(uid, id)
 	def := pluginByID(id)
+	if id == "slack" && !cfgOn("features.slack") {
+		return // off on this server: linked workspaces stay saved but do not connect (REQ-F-812)
+	}
 	all := p.io.load(uid)
 	mine, _ := all[id].(M)
 	if def == nil || mine == nil || !truthy(mine["enabled"]) {

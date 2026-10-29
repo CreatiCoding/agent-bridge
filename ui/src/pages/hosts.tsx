@@ -10,6 +10,7 @@ import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmen
 import { toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
+import { featureOn } from '../lib/features'
 
 export function Copy({ text }: { text: string }) {
   return (
@@ -565,7 +566,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                 <>
                   <BackgroundBox key={`bg-${h.id}`} hostId={h.id} state={detail.health?.background} online={h.online} />
                   {linux ? null : <AwakeBox key={`awake-${h.id}`} hostId={h.id} kind={h.kind} awake={detail.health?.awake} online={h.online} />}
-                  <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} />
+                  {featureOn('sessionMove') ? <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} /> : null}
                 </>
               ) : null}
               {h && !others ? <Row left={<Icon name="folder" />} title="디스크 관리" sub="캐시·머지된 worktree·큰 폴더 정리는 디스크 관리 메뉴에서 기기별로 한 번에 봐요" onClick={() => go({ name: 'disk' })} chevron /> : null}

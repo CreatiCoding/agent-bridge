@@ -7,6 +7,7 @@ import { fromHash, interceptLinks } from './lib/router'
 import { connect } from './lib/store'
 import type { Me } from './lib/types'
 import { startBackgroundRelay } from './components/relay-status'
+import { setFeatures } from './lib/features'
 import './styles.css'
 
 // The meta theme colour follows the page's own theme, so the phone's status bar matches it.
@@ -38,6 +39,7 @@ render(null)
 get<Me>('/api/me').then(
   (me) => {
     if (me.icons) applyIcons(me.icons)
+    setFeatures(me.features)
     if (!me.demo) startBackgroundRelay()
     render(me)
   },

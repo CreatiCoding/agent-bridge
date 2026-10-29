@@ -30,6 +30,7 @@ func pageApi(req *Req, res *Res, u *url.URL, uid string) bool {
 	}
 	// R1-M2: opening the link only asks; connecting is a form post from this page.
 	if (get || post) && p == "/api/plugins/slack/link" {
+		needFeature("slack")
 		html := func(note string) {
 			res.WriteHead(200, SECURITY, M{"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}).EndS(page("Slack 연결", note))
 		}
@@ -53,6 +54,7 @@ func pageApi(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if pc := pluginChoicesRe.FindStringSubmatch(p); post && pc != nil {
+		needPlugin(pc[1])
 		b := body(req, 16*1024)
 		var choices any
 		key := ""
@@ -67,6 +69,7 @@ func pageApi(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if pl := pluginRe.FindStringSubmatch(p); post && pl != nil {
+		needPlugin(pl[1])
 		b := body(req, 16*1024)
 		notes := []string{}
 		if err := try(func() {
@@ -91,6 +94,13 @@ func pageApi(req *Req, res *Res, u *url.URL, uid string) bool {
 	if get && p == "/api/options" {
 		out := shallow(CS_OPTIONS)
 		out["models"] = modelList()
+		modes := []any{}
+		for _, m := range asArr(CS_OPTIONS["modes"]) {
+			if modeOk(mstr(m, "value")) {
+				modes = append(modes, m)
+			}
+		}
+		out["modes"] = modes
 		jsonRes(res, 200, out)
 		return true
 	}
@@ -423,6 +433,22 @@ func keepBattery(h M, health M, now int64) {
 	kept := shallow(b)
 	kept["at"] = float64(now)
 	h["battery"] = kept
+	touchGlobals()
+}
+
+// keepBackground keeps the last background.on a host reported, and when, on its record (REQ-F-811). health lives
+// only in memory and is emptied when the host connects again, so a server that turns on auth.headerOnly still knows
+// which hosts had the headless link on. Written when it changes, else at most every BATTERY_KEEP_MS.
+func keepBackground(h M, health M, now int64) {
+	b, ok := health["background"].(M)
+	if !ok || h == nil {
+		return
+	}
+	on, _ := b["on"].(bool)
+	if prev, ok := h["lastBackground"].(M); ok && prev["on"] == on && float64(now)-numOr0(prev["at"]) < BATTERY_KEEP_MS {
+		return
+	}
+	h["lastBackground"] = M{"on": on, "at": float64(now)}
 	touchGlobals()
 }
 

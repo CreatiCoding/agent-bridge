@@ -165,8 +165,12 @@ func configure() bool {
 	DATA, _ = filepath.Abs(d)
 	// bridge.yaml (REQ-F-809): read here, before the handover, so a wrong file leaves the old instance working.
 	cfg, err := loadBridgeConfig(DATA, env)
-	if err == nil && cfg.path != "" {
-		err = prepareConfigFile(cfg.path, DATA, env, realProc)
+	if err == nil {
+		for _, f := range cfg.files() {
+			if err = prepareConfigFile(f, DATA, env, realProc); err != nil {
+				break
+			}
+		}
 	}
 	if err != nil {
 		configFailed(err)
@@ -174,8 +178,11 @@ func configure() bool {
 	}
 	CONFIG = cfg
 	CONFIG_DIFF = cfg.diffs(env)
-	if cfg.path != "" && inside(cfg.path, DATA) {
-		CHOWN_SKIP = []string{cfg.path}
+	CHOWN_SKIP = nil
+	for _, f := range cfg.files() {
+		if inside(f, DATA) {
+			CHOWN_SKIP = append(CHOWN_SKIP, f)
+		}
 	}
 	ORIGIN = cfg.effective(CFG_KEYS[0], env).(string)
 	GITHUB_CLIENT_ID = env("GITHUB_CLIENT_ID")

@@ -260,6 +260,7 @@ func init() {
 			st["healthAt"] = float64(nowMs())
 			if h, ok := hosts.Get(hostID); ok {
 				keepBattery(h, health, nowMs())
+				keepBackground(h, health, nowMs())
 			}
 			st["stale"] = false
 			broadcastState(uid)
@@ -639,6 +640,14 @@ func statusFromAgent(uid, hostID string, msg M) {
 		"context": str(msg["context"], 20), "autoAllow": truthy(msg["autoAllow"]), "allowAll": truthy(msg["autoAllow"]) && truthy(msg["allowAll"]), "refreshAfter": truthy(msg["refreshAfter"]),
 		"bridgeTools": bridgeTools, "size": orNull(msg["size"]), "quietSince": orNull(msg["quietSince"]), "usage": usage,
 		"handedOffTo": handed, "cache": cacheOf(msg["cache"]), "servers": servers,
+	}
+	// A session left with 전부 허용 that permissionModes no longer has (the file changed, the server restarted):
+	// turned off on the Mac and here (REQ-F-812).
+	if st["autoAllow"] == true && !modeOk(allowMode(st["allowAll"] == true)) {
+		st["autoAllow"], st["allowAll"] = false, false
+		meta.set("autoAllow", false)
+		meta.set("allowAll", false)
+		toHost(hostID, M{"t": "set", "sid": meta.id(), "autoAllow": false, "allowAll": false})
 	}
 	meta.set("state", st)
 	if truthy(mdFile) {

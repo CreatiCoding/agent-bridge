@@ -4,6 +4,7 @@ import { del, errorText, get, post } from '../lib/api'
 import { go } from '../lib/router'
 import { hostIcon, KINDS, titleOf } from '../lib/sessions'
 import { getStore } from '../lib/store'
+import { featureOn } from '../lib/features'
 import { bytes, tokens } from '../lib/format'
 import type { Session } from '../lib/types'
 import { chooseDialog, confirmDialog, type MenuEntry, promptDialog, toast } from '../kit/overlay'
@@ -81,13 +82,14 @@ function MoveRoute({ from, to, what, note }: { from: { icon: IconName; name: str
 /** The choice that means Slack, among the Macs (a host id is never this). */
 const SLACK = ':slack'
 /** Slack can take the session: the plugin is on and the session is not locked. */
-export const canSlack = (s: Session) => (getStore().state?.places ?? []).includes('slack') && !s.locked
+export const canSlack = (s: Session) => featureOn('slack') && (getStore().state?.places ?? []).includes('slack') && !s.locked
 
 /** Where to move the session: another Mac, or Slack (its channel's thread), in one list. */
 export async function moveTo(s: Session) {
   const all = getStore().state?.hosts ?? []
   const here = all.find((h) => h.id === s.hostId)
-  const hosts = all.filter((h) => h.id !== s.hostId)
+  // features.sessionMove off (REQ-F-812): another Mac is not offered, Slack still is.
+  const hosts = featureOn('sessionMove') ? all.filter((h) => h.id !== s.hostId) : []
   const slack = canSlack(s)
   if (!hosts.length && !slack) return toast('옮길 다른 맥이 없어요. 다른 맥에서 이 사이트를 열어 연결해 주세요')
   const to = await chooseDialog(
@@ -254,13 +256,13 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
   const alive = live && s.state.alive && !away
   const others = (getStore().state?.hosts ?? []).filter((h) => h.id !== s.hostId)
   const slackOn = (getStore().state?.places ?? []).includes('slack')
-  const seat: MenuEntry = away
+  const seat: MenuEntry | null = !away && !featureOn('slack') ? null : away
     ? { label: '브릿지로 가져오기', icon: 'move', hint: 'Slack 대신 여기서', onSelect: () => toBridge(s) }
     : { label: 'Slack 으로 옮기기', icon: 'move', hint: !slackOn ? 'Slack 플러그인을 켜야 해요' : s.locked ? '잠긴 세션은 못 옮겨요' : '전용 채널에서 이어서', disabled: !canSlack(s), onSelect: () => toSlack(s) }
   if (s.closed)
     return [
       away ? { label: '이어서 열기 (브릿지로 가져온 뒤)', icon: 'play', disabled: true } : { label: '이어서 열기', icon: 'play', onSelect: () => resume(s) },
-      ...(away ? [seat] : []),
+      ...(away && seat ? [seat] : []),
       { label: '이름 바꾸기', icon: 'edit', onSelect: () => rename(s) },
       'sep',
       {
@@ -328,11 +330,11 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       disabled: !alive || s.state.phase !== 'idle',
       onSelect: () => void trimLog(s),
     },
-    { label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move', disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) },
+    ...(featureOn('sessionMove') ? [{ label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move' as const, disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) }] : []),
     // Shown where the Mac has more than one Claude account (설정 → Claude 계정).
     ...((host?.accounts?.length ?? 0) > 1 ? [{ label: '다른 계정으로 옮기기', icon: 'user' as const, hint: `지금: ${accountOf(s)?.name ?? '기본 계정'}`, disabled: !alive || s.state.phase === 'busy', onSelect: () => moveAccount(s) }] : []),
     { label: '작업 폴더 바꾸기', icon: 'folder', hint: '같은 맥의 다른 폴더에서 이어서', disabled: !live || away || s.state.phase === 'busy', onSelect: () => openCwd(s) },
-    seat,
+    ...(seat ? [seat] : []),
     'sep',
     away
       ? { label: '잠그기', icon: 'key' as const, hint: 'Slack 에서 작업 중', disabled: true }
@@ -396,7 +398,7 @@ export async function refresh(s: Session) {
 }
 
 export async function resume(s: Session) {
-  const hosts = (getStore().state?.hosts ?? []).filter((h) => h.online)
+  const hosts = (getStore().state?.hosts ?? []).filter((h) => h.online && (featureOn('sessionMove') || h.id === s.hostId))
   if (!hosts.length) return toast('연결된 맥이 없어요')
   // The conversation is on its own Mac only (REQ-S-069): another Mac can open it only while that one is connected.
   if (!hosts.some((h) => h.id === s.hostId)) return toast('이 세션의 맥이 연결돼 있어야 다시 열 수 있어요')

@@ -9,6 +9,7 @@ import { back, go, navigate } from '../lib/router'
 import { loadOlder, retryLog, useSessionLog } from '../lib/session-log'
 import { groupTree, look, modelName, titleOf } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
+import { featureOn } from '../lib/features'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { Button, Chip, Empty, Icon, IconButton, LoadError, Spinner, useTick, useWide, wideNow } from '../kit'
@@ -766,7 +767,7 @@ export function SessionPage({ id }: { id: string }) {
         {wide ? <IconButton icon="list" label="할 일" className="todo-toggle" active={todoShown} aria-pressed={todoShown} onClick={() => showTodos(!todoShown)} /> : null}
         {wide ? <IconButton icon="refresh" label="새로고침" title="대화 그대로 다시 열기" onClick={() => void refresh(s)} disabled={!!disabled || !s.state.alive} /> : null}
         <div className="glass-group">
-          <ServerButton s={s} onPreview={setServer} />
+          {featureOn('preview') ? <ServerButton s={s} onPreview={setServer} /> : null}
           <IconButton icon="more" label="세션 메뉴" onClick={(e) => openMenu([...splitMenu(), ...phoneMenu, screenItem, { label: '할 일 정리', icon: 'list', hint: '지금까지 한 일·남은 일', disabled: !!disabled, onSelect: () => void askTodos() }, ...wideMenu, 'sep', ...sessionMenu(s, { groups: groupTree(groups).map((t) => ({ id: t.group.id, name: t.path })), noRefresh: wide, noTodos: true })], e.currentTarget, titleOf(s))} />
         </div>
       </div>
@@ -902,7 +903,7 @@ export function SessionPage({ id }: { id: string }) {
                         AGENTS.md
                       </Chip>
                       {/* Another Mac or Slack: one chip, one list (moveTo). */}
-                      {(hostCount > 1 || canSlack(s)) && s.state.alive && !away ? (
+                      {((featureOn('sessionMove') && hostCount > 1) || canSlack(s)) && s.state.alive && !away ? (
                         <Chip icon="move" onClick={() => moveTo(s)}>
                           옮기기
                         </Chip>

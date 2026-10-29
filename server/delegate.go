@@ -157,6 +157,9 @@ func followDelegate(c *Sess) {
 
 // runDelegate: one request of a session's bridge MCP server, through its Mac's agent (agent/mcp.mjs).
 func runDelegate(uid, hostID string, msg M) any {
+	if !cfgOn("features.sessionMove") {
+		throw(FEATURE_OFF)
+	}
 	parent, ok := sessions.Get(strOr(msg["sid"], ""))
 	if !ok || parent.uid() != uid || parent.host() != hostID || truthy(parent.get("closed")) {
 		throw("이 세션을 서버가 모릅니다")

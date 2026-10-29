@@ -19,11 +19,20 @@ var MIME = map[string]string{".html": "text/html; charset=utf-8", ".js": "text/j
 
 var SECURITY M
 
+func cspMore(key string) string {
+	out := ""
+	for _, x := range cfgGet(key).([]string) {
+		out += " " + x
+	}
+	return out
+}
+
 func initSecurity() {
 	SECURITY = M{
 		// Inline styles are allowed for the HTML previews (a sandboxed frame that inherits this policy).
 		// base-uri and object-src are not covered by default-src: a <base> or a plugin object stays off (REQ-S-011).
-		"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https://avatars.githubusercontent.com; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*; frame-src 'self' " + strings.Join(preview.ORIGINS, " ") + "; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
+		// csp.imgSrc and csp.frameSrc (REQ-F-812) only add https sources; script-src and connect-src never widen.
+		"Content-Security-Policy": "default-src 'self'; img-src 'self' data: blob: https://avatars.githubusercontent.com" + cspMore("csp.imgSrc") + "; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:*; frame-src 'self' " + strings.Join(preview.ORIGINS, " ") + cspMore("csp.frameSrc") + "; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "no-referrer",
 	}

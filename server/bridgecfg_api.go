@@ -26,7 +26,7 @@ func exportText(getenv func(string) string, now time.Time) string {
 	last, unset := "", []string{}
 	for _, k := range CFG_KEYS {
 		sec, name, _ := strings.Cut(k.key, ".")
-		if getenv(k.env) == "" {
+		if k.env == "" || getenv(k.env) == "" {
 			unset = append(unset, k.key)
 			continue
 		}
@@ -43,7 +43,7 @@ func exportText(getenv func(string) string, now time.Time) string {
 }
 
 var maskURLRe = regexp.MustCompile(`(https?://[^/\s"'?#]+)[^\s"']+`)
-var maskKeyRe = regexp.MustCompile(`(?i)^(\s*-?\s*"?[a-z0-9_.-]*(secret|password|passwd|token|key|credential)[a-z0-9_.-]*"?\s*:\s*).+$`)
+var maskKeyRe = regexp.MustCompile(`(?i)^(\s*-?\s*"?[a-z0-9_.-]*(secret|password|passwd|token|apikey|api_key|privatekey|private_key|credential)[a-z0-9_.-]*"?\s*:\s*).+$`)
 
 // maskConfigText: a file's text for a screen: secret-looking values and every URL's path and query hidden.
 func maskConfigText(s string) string {
@@ -125,7 +125,9 @@ func anyHas(list []any, s string) bool {
 func configLimit(disk []byte) []string {
 	out := []string{}
 	for _, k := range CFG_KEYS {
-		out = append(out, k.env)
+		if k.env != "" {
+			out = append(out, k.env)
+		}
 	}
 	for _, m := range refNameRe.FindAllStringSubmatch(string(disk), -1) {
 		if !contains(out, m[1]) {

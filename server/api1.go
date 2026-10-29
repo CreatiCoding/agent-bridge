@@ -119,7 +119,7 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if get && p == "/api/me" {
-		out := M{"user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"])}
+		out := M{"user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf()}
 		if u0, ok := users.Get(uid); !ok || u0 == nil {
 			out["user"] = nil
 		}
@@ -133,6 +133,7 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 	}
 	// ----- skills -----
 	if sk := apiSkillsRe.FindStringSubmatch(p); get && sk != nil {
+		needFeature("skills")
 		if !(SKILLS_APP != nil || SKILLS_TOKEN != "") {
 			refuse(503, "스킬 저장소가 설정되지 않았습니다 (SKILLS_GITHUB_APP_ID·SKILLS_GITHUB_APP_KEY 또는 SKILLS_GITHUB_TOKEN)")
 		}
@@ -421,10 +422,12 @@ func apiControl(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if get && p == "/api/push/key" {
+		needFeature("webpush")
 		jsonRes(res, 200, M{"key": vapid["publicKey"], "apns": apns != nil})
 		return true
 	}
 	if post && p == "/api/push/subscribe" {
+		needFeature("webpush")
 		b := body(req, 8192)
 		if !pushEndpointRe.MatchString(strOr(b["endpoint"], "")) || !pushService(b["endpoint"]) {
 			refuse(400, "구독 정보가 올바르지 않습니다")
@@ -640,6 +643,7 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		jsonRes(res, 200, out)
 		return true
 	case "/api/prefs/skills":
+		needFeature("skills")
 		// 스킬 저장소 (REQ-F-792): only a repo the person owns on GitHub.
 		if post {
 			b := body(req, 4096)
@@ -671,6 +675,9 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		jsonRes(res, 200, skillsView(uid))
 		return true
 	case "/api/prefs/voice":
+		if post {
+			needFeature("voice")
+		}
 		if get {
 			jsonRes(res, 200, cleanVoice(prefsOf(uid)["voice"]))
 			return true
@@ -695,6 +702,9 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		jsonRes(res, 200, out)
 		return true
 	case "/api/prefs/voice/hosts":
+		if post {
+			needFeature("voice")
+		}
 		own := func(id string) bool { return mstr(hosts.Val(id), "uid") == uid && hosts.Has(id) }
 		list := func() M {
 			out := M{}

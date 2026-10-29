@@ -13,6 +13,7 @@ import { StateWait, useStateLoaded } from '../components/state-wait'
 import { toast } from '../kit/overlay'
 import { Copy } from './hosts'
 import { PluginSheet, promptText, type Plugin } from './settings'
+import { featureOn } from '../lib/features'
 
 type Path = GuidePath
 
@@ -341,7 +342,7 @@ export function GuidePage({ me, path }: { me: Me | null; path: Path }) {
               </>
             ),
           },
-          slackStep,
+          ...(featureOn('slack') ? [slackStep] : []),
         ]
 
   const firstOpen = steps.find((s) => !s.done && !s.optional)?.key ?? steps.find((s) => !s.done)?.key

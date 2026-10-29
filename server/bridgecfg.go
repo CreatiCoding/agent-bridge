@@ -10,23 +10,60 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 )
 
-// cfgKey: a key that has an environment variable of the same meaning (the table in SPEC §5.1 of the design).
+// cfgKey: a key the file takes. The first four have an environment variable of the same meaning (the table in
+// SPEC REQ-F-809); the rest have none and fall back to def, which is today's behaviour (REQ-F-812).
 type cfgKey struct {
 	key  string // dotted, as in the file
-	env  string
-	kind string // origin | list | purge
+	env  string // "" when no environment variable means the same
+	kind string // origin | list | purge | bool | hours | path | modes | src
+	def  any    // the value when neither the file nor an environment variable gives one (env keys: unused)
 }
 
 var CFG_KEYS = []cfgKey{
-	{"origins.primary", "BRIDGE_ORIGIN", "origin"},
-	{"auth.allow", "GITHUB_ALLOWED_LOGINS", "list"},
-	{"auth.admins", "BRIDGE_ADMIN_LOGINS", "list"},
-	{"retention.allowPurge", "BRIDGE_PURGE", "purge"},
+	{"origins.primary", "BRIDGE_ORIGIN", "origin", nil},
+	{"auth.allow", "GITHUB_ALLOWED_LOGINS", "list", nil},
+	{"auth.admins", "BRIDGE_ADMIN_LOGINS", "list", nil},
+	{"retention.allowPurge", "BRIDGE_PURGE", "purge", nil},
+	{"retention.uploadsHours", "", "hours", 24},
+	{"retention.previews", "", "bool", true},
+	{"features.sessionMove", "", "bool", true},
+	{"features.webpush", "", "bool", true},
+	{"features.voice", "", "bool", true},
+	{"features.preview", "", "bool", true},
+	{"features.skills", "", "bool", true},
+	{"features.slack", "", "bool", true},
+	{"features.remoteKeys", "", "bool", true},
+	{"features.permissionModes", "", "modes", LAUNCH_MODES},
+	{"csp.frameSrc", "", "src", []string{}},
+	{"csp.imgSrc", "", "src", []string{}},
+	{"privacy.file", "", "path", ""},
 }
+
+// cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
+func cfgKeyOf(name string) cfgKey {
+	for _, k := range CFG_KEYS {
+		if k.key == name {
+			return k
+		}
+	}
+	panic("bridge.yaml 키가 아님: " + name)
+}
+
+// cfgGet: a key's value on this server (file over environment over the default). Before configure() ran, the default.
+func cfgGet(name string) any {
+	k := cfgKeyOf(name)
+	if CONFIG == nil {
+		return envOnly(k, func(string) string { return "" })
+	}
+	return CONFIG.effective(k, env)
+}
+
+func cfgOn(name string) bool { return cfgGet(name).(bool) }
 
 // cfgVal: one key's value after reading (string, []string or bool) and whether the file wrote it as a
 // reference to its own environment variable somewhere (then edits of that variable still reach it).
@@ -171,6 +208,9 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 			return nil, err
 		}
 		if ok {
+			if k.kind == "path" && !filepath.IsAbs(v.v.(string)) {
+				v.v = filepath.Join(filepath.Dir(p), v.v.(string)) // relative to the settings file's folder
+			}
 			c.set[k.key] = v
 		}
 	}
@@ -290,6 +330,35 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 			return cfgVal{}, false, &yamlErr{s.line, k.key + " 는 true 나 false 여야 합니다"}
 		}
 		return cfgVal{v == "true", false}, true, nil
+	case "bool", "hours", "path":
+		sc, err := scalarOf(k, n)
+		if err != nil {
+			return cfgVal{}, false, err
+		}
+		v, soft, err := substEnv(sc.raw, sc.line, getenv)
+		if err != nil || soft {
+			return cfgVal{}, false, err
+		}
+		switch k.kind {
+		case "bool":
+			if v != "true" && v != "false" {
+				return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 true 나 false 여야 합니다"}
+			}
+			return cfgVal{v == "true", false}, true, nil
+		case "hours":
+			h, e := strconv.Atoi(v)
+			if e != nil || h < 1 || h > 8760 {
+				return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 1 부터 8760 까지의 정수(시간)여야 합니다"}
+			}
+			return cfgVal{h, false}, true, nil
+		}
+		if strings.TrimSpace(v) == "" || strings.ContainsAny(v, "\x00\n") {
+			return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 파일 경로여야 합니다"}
+		}
+		if !strings.HasSuffix(strings.ToLower(v), ".html") {
+			return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 .html 파일이어야 합니다(그대로 웹 페이지로 내줍니다)"}
+		}
+		return cfgVal{v, false}, true, nil // made absolute against the file's folder in parseBridgeConfig
 	}
 	// list: a scalar (a reference or a comma list) or a list whose items may be references.
 	if n.kind == yScalar {
@@ -307,7 +376,7 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 		if err != nil || soft {
 			return cfgVal{}, false, err
 		}
-		return cfgVal{splitList(v), false}, true, nil
+		return checkList(k, n.line, splitListCase(v, k.kind == "list"), false)
 	}
 	if n.kind != yList {
 		return cfgVal{}, false, &yamlErr{n.line, k.key + " 는 목록이어야 합니다"}
@@ -333,7 +402,10 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 		if soft {
 			continue
 		}
-		v = strings.ToLower(strings.TrimSpace(v))
+		v = strings.TrimSpace(v)
+		if k.kind == "list" {
+			v = strings.ToLower(v) // logins; modes and CSP sources keep their case
+		}
 		if v == "" {
 			return cfgVal{}, false, &yamlErr{it.line, k.key + " 에 빈 항목이 있습니다"}
 		}
@@ -341,11 +413,55 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 			out = append(out, v)
 		}
 	}
-	return cfgVal{out, ref}, true, nil
+	return checkList(k, n.line, out, ref)
+}
+
+var cspSrcRe = regexp.MustCompile(`^https://(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?(/[A-Za-z0-9._~%/-]*)?$`)
+
+// checkList: what a list key's items may be. Permission modes are this server's launch modes and always hold
+// default; CSP sources are https origins (a path is allowed), so nothing can add a quote, a ; or a keyword.
+func checkList(k cfgKey, line int, items []string, ref bool) (cfgVal, bool, error) {
+	switch k.kind {
+	case "modes":
+		out := []string{"default"}
+		for _, m := range items {
+			if !contains(LAUNCH_MODES, m) {
+				return cfgVal{}, false, &yamlErr{line, k.key + " 의 " + m + " 는 모르는 모드입니다(받는 모드: " + strings.Join(LAUNCH_MODES, ", ") + ")"}
+			}
+			if !contains(out, m) {
+				out = append(out, m)
+			}
+		}
+		return cfgVal{out, ref}, true, nil
+	case "src":
+		for _, x := range items {
+			if !cspSrcRe.MatchString(x) {
+				return cfgVal{}, false, &yamlErr{line, k.key + " 의 " + x + " 는 https://호스트[:포트][/경로] 모양이어야 합니다"}
+			}
+		}
+	}
+	return cfgVal{items, ref}, true, nil
+}
+
+// splitListCase: splitList that keeps the case (modes, CSP sources).
+func splitListCase(s string, lower bool) []string {
+	if lower {
+		return splitList(s)
+	}
+	out := []string{}
+	for _, x := range strings.Split(s, ",") {
+		if x = strings.TrimSpace(x); x != "" && !contains(out, x) {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // envOnly: what the environment alone gives for a key (today's rules).
 func envOnly(k cfgKey, getenv func(string) string) any {
+	if k.env == "" {
+		return k.def
+	}
 	switch k.kind {
 	case "origin":
 		return strings.TrimRight(getenv(k.env), "/")
@@ -366,6 +482,8 @@ func cfgText(v any) string {
 		return "false"
 	case []string:
 		return strings.Join(x, ",")
+	case int:
+		return itoa(x)
 	}
 	return ""
 }
@@ -383,7 +501,7 @@ func (c *bridgeCfg) diffs(getenv func(string) string) []cfgDiff {
 	out := []cfgDiff{}
 	for _, k := range CFG_KEYS {
 		v, ok := c.set[k.key]
-		if !ok {
+		if !ok || k.env == "" {
 			continue
 		}
 		f, e := cfgText(v.v), cfgText(envOnly(k, getenv))
@@ -431,18 +549,39 @@ func inside(p, dir string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// prepareConfigFile makes the settings file readable by the user the server will run as, before the handover.
-// Inside DATA it tries to hand the file to node once (a failure is not counted: a read-only mount must not keep
-// the whole server root). Outside DATA it never changes anything. Then it checks the read.
+// files: the settings file and the files it names (privacy.file), as absolute paths.
+func (c *bridgeCfg) files() []string {
+	out := []string{}
+	if c.path != "" {
+		out = append(out, c.path)
+	}
+	if v, ok := c.set["privacy.file"]; ok {
+		out = append(out, v.v.(string))
+	}
+	return out
+}
+
+// prepareConfigFile makes a settings file (or one it names) readable by the user the server will run as, before
+// the handover. Inside DATA it tries to hand the file to node once (a failure is not counted: a read-only mount
+// must not keep the whole server root). Outside DATA it never changes anything. Then it checks the read.
 func prepareConfigFile(p, data string, getenv func(string) string, proc procOps) error {
-	if p == "" || proc.getuid() != 0 || getenv("BRIDGE_RUN_AS_ROOT") == "1" {
-		return nil // already read as the user that will keep running
+	st, err := os.Stat(p)
+	if err != nil || st.IsDir() {
+		return errf("설정이 가리키는 파일이 없습니다: " + p)
+	}
+	if proc.getuid() != 0 || getenv("BRIDGE_RUN_AS_ROOT") == "1" {
+		f, err := os.Open(p) // already the user that will keep running: just try
+		if err != nil {
+			return errf("설정이 가리키는 파일을 읽을 수 없습니다: " + p + " (" + err.Error() + ")")
+		}
+		_ = f.Close()
+		return nil
 	}
 	if inside(p, data) {
 		_ = os.Lchown(p, NODE_UID, NODE_GID)
 	}
 	if !readableBy(p, NODE_UID, NODE_GID) {
-		return errf("설정 파일을 서버 사용자(uid " + itoa(NODE_UID) + ")가 읽을 수 없습니다: " + p + " (권한을 0644 로 하거나 소유자를 바꾸세요)")
+		return errf("설정이 가리키는 파일을 서버 사용자(uid " + itoa(NODE_UID) + ")가 읽을 수 없습니다: " + p + " (권한을 0644 로 하거나 소유자를 바꾸세요)")
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ import { PushToggle } from '../components/push'
 import { SlackPlaces } from '../components/slack-places'
 import { AccountsPanel } from './accounts'
 import { VoiceSettings } from './voice-settings'
+import { featureOn, type Feature } from '../lib/features'
 
 export interface Plugin {
   id: string
@@ -523,13 +524,14 @@ function DeleteAccount({ me }: { me: Me | null }) {
 const AdminPanel = lazy(() => import('./admin').then((m) => ({ default: m.AdminPanel })))
 
 // `short`: the label on a phone, where all the tabs share one row (styles.css .page-tab-short).
-const TABS: { id: SettingsTab; label: string; short?: string; icon: string; admin?: true }[] = [
+const TABS: { id: SettingsTab; label: string; short?: string; icon: string; admin?: true; feature?: Feature }[] = [
   { id: 'launch', label: '새 세션', icon: 'plus' },
   { id: 'prompt', label: '프롬프트', icon: 'doc' },
   { id: 'accounts', label: 'Claude 계정', short: '계정', icon: 'user' },
   { id: 'device', label: '이 기기', icon: 'phone' },
-  { id: 'plugins', label: '플러그인', icon: 'plugin' },
-  { id: 'voice', label: '음성', icon: 'mic' },
+  // The only plugin is Slack; the tab goes with features.slack (REQ-F-812).
+  { id: 'plugins', label: '플러그인', icon: 'plugin', feature: 'slack' },
+  { id: 'voice', label: '음성', icon: 'mic', feature: 'voice' },
   { id: 'admin', label: '운영', icon: 'shield', admin: true },
   { id: 'changes', label: '변경 기록', icon: 'clock' },
   { id: 'more', label: '더 보기', icon: 'list' },
@@ -577,7 +579,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
       {/* Tabs (REQ-F-708): one part of the settings at a time, so nothing is far down a long page. Each tab has its
           own address (/settings/<tab>), so a link can open the right one. */}
       <div className="page-tabs" role="tablist" aria-label="설정">
-        {TABS.filter((t) => !t.admin || me?.admin).map((t) => (
+        {TABS.filter((t) => (!t.admin || me?.admin) && (!t.feature || featureOn(t.feature))).map((t) => (
           <a key={t.id} role="tab" aria-selected={tab === t.id} className={`page-tab${tab === t.id ? ' on' : ''}`} href={href({ name: 'settings', tab: t.id })} onClick={(e) => (e.preventDefault(), go({ name: 'settings', tab: t.id }, { replace: true }))}>
             <Icon name={t.icon} />
             {t.short ? (
@@ -689,7 +691,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             <IconSettings initial={getIcons()} />
           </section>
           ) : null}
-          {tab === 'plugins' ? (
+          {tab === 'plugins' && featureOn('slack') ? (
           <section className="card-box">
             {errs.plugins ? (
               <LoadError what="플러그인 목록을" error={errs.plugins} onRetry={() => load('plugins')} />
@@ -729,7 +731,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             )}
           </section>
           ) : null}
-          {tab === 'voice' ? <VoiceSettings /> : null}
+          {tab === 'voice' && featureOn('voice') ? <VoiceSettings /> : null}
           {/* 운영 (REQ-F-741): its own tab, shown to admins; anyone else who opens /settings/admin is told so. */}
           {tab === 'admin' ? (
             me?.admin ? (
@@ -757,7 +759,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
                 { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더', to: href({ name: 'disk' }) },
                 { icon: 'chart', label: '사용 통계', hint: '일한 시간·PR', to: href({ name: 'stats' }) },
                 { icon: 'chart', label: '성능 리포트', hint: '화면별 점수·개선 기록', to: href({ name: 'quality' }) },
-                { icon: 'sparkle', label: '스킬', hint: '골라서 설치', to: '/skills' },
+                ...(featureOn('skills') ? [{ icon: 'sparkle', label: '스킬', hint: '골라서 설치', to: '/skills' }] : []),
                 { icon: 'info', label: '시작 가이드', hint: '처음 시작 · 멀티 계정', to: href({ name: 'guide', path: 'start' }) },
                 { icon: 'shield', label: '개인정보 처리방침', hint: '저장하는 것·보관·제3자', to: '/privacy' },
                 // AGPL-3.0 section 13 (REQ-F-791): the source of what this server runs.
@@ -775,7 +777,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
           </section>
           ) : null}
           {/* The demo account has no GitHub login, and the demo refuses this call. */}
-          {tab === 'more' && me && !me.demo ? <SkillsRepoBox /> : null}
+          {tab === 'more' && me && !me.demo && featureOn('skills') ? <SkillsRepoBox /> : null}
           {tab === 'more' ? <DeleteAccount me={me} /> : null}
         </div>
         )}

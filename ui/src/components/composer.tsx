@@ -16,6 +16,7 @@ import { inPane, splitHost, useSplitVoice } from '../lib/split'
 import { Button, Icon, IconButton, NO_AUTOFILL, useMedia } from '../kit'
 import { VoiceMode, type VoiceDraft } from './voice-mode'
 import { openMenu, toast } from '../kit/overlay'
+import { featureOn } from '../lib/features'
 
 interface Skill {
   name: string
@@ -253,7 +254,7 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
   // is listening (LivePreview.start says why); the sound's AudioContext is made inside the press too (Safari wants
   // that). 'opening' is the wait for both.
   const voice = useVoicePrefs()
-  const voiceOn = !!voice?.on
+  const voiceOn = !!voice?.on && featureOn('voice') // features.voice (REQ-F-812)
   const [vm, setVm] = useState<{ listen: LiveListen; preview: LivePreview | null } | 'opening' | null>(null)
   const vmNow = useRef(vm)
   vmNow.current = vm

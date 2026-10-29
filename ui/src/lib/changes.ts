@@ -26,7 +26,18 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.348',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server'], text: 'bridge.yaml 의 features 로 다른 맥으로 옮기기·위임, 웹 알림, 음성, 서버 미리보기, 스킬, Slack, 키 입력을 끌 수 있음. 꺼진 기능의 API 는 403 "이 서버에서 꺼진 기능이에요", 화면은 그 입구를 숨김', refs: ['REQ-F-812'] },
+      { kind: 'added', scope: ['ui', 'server'], text: 'features.permissionModes 로 고를 수 있는 권한 모드를 정함. 목록 밖 모드는 manual 로 낮추고 전부 허용은 켜지 않으며, 세션 설정에서 목록 밖으로 바꾸면 403', refs: ['REQ-F-812'] },
+      { kind: 'added', scope: ['server'], text: 'retention.uploadsHours(업로드 보관 시간)·retention.previews(세션 미리보기 문구 저장), csp.frameSrc·csp.imgSrc(https 출처만), privacy.file(내 처리방침 페이지)', refs: ['REQ-F-812'] },
+      { kind: 'added', scope: ['server'], text: '호스트가 마지막으로 알린 헤드리스 연동 상태와 시각을 기기 기록에 남김', refs: ['REQ-F-811'] },
+    ],
+  },
+  {
     version: '1.347',
+    commit: 'ca8451d',
     date: '2026-10-29',
     changes: [
       { kind: 'added', scope: ['server'], text: '서버 설정 파일 bridge.yaml(BRIDGE_CONFIG, 기본 <BRIDGE_DATA>/bridge.yaml). origins.primary·auth.allow·auth.admins·retention.allowPurge 를 받고, 같은 뜻의 환경변수는 기본값. 틀린 파일이면 시작하지 않고(옛 인스턴스가 계속 일함) config-error.json 을 남김', refs: ['REQ-F-809'] },

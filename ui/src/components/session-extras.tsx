@@ -13,6 +13,7 @@ import { Button, Chip, Collapse, Field, Help, Icon, IconButton, Segmented, Spinn
 import { openMenu, Sheet, toast, type MenuEntry } from '../kit/overlay'
 import { act, command, sessionPost } from './session-menu'
 import { AllowHint, confirmAllowAll } from './auto-allow-confirm'
+import { featureOn } from '../lib/features'
 
 /** How a to-do's state reads at a glance (REQ-F-778). */
 const TODO_MARK: Record<string, string> = { completed: 'todoDone', in_progress: 'todoNow', pending: 'todo' }
@@ -479,7 +480,8 @@ export function ScreenSheet({ s, open, onClose }: { s: Session; open: boolean; o
             다시 읽기
           </Button>
           <span className="grow" />
-          {['Up', 'Down', 'Enter', 'Escape', 'Tab'].map((k) => (
+          {/* features.remoteKeys off (REQ-F-812): the screen is only read; cards are answered with their choices. */}
+          {(featureOn('remoteKeys') ? ['Up', 'Down', 'Enter', 'Escape', 'Tab'] : []).map((k) => (
             <Button key={k} size="sm" onClick={() => keys([k])}>
               {k === 'Escape' ? 'Esc' : k === 'Up' ? '↑' : k === 'Down' ? '↓' : k}
             </Button>

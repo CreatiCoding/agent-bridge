@@ -99,6 +99,7 @@ func route(req *Req, res *Res) {
 		jsonRes(res, status, out)
 	}()
 	if preview.is(req.r) {
+		needFeature("preview")
 		preview.handle(req, res)
 		return
 	}
@@ -292,6 +293,7 @@ func route(req *Req, res *Res) {
 		return
 	}
 	if p == "/skills" || skillsPageRe.MatchString(p) {
+		needFeature("skills")
 		if whoami(req) == "" {
 			login(p)
 			return
@@ -318,7 +320,12 @@ func route(req *Req, res *Res) {
 		res.WriteHead(200, M{"Content-Type": "text/x-shellscript; charset=utf-8", "Cache-Control": "no-cache"}).EndS(script)
 		return
 	case "/privacy":
-		sendFile(res, filepath.Join(ROOT, "web/privacy.html"), "")
+		// privacy.file (REQ-F-812): the operator's own policy replaces the one this project ships.
+		if f := cfgGet("privacy.file").(string); f != "" {
+			sendFile(res, f, "")
+		} else {
+			sendFile(res, filepath.Join(ROOT, "web/privacy.html"), "")
+		}
 		return
 	case "/support":
 		h := htmlHead()

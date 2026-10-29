@@ -85,7 +85,11 @@ func serviceAPI(req *Req, res *Res, p string) {
 		if title == "" {
 			title = "🤖 " + jsSliceTo(collapse(prompt), 70)
 		}
-		// No person is watching: permission prompts are answered automatically (autoAllow).
+		// No person is watching: permission prompts are answered automatically (autoAllow), so a server that took
+		// autoAllow out of features.permissionModes has no service API (REQ-F-812).
+		if !modeOk("autoAllow") {
+			refuse(403, FEATURE_OFF)
+		}
 		// AskUserQuestion and calls the guard flags still wait, and show up as state "waiting".
 		sid := startSession(uid, M{"hostId": target, "cwd": cwd, "create": true, "prompt": prompt, "title": title, "mode": "autoAllow", "chrome": false}, &Req{internal: true, Header: map[string][]string{}})
 		c, _ := sessions.Get(sid)

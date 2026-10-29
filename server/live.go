@@ -615,6 +615,9 @@ func moveSeat(uid string, meta *Sess, to any) M {
 	if to != "web" && to != "slack" {
 		refuse(400, "옮길 곳이 올바르지 않아요")
 	}
+	if to == "slack" {
+		needFeature("slack") // bringing a session back to the bridge stays open
+	}
 	from := seatOf(meta)
 	seatURL := func() any {
 		if u := mget(meta.get("seat"), "url"); u != nil {

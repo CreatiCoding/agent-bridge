@@ -297,6 +297,9 @@ func pushTo(uid string, n M, always bool) {
 	subs := subsOf(uid)
 	gone := []any{}
 	for _, sub := range webTargets(subs, devices) {
+		if !cfgOn("features.webpush") {
+			break // web push off on this server (REQ-F-812); app push (APNs) stays
+		}
 		if !pushService(mget(sub, "endpoint")) || vapidKey == nil {
 			continue
 		}
@@ -467,7 +470,9 @@ var VIDEO_TYPES = []string{"video/mp4", "video/quicktime", "video/webm", "video/
 var VIDEO_EXT = map[string]string{"video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "video/x-m4v": "m4v"}
 
 const UPLOAD_MAX = 500 * 1024 * 1024
-const UPLOAD_TTL_MS = 24 * 3600_000
+
+// uploadTTL: how long an upload the Mac has not taken is kept, retention.uploadsHours (REQ-F-812, default 24).
+func uploadTTL() float64 { return float64(cfgGet("retention.uploadsHours").(int)) * 3600_000 }
 
 func uploadsDir(uid string) string { return filepath.Join(DATA, "u", uid, "uploads") }
 
@@ -614,7 +619,7 @@ func uploadOf(uid string, id any) M {
 	}
 	file := filepath.Join(uploadsDir(uid), id.(string))
 	info, _ := readJSON(file+".json", nil).(M)
-	if info == nil || !exists(file) || float64(nowMs())-jsNumber(info["at"]) > UPLOAD_TTL_MS {
+	if info == nil || !exists(file) || float64(nowMs())-jsNumber(info["at"]) > uploadTTL() {
 		return nil
 	}
 	return M{"id": id, "file": file, "name": info["name"], "type": info["type"], "size": info["size"]}
@@ -630,7 +635,7 @@ func dropOldUploads() {
 				continue
 			}
 			info, _ := readJSON(filepath.Join(dir, f.Name()), nil).(M)
-			if info != nil && float64(nowMs())-jsNumber(info["at"]) <= UPLOAD_TTL_MS {
+			if info != nil && float64(nowMs())-jsNumber(info["at"]) <= uploadTTL() {
 				continue
 			}
 			_ = os.Remove(filepath.Join(dir, f.Name()))

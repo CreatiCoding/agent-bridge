@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
 import { Switch } from '../kit'
 import { toast } from '../kit/overlay'
+import { featureOn } from '../lib/features'
 
 const supported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
@@ -98,6 +99,7 @@ export function PushToggle() {
     navigator.serviceWorker.getRegistration('/').then(async (reg) => setOn(!!(await reg?.pushManager.getSubscription())), () => setOn(false))
   }, [])
   if (inAppPush()) return <AppPushToggle />
+  if (!featureOn('webpush')) return null // web push off on this server (REQ-F-812); app push stays
   if (on === null && !supported()) return <span className="muted" style={{ fontSize: 'var(--fs-small)' }}>이 브라우저는 웹 푸시를 못 받아요 (폰은 홈 화면에 추가한 뒤)</span>
   const toggle = async (want: boolean) => {
     try {

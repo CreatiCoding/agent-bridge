@@ -2172,6 +2172,15 @@ function keepBattery(h, health, now) {
   h.battery = { ...b, at: now }
   touchGlobals()
 }
+/** The last background.on a host reported, and when, kept on its record (REQ-F-811). */
+function keepBackground(h, health, now) {
+  const b = health?.background
+  if (!b || typeof b !== 'object' || Array.isArray(b) || !h) return
+  const on = b.on === true
+  if (h.lastBackground && h.lastBackground.on === on && now - (h.lastBackground.at ?? 0) < BATTERY_KEEP_MS) return
+  h.lastBackground = { on, at: now }
+  touchGlobals()
+}
 /** A battery report kept to its known fields (REQ-F-806): two flags, a state word and numbers. */
 function cleanBattery(b, num) {
   if (!b || typeof b !== 'object' || Array.isArray(b)) return null
@@ -2657,6 +2666,7 @@ const fromAgent = {
     if (st.stale) record(uid, hostId, { area: 'heartbeat', text: '에이전트가 다시 상태를 보냄' })
     Object.assign(st, { health, healthAt: Date.now(), stale: false })
     if (hosts[hostId]) keepBattery(hosts[hostId], health, Date.now())
+    if (hosts[hostId]) keepBackground(hosts[hostId], health, Date.now())
     broadcastState(uid)
   },
   page(uid, hostId, msg) {

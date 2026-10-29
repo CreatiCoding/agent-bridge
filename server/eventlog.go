@@ -85,14 +85,15 @@ func logEvents(meta *Sess, events []any) {
 		if k == "text" {
 			meta.set("lastMine", false)
 		}
-		if k == "text" || k == "user" {
+		// retention.previews: false keeps no words of the conversation in the session record (REQ-F-812).
+		if (k == "text" || k == "user") && cfgOn("retention.previews") {
 			last := jsSliceTo(collapse(mstr(e, "text")), PREVIEW_MAX)
 			if last == "" && truthy(e["images"]) {
 				last = "이미지 " + itoa(len(asArr(e["images"]))) + "장"
 			}
 			meta.set("last", last)
 		}
-		if k == "user" && !truthy(e["command"]) && !truthy(meta.get("preview")) {
+		if k == "user" && !truthy(e["command"]) && !truthy(meta.get("preview")) && cfgOn("retention.previews") {
 			meta.set("preview", jsSliceTo(collapse(mstr(e, "text")), PREVIEW_MAX))
 		}
 	}

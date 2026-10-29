@@ -314,6 +314,21 @@ export interface Me {
   source?: string
   icons?: IconPrefs
   voice?: VoicePrefs
+  /** What bridge.yaml turned off (REQ-F-812); an older server leaves it out (everything on). */
+  features?: Features
+}
+
+/** The server's feature flags (REQ-F-812). background is read-only (headless link and screenless hosts). */
+export interface Features {
+  sessionMove: boolean
+  webpush: boolean
+  voice: boolean
+  preview: boolean
+  skills: boolean
+  slack: boolean
+  remoteKeys: boolean
+  permissionModes: string[]
+  background: boolean
 }
 
 /** 음성 입력 (REQ-F-754), kept with the account. terms: one word per line (or comma), the spelling to keep. */

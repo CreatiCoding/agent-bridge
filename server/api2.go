@@ -464,6 +464,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if m := hostDelegateRe.FindStringSubmatch(p); post && m != nil {
+		needFeature("sessionMove")
 		ownHost(uid, m[1])
 		b := body(req, 1024)
 		on, ok := b["on"].(bool)
