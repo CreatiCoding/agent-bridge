@@ -108,6 +108,17 @@ export const muxOf = (s) => (s?.mux === 'zeropty' ? 'zeropty' : 'tmux')
 export const pickMux = ({ force, ready }) => (force === 'tmux' || !ready ? 'tmux' : 'zeropty')
 
 /**
+ * Whether the agent should fetch zeropty: not on a Mac kept to tmux, unless a session there still runs in zeropty
+ * (its path has the version in it, so an update would leave that session with no binary to drive it).
+ * @param {{ force?: string, sessions: Iterable<{ mux?: string }> }} o
+ */
+export function needsZeropty({ force, sessions }) {
+  if (force !== 'tmux') return true
+  for (const s of sessions) if (muxOf(s) === 'zeropty') return true
+  return false
+}
+
+/**
  * The environment zeropty is run with. Its server keeps the environment of the command that started it (as tmux
  * does), so whatever ran the agent must not leak into every session it will hold: tmux's own variables, and those
  * a running Claude Code hands its children.

@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, muxEnv, targetName } from '../../agent/mux.mjs'
+import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName } from '../../agent/mux.mjs'
 
 /** A release-shaped archive: <top>/zeropty, zeropty-tty, shim.dylib. */
 function fakeRelease(top = 'zp-test-darwin-universal') {
@@ -85,6 +85,14 @@ test('pickMux: 새 세션은 zeropty 가 준비됐을 때 zeropty, tmux 로 고�
   assert.equal(pickMux({ ready: false }), 'tmux')
   assert.equal(pickMux({ ready: true, force: 'tmux' }), 'tmux')
   assert.equal(pickMux({ ready: false, force: 'tmux' }), 'tmux')
+})
+
+test('needsZeropty: tmux 로 고정한 기기는 zeropty 세션이 남아 있을 때만 받는다 (AC-1472)', () => {
+  assert.equal(needsZeropty({ sessions: [] }), true)
+  assert.equal(needsZeropty({ force: 'tmux', sessions: [] }), false)
+  assert.equal(needsZeropty({ force: 'tmux', sessions: [{}, { mux: 'tmux' }] }), false)
+  assert.equal(needsZeropty({ force: 'tmux', sessions: [{}, { mux: 'zeropty' }] }), true)
+  assert.equal(needsZeropty({ force: 'tmux', sessions: new Map([['a', { mux: 'zeropty' }]]).values() }), true)
 })
 
 test('muxEnv: tmux·Claude Code 가 물려주는 변수는 zeropty 서버에 넘기지 않는다', () => {

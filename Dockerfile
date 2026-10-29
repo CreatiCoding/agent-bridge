@@ -1,6 +1,11 @@
 # The control page (ui/) is built with node; the server is one Go binary (standard library only). The image that
 # runs has no node: the agent's files (agent/*.mjs) are only served to the Macs, never run here.
-FROM node:22.23.4-alpine AS ui
+# The three base images, overridable for a registry mirror (docker build --build-arg NODE_IMAGE=…). The defaults are
+# the images this file has always used.
+ARG NODE_IMAGE=node:22.23.4-alpine
+ARG GO_IMAGE=golang:1.27.3-alpine
+ARG RUN_IMAGE=alpine:3.22
+FROM ${NODE_IMAGE} AS ui
 WORKDIR /ui
 RUN corepack enable
 COPY ui/package.json ui/yarn.lock ui/.yarnrc.yml ./
@@ -10,7 +15,7 @@ COPY web/relay.js web/qr.js /web/
 RUN yarn build
 
 # gofmt, go vet and the tests must pass, or the image is not built.
-FROM golang:1.27.3-alpine AS server
+FROM ${GO_IMAGE} AS server
 WORKDIR /src
 COPY server ./server
 COPY agent ./agent
@@ -22,7 +27,7 @@ RUN go vet ./...
 RUN CGO_ENABLED=0 go test ./...
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bridge-server .
 
-FROM alpine:3.22
+FROM ${RUN_IMAGE}
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 COPY package.json ./

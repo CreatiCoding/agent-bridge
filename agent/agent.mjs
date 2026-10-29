@@ -24,7 +24,7 @@ import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
-import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, muxEnv, targetName } from './mux.mjs'
+import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -444,6 +444,8 @@ const tmuxRaw = (...argv) => {
 async function ensureZeropty() {
   // No release for this system (a Linux build is not out yet): its sessions run in tmux, and nothing is fetched.
   if (zeroptyReady || doctorOnly || !ZEROPTY) return
+  // Kept to tmux with no zeropty session left: nothing would run in it.
+  if (!needsZeropty({ force: config.mux, sessions: sessions.values() })) return
   const r = await installZeropty(STATE_DIR, { log: (m) => log('info', 'zeropty', m) })
   zeroptyReady = zeroptyInstalled(ZP)
   if (!r.ok) {
@@ -3924,6 +3926,7 @@ async function runChecks() {
   const keepTmux = config.mux === 'tmux'
   if (!ZEROPTY) add('zeropty', 'warn', 'zeropty', `이 시스템(${process.platform}-${process.arch})용 zeropty 는 아직 없습니다. 세션은 tmux 로 엽니다`)
   else if (zv?.ok) add('zeropty', 'ok', 'zeropty', `${ZEROPTY.version}${keepTmux ? ' (이 기기는 tmux 로 고정: --mux tmux)' : ''}`)
+  else if (!needsZeropty({ force: config.mux, sessions: sessions.values() })) add('zeropty', 'ok', 'zeropty', '이 기기는 tmux 로 고정: zeropty 를 받지 않습니다 (--mux auto 로 풀기)')
   else add('zeropty', 'warn', 'zeropty', zeroptyReady ? `${ZEROPTY.version} 가 실행되지 않습니다. 새 세션은 tmux 로 엽니다` : `${ZEROPTY.version} 를 아직 받지 못했습니다. 새 세션은 tmux 로 엽니다 (에이전트가 다시 받아 봅니다)`)
   const tm = await run('tmux', ['-V'])
   stats.tools.tmux = tm.ok ? tm.out : null

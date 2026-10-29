@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.346',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'fixed', scope: ['agent'], text: 'tmux 로 고정한 기기(--mux tmux)는 zeropty 를 받지 않음. 그 기기에 zeropty 세션이 남아 있으면 지금처럼 받음. 점검 zeropty 는 받지 않은 경우 ok', refs: ['REQ-F-794'] },
+      { kind: 'changed', scope: ['server'], text: 'Dockerfile 베이스 이미지를 빌드 인자 NODE_IMAGE·GO_IMAGE·RUN_IMAGE 로 바꿀 수 있음(기본값은 지금 이미지)' },
+    ],
+  },
+  {
     version: '1.345',
+    commit: '515207d',
     date: '2026-10-29',
     changes: [
       { kind: 'changed', scope: ['ui'], text: 'iOS 카메라 번역: 언어 받기가 1분 넘게 안 끝나면 안내(인터넷 확인, 설정 → 앱 → 번역)와 "다시 받기" 단추를 보임', refs: ['REQ-F-808'] },
