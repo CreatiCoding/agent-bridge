@@ -163,17 +163,32 @@ func configure() bool {
 		d = filepath.Join(ROOT, "data")
 	}
 	DATA, _ = filepath.Abs(d)
-	ORIGIN = strings.TrimRight(env("BRIDGE_ORIGIN"), "/")
+	// bridge.yaml (REQ-F-809): read here, before the handover, so a wrong file leaves the old instance working.
+	cfg, err := loadBridgeConfig(DATA, env)
+	if err == nil && cfg.path != "" {
+		err = prepareConfigFile(cfg.path, DATA, env, realProc)
+	}
+	if err != nil {
+		configFailed(err)
+		return false
+	}
+	CONFIG = cfg
+	CONFIG_DIFF = cfg.diffs(env)
+	if cfg.path != "" && inside(cfg.path, DATA) {
+		CHOWN_SKIP = []string{cfg.path}
+	}
+	ORIGIN = cfg.effective(CFG_KEYS[0], env).(string)
 	GITHUB_CLIENT_ID = env("GITHUB_CLIENT_ID")
 	GITHUB_CLIENT_SECRET = env("GITHUB_CLIENT_SECRET")
 	// A public server (GitHub sign-in on) states its own origin (R1-L16). Without it the server does not start.
 	if GITHUB_CLIENT_ID != "" && ORIGIN == "" {
-		errorLine("BRIDGE_ORIGIN 이 없습니다. GitHub 로그인을 쓰는 서버는 사이트 주소(예: https://bridge.example.com)를 BRIDGE_ORIGIN 으로 정해야 합니다.")
+		errorLine("BRIDGE_ORIGIN(또는 bridge.yaml 의 origins.primary)이 없습니다. GitHub 로그인을 쓰는 서버는 사이트 주소(예: https://bridge.example.com)를 정해야 합니다.")
 		return false
 	}
-	ALLOWED = splitList(env("GITHUB_ALLOWED_LOGINS"))
+	ALLOWED = cfg.effective(CFG_KEYS[1], env).([]string)
 	DEV_LOGIN = env("BRIDGE_DEV_LOGIN") == "1"
-	ADMINS = splitList(env("BRIDGE_ADMIN_LOGINS"))
+	ADMINS = cfg.effective(CFG_KEYS[2], env).([]string)
+	PURGE = cfg.effective(CFG_KEYS[3], env).(bool)
 	SKILLS_REPO_ENV = strings.TrimSpace(env("SKILLS_REPO"))
 	SKILLS_TOKEN = env("SKILLS_GITHUB_TOKEN")
 	SERVICE_TOKEN = strings.TrimSpace(env("BRIDGE_SERVICE_TOKEN"))

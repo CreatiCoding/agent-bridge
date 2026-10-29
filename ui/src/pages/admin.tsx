@@ -7,6 +7,7 @@ import { back, go } from '../lib/router'
 import { NONE, useStore } from '../lib/store'
 import { Badge, Button, Empty, Icon, IconButton, LoadError, Row, Spinner, Switch } from '../kit'
 import { confirmDialog, promptDialog, toast } from '../kit/overlay'
+import { ConfigBox } from './admin-config'
 
 interface Access {
   open: boolean
@@ -480,7 +481,7 @@ export function AdminPanel() {
             <b>{over.server.version}</b>
             <span>
               서버 · 켜진 지 {duration(over.server.uptime)} · {bytes(over.server.rss)}
-              {over.server.originSet === false ? ' · BRIDGE_ORIGIN 없음' : ''}
+              {over.server.originSet === false ? ' · BRIDGE_ORIGIN / origins.primary 없음' : ''}
               {over.server.root ? ' · root 로 실행 중' : ''}
             </span>
           </div>
@@ -505,6 +506,10 @@ export function AdminPanel() {
           </div>
         </div>
       ) : null}
+      <section>
+        <h2>설정 파일</h2>
+        <ConfigBox />
+      </section>
       <section>
         <h2>제보{reports?.length ? ` · ${reports.filter((r) => r.status === 'new').length}개 새로` : ''}</h2>
         {auto ? <ReportAutoBox initial={auto} /> : null}

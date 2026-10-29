@@ -833,10 +833,10 @@ func apiAdmin(req *Req, res *Res, u *url.URL, uid string) bool {
 		if !isAdmin(uid) {
 			refuse(403, "운영자만 볼 수 있습니다")
 		}
-		enabled := os.Getenv("BRIDGE_PURGE") == "1"
+		enabled := PURGE
 		if post {
 			if !enabled {
-				refuse(409, "정리는 꺼져 있어요. 서버 환경 변수 BRIDGE_PURGE=1 로 다시 시작한 뒤에 할 수 있어요")
+				refuse(409, "정리는 꺼져 있어요. 서버 환경 변수 BRIDGE_PURGE=1(또는 bridge.yaml 의 retention.allowPurge: true)로 다시 시작한 뒤에 할 수 있어요")
 			}
 			b := body(req, 4096)
 			kinds := []string{}

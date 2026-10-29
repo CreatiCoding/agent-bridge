@@ -26,7 +26,18 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.347',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '서버 설정 파일 bridge.yaml(BRIDGE_CONFIG, 기본 <BRIDGE_DATA>/bridge.yaml). origins.primary·auth.allow·auth.admins·retention.allowPurge 를 받고, 같은 뜻의 환경변수는 기본값. 틀린 파일이면 시작하지 않고(옛 인스턴스가 계속 일함) config-error.json 을 남김', refs: ['REQ-F-809'] },
+      { kind: 'added', scope: ['ui', 'server'], text: '운영 탭 "설정 파일": 지금 환경변수를 참조로만 담은 bridge.yaml 내보내기(복사·내려받기·이 서버에 저장), 붙여 넣고 검사, 지금 파일 검사. 명령줄 bridge-server config export|check', refs: ['REQ-F-810', 'IF-254', 'IF-255', 'IF-256', 'IF-257'] },
+      { kind: 'changed', scope: ['ui', 'server'], text: '파일 값 때문에 환경변수 수정이 반영되지 않는 키는 운영 탭 맨 위에 경고. 출처 없음·데이터 정리 꺼짐 문구에 bridge.yaml 키 이름도 적음', refs: ['REQ-F-809', 'REQ-S-075'] },
+      { kind: 'fixed', scope: ['server'], text: '설정 파일은 시작 때의 소유자 바꾸기에서 빼서, 읽기 전용으로 마운트해도 서버 전체가 root 로 남지 않음', refs: ['REQ-F-809', 'REQ-S-066'] },
+    ],
+  },
+  {
     version: '1.346',
+    commit: '6ab8993',
     date: '2026-10-29',
     changes: [
       { kind: 'fixed', scope: ['agent'], text: 'tmux 로 고정한 기기(--mux tmux)는 zeropty 를 받지 않음. 그 기기에 zeropty 세션이 남아 있으면 지금처럼 받음. 점검 zeropty 는 받지 않은 경우 ok', refs: ['REQ-F-794'] },

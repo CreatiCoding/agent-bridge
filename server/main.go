@@ -416,6 +416,10 @@ func migrateSkillsRepo() {
 }
 
 func main() {
+	// Subcommands first: before configure() and the handover, so they never start a second server (REQ-F-810).
+	if len(os.Args) > 1 && os.Args[1] == "config" {
+		os.Exit(configCLI(os.Args[2:]))
+	}
 	if !configure() {
 		os.Exit(1)
 	}
@@ -424,6 +428,15 @@ func main() {
 	handover.takeOver()
 	logLine("user: " + dropRoot(DATA))
 	logLine("data: " + itoa(tightenTree(DATA)) + "개의 권한을 0600/0700 으로 맞춤")
+	_ = os.Remove(filepath.Join(DATA, "config-error.json")) // this start read the settings file (REQ-F-809)
+	if CONFIG.path != "" {
+		logLine("config: " + CONFIG.path + " (" + CONFIG.state + ")")
+	}
+	for _, d := range CONFIG_DIFF {
+		if !d.RefEnv && d.EnvSet {
+			errorLine("config: 환경변수 " + d.Env + " 를 고쳐도 반영되지 않습니다. bridge.yaml 의 " + d.Key + " 가 쓰입니다")
+		}
+	}
 	mu.Lock()
 	prepare()
 	loadStore()

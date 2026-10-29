@@ -264,11 +264,18 @@ const (
 
 func chownTree(dir string, uid, gid int) int { return chownTreeWith(dir, uid, gid, os.Lchown) }
 
+// CHOWN_SKIP: files inside DATA that configure() already tried to hand over (bridge.yaml, REQ-F-809). A read-only
+// mount there must not count as a failure, or the whole server would stay root.
+var CHOWN_SKIP []string
+
 // chownTreeWith is chownTree with the chown given (tests).
 func chownTreeWith(dir string, uid, gid int, chown func(string, int, int) error) int {
 	failed := 0
 	var walk func(p string)
 	walk = func(p string) {
+		if contains(CHOWN_SKIP, p) {
+			return
+		}
 		st, err := os.Lstat(p)
 		if err != nil {
 			return
