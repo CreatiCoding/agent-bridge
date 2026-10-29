@@ -24,6 +24,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>카메라 번역(시험 기능)에서 비춘 일본어를 읽으려고 카메라를 써요. 화면은 기기 밖으로 나가지 않아요.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>말한 내용을 받아써서 세션에 보내려고 마이크를 써요.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -33,6 +35,19 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>dev.creco.bridge.jp-camera</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>카메라 번역 (시험)</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>일본어 → 한국어, 오프라인</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>camera.viewfinder</string>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

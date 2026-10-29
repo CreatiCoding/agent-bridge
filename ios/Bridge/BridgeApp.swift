@@ -14,11 +14,14 @@ let inApp: Set<String> = ["bridge.creco.dev", "github.com"]
 @main
 struct BridgeApp: App {
   @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
+  @ObservedObject private var lab = Lab.shared
   var body: some Scene {
     WindowGroup {
       // The keyboard does not shrink the web view: WebKit pans what is seen, as in Safari, and the page puts its input
       // on the keyboard. Shrinking it as well moved the page twice, hiding the input behind the keyboard for a moment.
       Web().ignoresSafeArea(.container, edges: .bottom).ignoresSafeArea(.keyboard)
+        // 카메라 번역 (REQ-F-808): the icon's long-press menu opens it over the page.
+        .fullScreenCover(isPresented: $lab.camera) { CameraScreen() }
     }
   }
 }
@@ -159,6 +162,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     UNUserNotificationCenter.current().delegate = Push.shared
     Push.shared.refresh()
     return true
+  }
+
+  // A quick action that started the app comes with the scene; one pressed while it runs goes to SceneDelegate.
+  func application(_ app: UIApplication, configurationForConnecting s: UISceneSession, options o: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    if let item = o.shortcutItem { _ = Lab.shared.handle(item) }
+    let c = UISceneConfiguration(name: nil, sessionRole: s.role)
+    c.delegateClass = SceneDelegate.self
+    return c
   }
 
   func application(_ app: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken token: Data) {

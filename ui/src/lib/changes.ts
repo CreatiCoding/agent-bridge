@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.341',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: 'iOS 앱 카메라 번역(시험): 앱 아이콘을 길게 눌러 "카메라 번역 (시험)" 을 고르면 카메라에 비친 일본어를 바로 한국어로 얹어 보임. 읽기·번역 모두 기기 안에서 해서, 처음 한 번 언어를 받으면 인터넷 없이 됨(iOS 18 이상)', refs: ['REQ-F-808'] },
+    ],
+  },
+  {
     version: '1.340',
+    commit: 'd14e534',
     date: '2026-10-29',
     changes: [
       { kind: 'security', scope: ['server'], text: '조작 페이지·연동 탭의 이벤트 스트림은 받는 쪽이 읽지 않아 보내지 못한 것이 64 MiB 를 넘게 되면 끊음. 지금까지는 서버 메모리에 끝없이 쌓였음. 페이지는 다시 연결해 전체 상태를 받음', refs: ['REQ-S-087', 'IF-015', 'IF-075'] },
