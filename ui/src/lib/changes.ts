@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.344',
+    date: '2026-10-29',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: 'iOS 카메라 번역: 처음 언어팩을 받는 동안 멈춘 것처럼 보이던 것을 고침. 받는 동안은 "언어 받는 중…" 을 보이고, 다 받으면 바로 번역함', refs: ['REQ-F-808'] },
+    ],
+  },
+  {
     version: '1.343',
+    commit: '149bf49',
     date: '2026-10-29',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: 'iOS 앱에서 세션 줄을 길게 누르면 빈 링크 미리보기(링크 열기·복사·공유)가 뜨던 것을 고쳐, 원래 세션 메뉴가 뜸', refs: ['REQ-F-756'] },

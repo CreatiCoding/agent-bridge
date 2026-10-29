@@ -21,6 +21,8 @@ test('아이콘 길게 누르기 메뉴의 카메라 번역이 화면을 열고,
   assert.match(swift, /recognitionLevel = \.accurate/)
   assert.match(swift, /Configuration\(source: Locale\.Language\(identifier: "ja"\), target: Locale\.Language\(identifier: "ko"\)\)/)
   assert.match(swift, /prepareTranslation\(\)/)
+  // 1.344: prepareTranslation returns before the pack is downloaded; translating then waited on the system sheet.
+  assert.match(swift, /prepareTranslation\(\)[\s\S]*while await LanguageAvailability\(\)\.status\([^)]*\)[^{]*!= \.installed[\s\S]*언어 받는 중[\s\S]*for await lines in texts\.stream/)
   // Nothing leaves the phone: no network calls in the screen.
   assert.doesNotMatch(swift, /URLSession|URLRequest|https:\/\//)
 })

@@ -160,11 +160,18 @@ struct JapaneseCamera: View {
       do {
         // Asks to download the language pack if it is not on the phone yet; after that no network is needed.
         try await session.prepareTranslation()
-        await MainActor.run { status = "오프라인으로 번역해요 · 일본어 → 한국어"; failed = false }
       } catch {
         await MainActor.run { status = "언어 받기를 못 했어요. 인터넷에 연결해 한 번 받아 주세요"; failed = true }
         return
       }
+      // prepareTranslation returns once the download is agreed to, not when it is done. Translating before then
+      // waits on the system's download sheet, and the screen looked stuck; so wait until the pack is on the phone.
+      while await LanguageAvailability().status(from: Locale.Language(identifier: "ja"), to: Locale.Language(identifier: "ko")) != .installed {
+        await MainActor.run { status = "언어 받는 중… 끝나면 바로 번역해요"; failed = false }
+        try? await Task.sleep(for: .seconds(2))
+        if Task.isCancelled { return }
+      }
+      await MainActor.run { status = "오프라인으로 번역해요 · 일본어 → 한국어"; failed = false }
       for await lines in texts.stream {
         let known = await MainActor.run { korean }
         let todo = Array(Set(lines)).filter { known[$0] == nil }
