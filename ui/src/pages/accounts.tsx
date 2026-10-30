@@ -10,6 +10,7 @@ import { NONE, useStore } from '../lib/store'
 import type { Account, Host } from '../lib/types'
 import { Badge, Button, CardHead, Empty, Icon, NO_AUTOFILL, Spinner } from '../kit'
 import { confirmDialog, promptDialog, toast } from '../kit/overlay'
+import { copyText, linkClick } from '../lib/builtin-actions'
 
 type Reply = { ok: true; accounts: Account[]; url?: string; id?: string }
 const call = (hostId: string, body: Record<string, unknown>) => post<Reply>(`/api/hosts/${hostId}/accounts`, body)
@@ -172,11 +173,11 @@ function HostAccounts({ host }: { host: Host }) {
                     <li>로그인이 끝나면 페이지에 나오는 코드를 복사해 아래 칸에 붙여 넣어요.</li>
                   </ol>
                   <div className="hstack" style={{ flexWrap: 'wrap', gap: 6 }}>
-                    <a className="btn btn-primary btn-sm" href={login.url} target="_blank" rel="noreferrer noopener">
+                    <a className="btn btn-primary btn-sm" href={login.url} target="_blank" rel="noreferrer noopener" onClick={linkClick(login.url, 'accounts')}>
                       <Icon name="link" />
                       <span>로그인 페이지 열기</span>
                     </a>
-                    <Button size="sm" onClick={() => navigator.clipboard?.writeText(login.url).then(() => toast('로그인 주소를 복사했어요'))}>
+                    <Button size="sm" onClick={() => copyText(login.url, 'link').then((ok) => ok && toast('로그인 주소를 복사했어요'))}>
                       주소 복사
                     </Button>
                   </div>

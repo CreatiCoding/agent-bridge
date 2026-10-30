@@ -11,11 +11,12 @@ import { toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { featureOn } from '../lib/features'
+import { copyText, openSession } from '../lib/builtin-actions'
 
 export function Copy({ text }: { text: string }) {
   return (
     <div className="codebox">
-      <button type="button" className="codebox-copy" style={{ opacity: 1 }} onClick={() => navigator.clipboard?.writeText(text).then(() => toast('복사했어요'))}>
+      <button type="button" className="codebox-copy" style={{ opacity: 1 }} onClick={() => copyText(text, 'code').then((ok) => ok && toast('복사했어요'))}>
         <Icon name="copy" />
         <span>복사</span>
       </button>
@@ -656,7 +657,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                       key={s.id}
                       title={s.title || shortPath(s.cwd, h?.home)}
                       sub={`${PHASE[s.state.phase] ?? s.state.phase}${s.mux ? ` · ${s.mux}` : ''} · 사본 ${s.serverLines}줄${s.behind ? ` · ${s.behind}줄 밀림` : ''}${s.syncedAt ? ` · ${clock(s.syncedAt)}` : ''}${s.pushError ? ` · push 실패: ${s.pushError}` : ''}`}
-                      onClick={() => go({ name: 'session', id: s.id })}
+                      onClick={() => openSession(s.id, 'host')}
                       chevron
                     />
                   ))}

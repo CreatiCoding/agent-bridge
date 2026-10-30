@@ -1,12 +1,12 @@
 // What happened in sessions the person was not looking at: decisions waiting, background work that ended.
 import { post } from '../lib/api'
 import { ago } from '../lib/format'
-import { go } from '../lib/router'
 import { NONE, useStore } from '../lib/store'
 import { Button, Empty, Icon, IconButton } from '../kit'
 import { Sheet } from '../kit/overlay'
 import { act } from './session-menu'
 import { PushToggle } from './push'
+import { openSession } from '../lib/builtin-actions'
 
 export function NoticeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const notices = useStore((s) => s.state?.notices ?? NONE)
@@ -41,7 +41,7 @@ export function NoticeSheet({ open, onClose }: { open: boolean; onClose: () => v
               style={{ border: 0, background: 'none', textAlign: 'left', padding: 0 }}
               onClick={() => {
                 onClose()
-                if (n.sid) go({ name: 'session', id: n.sid })
+                if (n.sid) openSession(n.sid, 'notice')
                 void post('/api/notices/dismiss', { id: n.id })
               }}
             >

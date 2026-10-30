@@ -14,6 +14,7 @@ import { openMenu, Sheet, toast, type MenuEntry } from '../kit/overlay'
 import { act, command, sessionPost } from './session-menu'
 import { AllowHint, confirmAllowAll } from './auto-allow-confirm'
 import { featureOn } from '../lib/features'
+import { openLink } from '../lib/builtin-actions'
 
 /** How a to-do's state reads at a glance (REQ-F-778). */
 const TODO_MARK: Record<string, string> = { completed: 'todoDone', in_progress: 'todoNow', pending: 'todo' }
@@ -622,7 +623,7 @@ export function PrChips({ s }: { s: Session }) {
       </>
     ),
     icon: 'pr',
-    onSelect: () => open(p.url, '_blank', 'noopener'),
+    onSelect: () => openLink(p.url, 'pr'),
   }))
   const menu = (at: HTMLElement) =>
     openMenu(more ? [...items, 'sep', { label: `더 보기 (${more}개 남음)`, icon: 'down', onSelect: () => (setReopenAt(at), setLimit((l) => l + PR_PAGE)) }] : items, at, `PR ${prs.length + more}`)
@@ -637,7 +638,7 @@ export function PrChips({ s }: { s: Session }) {
   if (prs.length === 1 && !more) {
     const p = prs[0]
     return (
-      <Chip icon="pr" tone={prTone(p.state)} onClick={() => open(p.url, '_blank', 'noopener')} title={p.label}>
+      <Chip icon="pr" tone={prTone(p.state)} onClick={() => openLink(p.url, 'pr')} title={p.label}>
         {p.label.length > 28 ? `${p.label.slice(0, 27)}…` : p.label}
       </Chip>
     )

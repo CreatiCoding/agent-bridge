@@ -7,6 +7,7 @@ import { ago, bytes, shortPath } from '../lib/format'
 import { go } from '../lib/router'
 import { Badge, Button, Empty, Icon, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
+import { openSession } from '../lib/builtin-actions'
 
 interface Conversation {
   conv: string
@@ -52,7 +53,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
     setRun({ done: 0, failed: [], total: 1, now: nameOf(c) })
     try {
       const r = await adoptOne(c)
-      go({ name: 'session', id: r.id }, { replace: true })
+      openSession(r.id, 'adopt', { replace: true })
     } catch (e) {
       toast(errorText(e), { tone: 'bad' })
       setRun(null)

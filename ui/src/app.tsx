@@ -7,7 +7,7 @@ import { go, href, type Route, useRoute } from './lib/router'
 import { look } from './lib/sessions'
 import { getStore, onServerToast, reportFocus, useStore } from './lib/store'
 import { Button, Icon, IconButton, Logo, Spinner, useWide } from './kit'
-import { confirmDialog, openMenu, OverlayHost, toast, type MenuEntry } from './kit/overlay'
+import { confirmDialog, openMenu, OverlayHost, type MenuEntry } from './kit/overlay'
 import { PermissionModal } from './components/permission-modal'
 import { SudoGate } from './components/sudo-gate'
 import { NoticeSheet } from './components/notices'
@@ -44,6 +44,8 @@ const GuidePage = lazy(() => pageFiles.guide().then((m) => ({ default: m.GuidePa
 const idle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 2500))
 idle(() => void pageFiles.newSession().then(() => idle(() => Object.values(pageFiles).forEach((f) => void f()))))
 import { shownName, type Me } from './lib/types'
+import { openLink, openSession } from './lib/builtin-actions'
+import { dispatch } from './lib/actions'
 
 function ConnBanner() {
   const link = useStore((s) => s.link)
@@ -259,7 +261,7 @@ function nudgeAppUpdate(me: Me | null) {
   if (due == null || !app) return
   nudged = true
   void confirmDialog('새 버전이 있어요', { text: `지금 앱은 빌드 ${app.build}, 새 빌드는 ${due} 이에요. TestFlight 에서 업데이트해 주세요.`, ok: 'TestFlight 열기', cancel: '나중에' }).then((open) => {
-    if (open) location.href = TESTFLIGHT_URL
+    if (open) openLink(TESTFLIGHT_URL, 'app-update', '_self')
     else setAppSnooze({ build: due, until: Date.now() + APP_UPDATE_SNOOZE_MS })
   })
 }
@@ -279,7 +281,7 @@ export function App({ me }: { me: Me | null }) {
   const sessions = useStore((s) => s.state?.sessions)
   const hosts = useStore((s) => s.state?.hosts)
 
-  useEffect(() => onServerToast((text) => toast(text)), [])
+  useEffect(() => onServerToast((text, sid) => dispatch('notify.show', { text, ...(sid ? { sid } : {}) })), [])
   useEffect(() => nudgeAppUpdate(me), [me])
   // The sessions waiting for the person: counted in the tab title, and on the folded list's rail.
   const need = (sessions ?? []).filter((s) => look(s, hosts?.find((h) => h.id === s.hostId)).need).length
@@ -315,7 +317,7 @@ export function App({ me }: { me: Me | null }) {
         e.preventDefault()
         const at = sid ? rows.indexOf(sid) : -1
         const next = rows[(at + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length]
-        go({ name: 'session', id: next })
+        openSession(next, 'key')
       }
     }
     addEventListener('keydown', k)

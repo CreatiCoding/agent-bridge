@@ -5,7 +5,7 @@ import { errorText } from '../lib/api'
 import { kbDebugOn, kbDebugText } from '../lib/kbdebug'
 import { bytes, duration, folderPath, shortLabel, tokens } from '../lib/format'
 import { getPref, markSeen, setPref } from '../lib/local'
-import { back, go, navigate } from '../lib/router'
+import { back, navigate } from '../lib/router'
 import { loadOlder, retryLog, useSessionLog } from '../lib/session-log'
 import { groupTree, look, modelName, titleOf } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
@@ -25,6 +25,7 @@ import { SessionTabs, useGroupTabs } from '../components/session-tabs'
 import { PreviewSheet, ServerButton, type Server } from '../components/local-preview'
 import { useEdgeSwipeBack } from '../kit/swipe'
 import { inPane, SPLIT_MAX, splitHost, splitRoom, startSplit } from '../lib/split'
+import { copyText, openLink, openSession } from '../lib/builtin-actions'
 
 interface Pending {
   key: string
@@ -96,7 +97,7 @@ function SeatBanner({ s }: { s: Session }) {
         </div>
         <div className="banner-actions">
           {url ? (
-            <Button size="sm" icon="link" onClick={() => window.open(url, '_blank', 'noopener')}>
+            <Button size="sm" icon="link" onClick={() => openLink(url, 'slack')}>
               Slack 스레드 열기
             </Button>
           ) : null}
@@ -126,7 +127,7 @@ function DrivenBar({ s }: { s: Session }) {
         <span className="muted">{parent ? ` · ${titleOf(parent)}` : ''} · 직접 입력해도 돼요</span>
       </span>
       {parent ? (
-        <Button size="sm" tone="ghost" onClick={() => go({ name: 'session', id: parent.id })}>
+        <Button size="sm" tone="ghost" onClick={() => openSession(parent.id, 'delegate')}>
           맡긴 세션 열기
         </Button>
       ) : null}
@@ -158,7 +159,7 @@ function DelegatesBar({ s }: { s: Session }) {
       <b className="delegates-head">맡긴 세션 {kids.length}</b>
       <span className="delegates-list">
         {kids.map(({ c, host, l }) => (
-          <button key={c.id} type="button" className={`delegate-chip${l.need ? ' need' : ''}`} title={`${host?.name ?? '다른 맥'} · ${titleOf(c)} · ${l.label}\n누르면 열기`} onClick={() => go({ name: 'session', id: c.id })}>
+          <button key={c.id} type="button" className={`delegate-chip${l.need ? ' need' : ''}`} title={`${host?.name ?? '다른 맥'} · ${titleOf(c)} · ${l.label}\n누르면 열기`} onClick={() => openSession(c.id, 'delegate')}>
             <span className={`dot dot-${l.tone}${l.pulse ? ' pulse' : ''}`} style={{ width: 7, height: 7 }} />
             <span className="delegate-title">{titleOf(c)}</span>
             <span className="muted delegate-meta">
@@ -191,7 +192,7 @@ function DelegateAsks({ s }: { s: Session }) {
               <b>{hosts.find((h) => h.id === c.hostId)?.name ?? '다른 맥'} 에 맡긴 세션이 기다려요</b>
               <span className="muted"> · {titleOf(c)}</span>
             </span>
-            <Button size="sm" tone="ghost" onClick={() => go({ name: 'session', id: c.id })}>
+            <Button size="sm" tone="ghost" onClick={() => openSession(c.id, 'delegate')}>
               맡긴 세션 열기
             </Button>
           </div>
@@ -318,7 +319,7 @@ function StateBanner({ s }: { s: Session }) {
         <div className="banner-body">
           이 세션은 더 가벼운 새 세션으로 넘겨졌어요.
           <div className="banner-actions">
-            <Button size="sm" onClick={() => navigate(`/s/${s.state.handedOffTo}`)}>
+            <Button size="sm" onClick={() => s.state.handedOffTo && openSession(s.state.handedOffTo, 'handoff')}>
               새 세션으로
             </Button>
           </div>
@@ -680,7 +681,7 @@ export function SessionPage({ id }: { id: string }) {
   const askTodos = () => askSessionTodos(s, todoItems.length > 0, send)
   // ▶ and a to-do item send the request like any message, so a busy session gets it after its turn (REQ-F-779).
   const runTodos = (text: string) => void send(text).then((ok) => ok && toast(busy ? '지금 하던 일이 끝나면 이어서 해요' : '할 일을 시작했어요'))
-  const copyPath = () => navigator.clipboard?.writeText(s.cwd).then(() => toast('경로를 복사했어요'))
+  const copyPath = () => copyText(s.cwd, 'other').then((ok) => ok && toast('경로를 복사했어요'))
   // What a phone leaves out of its header, at the top of the ⋯ menu: the group's other sessions (the PC's tabs) and
   // the folder.
   const phoneMenu: MenuEntry[] = wide
@@ -693,7 +694,7 @@ export function SessionPage({ id }: { id: string }) {
                 icon: 'list' as const,
                 hint: `${crumbs.join(' › ')} · ${group.tabs.length}개`,
                 items: [
-                  ...group.tabs.map((t) => ({ label: titleOf(t), checked: t.id === s.id, hint: look(t, hosts.find((h) => h.id === t.hostId)).label, onSelect: () => t.id !== s.id && go({ name: 'session', id: t.id }, { replace: true }) })),
+                  ...group.tabs.map((t) => ({ label: titleOf(t), checked: t.id === s.id, hint: look(t, hosts.find((h) => h.id === t.hostId)).label, onSelect: () => t.id !== s.id && openSession(t.id, 'tabs', { replace: true }) })),
                   { label: '이 그룹에 새 세션', icon: 'plus' as const, onSelect: () => navigate(`/new?group=${group.holder!.id}`) },
                 ],
               },
@@ -817,7 +818,7 @@ export function SessionPage({ id }: { id: string }) {
               {p.writing ? <div className="bubble-note">받아쓰는 중…</div> : null}
             </div>
           ))}
-          <Writing text={writing} />
+          <Writing text={writing} sid={s.id} />
           <Activity s={s} items={log.folded.items} />
           {/* After the conversation is in: drawn before it, they were pushed down the moment it arrived (a layout
               shift of 0.18 on a phone). */}

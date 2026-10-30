@@ -1,12 +1,12 @@
 // A decision waiting in a session the person is not looking at is asked here, on top of whatever is open.
 // One the open session handed work to is asked in its conversation instead (DelegateAsks). Each card is asked once; closing it leaves the card in its conversation. One worked on in Slack is asked there.
 import { useState } from 'react'
-import { go } from '../lib/router'
 import { titleOf } from '../lib/sessions'
 import { useStore } from '../lib/store'
 import { Button } from '../kit'
 import { Sheet } from '../kit/overlay'
 import { DecisionCard } from './decision-card'
+import { openSession } from '../lib/builtin-actions'
 
 /** `current`: the session on screen, or the panes of 분할 화면 (each asks its own in its conversation). */
 export function PermissionModal({ current }: { current: string | string[] | null }) {
@@ -23,7 +23,7 @@ export function PermissionModal({ current }: { current: string | string[] | null
       footer={
         <div className="dialog-buttons">
           <Button onClick={close}>나중에</Button>
-          <Button tone="soft" onClick={() => (close(), go({ name: 'session', id: s.id }))}>
+          <Button tone="soft" onClick={() => (close(), openSession(s.id, 'permission'))}>
             대화로 가기
           </Button>
         </div>

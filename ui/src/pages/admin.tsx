@@ -8,6 +8,7 @@ import { NONE, useStore } from '../lib/store'
 import { Badge, Button, Empty, Icon, IconButton, LoadError, Row, Spinner, Switch } from '../kit'
 import { confirmDialog, promptDialog, toast } from '../kit/overlay'
 import { ConfigBox } from './admin-config'
+import { openSession } from '../lib/builtin-actions'
 
 interface Access {
   open: boolean
@@ -228,7 +229,7 @@ export function ReportPage({ id }: { id: string }) {
     setPref('reportFixHost', mac?.id ?? '')
     try {
       const x = await post<{ ok: true; id: string }>(`/api/admin/reports/${id}/fix`, { cwd: cwd.trim() || '~', hostId: mac?.id })
-      go({ name: 'session', id: x.id })
+      openSession(x.id, 'admin')
     } catch (e) {
       toast(errorText(e), { tone: 'bad' })
       setBusy(false)
@@ -290,7 +291,7 @@ export function ReportPage({ id }: { id: string }) {
                   <span className="muted grow" style={{ fontSize: 'var(--fs-small)' }}>
                     {`${r.fix.by} 가 ${ago(r.fix.at)} ${r.fix.auto ? '자동 대응으로 ' : ''}세션을 띄웠어요${r.fix.open ? '' : ' (끝난 세션)'}`}
                   </span>
-                  <Button size="sm" icon="forward" onClick={() => go({ name: 'session', id: r.fix!.sid })}>
+                  <Button size="sm" icon="forward" onClick={() => openSession(r.fix!.sid, 'admin')}>
                     그 세션 열기
                   </Button>
                 </div>

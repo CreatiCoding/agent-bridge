@@ -16,6 +16,7 @@ import { SlackPlaces } from '../components/slack-places'
 import { AccountsPanel } from './accounts'
 import { VoiceSettings } from './voice-settings'
 import { featureOn, type Feature } from '../lib/features'
+import { copyText, linkClick, openLink } from '../lib/builtin-actions'
 
 export interface Plugin {
   id: string
@@ -127,12 +128,12 @@ export function PluginSheet({ p, onClose, onSaved }: { p: Plugin; onClose: () =>
                 <p style={{ margin: '4px 0' }}>{h.text}</p>
                 <div className="hstack">
                   {h.link ? (
-                    <Button size="sm" icon="link" onClick={() => open(h.link!.url, '_blank', 'noopener')}>
+                    <Button size="sm" icon="link" onClick={() => openLink(h.link!.url, 'settings')}>
                       {h.link.label}
                     </Button>
                   ) : null}
                   {h.copy ? (
-                    <Button size="sm" icon="copy" onClick={() => navigator.clipboard?.writeText(h.copy!.text).then(() => toast('복사했어요'))}>
+                    <Button size="sm" icon="copy" onClick={() => copyText(h.copy!.text, 'other').then((ok) => ok && toast('복사했어요'))}>
                       {h.copy.label}
                     </Button>
                   ) : null}
@@ -145,7 +146,7 @@ export function PluginSheet({ p, onClose, onSaved }: { p: Plugin; onClose: () =>
                 <p className="muted" style={{ margin: '4px 0' }}>
                   {p.prompt.about}
                 </p>
-                <Button size="sm" icon="copy" onClick={() => navigator.clipboard?.writeText(promptText(p)).then(() => toast('프롬프트를 복사했어요'))}>
+                <Button size="sm" icon="copy" onClick={() => copyText(promptText(p), 'other').then((ok) => ok && toast('프롬프트를 복사했어요'))}>
                   프롬프트 복사
                 </Button>
               </div>
@@ -676,7 +677,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
                       홈 화면 앱은 켤 때마다 마이크 허용을 다시 물어요. Safari는 한 번 허용하면 기억해요. 처음 한 번은 Safari에서 로그인해야 해요.
                     </div>
                   </div>
-                  <a className="btn" href={safariHref()} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <a className="btn" href={safariHref()} onClick={linkClick(safariHref(), 'safari', '_self')} style={{ color: 'inherit', textDecoration: 'none' }}>
                     열기
                   </a>
                 </div>
@@ -765,7 +766,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
                 // AGPL-3.0 section 13 (REQ-F-791): the source of what this server runs.
                 ...(me?.source ? [{ icon: 'link', label: '소스 코드', hint: 'AGPL-3.0', to: me.source }] : []),
               ].map((x) => (
-                <a key={x.label} className="link-row" href={x.to}>
+                <a key={x.label} className="link-row" href={x.to} onClick={/^https?:/.test(x.to) ? linkClick(x.to, 'settings', '_self') : undefined}>
                   <Icon name={x.icon} />
                   <span className="grow">{x.label}</span>
                   {/* A phone shows the names alone: the hints made 시작 가이드 break over two lines. */}

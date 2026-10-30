@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.356',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '화면 안의 동작(세션 열기, 링크 열기, 복사, 코드 블록 그리기, 서버 알림)이 이름 붙은 액션을 거쳐요. 나중에 이 서버의 익스텐션이 끼어들 자리예요. 지금 보이는 동작은 그대로예요', refs: ['REQ-F-822'] },
+    ],
+  },
+  {
     version: '1.355',
+    commit: '95f7955',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['agent'], text: 'agent.json 의 hooks: 이 맥에서 세션이 열리거나 닫히거나 턴이 끝나면 정한 명령을 셸 없이 실행(이벤트는 stdin). 잘못된 항목과 실행할 수 없는 명령은 점검 화면에 보임', refs: ['REQ-F-821'] },

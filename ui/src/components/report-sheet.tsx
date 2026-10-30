@@ -8,6 +8,7 @@ import { shrinkImage } from '../lib/image'
 import { uploadVideo, VIDEO_MAX, VIDEO_TYPES, type SentVideo } from '../lib/video'
 import { Badge, Button, Icon, IconButton, LoadError, Spinner } from '../kit'
 import { confirmDialog, Sheet, toast } from '../kit/overlay'
+import { linkClick } from '../lib/builtin-actions'
 
 /** Opens the report sheet from anywhere (the app rail, the phone's menu). */
 export const openReport = () => dispatchEvent(new Event('cb-report'))
@@ -223,7 +224,7 @@ function PastList({ list, onRetry, onRemove }: { list: Past[] | null | undefined
           {r.images.length ? (
             <span className="report-pics">
               {r.images.map((name) => (
-                <a key={name} href={`/api/reports/${r.id}/img/${name}`} target="_blank" rel="noreferrer">
+                <a key={name} href={`/api/reports/${r.id}/img/${name}`} target="_blank" rel="noreferrer" onClick={linkClick(`/api/reports/${r.id}/img/${name}`, 'report')}>
                   <img src={`/api/reports/${r.id}/img/${name}`} alt="" />
                 </a>
               ))}

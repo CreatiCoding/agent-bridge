@@ -2,11 +2,12 @@
 // that session; × ends it, always after asking; + after the last tab starts a new session in the same group.
 // Shown only when the group holds two or more sessions still open, and only on a PC: a phone has them in the ⋯ menu.
 import { useEffect, useRef } from 'react'
-import { go, href } from '../lib/router'
+import { href } from '../lib/router'
 import { look, titleOf } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
 import { Icon } from '../kit'
 import { endSession } from './session-menu'
+import { openSession } from '../lib/builtin-actions'
 
 /** The sessions that share this one's group, as tabs: also the phone's "같은 그룹 세션" menu (session-page). */
 export function useGroupTabs(id: string) {
@@ -39,7 +40,7 @@ export function SessionTabs({ id }: { id: string }) {
       const t = order.current[Number(m[1]) - 1]
       if (!t) return
       e.preventDefault()
-      if (t.id !== id) go({ name: 'session', id: t.id }, { replace: true })
+      if (t.id !== id) openSession(t.id, 'tabs', { replace: true })
     }
     addEventListener('keydown', k)
     return () => removeEventListener('keydown', k)
@@ -54,7 +55,7 @@ export function SessionTabs({ id }: { id: string }) {
     const at = tabs.findIndex((x) => x.id === sid)
     const rest = tabs.filter((x) => x.id !== sid && !x.closed)
     const next = rest[Math.min(at, rest.length - 1)]
-    if (next) go({ name: 'session', id: next.id }, { replace: true })
+    if (next) openSession(next.id, 'tabs', { replace: true })
   }
 
   return (
@@ -73,7 +74,7 @@ export function SessionTabs({ id }: { id: string }) {
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
                 e.preventDefault()
-                if (!on) go({ name: 'session', id: s.id }, { replace: true })
+                if (!on) openSession(s.id, 'tabs', { replace: true })
               }}
               onAuxClick={(e) => {
                 // A middle click closes, as in an editor (still asking first).

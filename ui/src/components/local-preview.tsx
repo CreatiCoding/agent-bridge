@@ -8,6 +8,7 @@ import type { Session } from '../lib/types'
 import { Button, IconButton } from '../kit'
 import { confirmDialog, openMenu, Sheet, toast, type MenuItem } from '../kit/overlay'
 import { act, sessionPost } from './session-menu'
+import { openLink } from '../lib/builtin-actions'
 
 // ---------- is this browser on the session's Mac? ----------
 // The agent on this Mac (if any) says which host it is; asked once per page.
@@ -53,7 +54,7 @@ export function ServerButton({ s, onPreview }: { s: Session; onPreview: (x: Serv
   if (!servers.length || !s.state.alive) return null
   /** A tab of its own: localhost itself on this Mac, the preview address anywhere else. */
   const newTab = (x: Server) => {
-    if (here) return void window.open(`http://localhost:${x.port}/`, '_blank', 'noopener')
+    if (here) return void openLink(`http://localhost:${x.port}/`, 'preview')
     // Opened now, while the press still counts: a phone blocks a tab opened after waiting for the address.
     const w = window.open('', '_blank')
     if (w) w.opener = null
@@ -142,7 +143,7 @@ export function PreviewSheet({ s, server, onClose }: { s: Session; server: Serve
             처음부터 다시
           </Button>
           <span className="grow" />
-          <Button size="sm" icon="link" disabled={!url} onClick={() => url && (window.open(url, '_blank', 'noopener'), toast('새 탭에서 열었어요'))}>
+          <Button size="sm" icon="link" disabled={!url} onClick={() => url && (openLink(url, 'preview'), toast('새 탭에서 열었어요'))}>
             새 탭으로
           </Button>
         </div>

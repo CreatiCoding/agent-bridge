@@ -10,6 +10,7 @@ import type { LiveListen, LivePreview } from '../lib/voice'
 import type { VoiceEnd } from '../lib/voice-commands'
 import { Button, Empty, IconButton, NO_AUTOFILL, Row } from '../kit'
 import { openMenu, Sheet, toast, type MenuEntry } from '../kit/overlay'
+import { openSession } from '../lib/builtin-actions'
 
 interface Pane {
   key: string
@@ -68,7 +69,7 @@ export function SplitView({ ids, onPanes }: { ids: string[]; onPanes?: (ids: str
     if (w && (voice.current?.owner === w || voice.current?.target === w)) voiceEnd()
     const left = latest.current.filter((p) => p.key !== key)
     // One left is no split: that session opens on its own.
-    if (left.length <= 1) return go(left.length ? { name: 'session', id: left[0].id } : { name: 'home' }, { replace: true })
+    if (left.length <= 1) return void (left.length ? openSession(left[0].id, 'split', { replace: true }) : go({ name: 'home' }, { replace: true }))
     setPanes(left)
   }
 
@@ -83,7 +84,7 @@ export function SplitView({ ids, onPanes }: { ids: string[]; onPanes?: (ids: str
       },
       full: (w) => {
         const p = byWindow(w)
-        if (p) go({ name: 'session', id: p.id })
+        if (p) openSession(p.id, 'split')
       },
       moved: (w, path) => {
         const p = byWindow(w)
@@ -154,7 +155,7 @@ export function SplitView({ ids, onPanes }: { ids: string[]; onPanes?: (ids: str
   return (
     <div className="split">
       <div className="split-bar">
-        <IconButton icon="back" label="분할 끝내기" title="분할 끝내기 (첫 칸의 세션으로)" onClick={() => go({ name: 'session', id: panes[0].id })} />
+        <IconButton icon="back" label="분할 끝내기" title="분할 끝내기 (첫 칸의 세션으로)" onClick={() => openSession(panes[0].id, 'split')} />
         <b className="split-title">{saved?.name ?? '분할 화면'}</b>
         <span className="muted split-count">
           {panes.length} / {SPLIT_MAX}

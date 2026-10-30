@@ -14,6 +14,7 @@ import { toast } from '../kit/overlay'
 import { Copy } from './hosts'
 import { PluginSheet, promptText, type Plugin } from './settings'
 import { featureOn } from '../lib/features'
+import { copyText, openLink } from '../lib/builtin-actions'
 
 type Path = GuidePath
 
@@ -92,7 +93,7 @@ function SlackStep({ slack, onSaved }: { slack: Plugin; onSaved: (list: Plugin[]
   const steps = slack.help.filter((h) => /^\d/.test(h.title))
   const trouble = slack.help.find((h) => !/^\d/.test(h.title))
   const on = slack.status.state === 'on'
-  const copy = (text: string, note: string) => navigator.clipboard?.writeText(text).then(() => toast(note))
+  const copy = (text: string, note: string) => copyText(text, 'other').then((ok) => ok && toast(note))
   return (
     <>
       <p className="guide-note">세션을 Slack 전용 채널에서도 이어서 할 수 있어요. 한 세션은 한 번에 한 곳(브릿지 또는 Slack)에서만 작업하고, 메뉴와 스레드의 버튼으로 옮겨요.</p>
@@ -122,7 +123,7 @@ function SlackStep({ slack, onSaved }: { slack: Plugin; onSaved: (list: Plugin[]
             {h.link || h.copy ? (
               <div className="hstack" style={{ marginTop: 6, flexWrap: 'wrap' }}>
                 {h.link ? (
-                  <Button size="sm" icon="link" onClick={() => open(h.link?.url, '_blank', 'noopener')}>
+                  <Button size="sm" icon="link" onClick={() => h.link?.url && openLink(h.link.url, 'guide')}>
                     {h.link.label}
                   </Button>
                 ) : null}
@@ -359,7 +360,7 @@ export function GuidePage({ me, path }: { me: Me | null; path: Path }) {
           <b>시작 가이드</b>
           <span>{ready ? `${doneCount}/${needed.length} 단계 끝` : '불러오는 중'}</span>
         </div>
-        <IconButton icon="link" label="이 가이드 링크 복사" onClick={() => navigator.clipboard?.writeText(`${origin}/guide${path === 'start' ? '' : `/${path}`}`).then(() => toast('가이드 링크를 복사했어요. 로그인 전에도 열려요'))} />
+        <IconButton icon="link" label="이 가이드 링크 복사" onClick={() => copyText(`${origin}/guide${path === 'start' ? '' : `/${path}`}`, 'link').then((ok) => ok && toast('가이드 링크를 복사했어요. 로그인 전에도 열려요'))} />
       </div>
       <div className="scroll">
         <div className="page stack">

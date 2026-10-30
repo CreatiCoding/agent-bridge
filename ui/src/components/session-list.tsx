@@ -6,7 +6,7 @@ import { flushSync } from 'react-dom'
 import { post } from '../lib/api'
 import { ago } from '../lib/format'
 import { getPref, getSeen, setPref } from '../lib/local'
-import { go, href, navigate } from '../lib/router'
+import { href, navigate } from '../lib/router'
 import { prefetch } from '../lib/session-log'
 import { GROUP_DEPTH, groupHeight, groupTree, look, titleOf } from '../lib/sessions'
 import { useStore } from '../lib/store'
@@ -19,6 +19,7 @@ import { useSwipeRow } from '../kit/swipe'
 import { del } from '../lib/api'
 import { StateWait } from './state-wait'
 import { useGroupSort } from './group-sort'
+import { openSession } from '../lib/builtin-actions'
 
 function useSeen() {
   const [seen, setSeen] = useState(getSeen)
@@ -70,6 +71,7 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
       title={multiHost && host ? `${titleOf(s)} · ${host.name}` : undefined}
       draggable={!!onDragStart}
       data-sid={s.id}
+      data-from="list"
       onDragStart={(e) => {
         e.dataTransfer.setData('text/x-session', s.id)
         e.dataTransfer.effectAllowed = 'move'
@@ -246,7 +248,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
       ))
 
   // Taking one back from rest: woken and opened, ready to use again.
-  const wake = (s: Session) => void act(() => sessionPost(s, 'settings', { resting: false }), '휴면을 풀었어요').then((r) => r != null && openSession(s.id))
+  const wake = (s: Session) => void act(() => sessionPost(s, 'settings', { resting: false }), '휴면을 풀었어요').then((r) => r != null && openSession(s.id, 'list'))
   // Each one put to rest: opened (woken) or removed (ended and deleted, as "목록에서 지우기" does).
   const restItems = (list: Session[]) =>
     list.map((s) => ({
@@ -548,4 +550,3 @@ export async function newGroup() {
   if (name) await act(() => post('/api/groups', { op: 'create', name }), `'${name}' 그룹을 만들었어요`)
 }
 
-export const openSession = (id: string) => go({ name: 'session', id })

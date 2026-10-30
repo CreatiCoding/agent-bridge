@@ -8,6 +8,8 @@ import { connect } from './lib/store'
 import type { Me } from './lib/types'
 import { startBackgroundRelay } from './components/relay-status'
 import { setFeatures } from './lib/features'
+import { openSession } from './lib/builtin-actions'
+import { claimPrimary } from './lib/primary'
 import './styles.css'
 
 // The meta theme colour follows the page's own theme, so the phone's status bar matches it.
@@ -21,7 +23,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeColou
 // An address of before (/#/s/<id>) becomes its path before anything is drawn; links to the page's own addresses
 // move without reloading.
 fromHash()
-interceptLinks()
+interceptLinks((id, from) => openSession(id, from))
+claimPrimary()
 
 connect()
 navigator.serviceWorker?.register('/sw.js', { scope: '/' }).catch(() => {})

@@ -1,7 +1,9 @@
 // Claude's answers as React elements: headings, lists, quotes, tables, fenced code, inline code, bold,
 // italics, links. No HTML from a message is ever interpreted; everything is text until a rule makes it markup.
-import { Fragment, memo, type ReactNode, useState } from 'react'
+import { createContext, Fragment, memo, type ReactNode, useContext, useState, useSyncExternalStore } from 'react'
 import { Icon } from '../kit/icons'
+import { actionsVersion, dispatch, setDefault, watchActions } from './actions'
+import { copyText, linkClick } from './builtin-actions'
 
 const URL_RE = /https?:\/\/[\x21-\x5f\x61-\x7e]+/g
 
@@ -16,7 +18,7 @@ function linkify(text: string, key: string): ReactNode[] {
     const i = m.index ?? 0
     if (i > at) out.push(text.slice(at, i))
     out.push(
-      <a key={`${key}l${i}`} href={url} target="_blank" rel="noopener noreferrer">
+      <a key={`${key}l${i}`} href={url} target="_blank" rel="noopener noreferrer" onClick={linkClick(url, 'markdown')}>
         {url}
       </a>,
     )
@@ -42,7 +44,7 @@ export function inline(text: string, key = 'i'): ReactNode[] {
     else if (m[4] !== undefined) out.push(<del key={k}>{inline(m[4], k)}</del>)
     else if (m[5] !== undefined)
       out.push(
-        <a key={k} href={m[6]} target="_blank" rel="noopener noreferrer">
+        <a key={k} href={m[6]} target="_blank" rel="noopener noreferrer" onClick={linkClick(m[6], 'markdown')}>
           {m[5]}
         </a>,
       )
@@ -64,7 +66,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
         className="codebox-copy"
         aria-label="복사"
         onClick={() => {
-          navigator.clipboard?.writeText(code).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1200)))
+          void copyText(code, 'code').then((ok) => ok && (setCopied(true), setTimeout(() => setCopied(false), 1200)))
         }}
       >
         <Icon name={copied ? 'check' : 'copy'} />
@@ -89,7 +91,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
 type Block =
   | { t: 'p'; text: string }
   | { t: 'h'; level: number; text: string }
-  | { t: 'code'; lang: string; code: string }
+  | { t: 'code'; lang: string; code: string; closed: boolean }
   | { t: 'quote'; text: string }
   | { t: 'list'; ordered: boolean; start: number; items: { text: string; depth: number; check?: boolean }[] }
   | { t: 'table'; head: string[]; rows: string[][]; align: ('left' | 'right' | 'center' | undefined)[] }
@@ -125,7 +127,8 @@ export function parse(md: string): Block[] {
         if (close) break
         body.push(lines[j].startsWith(fence[1]) ? lines[j].slice(fence[1].length) : lines[j])
       }
-      blocks.push({ t: 'code', lang: fence[3], code: body.join('\n') })
+      // Not closed yet: an answer still being written, or a fence Claude never closed.
+      blocks.push({ t: 'code', lang: fence[3], code: body.join('\n'), closed: j < lines.length })
       i = j
       continue
     }
@@ -201,6 +204,22 @@ function lines(text: string, key: string) {
 let htmlBlock: ((code: string) => ReactNode) | null = null
 export const setHtmlBlock = (f: (code: string) => ReactNode) => void (htmlBlock = f)
 
+// renderer.block (REQ-F-822): a fenced block goes through the bus, so a handler around it can draw it its own way.
+setDefault('renderer.block', ({ lang, text }) => (lang === 'html' && htmlBlock ? htmlBlock(text) : <CodeBlock code={text} lang={lang} />))
+
+/**
+ * Where a piece of Markdown is drawn: the session it belongs to and whether it is that session's last message.
+ * Outside a session (a card's plan, a quote) there is no sid.
+ */
+export const MarkdownContext = createContext<{ sid?: string; isLast?: boolean }>({})
+
+function FencedBlock({ lang, code, closed }: { lang: string; code: string; closed: boolean }) {
+  const { sid, isLast } = useContext(MarkdownContext)
+  // Drawn again when a handler comes or goes.
+  useSyncExternalStore(watchActions, actionsVersion)
+  return <>{dispatch('renderer.block', { lang, text: code, closed, isLast: !!isLast, ...(sid ? { sid } : {}) }) as ReactNode}</>
+}
+
 /** Parsed and drawn again only when its text changes. */
 export const Markdown = memo(MarkdownView)
 function MarkdownView({ text, className }: { text: string; className?: string }) {
@@ -217,7 +236,7 @@ function MarkdownView({ text, className }: { text: string; className?: string })
             return <H key={k}>{inline(b.text, k)}</H>
           }
           case 'code':
-            return b.lang === 'html' && htmlBlock ? <Fragment key={k}>{htmlBlock(b.code)}</Fragment> : <CodeBlock key={k} code={b.code} lang={b.lang} />
+            return <FencedBlock key={k} lang={b.lang} code={b.code} closed={b.closed} />
           case 'quote':
             return (
               <blockquote key={k}>

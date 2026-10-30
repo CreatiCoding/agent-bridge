@@ -10,6 +10,7 @@ import { addVoiceRecent, getVoiceDevice, joinWords, setVoiceDevice, VOICE_CODE_T
 import { inHomeApp, safariHref } from '../lib/safari'
 import { Button, IconButton } from '../kit'
 import { toast } from '../kit/overlay'
+import { linkClick } from '../lib/builtin-actions'
 
 interface Said {
   id: number
@@ -321,7 +322,7 @@ export function VoiceMode({
             {inHomeApp() ? (
               <>
                 {' '}
-                홈 화면 앱은 켤 때마다 마이크를 다시 물어요. <a href={safariHref()}>Safari로 열기</a>
+                홈 화면 앱은 켤 때마다 마이크를 다시 물어요. <a href={safariHref()} onClick={linkClick(safariHref(), 'safari', '_self')}>Safari로 열기</a>
               </>
             ) : null}
           </span>

@@ -13,6 +13,7 @@ import { AdoptList, presetAdopt } from './adopt-list'
 import { confirmLaunchMode } from '../components/auto-allow-confirm'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { confirmDialog, toast } from '../kit/overlay'
+import { openSession } from '../lib/builtin-actions'
 
 interface Dirs {
   ok: true
@@ -105,7 +106,7 @@ export function NewSessionPage() {
       setPref('newHost', host.id)
       setPref('newAccount', account)
       if (!auto) setPref('newCwd', cwd)
-      go({ name: 'session', id: r.id }, { replace: true })
+      openSession(r.id, 'new', { replace: true })
     } catch (e) {
       if (e instanceof ApiError && e.data.missing && !create) {
         setBusy(false)

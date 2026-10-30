@@ -1,9 +1,9 @@
 // The conversation, drawn from the folded log. Tool calls in a row become one compact block; each can be
 // opened to see what it ran and what came back.
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clock, duration, shortLabel } from '../lib/format'
-import { Markdown, setHtmlBlock } from '../lib/markdown'
+import { Markdown, MarkdownContext, setHtmlBlock } from '../lib/markdown'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { Badge, Button, Collapse, Icon, IconButton, Spinner } from '../kit'
@@ -12,6 +12,7 @@ import { DecisionCard } from './decision-card'
 import { HtmlPreview, isHtmlDocument } from './html-preview'
 import { act, command, sessionPost } from './session-menu'
 import { TodoAskCard, todoAskOf } from './session-extras'
+import { copyText } from '../lib/builtin-actions'
 
 // A ```html block in an answer is drawn, not only shown as code.
 setHtmlBlock((code) => <HtmlPreview html={code} />)
@@ -73,7 +74,7 @@ function UserMsgView({ it, session, onImage, onEdit }: { it: Extract<Item, { t: 
   const menu = (at: HTMLElement | { x: number; y: number }) =>
     openMenu(
       [
-        { label: '복사', icon: 'copy', onSelect: () => navigator.clipboard?.writeText(it.text).then(() => toast('복사했어요')) },
+        { label: '복사', icon: 'copy', onSelect: () => copyText(it.text, 'message').then((ok) => ok && toast('복사했어요')) },
         { label: '다시 쓰기', icon: 'edit', hint: '입력칸으로', onSelect: () => onEdit(it.text) },
         ...(held
           ? [
@@ -173,9 +174,16 @@ function NoteView({ it, session }: { it: Extract<Item, { t: 'note' }>; session: 
 const TextMsg = memo(TextMsgView, (a, b) => a.it === b.it && a.last === b.last && a.session.closed === b.session.closed && a.session.seat?.where === b.session.seat?.where)
 function TextMsgView({ it, session, last, onSend, onImage }: { it: Extract<Item, { t: 'text' }>; session: Session; last: boolean; onSend: (text: string) => void; onImage: (s: string) => void }) {
   const html = isHtmlDocument(it.text)
+  const where = useMemo(() => ({ sid: session.id, isLast: last }), [session.id, last])
   return (
     <div className="msg-text">
-      {html ? <HtmlPreview html={it.text} /> : <Markdown text={it.text} />}
+      {html ? (
+        <HtmlPreview html={it.text} />
+      ) : (
+        <MarkdownContext.Provider value={where}>
+          <Markdown text={it.text} />
+        </MarkdownContext.Provider>
+      )}
       {html ? null : <LocalThumbs session={session} paths={localImages(it.text)} onOpen={onImage} />}
       {it.choices?.length && last && !session.closed && session.seat?.where !== 'slack' ? (
         <div className="choices">
@@ -505,11 +513,14 @@ export const TimelineView = memo(function TimelineView({ items, session, onSend:
 })
 
 /** What Claude is writing now, read off the terminal: shown faintly until the transcript has it. */
-export function Writing({ text }: { text: string }) {
+export function Writing({ text, sid }: { text: string; sid: string }) {
+  const where = useMemo(() => ({ sid, isLast: true }), [sid])
   if (!text.trim()) return null
   return (
     <div className="msg-text writing">
-      <Markdown text={text} />
+      <MarkdownContext.Provider value={where}>
+        <Markdown text={text} />
+      </MarkdownContext.Provider>
     </div>
   )
 }

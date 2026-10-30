@@ -90,9 +90,10 @@ export function fromHash() {
 
 /**
  * A click on a link to one of this page's addresses moves there without reloading. A click with a modifier key,
- * a middle click, a link with a target or a download, and links elsewhere are the browser's.
+ * a middle click, a link with a target or a download, and links elsewhere are the browser's. A link to a session
+ * goes to `session` (session.open, REQ-F-822) with the link's data-from.
  */
-export function interceptLinks() {
+export function interceptLinks(session: (id: string, from: string) => void = (id) => go({ name: 'session', id })) {
   addEventListener('click', (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
     const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
@@ -100,7 +101,9 @@ export function interceptLinks() {
     const u = new URL(a.href, location.href)
     if (u.origin !== location.origin || !matchRoute(u.pathname + u.search)) return
     e.preventDefault()
-    navigate(u.pathname + u.search)
+    const r = matchRoute(u.pathname + u.search)
+    if (r?.name === 'session') session(r.id, a.dataset.from ?? 'link')
+    else navigate(u.pathname + u.search)
   })
 }
 

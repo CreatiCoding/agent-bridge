@@ -14,6 +14,7 @@ import { clearLock, lockSession, relock } from './lock'
 import { confirmCopyMode } from './auto-allow-confirm'
 import { openCwd } from './cwd-sheet'
 import { TODO_ASK, TODO_REASK } from './session-extras'
+import { openLink, openSession } from '../lib/builtin-actions'
 
 export async function act<T = { ok: true; note?: string }>(run: () => Promise<T>, done?: string | ((r: T) => string | undefined)) {
   try {
@@ -178,7 +179,6 @@ export async function moveAccount(s: Session) {
 
 /** Where the session is worked on: one place at a time, the bridge or Slack. */
 export const inSlack = (s: Session) => s.seat?.where === 'slack'
-const openUrl = (url: string) => window.open(url, '_blank', 'noopener')
 
 export async function toSlack(s: Session) {
   const ok = await confirmDialog('Slack 으로 옮길까요?', {
@@ -198,7 +198,7 @@ export async function toSlack(s: Session) {
 async function seatSlack(s: Session) {
   try {
     const r = await sessionPost<{ ok: true; url: string | null }>(s, 'seat', { to: 'slack' })
-    toast('Slack 으로 옮겼어요', r.url ? { action: { label: 'Slack 열기', run: () => openUrl(r.url ?? '') } } : {})
+    toast('Slack 으로 옮겼어요', r.url ? { action: { label: 'Slack 열기', run: () => void openLink(r.url ?? '', 'slack') } } : {})
   } catch (e) {
     toast(errorText(e), { tone: 'bad' })
   }
@@ -314,7 +314,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       icon: 'fork',
       hint: '같은 대화에서 갈라진 새 세션',
       disabled: !alive,
-      onSelect: async () => (await confirmCopyMode(s)) && act(() => sessionPost<{ ok: true; id: string }>(s, 'fork'), '복제한 세션을 띄웠어요').then((r) => r && go({ name: 'session', id: r.id })),
+      onSelect: async () => (await confirmCopyMode(s)) && act(() => sessionPost<{ ok: true; id: string }>(s, 'fork'), '복제한 세션을 띄웠어요').then((r) => r && openSession(r.id, 'fork')),
     },
     {
       label: '가벼운 복제',

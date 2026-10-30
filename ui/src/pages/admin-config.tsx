@@ -5,6 +5,7 @@ import { ApiError, errorText, get, post } from '../lib/api'
 import { ago } from '../lib/format'
 import { Button, Icon, Row } from '../kit'
 import { Sheet, toast } from '../kit/overlay'
+import { copyText } from '../lib/builtin-actions'
 
 interface Diff { key: string; env: string; file: string; envValue: string; refEnv: boolean; envSet: boolean; warn: boolean }
 interface Status {
@@ -117,7 +118,7 @@ function ConfigSheet({ s, onClose, onChanged }: { s: Status; onClose: () => void
             </p>
             <pre className="report-debug" style={{ maxHeight: 260, overflow: 'auto' }}>{text ?? '만드는 중…'}</pre>
             <div className="hstack" style={{ flexWrap: 'wrap', gap: 6 }}>
-              <Button size="sm" icon="copy" disabled={!text} onClick={() => text && navigator.clipboard?.writeText(text).then(() => toast('복사했어요'))}>
+              <Button size="sm" icon="copy" disabled={!text} onClick={() => text && copyText(text, 'other').then((ok) => ok && toast('복사했어요'))}>
                 복사
               </Button>
               <Button size="sm" disabled={!text} onClick={download}>
