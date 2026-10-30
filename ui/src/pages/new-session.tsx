@@ -1,7 +1,7 @@
 // Start a session: which Mac, which folder (picked by browsing that Mac's folders), what to say first, and
 // optionally the model, effort and permission mode.
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, errorText, get, post } from '../lib/api'
+import { ApiError, errorText, get } from '../lib/api'
 import { defaultFolder, folderStamp } from '../lib/folder'
 import { getPref, setPref } from '../lib/local'
 import { back, go } from '../lib/router'
@@ -14,6 +14,7 @@ import { confirmLaunchMode } from '../components/auto-allow-confirm'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { confirmDialog, toast } from '../kit/overlay'
 import { openSession } from '../lib/builtin-actions'
+import { dispatch, isCancel } from '../lib/actions'
 
 interface Dirs {
   ok: true
@@ -102,11 +103,12 @@ export function NewSessionPage() {
     const create = retry || auto
     setBusy(true)
     try {
-      const r = await post<{ ok: true; id: string }>('/api/sessions', { hostId: host.id, cwd: folder, prompt, model, effort, mode, create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, prompt, model, effort, mode, create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
+      if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       setPref('newAccount', account)
       if (!auto) setPref('newCwd', cwd)
-      openSession(r.id, 'new', { replace: true })
+      openSession(r.sid, 'new', { replace: true })
     } catch (e) {
       if (e instanceof ApiError && e.data.missing && !create) {
         setBusy(false)

@@ -16,10 +16,10 @@ import { Ago, Badge, Collapse, Icon, IconButton, Row, SectionHeader, Segmented, 
 import { confirmDialog, openMenu, promptDialog } from '../kit/overlay'
 import { act, resume, sessionMenu, sessionPost, toggleRest } from './session-menu'
 import { useSwipeRow } from '../kit/swipe'
-import { del } from '../lib/api'
 import { StateWait } from './state-wait'
 import { useGroupSort } from './group-sort'
 import { openSession } from '../lib/builtin-actions'
+import { closeSession } from '../lib/builtin-actions'
 
 function useSeen() {
   const [seen, setSeen] = useState(getSeen)
@@ -46,11 +46,11 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
   const actions = s.closed
     ? [
         { label: '이어서 열기', tone: 'blue', run: () => resume(s) },
-        { label: '지우기', tone: 'red', run: async () => (await confirmDialog('이 세션을 목록에서 지울까요?', { text: '맥에 둔 화면 기록도 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '지우기', danger: true })) && act(() => del(`/api/sessions/${s.id}`), '지웠어요') },
+        { label: '지우기', tone: 'red', run: async () => (await confirmDialog('이 세션을 목록에서 지울까요?', { text: '맥에 둔 화면 기록도 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '지우기', danger: true })) && act(() => closeSession(s.id, 'remove'), '지웠어요') },
       ]
     : [
         { label: s.resting ? '휴면 풀기' : '휴면', tone: 'grey', run: () => toggleRest(s) },
-        { label: '종료', tone: 'red', run: async () => (await confirmDialog('세션을 끝낼까요?', { text: '대화는 남아요. 나중에 이어서 열 수 있어요.', ok: '끝내기', danger: true })) && act(() => sessionPost(s, 'close'), '끝냈어요') },
+        { label: '종료', tone: 'red', run: async () => (await confirmDialog('세션을 끝낼까요?', { text: '대화는 남아요. 나중에 이어서 열 수 있어요.', ok: '끝내기', danger: true })) && act(() => closeSession(s.id, 'end'), '끝냈어요') },
       ]
   return (
     <div className="swipe">
@@ -261,7 +261,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
           icon: 'trash' as const,
           danger: true,
           onSelect: async () => {
-            if (await confirmDialog(`'${titleOf(s)}' 세션을 제거할까요?`, { text: '세션을 끝내고 목록과 맥의 화면 기록에서 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '제거하기', danger: true })) await act(() => del(`/api/sessions/${s.id}`), '제거했어요')
+            if (await confirmDialog(`'${titleOf(s)}' 세션을 제거할까요?`, { text: '세션을 끝내고 목록과 맥의 화면 기록에서 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '제거하기', danger: true })) await act(() => closeSession(s.id, 'remove'), '제거했어요')
           },
         },
       ],

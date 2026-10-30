@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.357',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '보내기, 카드 답, 새 세션, 세션 끝내기·지우기도 이름 붙은 액션을 거쳐요. 지금 보이는 동작은 그대로예요', refs: ['REQ-F-823'] },
+    ],
+  },
+  {
     version: '1.356',
+    commit: '2b86307',
     date: '2026-10-31',
     changes: [
       { kind: 'changed', scope: ['ui'], text: '화면 안의 동작(세션 열기, 링크 열기, 복사, 코드 블록 그리기, 서버 알림)이 이름 붙은 액션을 거쳐요. 나중에 이 서버의 익스텐션이 끼어들 자리예요. 지금 보이는 동작은 그대로예요', refs: ['REQ-F-822'] },

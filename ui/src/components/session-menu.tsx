@@ -1,6 +1,6 @@
 // What can be done to a session, as one menu: the ⋯ in the conversation header, a right-click or a long press
 // on its row. Each item says plainly what it does; the ones that cannot be undone ask first.
-import { del, errorText, get, post } from '../lib/api'
+import { errorText, get, post } from '../lib/api'
 import { go } from '../lib/router'
 import { hostIcon, KINDS, titleOf } from '../lib/sessions'
 import { getStore } from '../lib/store'
@@ -15,10 +15,14 @@ import { confirmCopyMode } from './auto-allow-confirm'
 import { openCwd } from './cwd-sheet'
 import { TODO_ASK, TODO_REASK } from './session-extras'
 import { openLink, openSession } from '../lib/builtin-actions'
+import { closeSession, sendMessage } from '../lib/builtin-actions'
+import { isCancel, type Cancel } from '../lib/actions'
 
-export async function act<T = { ok: true; note?: string }>(run: () => Promise<T>, done?: string | ((r: T) => string | undefined)) {
+/** Runs a request, saying what came of it. A cancelled action (its reason already shown) counts as not done. */
+export async function act<T = { ok: true; note?: string }>(run: () => Promise<T | Cancel>, done?: string | ((r: T) => string | undefined)) {
   try {
     const r = await run()
+    if (isCancel(r)) return null
     const text = typeof done === 'function' ? done(r) : (done ?? (r as { note?: string })?.note)
     if (text) toast(text)
     return r
@@ -44,7 +48,7 @@ export const toggleFavorite = (s: Session) => act(() => sessionPost(s, 'settings
 /** End a session, always after asking (the ⋯ menu and a tab's ×). True when it was ended. */
 export async function endSession(s: Session) {
   if (!(await confirmDialog(`"${titleOf(s)}" 세션을 끝낼까요?`, { text: '대화는 남아요. 나중에 이어서 열 수 있어요.', ok: '끝내기', danger: true }))) return false
-  return (await act(() => sessionPost(s, 'close'), '끝냈어요')) != null
+  return (await act(() => closeSession(s.id, 'end'), '끝냈어요')) != null
 }
 
 /** A command the server runs as the page's ⋯ used to: the same words and checks for every page. */
@@ -215,7 +219,7 @@ export async function trash(s: Session) {
     ok: '휴지통으로',
     danger: true,
   })
-  if (ok) await act(() => sessionPost(s, 'trash'))
+  if (ok) await act(() => closeSession(s.id, 'trash'))
 }
 
 /**
@@ -237,7 +241,7 @@ export async function askTodos(s: Session, again = false, send?: (text: string) 
     }
   }
   const text = again ? TODO_REASK : TODO_ASK
-  const ok = send ? await send(text) : (await act(() => sessionPost(s, 'say', { text, images: [] }), () => undefined)) != null
+  const ok = send ? await send(text) : (await act(() => sendMessage(s.id, text), () => undefined)) != null
   if (ok) toast(!noTool ? '할 일 정리를 부탁했어요' : later ? '하던 일이 끝나면 세션을 다시 열어 할 일 도구를 붙이고 정리를 부탁할게요' : '세션을 다시 열어 할 일 도구를 붙이고 정리를 부탁했어요')
   return ok
 }
@@ -270,7 +274,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
         icon: 'trash',
         danger: true,
         onSelect: async () => {
-          if (await confirmDialog('이 세션을 목록에서 지울까요?', { text: '맥에 둔 화면 기록도 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '지우기', danger: true })) await act(() => del(`/api/sessions/${s.id}`), '지웠어요')
+          if (await confirmDialog('이 세션을 목록에서 지울까요?', { text: '맥에 둔 화면 기록도 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '지우기', danger: true })) await act(() => closeSession(s.id, 'remove'), '지웠어요')
         },
       },
     ]

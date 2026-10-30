@@ -4,7 +4,8 @@ import { useRef, useState } from 'react'
 import { Markdown } from '../lib/markdown'
 import type { Card, Session } from '../lib/types'
 import { Button, Icon } from '../kit'
-import { act, command, inSlack, sessionPost } from './session-menu'
+import { act, command, inSlack } from './session-menu'
+import { dispatch } from '../lib/actions'
 
 export const CARD_LABEL: Record<string, string> = { permission: '권한 요청', question: '질문', plan: '플랜 승인', dialog: '터미널 확인', keyed: '터미널 확인', stuck: '지시 대기' }
 
@@ -65,7 +66,10 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
     if (Date.now() - last.current < 1500) return
     last.current = Date.now()
     setBusy(String(n))
-    await act(() => sessionPost(session, 'answer', { card: card.id, n }))
+    // The card as it is drawn; an old agent's option without a kind is "other" (allowing is "not deny").
+    const o = typeof n === 'number' ? card.options?.find((x) => x.n === n) : undefined
+    const option = n === 'esc' ? { n, label: 'Esc', kind: 'deny' } : n === 'enter' ? { n, label: '확정', kind: 'other' } : { n, label: o?.label ?? '', kind: o?.kind ?? 'other' }
+    await act(() => dispatch('permission.answer', { sid: session.id, known: true, card: { id: card.id, kind: card.kind, ...(card.title ? { title: card.title } : {}), ...(card.tool ? { tool: card.tool } : {}) }, option }))
     setBusy(null)
   }
   const label = CARD_LABEL[card.kind] ?? '응답 대기'

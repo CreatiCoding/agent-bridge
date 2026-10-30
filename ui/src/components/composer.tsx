@@ -17,6 +17,8 @@ import { Button, Icon, IconButton, NO_AUTOFILL, useMedia } from '../kit'
 import { VoiceMode, type VoiceDraft } from './voice-mode'
 import { openMenu, toast } from '../kit/overlay'
 import { featureOn } from '../lib/features'
+import { dispatch } from '../lib/actions'
+import { registerComposer } from '../lib/builtin-actions'
 
 interface Skill {
   name: string
@@ -160,14 +162,20 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
     )
   }
 
-  const send = async () => {
-    const t = text.trim()
-    if ((!t && !images.length && !videos.length) || sending) return
+  // composer.submit (REQ-F-822): the default sends `override` (or what is written) with what is attached, and
+  // empties the box once it went. A press waits here too, so a second press while it goes does nothing.
+  const submitting = useRef(false)
+  const submit = async (override?: string): Promise<{ sent: boolean; reason?: string }> => {
+    const t = (override ?? text).trim()
+    if (!t && !images.length && !videos.length) return { sent: false, reason: 'empty' }
+    if (submitting.current) return { sent: false, reason: 'sending' }
     // The same words twice in a row are usually a double press: the second press needs a second press.
     if (t && lastSent.current?.text === t && Date.now() - lastSent.current.at < 10_000 && !images.length && !videos.length) {
       lastSent.current = { text: '', at: 0 }
-      return toast('방금 보낸 글과 같아요. 한 번 더 누르면 보내요')
+      toast('방금 보낸 글과 같아요. 한 번 더 누르면 보내요')
+      return { sent: false, reason: 'duplicate' }
     }
+    submitting.current = true
     setSending(true)
     // The videos first, one by one with how far each has got; the message names them once all are up.
     const sent: SentVideo[] = []
@@ -176,11 +184,14 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
         sent.push(await uploadVideo(`/api/sessions/${encodeURIComponent(session.id)}/upload`, v.file, (pct) => setVideos((now) => now.map((x, j) => (j === i ? { ...x, pct } : x)))))
       } catch (e) {
         setVideos((now) => now.map((x) => ({ ...x, pct: null })))
+        submitting.current = false
         setSending(false)
-        return toast(`영상을 올리지 못했어요: ${e instanceof Error ? e.message : e}`, { tone: 'bad' })
+        toast(`영상을 올리지 못했어요: ${e instanceof Error ? e.message : e}`, { tone: 'bad' })
+        return { sent: false, reason: 'upload' }
       }
     }
     const ok = await onSend(t, images, sent)
+    submitting.current = false
     setSending(false)
     if (ok) {
       lastSent.current = { text: t, at: Date.now() }
@@ -189,6 +200,23 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
       setVideos([])
       setDraft(session.id, '')
       recall.current = null
+    }
+    return { sent: ok }
+  }
+  const submitNow = useRef(submit)
+  submitNow.current = submit
+  useEffect(() => registerComposer(session.id, (t) => submitNow.current(t)), [session.id])
+  // The box's own send: through the bus, held as sending while handlers decide.
+  const pressing = useRef(false)
+  const send = async () => {
+    if (pressing.current || submitting.current) return
+    pressing.current = true
+    setSending(true)
+    try {
+      await dispatch('composer.submit', { sid: session.id })
+    } finally {
+      pressing.current = false
+      if (!submitting.current) setSending(false)
     }
   }
 

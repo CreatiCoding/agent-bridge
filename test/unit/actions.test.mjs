@@ -175,3 +175,16 @@ test('호출 지점: 세션으로 가는 이동은 모두 session.open 을 지�
   assert.deepEqual(grepF('navigate(`/s/'), [])
   assert.match(readFileSync(new URL('../../ui/src/main.tsx', import.meta.url), 'utf8'), /interceptLinks\(\(id, from\) => openSession\(id, from\)\)/)
 })
+
+test('호출 지점: 보내기·카드 답·세션 만들기·닫기는 기본 구현 한 곳에서만 서버를 부른다', () => {
+  for (const s of ["'say'", '/say`', "'answer'", '/answer`', "post<{ ok: true; id: string }>('/api/sessions'", "'close')", 'del(`/api/sessions/${s.id}`)', "sessionPost(s, 'trash')"]) {
+    const where = files(grepF(s)).filter((f) => f !== 'ui/src/lib/builtin-actions.tsx')
+    assert.deepEqual(where, [], s)
+  }
+  const composer = readFileSync(new URL('../../ui/src/components/composer.tsx', import.meta.url), 'utf8')
+  assert.match(composer, /dispatch\('composer\.submit', \{ sid: session\.id \}\)/)
+  assert.match(composer, /registerComposer\(session\.id/)
+  // The page draws the sent message from what message.send really sends (after its before handlers).
+  assert.match(readFileSync(new URL('../../ui/src/pages/session-page.tsx', import.meta.url), 'utf8'), /onSending\(s\.id,/)
+  assert.match(readFileSync(new URL('../../ui/src/components/decision-card.tsx', import.meta.url), 'utf8'), /n === 'esc' \? \{ n, label: 'Esc', kind: 'deny' \} : n === 'enter' \? \{ n, label: '확정', kind: 'other' \}/)
+})

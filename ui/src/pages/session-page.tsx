@@ -25,7 +25,8 @@ import { SessionTabs, useGroupTabs } from '../components/session-tabs'
 import { PreviewSheet, ServerButton, type Server } from '../components/local-preview'
 import { useEdgeSwipeBack } from '../kit/swipe'
 import { inPane, SPLIT_MAX, splitHost, splitRoom, startSplit } from '../lib/split'
-import { copyText, openLink, openSession } from '../lib/builtin-actions'
+import { copyText, onSending, openLink, openSession, sendMessage } from '../lib/builtin-actions'
+import { isCancel } from '../lib/actions'
 
 interface Pending {
   key: string
@@ -584,21 +585,37 @@ export function SessionPage({ id }: { id: string }) {
     return out.reverse()
   }, [log.folded.items])
 
+  // What is sent is drawn at once, faded, with the words that really go (after the before handlers of
+  // message.send, REQ-F-822). 음성 모드's draft is already drawn: it claims the next one and takes those words.
+  const claim = useRef<string | null>(null)
+  useEffect(() => {
+    if (!s) return
+    return onSending(s.id, (a) => {
+      const key = claim.current
+      claim.current = null
+      if (key) {
+        setPending((x) => x.map((y) => (y.key === key ? { ...y, text: a.text, at: Date.now(), writing: false } : y)))
+        return
+      }
+      if (/^[/:]/.test(a.text.trim())) return
+      // Shown as the server logs it: the videos as "🎬 <name>" lines under the words.
+      const shown = [a.text, ...a.videos.map((v) => `🎬 ${v.name}`)].filter(Boolean).join('\n')
+      const p: Pending = { key: crypto.randomUUID(), text: shown, images: a.images.map((i) => i.data), at: Date.now() }
+      setPending((x) => [...x, p])
+      atBottom.current = true
+      requestAnimationFrame(() => toBottom())
+      return (ok) => void (ok || setPending((x) => x.filter((y) => y.key !== p.key)))
+    })
+  }, [s?.id, toBottom])
+
   const send = useCallback(
     async (text: string, images: { data: string; name: string }[] = [], videos: SentVideo[] = []) => {
       if (!s) return false
-      // Shown as the server logs it: the videos as "🎬 <name>" lines under the words.
-      const shown = [text, ...videos.map((v) => `🎬 ${v.name}`)].filter(Boolean).join('\n')
-      const p: Pending = { key: crypto.randomUUID(), text: shown, images: images.map((i) => i.data), at: Date.now() }
-      const side = /^[/:]/.test(text.trim())
-      if (!side) setPending((x) => [...x, p])
       atBottom.current = true
       requestAnimationFrame(() => toBottom())
       try {
-        await sessionPost(s, 'say', { text, images, ...(videos.length ? { videos: videos.map((v) => ({ id: v.id })) } : {}) })
-        return true
+        return !isCancel(await sendMessage(s.id, text, images, videos))
       } catch (e) {
-        setPending((x) => x.filter((y) => y.key !== p.key))
         toast(errorText(e), { tone: 'bad' })
         return false
       }
@@ -618,15 +635,15 @@ export function SessionPage({ id }: { id: string }) {
         drop,
         send: async (text) => {
           if (!s) return (drop(), false)
-          setPending((x) => x.map((y) => (y.key === key ? { ...y, text, at: Date.now(), writing: false } : y)))
+          claim.current = key
           try {
-            await sessionPost(s, 'say', { text, images: [] })
-            return true
+            if (!isCancel(await sendMessage(s.id, text))) return true
           } catch (e) {
-            drop()
             toast(errorText(e), { tone: 'bad' })
-            return false
           }
+          if (claim.current === key) claim.current = null
+          drop()
+          return false
         },
       }
     },
