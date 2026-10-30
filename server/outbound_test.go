@@ -89,7 +89,7 @@ func TestNotifyRead(t *testing.T) {
 		{"notify:\n  - type: email\n", "모르는 수신처"},
 		{"notify:\n  - type: webhook\n    url: ftp://h/x\n    secret: " + HOOK_SECRET + "\n    events: [login]\n", "http(s)://"},
 		{"notify:\n  - type: webhook\n    url: https://h.example/secretpath\n    secret: short\n    events: [login]\n", "16자 이상"},
-		{"notify:\n  - type: webhook\n    url: https://h.example/x\n    secret: " + HOOK_SECRET + "\n    events: [message.send]\n", "내지 않는 이벤트"},
+		{"notify:\n  - type: webhook\n    url: https://h.example/x\n    secret: " + HOOK_SECRET + "\n    events: [session.open]\n", "내지 않는 이벤트"},
 		{"notify:\n  - type: webhook\n    url: https://h.example/x\n    secret: " + HOOK_SECRET + "\n", "events 가 없습니다"},
 		{"notify:\n  - type: webhook\n    nope: 1\n", "모르는 키 notify[].nope"},
 		{"notify:\n  type: webhook\n", "목록이어야"},

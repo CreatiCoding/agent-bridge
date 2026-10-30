@@ -20,6 +20,7 @@ func sudoCommand(uid string, meta *Sess, command string, opts csOptsCmd) string 
 	}
 	hostID := liveHost(meta)
 	logEvents(meta, []any{M{"k": "line", "text": "🔐 관리자 권한으로 실행: `" + jsSliceTo(collapse(command), 200) + "`"}})
+	sessAfter("session.sudo", meta, kv{"command", jsSliceTo(command, 2000)})
 	goLocked("sudo", func() {
 		r := ask(hostID, M{"t": "sudo", "sid": meta.id(), "command": command}, 10*60_000)
 		out := trailingWSRe.ReplaceAllString(ansiRe.ReplaceAllString(strOr(r["out"], ""), ""), "")
@@ -77,6 +78,12 @@ func startSession(uid string, b M, req *Req) string {
 	st["phase"] = "starting"
 	meta.set("state", st)
 	internal := req != nil && req.internal
+	from := "new"
+	if f, ok := b["from"].(startFrom); ok {
+		from = string(f)
+	} else if b["via"] == "delegate" && internal {
+		from = "delegate"
+	}
 	// One started from a Slack message is worked on in Slack until it is moved.
 	if b["via"] == "slack" && internal {
 		meta.set("seat", M{"where": "slack", "at": float64(nowMs()), "url": nil})
@@ -173,6 +180,11 @@ func startSession(uid string, b M, req *Req) string {
 	touch(meta)
 	// Anything it said before this point may have been said to nobody: have it say where it stands.
 	toHost(hostID, M{"t": "report", "sid": sid})
+	if from == "report" {
+		withBy("system", func() { createdAfter(meta, from, mode) }) // the server opens it for a report: told only
+	} else {
+		createdAfter(meta, from, mode)
+	}
 	return sid
 }
 

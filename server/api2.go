@@ -129,6 +129,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		touch(meta)
 		record(uid, m[1], M{"area": "adopt", "sid": sid, "text": "맥의 대화 " + jsSliceTo(b["conv"].(string), 8) + " 를 bridge 세션으로 가져옴"})
 		toHost(m[1], M{"t": "report", "sid": sid})
+		createdAfter(meta, "adopt", "")
 		jsonRes(res, 200, M{"ok": true, "id": sid})
 		return true
 	}
@@ -342,6 +343,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			ask(hostID, M{"t": "sudooff"}, 15_000)
 			st.until = 0
 			record(uid, hostID, M{"area": "sudo", "text": "관리자 권한을 닫음"})
+			hostSudoAfter(uid, hostID, "off")
 			broadcastState(uid)
 			jsonRes(res, 200, M{"ok": true})
 			return true
@@ -362,6 +364,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			sudoAnswer(hostID, areq, true, "")
 		}
 		record(uid, hostID, M{"area": "sudo", "text": "관리자 권한을 5분 열었음"})
+		hostSudoAfter(uid, hostID, "open")
 		broadcastState(uid)
 		jsonRes(res, 200, M{"ok": true, "until": st.until})
 		return true

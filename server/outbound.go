@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,9 +18,9 @@ import (
 	"time"
 )
 
-// NOTIFY_EVENTS: the events this version raises. Those of the server hooks (session.create, message.send …) come
-// with them; a notify entry naming one this version never raises is refused rather than left silent.
-var NOTIFY_EVENTS = []string{"login", "session.done", "decision.waiting", "decision.answered"}
+// NOTIFY_EVENTS: the events this version raises: every action the server hooks know (REQ-F-819) and the events of
+// the Mac. A notify entry naming one this version never raises is refused rather than left silent.
+var NOTIFY_EVENTS = append(append([]string{}, HOOK_ACTIONS...), HOOK_EVENTS...)
 
 // notifyTarget: one entry of notify. URLText is the url as written (before ${ENV}), for screens.
 type notifyTarget struct {
@@ -142,6 +143,27 @@ func recipients() []any {
 		}
 		out = append(out, orderedObj{{"origin", rawOrigin(t.URLText)}, {"events", ev}})
 	}
+	// The hooks' webhooks get the same events (REQ-F-819), and a command may send them on wherever it likes.
+	hooks, _ := cfgGet("hooks").(map[string][]hookTarget)
+	at := map[string]int{}
+	for _, name := range sortedKeysOf(hooks) {
+		for _, t := range hooks[name] {
+			where := "(이 서버 안의 명령)"
+			if t.Type == "webhook" {
+				where = rawOrigin(t.URLText)
+			}
+			i, ok := at[where]
+			if !ok {
+				i = len(out)
+				at[where] = i
+				out = append(out, orderedObj{{"origin", where}, {"events", []any{}}})
+			}
+			row := out[i].(orderedObj)
+			if !containsAny(row[1].V.([]any), name) {
+				row[1].V = append(row[1].V.([]any), name)
+			}
+		}
+	}
 	return out
 }
 
@@ -154,8 +176,8 @@ func sessionOfEvent(meta *Sess) orderedObj {
 	return orderedObj{{"id", meta.id()}, {"host", host}, {"hostId", meta.host()}, {"cwd", meta.get("cwd")}, {"title", meta.get("title")}}
 }
 
-// emitEvent raises one event: {id, name, at, user: {uid, login}, ...more, url}. It is called under the lock; the
-// sending happens in a goroutine with copies only.
+// emitEvent raises one event to notify and the after hooks. It is called under the lock; the sending happens in
+// goroutines with copies only.
 func emitEvent(name, uid string, more orderedObj) {
 	targets := []notifyTarget{}
 	for _, t := range notifyTargets() {
@@ -163,27 +185,17 @@ func emitEvent(name, uid string, more orderedObj) {
 			targets = append(targets, t)
 		}
 	}
-	if len(targets) == 0 {
+	hooks := hooksOf(name + ".after")
+	if len(targets) == 0 && len(hooks) == 0 {
 		return
 	}
-	login := ""
-	if u, ok := users.Get(uid); ok {
-		login = mstr(u, "login")
-	}
-	ev := orderedObj{{"id", randHex(16)}, {"name", name}, {"at", nowMs()}, {"user", orderedObj{{"uid", uid}, {"login", login}}}}
-	ev = append(ev, more...)
-	link := ORIGIN
-	for _, x := range more {
-		if x.K == "session" {
-			if s, ok := x.V.(orderedObj); ok && ORIGIN != "" {
-				link = ORIGIN + "/s/" + jsString(s[0].V)
-			}
-		}
-	}
-	ev = append(ev, kv{"url", link})
+	ev, login := eventOf(name, uid, more)
 	body := jsonBytes(ev)
 	for _, t := range targets {
 		go deliverEvent(t, body, uid, login)
+	}
+	for _, t := range hooks {
+		go afterHook(name, t, body, uid, login)
 	}
 }
 
@@ -206,6 +218,20 @@ func signedHeaders(secret, method, pathQuery, user, login string, body []byte, n
 		"X-Bridge-Signature": "v1=" + hex.EncodeToString(m.Sum(nil))}
 }
 
+// signedPost: body POSTed to u, signed (REQ-F-818 rule 3), by the one client every outgoing request uses.
+func signedPost(ctx context.Context, u, pathQuery, secret string, body []byte, uid, login string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "claude-bridge/"+VERSION)
+	for k, v := range signedHeaders(secret, "POST", pathQuery, uid, login, body, time.Now()) {
+		req.Header.Set(k, v)
+	}
+	return notifyClient.Do(req)
+}
+
 // deliverEvent: one event to one webhook, off the lock. A try that fails (no answer, not 2xx) is tried again after
 // 1 s, 10 s and 60 s, each time freshly signed; then it is dropped with one line in the log (origin only).
 func deliverEvent(t notifyTarget, body []byte, uid, login string) {
@@ -225,16 +251,7 @@ func deliverEvent(t notifyTarget, body []byte, uid, login string) {
 		if i > 0 {
 			time.Sleep(NOTIFY_RETRY[i-1])
 		}
-		req, err := http.NewRequest("POST", t.URL, bytes.NewReader(body))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "claude-bridge/"+VERSION)
-		for k, v := range signedHeaders(t.Secret, "POST", pq, uid, login, body, time.Now()) {
-			req.Header.Set(k, v)
-		}
-		r, err := notifyClient.Do(req)
+		r, err := signedPost(context.Background(), t.URL, pq, t.Secret, body, uid, login)
 		if err == nil {
 			r.Body.Close()
 			if r.StatusCode >= 200 && r.StatusCode < 300 {
@@ -270,21 +287,6 @@ func privacyWithRecipients(html string) string {
 	html = strings.Replace(html, "<p>① 운영자는 개인정보 처리 업무를 위탁하지 않습니다.</p>", "<p>① 운영자는 운영자가 지정한 수신처(제5조 ③의 목록) 외에는 개인정보 처리 업무를 위탁하지 않습니다.</p>", 1)
 	html = strings.Replace(html, "<li>No data is given to third parties, and no processing is outsourced.</li>", "<li>Data is sent only to the destinations the operator of this server set, with the events listed: <ul>"+itemsEn+"</ul></li>", 1)
 	return html
-}
-
-// byOf: where a request came from, decided by the way in, never by what the body says (a page saying "slack" is
-// a page): a cookie request is page; the server's own requests are slack, delegate or system.
-func byOf(req *Req, b M) string {
-	if !req.internal {
-		return "page"
-	}
-	switch b["via"] {
-	case "slack":
-		return "slack"
-	case "delegate":
-		return "delegate"
-	}
-	return "system"
 }
 
 // cardAnswers: how the open card of a session was answered through this server (card id -> {n, via, by}), until the

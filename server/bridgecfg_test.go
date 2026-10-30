@@ -100,7 +100,7 @@ func TestBridgeConfigLiteralsAndLists(t *testing.T) {
 
 func TestBridgeConfigRefuses(t *testing.T) {
 	bad := []struct{ src, has string }{
-		{"hooks:\n  x: 1\n", "모르는 키 hooks"},
+		{"extensions:\n  x: 1\n", "모르는 키 extensions"},
 		{"auth:\n  allowed: [a]\n", "모르는 키 auth.allowed"},
 		{"auth: [a]\n", "키: 값"},
 		{"origins:\n  primary: https://h.example/path\n", "경로 없이"},

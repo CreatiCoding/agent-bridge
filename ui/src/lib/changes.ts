@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.353',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 hooks: 세션 만들기·닫기, 글 보내기, 카드 답, 설정 바꾸기 같은 액션과 턴 끝·카드 이벤트 뒤에 웹훅이나 서버 안 명령을 부름(after, 한 번, 서명). 누가 했는지(page·slack·service·delegate·system)는 요청이 들어온 길로 정함', refs: ['REQ-F-819'] },
+      { kind: 'added', scope: ['server'], text: 'notify 가 액션 이벤트(session.create, message.send, permission.answer …)도 받음. 훅의 수신처도 처리방침과 설정 화면의 목록에 보임', refs: ['REQ-F-818', 'REQ-F-819'] },
+    ],
+  },
+  {
     version: '1.352',
+    commit: 'f3506a6',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['server'], text: '서버가 이벤트를 냄: login, session.done(턴 끝), decision.waiting(권한·질문 카드가 열림), decision.answered(어떻게 답했는지). 맥 쪽 보고에서 나온 이벤트는 감사 기록으로 믿지 않음', refs: ['REQ-F-817'] },

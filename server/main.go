@@ -143,7 +143,7 @@ func route(req *Req, res *Res) {
 	}
 	// Bearer token only, no cookie: kept apart from the browser routes below.
 	if service {
-		serviceAPI(req, res, p)
+		withBy("service", func() { serviceAPI(req, res, p) })
 		return
 	}
 	if strings.HasPrefix(p, "/api/") {
@@ -175,7 +175,7 @@ func route(req *Req, res *Res) {
 		if isDemoUid(uid) {
 			demoGate(req, p, uid)
 		}
-		api(req, res, u, uid)
+		withBy("page", func() { api(req, res, u, uid) })
 		return
 	}
 	if req.Method != "GET" {
@@ -472,6 +472,7 @@ func main() {
 	handover = createHandover(DATA)
 	handover.takeOver()
 	logLine("user: " + dropRoot(DATA))
+	checkHookExec() // as the user the server runs as (REQ-F-819)
 	logLine("data: " + itoa(tightenTree(DATA)) + "개의 권한을 0600/0700 으로 맞춤")
 	_ = os.Remove(filepath.Join(DATA, "config-error.json")) // this start read the settings file (REQ-F-809)
 	if CONFIG.path != "" {

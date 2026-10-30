@@ -305,7 +305,7 @@ func runDelegate(uid, hostID string, msg M) any {
 	case "delegate_stop":
 		c := child()
 		if !truthy(c.get("closed")) {
-			closeSession(c, "맡긴 세션이 닫음")
+			withBy("system", func() { closeSession(c, "맡긴 세션이 닫음") }) // cleaning up after itself (SPEC: after only)
 		}
 		broadcastState(uid)
 		return brief(c, M{"state": "closed"})

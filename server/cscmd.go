@@ -169,6 +169,7 @@ func csCommand(uid string, value any, opts csOptsCmd) string {
 			refuse(409, "쉬고 있는 세션만 압축할 수 있어요")
 		}
 		toHost(liveHost(meta), M{"t": "send", "sid": meta.id(), "id": uuidv4(), "text": COMPACT_TEXT})
+		sessAfter("session.do", meta, kv{"do", "compact"})
 		logEvents(meta, []any{M{"k": "notice", "tone": "info", "text": "🗜️ 컨텍스트 압축을 요청했어요. 끝나면 이 세션에서 그대로 이어가요"}})
 		return "압축을 요청했어요"
 	case cmd == "screen":
@@ -321,8 +322,9 @@ func (h *bridgeHost) Find(thread string) M {
 	return nil
 }
 
-func (h *bridgeHost) Command(value string) string {
-	return csCommand(h.uid, value, csOptsCmd{via: "slack"})
+func (h *bridgeHost) Command(value string) (out string) {
+	withBy("slack", func() { out = csCommand(h.uid, value, csOptsCmd{via: "slack"}) })
+	return
 }
 
 // Seat: where the session is driven from, and the page to go to for it.
@@ -386,7 +388,12 @@ func (h *bridgeHost) SeatUrl(thread string, u any) {
 	broadcastState(h.uid)
 }
 
-func (h *bridgeHost) MoveTo(thread string, to string) M {
+func (h *bridgeHost) MoveTo(thread string, to string) (out M) {
+	withBy("slack", func() { out = h.moveTo(thread, to) })
+	return
+}
+
+func (h *bridgeHost) moveTo(thread string, to string) M {
 	meta := byThread(h.uid, thread)
 	if meta == nil {
 		refuse(400, "세션을 찾지 못했어요")
@@ -394,7 +401,7 @@ func (h *bridgeHost) MoveTo(thread string, to string) M {
 	return moveSeat(h.uid, meta, to)
 }
 
-func (h *bridgeHost) Send(thread string, text string, images []any) M {
+func (h *bridgeHost) Send(thread string, text string, images []any) (out M) {
 	meta := byThread(h.uid, thread)
 	if meta == nil || truthy(meta.get("closed")) {
 		refuse(400, "이미 끝난 세션이에요")
@@ -402,7 +409,8 @@ func (h *bridgeHost) Send(thread string, text string, images []any) M {
 	if images == nil {
 		images = []any{}
 	}
-	return csSend(h.uid, meta, text, images, "slack", csOptsCmd{})
+	withBy("slack", func() { out = csSend(h.uid, meta, text, images, "slack", csOptsCmd{}) })
+	return
 }
 
 // Start: on the main Mac when it is connected, else the first connected one, in the folder set for that Mac.
@@ -433,7 +441,7 @@ func (h *bridgeHost) Start(prompt string, cwd any, places string) M {
 	res := newRes(req)
 	u := mustURL("http://x/api/sessions")
 	req.URL = u
-	api(req, res, u, h.uid)
+	withBy("slack", func() { api(req, res, u, h.uid) })
 	v, err := parseJSON(res.body)
 	if err != nil {
 		panic(err)

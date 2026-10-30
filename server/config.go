@@ -166,6 +166,9 @@ func configure() bool {
 	// bridge.yaml (REQ-F-809): read here, before the handover, so a wrong file leaves the old instance working.
 	cfg, err := loadBridgeConfig(DATA, env)
 	if err == nil {
+		err = checkHookPaths(cfg, DATA)
+	}
+	if err == nil {
 		for _, f := range cfg.files() {
 			if err = prepareConfigFile(f, DATA, env, realProc); err != nil {
 				break

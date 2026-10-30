@@ -111,7 +111,7 @@ func init() {
 			}
 			goLocked("delegate", func() {
 				var result any
-				err := try(func() { result = runDelegate(uid, hostID, msg) })
+				err := try(func() { withBy("delegate", func() { result = runDelegate(uid, hostID, msg) }) })
 				if err != nil {
 					toHost(hostID, M{"t": "delegated", "areq": areq, "ok": false, "error": jsSliceTo(err.Error(), 500)})
 					return
@@ -999,7 +999,7 @@ func fromBridge(uid, hostID string, msgs []any, origin string) {
 		if h == nil {
 			continue
 		}
-		if err := tryLog(func() { h(uid, hostID, msg) }); err != nil {
+		if err := tryLog(func() { withBy("system", func() { h(uid, hostID, msg) }) }); err != nil {
 			// Logged and skipped: answering 500 would make the tab send the whole batch again, the good ones twice.
 			logLine("error", "from agent "+jsStringU(msg["t"]), err)
 			var sid any

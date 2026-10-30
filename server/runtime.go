@@ -84,10 +84,16 @@ func errMsg(e error) string {
 	return e.Error()
 }
 
-// await lets the lock go while f waits on the outside world, as an `await` let other code run.
+// await lets the lock go while f waits on the outside world, as an `await` let other code run. The request's hook
+// scope is put away meanwhile, so the code that runs in between does not see it, and comes back with the lock.
 func await(f func()) {
+	s := scopeNow
+	scopeNow = nil
 	mu.Unlock()
-	defer mu.Lock()
+	defer func() {
+		mu.Lock()
+		scopeNow = s
+	}()
 	f()
 }
 
@@ -141,8 +147,11 @@ func tryLog(f func()) (err error) {
 	return nil
 }
 
-// goLocked starts f later with the lock: `void promise()`.
-func goLocked(what string, f func()) { go locked(what, f) }
+// goLocked starts f later with the lock: `void promise()`. It goes on as the same kind of request (hook scope).
+func goLocked(what string, f func()) {
+	by := curBy()
+	go locked(what, func() { withBy(by, f) })
+}
 
 // Timer is a setTimeout handle.
 type Timer struct {

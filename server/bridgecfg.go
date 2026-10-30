@@ -21,7 +21,7 @@ import (
 type cfgKey struct {
 	key  string // dotted, as in the file
 	env  string // "" when no environment variable means the same
-	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers | notify
+	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers | notify | hooks
 	def  any    // the value when neither the file nor an environment variable gives one (env keys: unused)
 }
 
@@ -47,6 +47,7 @@ var CFG_KEYS = []cfgKey{
 	{"auth.providers", "", "providers", []authProvider{}},
 	{"auth.headerOnly", "", "bool", false},
 	{"notify", "", "notify", []notifyTarget{}}, // a top-level list: no dot
+	{"hooks", "", "hooks", map[string][]hookTarget{}},
 }
 
 // cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
@@ -168,7 +169,7 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 	}
 	c.state = "file"
 	known := map[string][]string{}
-	top := map[string]bool{} // keys that are a whole section (notify)
+	top := map[string]bool{} // keys that are a whole section (notify, hooks)
 	order := []string{}
 	for _, k := range CFG_KEYS {
 		sec, name, dotted := strings.Cut(k.key, ".")
@@ -416,6 +417,8 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 		return readProviders(k, n, getenv)
 	case "notify":
 		return readNotify(k, n, getenv)
+	case "hooks":
+		return readHooks(k, n, getenv)
 	case "origins":
 		items, err := plainList(k, n, getenv)
 		if err != nil {

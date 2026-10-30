@@ -299,7 +299,7 @@ func fixReport(r M, uid string, want any, cwd any, auto bool, req *Req) string {
 	if auto {
 		title = jsSliceTo(said1, 80)
 	}
-	opts := M{"hostId": hostID, "cwd": jsSliceTo(c, 1000), "create": true, "title": title, "prompt": "", "group": group}
+	opts := M{"hostId": hostID, "cwd": jsSliceTo(c, 1000), "create": true, "title": title, "prompt": "", "group": group, "from": startFrom("report")}
 	if mode != nil {
 		opts["mode"] = mode
 	}
@@ -367,6 +367,11 @@ func fixReport(r M, uid string, want any, cwd any, auto bool, req *Req) string {
 		cmd["videos"] = videos
 	}
 	toHost(hostID, cmd)
+	if m, ok := sessions.Get(sid); ok {
+		withBy("system", func() {
+			sessAfter("message.send", m, kv{"text", text}, kv{"images", len(files)}, kv{"videos", len(videos)})
+		})
+	}
 	r["status"] = "fixing"
 	by := mget(users.Val(uid), "login")
 	if by == nil {
@@ -718,6 +723,7 @@ func closeSession(meta *Sess, text string) {
 	meta.set("closedAt", float64(nowMs()))
 	resetVolatile(meta)
 	logEvents(meta, []any{M{"k": "end", "text": text}})
+	sessAfter("session.close", meta, kv{"kind", "end"})
 }
 
 // forgetSession — 제거: the server's copy of a session goes (its folder and conversation on the Mac stay).
