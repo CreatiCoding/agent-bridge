@@ -113,6 +113,19 @@ func checkText(p string, b []byte, getenv func(string) string, limit []string) M
 		return M{"ok": false, "errors": []any{maskConfigText(err.Error())}, "diff": []any{}}
 	}
 	out := M{"ok": true, "errors": []any{}, "state": c.state, "diff": diffsJSON(c.diffs(getenv))}
+	// A file on disk: its extensions are read too (a pasted text never opens files). One that will not load does
+	// not stop the server; it is said here and in 운영 탭.
+	if limit == nil {
+		if es, ok := c.set["extensions"].v.([]extEntry); ok {
+			warn := []any{}
+			for _, d := range loadExtensions(es, getenv) {
+				if d.Err != "" {
+					warn = append(warn, maskConfigText("익스텐션 "+d.ID+": "+d.Err))
+				}
+			}
+			out["extWarnings"] = warn
+		}
+	}
 	// A file that turns header-only sign-in on, on a server that is not yet: the hosts to turn off first.
 	if only, _ := c.set["auth.headerOnly"].v.(bool); only && !headerOnly() && hosts != nil {
 		out["headerOnlyHosts"] = headerOnlyHosts(hosts.Values())

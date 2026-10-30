@@ -178,6 +178,9 @@ func route(req *Req, res *Res) {
 		withBy("page", func() { api(req, res, u, uid) })
 		return
 	}
+	if req.Method == "GET" && serveExt(req, res, p) {
+		return
+	}
 	if req.Method != "GET" {
 		res.WriteHead(405).End()
 		return
@@ -514,6 +517,7 @@ func main() {
 	UI = filepath.Join(ROOT, "ui", "dist")
 	go locked("preload", preloadAssets)
 	startAttemptSweep()
+	startExtDev(env)
 	startDemoSweep()
 	demoCleanStart()
 	migrateSkillsRepo()

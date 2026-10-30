@@ -187,6 +187,18 @@ func configure() bool {
 			CHOWN_SKIP = append(CHOWN_SKIP, f)
 		}
 	}
+	// Extensions (REQ-F-825): read into memory now, as root, before the handover. A folder inside DATA is left out
+	// of the ownership walk like the settings file; one outside is never changed.
+	EXT_DEV = env("BRIDGE_EXT_DEV") == "1"
+	EXTS = loadExtensions(cfg.effective(cfgKeyOf("extensions"), env).([]extEntry), env)
+	for _, d := range EXTS {
+		if inside(d.Dir, DATA) {
+			CHOWN_SKIP = append(CHOWN_SKIP, d.Dir)
+		}
+		if d.Err != "" {
+			errorLine("익스텐션 " + d.ID + " 을(를) 불러오지 못했습니다: " + d.Err)
+		}
+	}
 	ORIGIN = cfg.effective(CFG_KEYS[0], env).(string)
 	GITHUB_CLIENT_ID = env("GITHUB_CLIENT_ID")
 	GITHUB_CLIENT_SECRET = env("GITHUB_CLIENT_SECRET")

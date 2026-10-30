@@ -21,7 +21,7 @@ import (
 type cfgKey struct {
 	key  string // dotted, as in the file
 	env  string // "" when no environment variable means the same
-	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers | notify | hooks
+	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers | notify | hooks | extensions
 	def  any    // the value when neither the file nor an environment variable gives one (env keys: unused)
 }
 
@@ -48,6 +48,8 @@ var CFG_KEYS = []cfgKey{
 	{"auth.headerOnly", "", "bool", false},
 	{"notify", "", "notify", []notifyTarget{}}, // a top-level list: no dot
 	{"hooks", "", "hooks", map[string][]hookTarget{}},
+	{"extensionConsent", "", "bool", true},
+	{"extensions", "", "extensions", []extEntry{}},
 }
 
 // cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
@@ -228,6 +230,13 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 		if ok {
 			if k.kind == "path" && !filepath.IsAbs(v.v.(string)) {
 				v.v = filepath.Join(filepath.Dir(p), v.v.(string)) // relative to the settings file's folder
+			}
+			if k.kind == "extensions" {
+				for i, e := range v.v.([]extEntry) {
+					if !filepath.IsAbs(e.Path) {
+						v.v.([]extEntry)[i].Path = filepath.Join(filepath.Dir(p), e.Path)
+					}
+				}
 			}
 			c.set[k.key] = v
 		}
@@ -419,6 +428,8 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 		return readNotify(k, n, getenv)
 	case "hooks":
 		return readHooks(k, n, getenv)
+	case "extensions":
+		return readExtensions(k, n, getenv)
 	case "origins":
 		items, err := plainList(k, n, getenv)
 		if err != nil {

@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.359',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '운영자가 bridge.yaml 의 extensions 로 익스텐션 폴더를 둘 수 있어요. 서버는 그 파일을 동의한 사람에게만 내주고, 받는 주소를 처리방침에 싣어요. 화면에서 불러오는 것은 다음 판이에요', refs: ['REQ-F-825'] },
+    ],
+  },
+  {
     version: '1.358',
+    commit: '62e1cd6',
     date: '2026-10-31',
     changes: [
       { kind: 'changed', scope: ['ui'], text: '입력칸의 버튼 줄, 세션 메뉴, 목록의 배지, 설정 탭에 나중에 익스텐션이 항목을 더할 자리를 만들었어요. 세션 메뉴는 목록과 세션 화면이 한 목록을 같이 써요. 보이는 메뉴와 단축키는 그대로예요', refs: ['REQ-F-824'] },

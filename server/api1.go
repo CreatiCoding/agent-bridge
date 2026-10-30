@@ -20,7 +20,7 @@ func qnil(u *url.URL, k string) any { return nilIfEmpty(u.Query(), k) }
 
 // api: every route of a signed-in person, in the order server.mjs tried them.
 func api(req *Req, res *Res, u *url.URL, uid string) {
-	for _, h := range []func(*Req, *Res, *url.URL, string) bool{apiMisc, apiBridge, apiControl, apiHosts, apiConfig, apiAdmin, apiSessions} {
+	for _, h := range []func(*Req, *Res, *url.URL, string) bool{apiExt, apiMisc, apiBridge, apiControl, apiHosts, apiConfig, apiAdmin, apiSessions} {
 		if h(req, res, u, uid) {
 			return
 		}
@@ -122,7 +122,7 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if get && p == "/api/me" {
-		out := M{"uid": uid, "provider": providerOf(uid), "user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf()}
+		out := M{"uid": uid, "provider": providerOf(uid), "user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf(), "extensions": extList(uid)}
 		if u0, ok := users.Get(uid); !ok || u0 == nil {
 			out["user"] = nil
 		}

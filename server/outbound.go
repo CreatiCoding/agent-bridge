@@ -164,6 +164,32 @@ func recipients() []any {
 			}
 		}
 	}
+	// Extensions (REQ-F-825) send to their hooks' webhooks and, for the people who agreed, to their routes.
+	add := func(where, what string) {
+		i, ok := at[where]
+		if !ok {
+			i = len(out)
+			at[where] = i
+			out = append(out, orderedObj{{"origin", where}, {"events", []any{}}})
+		}
+		row := out[i].(orderedObj)
+		if !containsAny(row[1].V.([]any), what) {
+			row[1].V = append(row[1].V.([]any), what)
+		}
+	}
+	for _, d := range EXTS {
+		if d.Err != "" {
+			continue
+		}
+		for _, name := range sortedKeysOf(d.Hooks) {
+			for _, t := range d.Hooks[name] {
+				add(rawOrigin(t.URLText), name+" (익스텐션 "+d.ID+")")
+			}
+		}
+		for _, r := range d.Routes {
+			add(rawOrigin(r.Upstream), "익스텐션 "+d.ID+" 의 요청")
+		}
+	}
 	return out
 }
 
