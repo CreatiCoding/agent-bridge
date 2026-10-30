@@ -155,6 +155,7 @@ func headerSignIn(req *Req, res *Res) bool {
 		return false
 	}
 	token := newSignIn(uid)
+	emitEvent("login", uid, orderedObj{{"provider", "trusted-header"}})
 	req.movedCb = &token
 	addSetCookie(res, cookie(req, cname(req, "cb"), token, LOGIN_DAYS*86_400))
 	return false

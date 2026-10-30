@@ -318,6 +318,8 @@ export interface Me {
   features?: Features
   /** false on a page at origins.extra (REQ-F-815): it does not link Macs. Left out elsewhere. */
   linkHere?: boolean
+  /** Where this server sends conversations (bridge.yaml notify, REQ-F-818): the origin and the events; left out when none. */
+  recipients?: { origin: string; events: string[] }[]
 }
 
 /** The server's feature flags (REQ-F-812). background is read-only (headless link and screenless hosts). */

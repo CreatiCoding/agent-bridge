@@ -200,9 +200,12 @@ export function HostsPage({ me }: { me: Me | null }) {
               <ServerLink />
             </PhoneFold>
           ) : null}
-          <PhoneFold icon="qr" title="폰에서 열기" hint="QR 로그인">
-            <PhoneLogin />
-          </PhoneFold>
+          {/* A header-only server closes the QR sign-in too (REQ-F-816): other devices come in through the proxy. */}
+          {featureOn('background') ? (
+            <PhoneFold icon="qr" title="폰에서 열기" hint="QR 로그인">
+              <PhoneLogin />
+            </PhoneFold>
+          ) : null}
         </div>
       </div>
     </div>

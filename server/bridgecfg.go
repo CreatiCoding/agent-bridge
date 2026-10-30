@@ -21,7 +21,7 @@ import (
 type cfgKey struct {
 	key  string // dotted, as in the file
 	env  string // "" when no environment variable means the same
-	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers
+	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers | notify
 	def  any    // the value when neither the file nor an environment variable gives one (env keys: unused)
 }
 
@@ -46,6 +46,7 @@ var CFG_KEYS = []cfgKey{
 	{"origins.extra", "", "origins", []string{}},
 	{"auth.providers", "", "providers", []authProvider{}},
 	{"auth.headerOnly", "", "bool", false},
+	{"notify", "", "notify", []notifyTarget{}}, // a top-level list: no dot
 }
 
 // cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
@@ -167,17 +168,26 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 	}
 	c.state = "file"
 	known := map[string][]string{}
+	top := map[string]bool{} // keys that are a whole section (notify)
 	order := []string{}
 	for _, k := range CFG_KEYS {
-		sec, name, _ := strings.Cut(k.key, ".")
+		sec, name, dotted := strings.Cut(k.key, ".")
 		if _, ok := known[sec]; !ok {
 			order = append(order, sec)
+		}
+		if !dotted {
+			top[sec] = true
+			known[sec] = nil
+			continue
 		}
 		known[sec] = append(known[sec], name)
 	}
 	keys := func() string {
 		out := []string{}
 		for _, s := range order {
+			if top[s] {
+				out = append(out, s)
+			}
 			for _, n := range known[s] {
 				out = append(out, s+"."+n)
 			}
@@ -189,8 +199,8 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 		if !ok {
 			return nil, &yamlErr{sec.line, "모르는 키 " + sec.key + " (이 서버(" + VERSION + ")가 받는 키: " + keys() + ")"}
 		}
-		if sec.val.kind == yScalar && sec.val.null {
-			continue // `retention:` with nothing under it is the section left out
+		if top[sec.key] || (sec.val.kind == yScalar && sec.val.null) {
+			continue // `retention:` with nothing under it is the section left out; notify is read below
 		}
 		if sec.val.kind != yMap {
 			return nil, &yamlErr{sec.line, sec.key + " 아래는 \"키: 값\" 이어야 합니다"}
@@ -202,8 +212,11 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 		}
 	}
 	for _, k := range CFG_KEYS {
-		sec, name, _ := strings.Cut(k.key, ".")
-		n := root.get(sec).get(name)
+		sec, name, dotted := strings.Cut(k.key, ".")
+		n := root.get(sec)
+		if dotted {
+			n = n.get(name)
+		}
 		if n == nil || (n.kind == yScalar && n.null) {
 			continue
 		}
@@ -401,6 +414,8 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 	switch k.kind {
 	case "providers":
 		return readProviders(k, n, getenv)
+	case "notify":
+		return readNotify(k, n, getenv)
 	case "origins":
 		items, err := plainList(k, n, getenv)
 		if err != nil {

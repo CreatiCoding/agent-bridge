@@ -565,6 +565,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			n = jsNumber(b["n"])
 		}
 		toHost(liveHost(meta), M{"t": "answer", "sid": meta.id(), "card": b["card"], "n": n})
+		noteAnswer(b["card"].(string), M{"n": n, "via": "card", "by": byOf(req, b)})
 	case "setting":
 		if !containsAny([]any{"model", "effort", "mode"}, b["kind"]) {
 			refuse(400, "없는 설정입니다")
@@ -941,6 +942,10 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 		if truthy(f.id) {
 			imgs = append(imgs, f.id)
 		}
+	}
+	// A question or plan card answered in words (REQ-F-817 decision.answered via message).
+	if c, ok := meta.get("card").(M); ok && (c["kind"] == "question" || c["kind"] == "plan") && safeId(c["id"]) {
+		noteAnswer(c["id"].(string), M{"n": nil, "via": "message", "by": byOf(req, b)})
 	}
 	logSaid(meta, id, strings.Join(parts, "\n"), via, imgs)
 	if len(videos) > 0 {

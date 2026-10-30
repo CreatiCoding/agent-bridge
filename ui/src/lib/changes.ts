@@ -26,7 +26,19 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.352',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '서버가 이벤트를 냄: login, session.done(턴 끝), decision.waiting(권한·질문 카드가 열림), decision.answered(어떻게 답했는지). 맥 쪽 보고에서 나온 이벤트는 감사 기록으로 믿지 않음', refs: ['REQ-F-817'] },
+      { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 notify: 고른 이벤트를 웹훅으로 보냄. HMAC 서명(타임스탬프·nonce·본문 해시), 실패하면 1초·10초·60초 뒤 다시', refs: ['REQ-F-818'] },
+      { kind: 'added', scope: ['server', 'ui'], text: '수신처가 있으면 개인정보 처리방침에 수신처 목록(출처와 이벤트만)이 들어가고, 설정 → 더 보기에 "이 서버가 대화를 보내는 곳" 이 보임', refs: ['REQ-F-818'] },
+      { kind: 'fixed', scope: ['ui'], text: '헤더 로그인만 받는 서버의 기기 화면에서 쓸 수 없는 "폰에서 열기"(QR 로그인)를 숨김', refs: ['REQ-F-816'] },
+      { kind: 'fixed', scope: ['server'], text: '운영 탭의 설정 글 가리기가 경로 없는 주소의 마지막 글자를 자르던 것을 고침. 주소의 user:password@ 도 가림', refs: ['REQ-F-810'] },
+    ],
+  },
+  {
     version: '1.351',
+    commit: 'e28948c',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['server', 'ui'], text: 'bridge.yaml 의 auth.headerOnly: 프록시의 헤더 로그인만 받음. GitHub·Apple·데모·QR 로그인 입구를 닫고, 헤더 없이 온 쿠키는 받지 않으며, 로그인 화면 대신 "프록시를 거쳐 다시 열어 주세요"', refs: ['REQ-F-816'] },

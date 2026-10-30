@@ -661,6 +661,10 @@ func statusFromAgent(uid, hostID string, msg M) {
 		meta.set("coding", false)
 	}
 	over := phase == "idle" || phase == "ended"
+	// A turn ended (REQ-F-817): the event that says the work is done.
+	if was == "busy" && phase == "idle" {
+		emitEvent("session.done", meta.uid(), orderedObj{{"session", sessionOfEvent(meta)}})
+	}
 	// A session that was handed work ended a turn: the one that handed it over hears of it (REQ-F-760 rule 11).
 	if truthy(meta.get("delegatedBy")) && was == "busy" && over {
 		followDelegate(meta)
@@ -891,6 +895,9 @@ func cardFromAgent(uid, hostID string, msg M) {
 		return "세션"
 	}
 	if truthy(c["open"]) {
+		if mget(meta.get("card"), "id") != cid { // the agent sends an open card again on reconnect: once (REQ-F-817)
+			emitEvent("decision.waiting", uid, orderedObj{{"session", sessionOfEvent(meta)}, {"card", cardEvent(c)}})
+		}
 		meta.set("card", c)
 		at := numOr0(c["at"])
 		if at == 0 {
@@ -937,9 +944,21 @@ func cardFromAgent(uid, hostID string, msg M) {
 			k := mstr(x, "key")
 			return k == "card|"+cid || strings.HasPrefix(k, "remind|"+cid+"|")
 		})
-		if mget(meta.get("card"), "id") == cid {
+		wasOpen := mget(meta.get("card"), "id") == cid
+		if wasOpen {
 			meta.set("card", nil)
 		}
+		// decision.answered (REQ-F-817): how it was answered through this server, else at the Mac itself.
+		if a, ok := cardAnswers[cid]; wasOpen || truthy(c["auto"]) {
+			n, via, by := any(nil), "terminal", any(nil)
+			if truthy(c["auto"]) {
+				via = "auto"
+			} else if ok {
+				n, via, by = a["n"], mstr(a, "via"), a["by"]
+			}
+			emitEvent("decision.answered", uid, orderedObj{{"session", sessionOfEvent(meta)}, {"card", orderedObj{{"id", cid}}}, {"n", n}, {"via", via}, {"by", by}})
+		}
+		delete(cardAnswers, cid)
 		// An automatic allow was never open: it is logged as one line with what was allowed.
 		if truthy(c["auto"]) {
 			logEvents(meta, []any{M{"k": "card", "card": c}})

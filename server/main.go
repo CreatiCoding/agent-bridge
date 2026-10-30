@@ -352,6 +352,15 @@ func route(req *Req, res *Res) {
 		// privacy.file (REQ-F-812): the operator's own policy replaces the one this project ships.
 		if f := cfgGet("privacy.file").(string); f != "" {
 			sendFile(res, f, "")
+		} else if len(recipients()) > 0 {
+			// The operator's notify destinations, added where the policy says nothing leaves (REQ-F-818).
+			b, err := os.ReadFile(filepath.Join(ROOT, "web/privacy.html"))
+			if err != nil {
+				panic(err)
+			}
+			h := htmlHead()
+			h["Cache-Control"] = "no-cache"
+			res.WriteHead(200, h).EndS(privacyWithRecipients(string(b)))
 		} else {
 			sendFile(res, filepath.Join(ROOT, "web/privacy.html"), "")
 		}

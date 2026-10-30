@@ -778,6 +778,17 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
           ) : null}
           {/* The demo account has no GitHub login, and the demo refuses this call. */}
           {tab === 'more' && me && !me.demo && featureOn('skills') ? <SkillsRepoBox /> : null}
+          {tab === 'more' && me?.recipients?.length ? (
+            <section className="card-box">
+              <CardHead title="이 서버가 대화를 보내는 곳" help="운영자가 서버 설정(bridge.yaml 의 notify)에 정한 수신처예요. 세션 제목·작업 폴더·권한과 질문 카드의 내용이 이벤트로 가요. 개인정보 처리방침에도 같은 목록이 있어요." />
+              {me.recipients.map((r, i) => (
+                <div key={i} className="setting-line">
+                  <span className="grow mono">{r.origin}</span>
+                  <span className="muted" style={{ fontSize: 'var(--fs-small)' }}>{r.events.join(', ')}</span>
+                </div>
+              ))}
+            </section>
+          ) : null}
           {tab === 'more' ? <DeleteAccount me={me} /> : null}
         </div>
         )}

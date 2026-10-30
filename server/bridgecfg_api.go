@@ -42,7 +42,9 @@ func exportText(getenv func(string) string, now time.Time) string {
 	return b.String()
 }
 
-var maskURLRe = regexp.MustCompile(`(https?://[^/\s"'?#]+)[^\s"']+`)
+// The path, query and fragment of a url go; an origin alone stays as it is.
+var maskURLRe = regexp.MustCompile(`(https?://[^/\s"'?#]+)[/?#][^\s"']*`)
+var maskUserRe = regexp.MustCompile(`(https?://)[^/\s"'?#@]*@`)
 var maskKeyRe = regexp.MustCompile(`(?i)^(\s*-?\s*"?[a-z0-9_.-]*(secret|password|passwd|token|apikey|api_key|privatekey|private_key|credential)[a-z0-9_.-]*"?\s*:\s*).+$`)
 
 // maskConfigText: a file's text for a screen: secret-looking values and every URL's path and query hidden.
@@ -50,6 +52,7 @@ func maskConfigText(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		l = maskKeyRe.ReplaceAllString(l, "${1}***")
+		l = maskUserRe.ReplaceAllString(l, "${1}") // user:password@ in a url
 		lines[i] = maskURLRe.ReplaceAllString(l, "${1}/…")
 	}
 	return strings.Join(lines, "\n")

@@ -129,6 +129,9 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		if !linksHere(req) {
 			out["linkHere"] = false // a page at origins.extra does not link Macs (REQ-F-815)
 		}
+		if rs := recipients(); len(rs) > 0 {
+			out["recipients"] = rs // where this server sends conversations (REQ-F-818): origins and events only
+		}
 		if isDemoUid(uid) {
 			out["demo"] = true
 		} else if appBuild != nil {
