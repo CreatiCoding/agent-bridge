@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -607,6 +607,16 @@ const projectDir = (cwd, account = '') => path.join(projectsOf(account), cwd.rep
 const transcriptPath = (s, sid) => s.transcript || path.join(projectDir(s.cwd, s.account), `${s.conv || sid}.jsonl`)
 const expandHome = (p) => (p === '~' || p.startsWith('~/') ? path.join(HOME, p.slice(1)) : p)
 
+// ---------- hooks (agent.json, REQ-F-821) ----------
+// A command the Mac's owner names runs after a session starts, closes or ends a turn (guard.mjs hookList, runHook).
+
+function agentHook(event, sid, cwd) {
+  const runs = hookList(config.hooks, expandHome).out[`${event}.after`]
+  if (!runs?.length) return
+  const body = JSON.stringify({ name: event, at: Date.now(), session: { id: sid, cwd: cwd ?? '', host: os.hostname() } })
+  for (const run of runs) runHook(run, body, HOME, (why) => log('warn', 'hook', `${event}.after → ${run} 실패: ${why}`, sid))
+}
+
 // ---------- link to the bridge page ----------
 
 /** The one connected bridge page (SSE response), which tab it is, and when that tab last did anything. */
@@ -1176,6 +1186,7 @@ function beginTurn(sid, s) {
 
 function endTurn(sid, s, why) {
   if (!s.turn) return
+  agentHook('session.done', sid, s.cwd)
   s.turn = null
   s.running = new Map()
   s.asking = null
@@ -2353,6 +2364,7 @@ const commands = {
       if (onLine && !s.hooks) beginTurn(sid, s)
       saveSessions()
       emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: s.account ?? '' })
+      agentHook('session.create', sid, dir)
     } catch (e) {
       log('error', 'new', `세션을 시작하지 못함: ${e.message}`, sid)
       emit({ t: 'opened', reqId, sid, ok: false, error: e.message, missing: !!e.missing })
@@ -2559,6 +2571,7 @@ const commands = {
     saveSessions()
     fs.rmSync(path.join(STATE_DIR, 'prompts', `${sid}.txt`), { force: true })
     emit({ t: 'closed', sid })
+    agentHook('session.close', sid, s.cwd)
   },
   /** The session now runs on another host: stop it here and forget it. The transcript file stays. */
   async release({ sid }) {
@@ -2635,6 +2648,7 @@ const commands = {
         uuids = [...fs.readFileSync(transcriptPath(from, sid), 'utf8').matchAll(/"uuid":"([0-9a-f-]{36})"/g)].map((m) => m[1])
       } catch {}
       emit({ t: 'opened', reqId, sid: newSid, ok: true, cwd: s.cwd, warnings: [], account: s.account ?? '', uuids })
+      agentHook('session.create', newSid, s.cwd)
     } catch (e) {
       log('error', 'fork', `세션을 복제하지 못함: ${e.message}`, sid)
       emit({ t: 'opened', reqId, sid: newSid, ok: false, error: e.message })
@@ -2699,6 +2713,7 @@ const commands = {
       note(sid, '🧵 가벼운 새 세션으로 넘겼어요. 이 세션은 터미널에서 그대로 쓸 수 있어요.')
       publish(sid, from)
       emit({ t: 'opened', reqId, sid: newSid, ok: true, cwd: s.cwd, warnings: [], account: s.account ?? '' })
+      agentHook('session.create', newSid, s.cwd)
     } catch (e) {
       log('error', 'lightfork', e.message, sid)
       note(sid, `❌ 가벼운 복제로 새 세션을 열지 못했어요. ${e.message}`, 'warn')
@@ -3118,6 +3133,7 @@ const commands = {
       saveSessions()
       log('info', 'adopt', `폴더(${s.cwd.length}자)의 대화 ${conv.slice(0, 8)} 를 이어서 엶`, sid)
       emit({ t: 'opened', reqId, sid, ok: true, cwd: s.cwd, warnings: [], account })
+      agentHook('session.create', sid, s.cwd)
     } catch (e) {
       log('error', 'adopt', `대화를 가져오지 못함: ${e.message}`, sid)
       emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
@@ -4050,6 +4066,20 @@ async function runChecks() {
     chrome ? add('browser', 'ok', '브라우저', 'Chrome 있음') : add('browser', 'warn', '브라우저', 'Chrome 이 없습니다. Safari 는 연동 페이지가 이 맥의 에이전트(127.0.0.1)에 붙는 것을 막을 수 있습니다', 'Chrome 을 설치하고 연동 링크를 Chrome 에서 열기')
   }
 
+  // agent.json hooks: a wrong entry is skipped, said here; a command that cannot run is said too.
+  {
+    const { out, bad } = hookList(config.hooks, expandHome)
+    const missing = Object.values(out).flat().filter((run) => {
+      try {
+        fs.accessSync(run, fs.constants.X_OK)
+        return false
+      } catch {
+        return true
+      }
+    })
+    if (bad.length || missing.length) add('hooks', 'warn', '훅', [...bad, ...missing.map((r) => `실행할 수 없는 명령: ${r}`)].join(' · '), 'agent.json 의 hooks 를 고치기')
+    else if (Object.keys(out).length) add('hooks', 'ok', '훅', Object.entries(out).map(([n, r]) => `${n} ${r.length}개`).join(', '))
+  }
   // supervisor none: this Mac is meant to have no service (an outside supervisor calls `start`), but one is there.
   if (config.supervisor === 'none' && fs.existsSync(SERVICE_FILE) && serviceCmd !== 'install') add('supervisor', 'warn', '서비스', 'agent.json 의 supervisor 가 none 인데 백그라운드 서비스가 설치돼 있습니다', `node ${SELF} service uninstall`)
   if (process.platform === 'darwin') {

@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.355',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['agent'], text: 'agent.json 의 hooks: 이 맥에서 세션이 열리거나 닫히거나 턴이 끝나면 정한 명령을 셸 없이 실행(이벤트는 stdin). 잘못된 항목과 실행할 수 없는 명령은 점검 화면에 보임', refs: ['REQ-F-821'] },
+    ],
+  },
+  {
     version: '1.354',
+    commit: '9c94402',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 hooks 에 before 훅: 액션 직전에 묻고, 막으면 그 이유를 보여 주고, 보낼 글·세션 제목·첫 지시·권한 모드를 바꿀 수 있음. 묻는 동안 다른 요청은 기다리지 않고, 그사이 세션이 바뀌면 다시 하게 함. 확인 서버가 죽으면 기본은 그대로 진행(onError: deny 로 막기)', refs: ['REQ-F-820'] },

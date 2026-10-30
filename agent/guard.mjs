@@ -1,6 +1,7 @@
 // Checks on what the server or a page hands the agent before it touches this Mac with it: addresses, names, paths,
 // files. Each one answers a finding of review report #1; kept apart from agent.mjs so they can be tested.
 import crypto from 'node:crypto'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { UPDATE_KEYS } from './keys.mjs'
@@ -565,4 +566,48 @@ export function worktreeWhy({ merged, dirty, locked, active, touched, now }) {
   if (!merged) return '기본 브랜치에 머지되지 않음'
   if (touched && now - touched < WORKTREE_QUIET_MS) return '최근 1시간 안에 쓰임'
   return null
+}
+
+// ---------- hooks (agent.json, REQ-F-821) ----------
+// A command the Mac's owner names runs after a session starts, closes or ends a turn, with {name, at, session: {id,
+// cwd, host}} on stdin. No shell; `~` is the home folder. What it does is the owner's affair (it may reach out, an
+// exception to the agent never connecting anywhere but the bridge); a failure is a line in the log, nothing more.
+
+export const AGENT_HOOKS = ['session.create.after', 'session.close.after', 'session.done.after']
+export const AGENT_HOOK_MS = 10_000
+
+/** The usable entries of agent.json `hooks` (name -> absolute commands) and what is wrong with the rest. */
+export function hookList(h, expandHome) {
+  const out = {}
+  const bad = []
+  if (h === undefined) return { out, bad }
+  if (!h || typeof h !== 'object' || Array.isArray(h)) return { out, bad: ['hooks 는 {"이름": [{"run": "명령"}]} 모양이어야 합니다'] }
+  for (const [name, list] of Object.entries(h)) {
+    if (!AGENT_HOOKS.includes(name)) {
+      bad.push(`모르는 훅 ${name} (받는 이름: ${AGENT_HOOKS.join(', ')})`)
+      continue
+    }
+    for (const x of Array.isArray(list) ? list : [null]) {
+      const run = typeof x?.run === 'string' ? expandHome(x.run.trim()) : ''
+      if (!run || !path.isAbsolute(run)) {
+        bad.push(`${name} 의 run 은 명령의 절대 경로(또는 ~/…)여야 합니다`)
+        continue
+      }
+      ;(out[name] ??= []).push(run)
+    }
+  }
+  return { out, bad }
+}
+
+/** Runs one hook command with body on stdin; onFail(why) when it cannot start, exits non-zero or takes too long. */
+export function runHook(run, body, cwd, onFail, ms = AGENT_HOOK_MS) {
+  try {
+    const child = execFile(run, [], { timeout: ms, maxBuffer: 64 * 1024, cwd }, (err) => {
+      if (err) onFail(err.killed ? '시간 초과' : String(err.code ?? err.message))
+    })
+    child.stdin?.on('error', () => {}) // a command that does not read stdin
+    child.stdin?.end(body)
+  } catch (e) {
+    onFail(e.message)
+  }
 }
