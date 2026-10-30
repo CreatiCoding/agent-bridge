@@ -54,3 +54,10 @@
 - **문제 없음으로 본 것**: 연동 경로(`/api/bridge/stream`·`up`·`bye`·`upload`·`transcript`)는 호스트 주인과 `conn` 을 확인. 세션을 바꾸는 에이전트 메시지(`lines`·`status`·`card`·`note`·`preview`·`conv`·`stats`·`folder`·`delivered`·`closed`)는 `owns`(같은 계정이고 그 호스트에서 돌거나 옮겨 가는 중)를 확인. `toast`·`screen`·`error` 는 확인이 없지만 보내는 사람 자신의 조작 페이지에만 간다. 명령의 답과 `got` 은 명령을 보낸 호스트에서 온 것만 받는다. 미리보기 웹소켓 메시지는 그 소켓의 호스트에서 온 것만. 미리보기 밖의 웹소켓 업그레이드는 바로 닫는다. hello 의 세션 목록은 남의 세션 id 를 건너뜀. 데모 계정은 연동 경로를 쓸 수 없다.
 - **보류**:
   - 연동 탭이 올리는 `health`·`hello`·`logs` 의 일부 칸은 길이를 자르지 않고 기기 기록·상태에 남는다. 본문 한도(32 MB) 안이고 같은 계정의 맥이 보내는 것이라 관찰만 한다.
+
+## 2026-10-30 (금)
+
+- **본 범위**: 최근 24시간 origin/main 커밋(`6c86736`~`9967ddb`, 6개): iOS 카메라 번역(`6c86736`·`5ce6fec`·`515207d`, 기기 안에서만 처리하고 네트워크를 쓰지 않음), 앱 웹뷰 링크 미리보기 끄기(`149bf49`), TestFlight 수동 서명(`75fbc2a`, 운영자 맥의 스크립트), ui 의 vite 6.4.5(`9967ddb`). 금요일 중점: UI — `ui/src` 의 마크다운 렌더(`lib/markdown.tsx`), 답 안 HTML 미리보기 틀(`html-preview.tsx`), `dangerouslySetInnerHTML`(QR), 외부 링크·`window.open`·`target=_blank` 의 주소 출처, 분할 화면·로컬 미리보기 iframe, 프레임 간 메시지, `web/` 의 스킬 페이지·`markdown.js`, 서비스 워커 알림 클릭, iOS 앱 웹뷰의 스크립트 메시지·이동 처리.
+- **고친 것**: 없음.
+- **문제 없음으로 본 것**: 마크다운은 HTML 을 해석하지 않고 링크는 http(s) 만. 답 안 HTML 은 스크립트 없는 sandbox 틀에 CSP 를 앞에 붙이고, 그 틀 안의 자동 새로고침 이동은 브라우저가 막는 것을 헤드리스 Chrome 으로 확인. QR 은 비트로 만든 SVG 만. `window.open`·`href` 로 여는 주소는 서버가 만든 것(Slack 주소·미리보기 주소·PR 정규식 `https://…/pull/N`)이고 React 19 는 `javascript:` href 를 막으며 페이지 CSP 가 인라인 스크립트를 막음. 분할 화면 칸은 `/s/<id>` 같은 출처, 로컬 미리보기는 다른 출처(lp*). 페이지가 받는 `message` 이벤트 처리기는 없음. 스킬 페이지는 모든 값을 이스케이프하고 이름은 `^[\w.-]+$`. 제보·그림 파일은 png·jpg·gif·webp 만(SVG 없음). iOS 앱의 스크립트 메시지는 메인 프레임이고 사이트 호스트일 때만 받음.
+- **보류**: 없음(지난 회차 보류 항목은 그대로).
