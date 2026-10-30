@@ -122,7 +122,7 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if get && p == "/api/me" {
-		out := M{"user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf()}
+		out := M{"uid": uid, "provider": providerOf(uid), "user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf()}
 		if u0, ok := users.Get(uid); !ok || u0 == nil {
 			out["user"] = nil
 		}

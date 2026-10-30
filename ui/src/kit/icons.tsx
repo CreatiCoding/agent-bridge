@@ -71,6 +71,8 @@ const PATHS: Record<string, string> = {
 }
 
 export type IconName = keyof typeof PATHS | string
+/** Every icon name Icon draws (an unknown one draws info). */
+export const ICONS: readonly string[] = Object.keys(PATHS)
 
 export const ICON_SIZE = 18
 

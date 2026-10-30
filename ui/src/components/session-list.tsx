@@ -1,7 +1,7 @@
 // The list of sessions: a one-line count at the top, then the groups and the sessions in no group, then what was
 // ended (to pick up again). Rows keep the order they were started in, so nothing jumps while work goes on;
 // a session that needs the person shows it by its colour and badge.
-import { memo, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { post } from '../lib/api'
 import { ago } from '../lib/format'
@@ -20,6 +20,8 @@ import { StateWait } from './state-wait'
 import { useGroupSort } from './group-sort'
 import { openSession } from '../lib/builtin-actions'
 import { closeSession } from '../lib/builtin-actions'
+import { resolve, type SlotItem } from '../lib/slots'
+import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
 
 function useSeen() {
   const [seen, setSeen] = useState(getSeen)
@@ -121,16 +123,38 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
             {s.locked ? <Icon name="key" className="inline-icon" /> : null}
             {titleOf(s)}
           </span>
-          {l.need || l.tone === 'violet' || l.label === '기기 끊김' ? <Badge tone={l.tone}>{l.label}</Badge> : null}
-          {s.seat?.where === 'slack' ? <Badge tone="violet">Slack</Badge> : null}
-          {/* Driven by a session on another Mac (다른 맥에 맡기기): told apart from the ones the person works in. */}
-          {s.delegatedBy ? <Badge tone="violet">맡김</Badge> : null}
+          <RowBadges s={s} l={l} />
           {/* Put to rest: the word where the time goes, so it reads from across the room. */}
           <span className="srow-time">{l.label === '휴면' ? '휴면' : <Ago t={s.lastAt} format={ago} />}</span>
         </span>
       </span>
     </a>
     </div>
+  )
+}
+
+/**
+ * A row's badges, the session-list.row.badges slot (REQ-F-824): what needs the person, Slack, 맡김, then what an
+ * extension adds (two at most, the rest as +n). Shown only: the row is a link, so nothing in it can be pressed.
+ */
+type RowBadge = { id: string; builtin?: boolean; render: () => ReactNode }
+function RowBadges({ s, l }: { s: Session; l: ReturnType<typeof look> }) {
+  useSlots()
+  const builtin: RowBadge[] = [
+    { id: 'state', builtin: true, render: () => (l.need || l.tone === 'violet' || l.label === '기기 끊김' ? <Badge tone={l.tone}>{l.label}</Badge> : null) },
+    { id: 'slack', builtin: true, render: () => (s.seat?.where === 'slack' ? <Badge tone="violet">Slack</Badge> : null) },
+    // Driven by a session on another Mac (다른 맥에 맡기기): told apart from the ones the person works in.
+    { id: 'delegated', builtin: true, render: () => (s.delegatedBy ? <Badge tone="violet">맡김</Badge> : null) },
+  ]
+  const items = resolve<RowBadge>('session-list.row.badges', builtin, (b) => b as unknown as SlotItem, (i, isBuiltin) => ({ ...(i as unknown as RowBadge), builtin: isBuiltin }))
+  const added = items.filter((b) => !b.builtin)
+  const more = added.length - 2
+  const ctx = useMemo(() => ({ session: s }), [s])
+  return (
+    <SlotContext.Provider value={ctx}>
+      {items.map((b) => (b.builtin ? <Fragment key={b.id}>{b.render()}</Fragment> : added.indexOf(b) < 2 ? <SlotRender key={b.id} render={b.render} /> : null))}
+      {more > 0 ? <Badge>+{more}</Badge> : null}
+    </SlotContext.Provider>
   )
 }
 

@@ -151,6 +151,10 @@ func TestFeaturesOffAtAPI(t *testing.T) {
 	code, body := callAPI(t, "GET", "/api/me", "")
 	eq(t, code, 200)
 	jeq(t, oget(js(body), "features"), `{"background":true,"permissionModes":["default","plan"],"preview":true,"remoteKeys":true,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
+	// Who is signed in, and how (REQ-F-824: an extension's settings section gets them).
+	uid, _ := oget(js(body), "uid").(string)
+	ok(t, uid != "", body)
+	jeq(t, oget(js(body), "provider"), `"`+providerOf(uid)+`"`, body)
 	for _, c := range [][2]string{{"GET", "/api/push/key"}, {"POST", "/api/push/subscribe"}, {"POST", "/api/prefs/voice"}, {"GET", "/api/skills"}, {"GET", "/api/prefs/skills"}, {"POST", "/api/plugins/slack"}} {
 		code, _ = callAPI(t, c[0], c[1], "{}")
 		eq(t, code, 403, c[0]+" "+c[1])

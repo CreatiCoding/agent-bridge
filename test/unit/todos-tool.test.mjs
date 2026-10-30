@@ -24,10 +24,13 @@ test('the page reopens a session without the tool before asking, after its work 
 
 test('a row\'s menu on the list asks for the list too, and the session page shows it once (AC-1416)', () => {
   const menu = fs.readFileSync(new URL('../../ui/src/components/session-menu.tsx', import.meta.url), 'utf8')
-  assert.match(menu, /\.\.\.\(opts\.noTodos \? \[\] : \[\{ label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked\(s\), onSelect: \(\) => void askTodos\(s\) \}\]\)/)
+  // A row's menu (no page) has its own; the page's comes first among its items (1.358: one sessionMenu for both).
+  assert.match(menu, /\.\.\.\(page \? \[\] : \[\{ id: 'todos', label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked\(s\), onSelect: \(\) => void askTodos\(s\) \}\]\)/)
+  assert.match(menu, /\{ id: 'todos', label: '할 일 정리', icon: 'list', hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked\(s\), onSelect: \(\) => void page\.askTodos\(\) \}/)
+  assert.equal(menu.match(/label: '할 일 정리'/g).length, 2)
   const page = fs.readFileSync(new URL('../../ui/src/pages/session-page.tsx', import.meta.url), 'utf8')
-  assert.match(page, /noRefresh: wide, noTodos: true \}/)
-  assert.equal(page.match(/label: '할 일 정리'/g).length, 1)
+  assert.match(page, /sessionMenu\(s, \{ groups: .*, wide, page: \{ sheet: setSheet, askTodos: \(\) => void askTodos\(\)/)
+  assert.equal(page.match(/label: '할 일 정리'/g), null)
 })
 
 test('the session menu compacts a resting session, as the big-context banner does (AC-1417)', () => {

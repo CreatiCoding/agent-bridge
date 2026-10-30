@@ -2,7 +2,7 @@
 // notes (toasts) and the questions the page asks (confirm, prompt). One host component renders them all.
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { Button, Icon, type IconName, NO_AUTOFILL, useWide } from './index'
+import { Button, Icon, type IconName, TextField, useWide } from './index'
 
 // ---------- leaving ----------
 
@@ -121,6 +121,8 @@ export function Sheet({ open, onClose, title, children, footer, wide, className,
 // ---------- menu ----------
 
 export interface MenuItem {
+  /** The item's name in the session.menu slot (REQ-F-824); other menus leave it out. */
+  id?: string
   label: ReactNode
   icon?: IconName
   danger?: boolean
@@ -131,7 +133,7 @@ export interface MenuItem {
   /** A submenu, shown in place (a phone) or beside (a PC). */
   items?: MenuItem[]
 }
-export type MenuEntry = MenuItem | 'sep' | { header: ReactNode }
+export type MenuEntry = MenuItem | 'sep' | { id?: string; header: ReactNode }
 
 interface MenuReq {
   items: MenuEntry[]
@@ -420,16 +422,9 @@ function DialogView({ d, leaving }: { d: Dialog; leaving?: boolean }) {
       {d.text ? <div className="dialog-text">{d.text}</div> : null}
       {d.kind === 'prompt' ? (
         d.multiline ? (
-          <textarea className="input" {...NO_AUTOFILL} autoFocus rows={8} value={value} placeholder={d.placeholder} onChange={(e) => setValue(e.target.value)} />
+          <TextField autoFocus rows={8} value={value} placeholder={d.placeholder} onChange={setValue} />
         ) : (
-          <input
-            className="input"
-            autoFocus
-            value={value}
-            placeholder={d.placeholder}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && value.trim() && done(value)}
-          />
+          <TextField autoFocus value={value} placeholder={d.placeholder} onChange={setValue} onEnter={() => value.trim() && done(value)} />
         )
       ) : null}
       {d.kind === 'choose' ? (

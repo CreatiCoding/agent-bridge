@@ -3,7 +3,7 @@ import type React from 'react'
 import { type ButtonHTMLAttributes, type ReactNode, forwardRef, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { Icon, type IconName } from './icons'
 
-export { Icon, Logo, type IconName } from './icons'
+export { Icon, ICONS, Logo, type IconName } from './icons'
 
 type Tone = 'primary' | 'plain' | 'danger' | 'ghost' | 'soft'
 
@@ -19,12 +19,20 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
   )
 })
 
-export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconName; label: string; active?: boolean }>(function IconButton(
-  { icon, label, active, className, ...rest },
+/** keepFocus: a press leaves the focus where it is (a text box keeps it, and a phone's keyboard stays up). */
+export const IconButton = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconName; label: string; active?: boolean; keepFocus?: boolean }>(function IconButton(
+  { icon, label, active, className, keepFocus, onMouseDown, ...rest },
   ref,
 ) {
+  const down = keepFocus
+    ? (e: React.MouseEvent<HTMLButtonElement>) => {
+        const a = document.activeElement
+        if (a instanceof HTMLTextAreaElement || a instanceof HTMLInputElement) e.preventDefault()
+        onMouseDown?.(e)
+      }
+    : onMouseDown
   return (
-    <button ref={ref} type="button" className={`icon-btn${active ? ' on' : ''}${className ? ` ${className}` : ''}`} aria-label={label} title={label} {...rest}>
+    <button ref={ref} type="button" className={`icon-btn${active ? ' on' : ''}${className ? ` ${className}` : ''}`} aria-label={label} title={label} onMouseDown={down} {...rest}>
       <Icon name={icon} />
     </button>
   )
@@ -88,6 +96,18 @@ export function Field({ label, hint, children }: { label?: ReactNode; hint?: Rea
 }
 
 /** A row in a list: something on the left, text in the middle, something on the right, and maybe a press. */
+/**
+ * A one-line (or, with rows, several-line) text box in the page's style; the several-line one is left alone by
+ * password managers and autocorrect. On one line, Enter (not while a Korean syllable is being put together) calls onEnter.
+ */
+export const TextField = forwardRef<HTMLInputElement & HTMLTextAreaElement, { value: string; onChange: (v: string) => void; label?: string; placeholder?: string; rows?: number; autoFocus?: boolean; disabled?: boolean; onEnter?: () => void }>(function TextField({ value, onChange, label, placeholder, rows, autoFocus, disabled, onEnter }, ref) {
+  return rows ? (
+    <textarea ref={ref} className="input" {...NO_AUTOFILL} aria-label={label} autoFocus={autoFocus} disabled={disabled} rows={rows} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+  ) : (
+    <input ref={ref} className="input" aria-label={label} autoFocus={autoFocus} disabled={disabled} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && onEnter?.()} />
+  )
+})
+
 export function Row({ left, title, sub, right, onClick, onContextMenu, active, href, className, chevron }: { left?: ReactNode; title: ReactNode; sub?: ReactNode; right?: ReactNode; onClick?: () => void; onContextMenu?: (e: React.MouseEvent) => void; active?: boolean; href?: string; className?: string; chevron?: boolean }) {
   const body = (
     <>

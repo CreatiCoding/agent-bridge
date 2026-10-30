@@ -5,7 +5,7 @@ import { errorText } from '../lib/api'
 import { kbDebugOn, kbDebugText } from '../lib/kbdebug'
 import { bytes, duration, folderPath, shortLabel, tokens } from '../lib/format'
 import { getPref, markSeen, setPref } from '../lib/local'
-import { back, navigate } from '../lib/router'
+import { back } from '../lib/router'
 import { loadOlder, retryLog, useSessionLog } from '../lib/session-log'
 import { groupTree, look, modelName, titleOf } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
@@ -13,7 +13,7 @@ import { featureOn } from '../lib/features'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { Button, Chip, Empty, Icon, IconButton, LoadError, Spinner, useTick, useWide, wideNow } from '../kit'
-import { openMenu, toast, type MenuEntry } from '../kit/overlay'
+import { openMenu, toast } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
 import type { VoiceDraft } from '../components/voice-mode'
 import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodoPanelPref, SettingsSheet, TodoAskCard, todoAskOf, TodoPanel, todoPanelPref, Todos, useTodoHidden } from '../components/session-extras'
@@ -24,7 +24,7 @@ import { LockScreen, useUnlocked } from '../components/lock'
 import { SessionTabs, useGroupTabs } from '../components/session-tabs'
 import { PreviewSheet, ServerButton, type Server } from '../components/local-preview'
 import { useEdgeSwipeBack } from '../kit/swipe'
-import { inPane, SPLIT_MAX, splitHost, splitRoom, startSplit } from '../lib/split'
+import { inPane } from '../lib/split'
 import { copyText, onSending, openLink, openSession, sendMessage } from '../lib/builtin-actions'
 import { isCancel } from '../lib/actions'
 
@@ -699,45 +699,6 @@ export function SessionPage({ id }: { id: string }) {
   // ▶ and a to-do item send the request like any message, so a busy session gets it after its turn (REQ-F-779).
   const runTodos = (text: string) => void send(text).then((ok) => ok && toast(busy ? '지금 하던 일이 끝나면 이어서 해요' : '할 일을 시작했어요'))
   const copyPath = () => copyText(s.cwd, 'other').then((ok) => ok && toast('경로를 복사했어요'))
-  // What a phone leaves out of its header, at the top of the ⋯ menu: the group's other sessions (the PC's tabs) and
-  // the folder.
-  const phoneMenu: MenuEntry[] = wide
-    ? []
-    : [
-        ...(group.tabs.length > 1 && group.holder
-          ? [
-              {
-                label: '같은 그룹 세션',
-                icon: 'list' as const,
-                hint: `${crumbs.join(' › ')} · ${group.tabs.length}개`,
-                items: [
-                  ...group.tabs.map((t) => ({ label: titleOf(t), checked: t.id === s.id, hint: look(t, hosts.find((h) => h.id === t.hostId)).label, onSelect: () => t.id !== s.id && openSession(t.id, 'tabs', { replace: true }) })),
-                  { label: '이 그룹에 새 세션', icon: 'plus' as const, onSelect: () => navigate(`/new?group=${group.holder!.id}`) },
-                ],
-              },
-            ]
-          : []),
-        { label: '경로 복사', icon: 'copy', hint: folderPath(s.cwd, s.home), onSelect: () => void copyPath() },
-        'sep',
-      ]
-  const wideMenu: MenuEntry[] = wide ? [{ label: 'AGENTS.md', icon: 'doc', hint: '이 폴더의 작업 지침', onSelect: () => setSheet('doc') }] : []
-  // 터미널 화면 is in the ⋯ menu on every screen; a wide header has 새로고침 in its place (REQ-F-609).
-  // 분할 화면 (REQ-F-786): where there is room for two panes, a session opens beside another; inside a pane, the
-  // pane adds one beside it, leaves, or opens on its own. Made as the menu opens: the panes change without this one.
-  const splitMenu = (): MenuEntry[] => {
-  const split = splitHost()
-  return inPane && split
-    ? [
-        { label: '옆에 세션 추가', icon: 'columns', hint: split.count() >= SPLIT_MAX ? `${SPLIT_MAX}칸까지예요` : `${split.count()} / ${SPLIT_MAX}칸`, disabled: split.count() >= SPLIT_MAX, onSelect: () => split.add() },
-        { label: '이 세션만 크게', icon: 'forward', onSelect: () => split.full(window) },
-        { label: '분할에서 빼기', icon: 'close', onSelect: () => split.close(window) },
-        'sep',
-      ]
-    : splitRoom() >= 2
-      ? [{ label: '분할로 띄우기', icon: 'columns', hint: `다른 세션과 나란히 · 최대 ${SPLIT_MAX}개`, onSelect: () => void startSplit(s.id) }, 'sep']
-      : []
-  }
-  const screenItem: MenuEntry = { label: '터미널 화면', icon: 'terminal', disabled: !s.state.alive, onSelect: () => setSheet('screen') }
   const disabled = todoBlocked(s)
   return (
     <div className={`main sess${s.delegatedBy && !s.closed ? ' driven' : ''}`} ref={setPageEl}>
@@ -786,7 +747,7 @@ export function SessionPage({ id }: { id: string }) {
         {wide ? <IconButton icon="refresh" label="새로고침" title="대화 그대로 다시 열기" onClick={() => void refresh(s)} disabled={!!disabled || !s.state.alive} /> : null}
         <div className="glass-group">
           {featureOn('preview') ? <ServerButton s={s} onPreview={setServer} /> : null}
-          <IconButton icon="more" label="세션 메뉴" onClick={(e) => openMenu([...splitMenu(), ...phoneMenu, screenItem, { label: '할 일 정리', icon: 'list', hint: '지금까지 한 일·남은 일', disabled: !!disabled, onSelect: () => void askTodos() }, ...wideMenu, 'sep', ...sessionMenu(s, { groups: groupTree(groups).map((t) => ({ id: t.group.id, name: t.path })), noRefresh: wide, noTodos: true })], e.currentTarget, titleOf(s))} />
+          <IconButton icon="more" label="세션 메뉴" onClick={(e) => openMenu(sessionMenu(s, { groups: groupTree(groups).map((t) => ({ id: t.group.id, name: t.path })), wide, page: { sheet: setSheet, askTodos: () => void askTodos(), copyPath: () => void copyPath(), group: { tabs: group.tabs, holder: group.holder ?? null, crumbs } } }), e.currentTarget, titleOf(s))} />
         </div>
       </div>
       <DrivenBar s={s} />

@@ -4,7 +4,7 @@
 // the picture button, which is the only way on a phone) or dropped (8 at most). A line starting with / offers the session's skills and commands.
 // With 음성 입력 on (설정 → 음성), a microphone button turns 음성 모드 on: the box gives way to a panel that keeps
 // listening and gathers what is said, sent with one press (components/voice-mode.tsx); on a PC a key does the same.
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { get } from '../lib/api'
 import { shrinkImage } from '../lib/image'
 import { uploadVideo, VIDEO_MAX, VIDEO_TYPES, type SentVideo } from '../lib/video'
@@ -19,6 +19,9 @@ import { openMenu, toast } from '../kit/overlay'
 import { featureOn } from '../lib/features'
 import { dispatch } from '../lib/actions'
 import { registerComposer } from '../lib/builtin-actions'
+import { resolve, type SlotItem } from '../lib/slots'
+import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
+import type { IconName } from '../kit'
 
 interface Skill {
   name: string
@@ -42,6 +45,27 @@ export interface ComposerHandle {
 }
 
 export type { SentVideo }
+
+/** composer.actions' context and commands (§7.1); also what a shortcut gets while the box has the focus. */
+export interface ComposerCtx {
+  sid: string
+  text: string
+  attachments: { kind: 'image' | 'video'; name: string; pct?: number }[]
+  sending: boolean
+  busy: boolean
+  disabled: boolean
+  setText: (text: string) => void
+  addAttachment: (file: File) => void
+  clear: () => void
+  focus: () => void
+}
+/** An item of composer.actions: the box's own (builtin) or added, with what it is folded into on a narrow screen. */
+interface Action {
+  id: string
+  builtin?: boolean
+  render: () => ReactNode
+  menu?: { label: string; icon?: IconName; enabled?: (ctx: ComposerCtx) => boolean; run: (ctx: ComposerCtx) => void }
+}
 
 export const Composer = forwardRef<ComposerHandle, { session: Session; history: string[]; disabled?: string; busy: boolean; onSend: (text: string, images: { data: string; name: string }[], videos?: SentVideo[]) => Promise<boolean>; onDraft?: (shown: string) => VoiceDraft; onStop: () => void; tools?: ReactNode }>(function Composer({ session, history, disabled, busy, onSend, onDraft, onStop, tools }, ref) {
   const [text, setText] = useState(() => getDraft(session.id))
@@ -205,7 +229,8 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
   }
   const submitNow = useRef(submit)
   submitNow.current = submit
-  useEffect(() => registerComposer(session.id, (t) => submitNow.current(t)), [session.id])
+  const ctxNow = useRef<ComposerCtx | null>(null)
+  useEffect(() => registerComposer(session.id, (t) => submitNow.current(t), () => ctxNow.current), [session.id])
   // The box's own send: through the bus, held as sending while handlers decide.
   const pressing = useRef(false)
   const send = async () => {
@@ -369,6 +394,75 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
 
   const empty = !text.trim() && !images.length && !videos.length
   const dev = getVoiceDevice()
+  // composer.actions (REQ-F-824): the box's own buttons under their ids, and what an extension adds. On a narrow
+  // screen an added item beyond the first folds into one ⋯ (the box's own never fold).
+  const builtinActions: Action[] = [
+    {
+      id: 'attach',
+      builtin: true,
+      render: () => (
+        <>
+          <IconButton icon="plus" label="사진 첨부" className="glass-btn" onClick={(e) => attach(e.currentTarget)} disabled={!!disabled} />
+          <input ref={file} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => (e.target.files && void addFiles(e.target.files), (e.target.value = ''))} />
+        </>
+      ),
+    },
+    { id: 'chips', builtin: true, render: () => <div className="chips">{tools}</div> },
+    ...(voiceOn
+      ? [
+          {
+            id: 'mic',
+            builtin: true,
+            render: () => (
+            <button
+              type="button"
+              className="icon-btn glass-btn mic-btn"
+              aria-label="음성 모드"
+              title={mouse && dev.key !== 'off' ? `음성 모드 (${KEY_LABEL[dev.key]})` : '음성 모드'}
+              disabled={!!disabled || vm === 'opening'}
+              onClick={() => void voiceStart()}
+            >
+              <Icon name="mic" />
+            </button>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: 'send',
+      builtin: true,
+      render: () =>
+        busy && empty ? (
+            <button type="button" className="send stop" aria-label="중단 (Esc)" title="중단 (Esc)" onClick={onStop}>
+              <Icon name="stop" />
+            </button>
+          ) : (
+            // The press keeps the focus in the text box, so a phone's keyboard stays up for the next message.
+            <button type="button" className="send" aria-label="보내기" title={enterSends ? '보내기 (Enter · ⌘Enter)' : '보내기 (⌘Enter)'} disabled={empty || sending || !!disabled} onMouseDown={(e) => document.activeElement === box.current && e.preventDefault()} onClick={() => void send()}>
+              <Icon name="send" />
+            </button>
+          ),
+    },
+  ]
+  const slotCtx: ComposerCtx = {
+    sid: session.id,
+    text,
+    attachments: [...images.map((im) => ({ kind: 'image' as const, name: im.name })), ...videos.map((v) => ({ kind: 'video' as const, name: v.file.name, ...(v.pct === null ? {} : { pct: v.pct }) }))],
+    sending,
+    busy,
+    disabled: !!disabled,
+    setText: (t) => setText(t),
+    addAttachment: (f) => void addFiles([f]),
+    clear: () => (setText(''), setImages([]), setVideos([])),
+    focus: () => box.current?.focus(),
+  }
+  ctxNow.current = slotCtx
+  useSlots()
+  const actions = resolve<Action>('composer.actions', builtinActions, (a) => a as unknown as SlotItem, (i, builtin) => ({ ...(i as unknown as Action), builtin }))
+  const narrow = useMedia('(max-width: 479px)')
+  const added = actions.filter((a) => !a.builtin)
+  const folded = narrow ? added.slice(1).filter((a) => a.menu) : []
+  const foldedSet = new Set(folded)
   return (
     <div
       className="composer-in"
@@ -473,33 +567,12 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
           }}
           aria-label="메시지"
         />
-        <div className="inputbar">
-          <IconButton icon="plus" label="사진 첨부" className="glass-btn" onClick={(e) => attach(e.currentTarget)} disabled={!!disabled} />
-          <input ref={file} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => (e.target.files && void addFiles(e.target.files), (e.target.value = ''))} />
-          <div className="chips">{tools}</div>
-          {voiceOn ? (
-            <button
-              type="button"
-              className="icon-btn glass-btn mic-btn"
-              aria-label="음성 모드"
-              title={mouse && dev.key !== 'off' ? `음성 모드 (${KEY_LABEL[dev.key]})` : '음성 모드'}
-              disabled={!!disabled || vm === 'opening'}
-              onClick={() => void voiceStart()}
-            >
-              <Icon name="mic" />
-            </button>
-          ) : null}
-          {busy && empty ? (
-            <button type="button" className="send stop" aria-label="중단 (Esc)" title="중단 (Esc)" onClick={onStop}>
-              <Icon name="stop" />
-            </button>
-          ) : (
-            // The press keeps the focus in the text box, so a phone's keyboard stays up for the next message.
-            <button type="button" className="send" aria-label="보내기" title={enterSends ? '보내기 (Enter · ⌘Enter)' : '보내기 (⌘Enter)'} disabled={empty || sending || !!disabled} onMouseDown={(e) => document.activeElement === box.current && e.preventDefault()} onClick={() => void send()}>
-              <Icon name="send" />
-            </button>
-          )}
-        </div>
+        <SlotContext.Provider value={slotCtx}>
+          <div className="inputbar">
+            {actions.filter((a) => !foldedSet.has(a)).map((a) => (a.builtin ? <Fragment key={a.id}>{a.render()}</Fragment> : <SlotRender key={a.id} render={a.render} />))}
+            {folded.length ? <IconButton icon="more" label="더 보기" className="glass-btn" keepFocus onClick={(e) => openMenu(folded.map((a) => ({ label: a.menu!.label, icon: a.menu!.icon, disabled: a.menu!.enabled ? !a.menu!.enabled(slotCtx) : false, onSelect: () => a.menu!.run(slotCtx) })), e.currentTarget)} /> : null}
+          </div>
+        </SlotContext.Provider>
       </div>
       )}
     </div>

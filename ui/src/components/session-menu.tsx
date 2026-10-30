@@ -1,22 +1,24 @@
 // What can be done to a session, as one menu: the ⋯ in the conversation header, a right-click or a long press
 // on its row. Each item says plainly what it does; the ones that cannot be undone ask first.
 import { errorText, get, post } from '../lib/api'
-import { go } from '../lib/router'
-import { hostIcon, KINDS, titleOf } from '../lib/sessions'
+import { go, navigate } from '../lib/router'
+import { hostIcon, KINDS, look, titleOf } from '../lib/sessions'
 import { getStore } from '../lib/store'
 import { featureOn } from '../lib/features'
-import { bytes, tokens } from '../lib/format'
+import { bytes, folderPath, tokens } from '../lib/format'
 import type { Session } from '../lib/types'
-import { chooseDialog, confirmDialog, type MenuEntry, promptDialog, toast } from '../kit/overlay'
+import { chooseDialog, confirmDialog, type MenuEntry, type MenuItem, promptDialog, toast } from '../kit/overlay'
 import { Icon, type IconName } from '../kit'
 import { tokenOf } from '../lib/locks'
 import { clearLock, lockSession, relock } from './lock'
 import { confirmCopyMode } from './auto-allow-confirm'
 import { openCwd } from './cwd-sheet'
 import { TODO_ASK, TODO_REASK } from './session-extras'
-import { openLink, openSession } from '../lib/builtin-actions'
-import { closeSession, sendMessage } from '../lib/builtin-actions'
+import { closeSession, openLink, openSession, sendMessage } from '../lib/builtin-actions'
 import { isCancel, type Cancel } from '../lib/actions'
+import { resolve, type SlotItem } from '../lib/slots'
+import { inPane, SPLIT_MAX, splitHost, splitRoom, startSplit } from '../lib/split'
+import type { ReactNode } from 'react'
 
 /** Runs a request, saying what came of it. A cancelled action (its reason already shown) counts as not done. */
 export async function act<T = { ok: true; note?: string }>(run: () => Promise<T | Cancel>, done?: string | ((r: T) => string | undefined)) {
@@ -252,7 +254,35 @@ export const todoBlocked = (s: Session) => {
   return inSlack(s) ? 'Slack 에서 작업 중이에요' : s.closed ? '끝난 세션이에요' : s.moving ? '옮기는 중이에요' : host && !host.online ? '맥이 연결돼 있지 않아요' : undefined
 }
 
-export function sessionMenu(s: Session, opts: { groups?: { id: string; name: string }[]; noRefresh?: boolean; noTodos?: boolean } = {}): MenuEntry[] {
+/** What session.menu's items are given (REQ-F-824): the session and the states the page's own items look at. */
+export interface SessionMenuCtx {
+  sid: string
+  session: Session
+  closed: boolean
+  alive: boolean
+  away: boolean
+  hostConnected: boolean
+  canMoveHost: boolean
+  slackOn: boolean
+  phase: Session['state']['phase']
+  wide: boolean
+  todoBlocked: string | undefined
+  place: 'page' | 'list'
+}
+
+/** What only the session's own page has: its sheets, its 할 일 정리 (it draws the bubble) and its group. */
+export interface PageMenu {
+  sheet: (kind: 'screen' | 'doc') => void
+  askTodos: () => void
+  copyPath: () => void
+  group: { tabs: Session[]; holder: { id: string } | null; crumbs: string[] }
+}
+
+/**
+ * The session's ⋯ menu, as one list for its row (place "list") and its page (place "page"): every item has an id
+ * (BUILTIN_IDS) and the whole goes through the session.menu slot.
+ */
+export function sessionMenu(s: Session, opts: { groups?: { id: string; name: string }[]; wide?: boolean; page?: PageMenu } = {}): MenuEntry[] {
   const host = getStore().state?.hosts.find((h) => h.id === s.hostId)
   const live = !s.closed && !!host?.online
   // In Slack the session is only read here: what would drive it waits until it is brought back.
@@ -260,16 +290,20 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
   const alive = live && s.state.alive && !away
   const others = (getStore().state?.hosts ?? []).filter((h) => h.id !== s.hostId)
   const slackOn = (getStore().state?.places ?? []).includes('slack')
-  const seat: MenuEntry | null = !away && !featureOn('slack') ? null : away
-    ? { label: '브릿지로 가져오기', icon: 'move', hint: 'Slack 대신 여기서', onSelect: () => toBridge(s) }
-    : { label: 'Slack 으로 옮기기', icon: 'move', hint: !slackOn ? 'Slack 플러그인을 켜야 해요' : s.locked ? '잠긴 세션은 못 옮겨요' : '전용 채널에서 이어서', disabled: !canSlack(s), onSelect: () => toSlack(s) }
+  const wide = !!opts.wide
+  const page = opts.page
+  const ctx: SessionMenuCtx = { sid: s.id, session: s, closed: !!s.closed, alive, away, hostConnected: !!host?.online, canMoveHost: others.length > 0, slackOn, phase: s.state.phase, wide, todoBlocked: todoBlocked(s), place: page ? 'page' : 'list' }
+  const seat: MenuItem | null = !away && !featureOn('slack') ? null : away
+    ? { id: 'place', label: '브릿지로 가져오기', icon: 'move', hint: 'Slack 대신 여기서', onSelect: () => toBridge(s) }
+    : { id: 'place', label: 'Slack 으로 옮기기', icon: 'move', hint: !slackOn ? 'Slack 플러그인을 켜야 해요' : s.locked ? '잠긴 세션은 못 옮겨요' : '전용 채널에서 이어서', disabled: !canSlack(s), onSelect: () => toSlack(s) }
   if (s.closed)
-    return [
-      away ? { label: '이어서 열기 (브릿지로 가져온 뒤)', icon: 'play', disabled: true } : { label: '이어서 열기', icon: 'play', onSelect: () => resume(s) },
+    return slotMenu([
+      away ? { id: 'resume', label: '이어서 열기 (브릿지로 가져온 뒤)', icon: 'play', disabled: true } : { id: 'resume', label: '이어서 열기', icon: 'play', onSelect: () => resume(s) },
       ...(away && seat ? [seat] : []),
-      { label: '이름 바꾸기', icon: 'edit', onSelect: () => rename(s) },
+      { id: 'rename', label: '이름 바꾸기', icon: 'edit', onSelect: () => rename(s) },
       'sep',
       {
+        id: 'remove',
         label: '목록에서 지우기',
         icon: 'trash',
         danger: true,
@@ -277,11 +311,13 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
           if (await confirmDialog('이 세션을 목록에서 지울까요?', { text: '맥에 둔 화면 기록도 지워요. Claude Code 대화 파일은 맥에 그대로예요.', ok: '지우기', danger: true })) await act(() => closeSession(s.id, 'remove'), '지웠어요')
         },
       },
-    ]
+    ], ctx)
   const groups = opts.groups ?? []
-  return [
-    { label: '이름 바꾸기', icon: 'edit', onSelect: () => rename(s) },
+  return slotMenu([
+    ...(page ? pageItems(s, page, wide) : []),
+    { id: 'rename', label: '이름 바꾸기', icon: 'edit', onSelect: () => rename(s) },
     {
+            id: 'group',
             label: '그룹',
             icon: 'group' as const,
             items: [
@@ -301,12 +337,13 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
           },
     'sep',
     // A wide session page has 새로고침 as a header button instead.
-    ...(opts.noRefresh ? [] : [{ label: '새로고침', icon: 'refresh' as const, hint: '대화 그대로 다시 열기', disabled: !alive, onSelect: () => refresh(s) }]),
+    ...(page && wide ? [] : [{ id: 'refresh', label: '새로고침', icon: 'refresh' as const, hint: '대화 그대로 다시 열기', disabled: !alive, onSelect: () => refresh(s) }]),
     // The session page puts its own near the top (it knows whether a list is already there); a row's menu, the only
     // way to it on a phone's list, asks as a first 정리.
-    ...(opts.noTodos ? [] : [{ label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked(s), onSelect: () => void askTodos(s) }]),
+    ...(page ? [] : [{ id: 'todos', label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked(s), onSelect: () => void askTodos(s) }]),
     // The same /compact as the big-context banner (REQ-F-776), at any size: the server takes it only while it rests.
     {
+      id: 'compact',
       label: '지금 압축',
       icon: 'sparkle',
       hint: !alive ? undefined : s.state.phase !== 'idle' ? '쉬고 있을 때만' : s.state.cache?.ctx ? `컨텍스트 ${tokens(s.state.cache.ctx)} · 이 세션에서 그대로` : '대화를 요약해 이 세션에서 그대로',
@@ -314,6 +351,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       onSelect: () => act(() => command(s, 'compact')),
     },
     {
+      id: 'fork',
       label: '복제',
       icon: 'fork',
       hint: '같은 대화에서 갈라진 새 세션',
@@ -321,6 +359,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       onSelect: async () => (await confirmCopyMode(s)) && act(() => sessionPost<{ ok: true; id: string }>(s, 'fork'), '복제한 세션을 띄웠어요').then((r) => r && openSession(r.id, 'fork')),
     },
     {
+      id: 'lightfork',
       label: '가벼운 복제',
       icon: 'sparkle',
       hint: 'SESSION.md 로 새 세션',
@@ -328,22 +367,24 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       onSelect: () => void lightCopy(s),
     },
     {
+      id: 'trim-log',
       label: '대화 기록 정리',
       icon: 'doc',
       hint: !alive ? undefined : s.state.phase !== 'idle' ? '쉬고 있을 때만' : s.state.size ? `${bytes(s.state.size)} · 압축 전 기록을 덜어 내고 이 세션에서 그대로` : '압축 전 기록을 덜어 내고 이 세션에서 그대로',
       disabled: !alive || s.state.phase !== 'idle',
       onSelect: () => void trimLog(s),
     },
-    ...(featureOn('sessionMove') ? [{ label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move' as const, disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) }] : []),
+    ...(featureOn('sessionMove') ? [{ id: 'move-host', label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move' as const, disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) }] : []),
     // Shown where the Mac has more than one Claude account (설정 → Claude 계정).
-    ...((host?.accounts?.length ?? 0) > 1 ? [{ label: '다른 계정으로 옮기기', icon: 'user' as const, hint: `지금: ${accountOf(s)?.name ?? '기본 계정'}`, disabled: !alive || s.state.phase === 'busy', onSelect: () => moveAccount(s) }] : []),
-    { label: '작업 폴더 바꾸기', icon: 'folder', hint: '같은 맥의 다른 폴더에서 이어서', disabled: !live || away || s.state.phase === 'busy', onSelect: () => openCwd(s) },
+    ...((host?.accounts?.length ?? 0) > 1 ? [{ id: 'move-account', label: '다른 계정으로 옮기기', icon: 'user' as const, hint: `지금: ${accountOf(s)?.name ?? '기본 계정'}`, disabled: !alive || s.state.phase === 'busy', onSelect: () => moveAccount(s) }] : []),
+    { id: 'move-cwd', label: '작업 폴더 바꾸기', icon: 'folder', hint: '같은 맥의 다른 폴더에서 이어서', disabled: !live || away || s.state.phase === 'busy', onSelect: () => openCwd(s) },
     ...(seat ? [seat] : []),
     'sep',
     away
-      ? { label: '잠그기', icon: 'key' as const, hint: 'Slack 에서 작업 중', disabled: true }
+      ? { id: 'lock', label: '잠그기', icon: 'key' as const, hint: 'Slack 에서 작업 중', disabled: true }
       : s.locked
       ? {
+          id: 'lock',
           label: '잠금',
           icon: 'key' as const,
           items: [
@@ -351,20 +392,105 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
             { label: '잠금 없애기…', onSelect: () => clearLock(s) },
           ],
         }
-      : { label: '잠그기', icon: 'key' as const, hint: '비밀번호로 가리기', onSelect: () => lockSession(s) },
-    { label: s.favorite ? '즐겨찾기 빼기' : '즐겨찾기', icon: 'star', hint: s.favorite ? undefined : '최신순 맨 위에', onSelect: () => toggleFavorite(s) },
-    { label: s.resting ? '휴면 풀기' : '휴면', icon: s.resting ? 'pop' : 'push', hint: s.resting ? undefined : '그룹 목록에서 숨김', onSelect: () => toggleRest(s) },
-    { label: '이 세션의 로그', icon: 'list', onSelect: () => go({ name: 'host', id: s.hostId, sid: s.id }) },
+      : { id: 'lock', label: '잠그기', icon: 'key' as const, hint: '비밀번호로 가리기', onSelect: () => lockSession(s) },
+    { id: 'favorite', label: s.favorite ? '즐겨찾기 빼기' : '즐겨찾기', icon: 'star', hint: s.favorite ? undefined : '최신순 맨 위에', onSelect: () => toggleFavorite(s) },
+    { id: 'rest', label: s.resting ? '휴면 풀기' : '휴면', icon: s.resting ? 'pop' : 'push', hint: s.resting ? undefined : '그룹 목록에서 숨김', onSelect: () => toggleRest(s) },
+    { id: 'log', label: '이 세션의 로그', icon: 'list', onSelect: () => go({ name: 'host', id: s.hostId, sid: s.id }) },
     'sep',
     {
+      id: 'end',
       label: '종료',
       icon: 'stop',
       danger: true,
       disabled: s.closed,
       onSelect: () => void endSession(s),
     },
-    { label: '폴더 버리고 종료', icon: 'trash', danger: true, disabled: !live || away, onSelect: () => trash(s) },
+    { id: 'trash', label: '폴더 버리고 종료', icon: 'trash', danger: true, disabled: !live || away, onSelect: () => trash(s) },
+  ], ctx)
+}
+
+/**
+ * The items only the session's page has, first in its menu: 분할 화면 (REQ-F-786: beside another where there is
+ * room; inside a pane, add one, open on its own, or leave), on a phone what its header leaves out (the group's
+ * other sessions, the folder), 터미널 화면, 할 일 정리 and on a wide screen AGENTS.md. Made as the menu opens: the
+ * panes change without this page.
+ */
+function pageItems(s: Session, page: PageMenu, wide: boolean): MenuEntry[] {
+  const hosts = getStore().state?.hosts ?? []
+  const split = splitHost()
+  const g = page.group
+  return [
+    ...(inPane && split
+      ? [
+          { id: 'split-add', label: '옆에 세션 추가', icon: 'columns' as const, hint: split.count() >= SPLIT_MAX ? `${SPLIT_MAX}칸까지예요` : `${split.count()} / ${SPLIT_MAX}칸`, disabled: split.count() >= SPLIT_MAX, onSelect: () => split.add() },
+          { id: 'split-full', label: '이 세션만 크게', icon: 'forward' as const, onSelect: () => split.full(window) },
+          { id: 'split-leave', label: '분할에서 빼기', icon: 'close' as const, onSelect: () => split.close(window) },
+          'sep' as const,
+        ]
+      : splitRoom() >= 2
+        ? [{ id: 'split', label: '분할로 띄우기', icon: 'columns' as const, hint: `다른 세션과 나란히 · 최대 ${SPLIT_MAX}개`, onSelect: () => void startSplit(s.id) }, 'sep' as const]
+        : []),
+    ...(wide
+      ? []
+      : [
+          ...(g.tabs.length > 1 && g.holder
+            ? [
+                {
+                  id: 'same-group',
+                  label: '같은 그룹 세션',
+                  icon: 'list' as const,
+                  hint: `${g.crumbs.join(' › ')} · ${g.tabs.length}개`,
+                  items: [
+                    ...g.tabs.map((t) => ({ label: titleOf(t), checked: t.id === s.id, hint: look(t, hosts.find((h) => h.id === t.hostId)).label, onSelect: () => void (t.id !== s.id && openSession(t.id, 'tabs', { replace: true })) })),
+                    { label: '이 그룹에 새 세션', icon: 'plus' as const, onSelect: () => navigate(`/new?group=${g.holder!.id}`) },
+                  ],
+                },
+              ]
+            : []),
+          { id: 'copy-path', label: '경로 복사', icon: 'copy' as const, hint: folderPath(s.cwd, s.home), onSelect: () => void page.copyPath() },
+          'sep' as const,
+        ]),
+    // 터미널 화면 is in the ⋯ menu on every screen; a wide header has 새로고침 in its place (REQ-F-609).
+    { id: 'screen', label: '터미널 화면', icon: 'terminal', disabled: !s.state.alive, onSelect: () => page.sheet('screen') },
+    { id: 'todos', label: '할 일 정리', icon: 'list', hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked(s), onSelect: () => void page.askTodos() },
+    ...(wide ? [{ id: 'doc', label: 'AGENTS.md', icon: 'doc' as const, hint: '이 폴더의 작업 지침', onSelect: () => page.sheet('doc') }] : []),
+    'sep',
   ]
+}
+
+/** A menu entry as a session.menu slot item and back (the item shape of §7.1: what it shows is asked of ctx). */
+type MenuData = SlotItem & { label?: ReactNode; icon?: IconName; hint?: ReactNode; danger?: boolean; sep?: boolean; header?: ReactNode; visible?: (c: SessionMenuCtx) => boolean; checked?: (c: SessionMenuCtx) => boolean; enabled?: (c: SessionMenuCtx) => boolean; run?: (c: SessionMenuCtx) => void; items?: MenuData[] }
+const toData = (e: MenuItem): MenuData => ({
+  id: e.id ?? '',
+  label: e.label,
+  icon: e.icon,
+  hint: e.hint,
+  danger: e.danger,
+  checked: () => !!e.checked,
+  enabled: () => !e.disabled,
+  ...(e.onSelect ? { run: () => e.onSelect!() } : {}),
+  ...(e.items ? { items: e.items.map(toData) } : {}),
+})
+function fromData(d: MenuData, ctx: SessionMenuCtx): MenuEntry | null {
+  if (d.visible && !d.visible(ctx)) return null
+  if (d.sep) return 'sep'
+  if (d.header != null) return { id: d.id, header: d.header }
+  return {
+    id: d.id,
+    label: d.label ?? d.id,
+    icon: d.icon,
+    hint: d.hint,
+    danger: d.danger,
+    checked: d.checked?.(ctx),
+    disabled: d.enabled ? !d.enabled(ctx) : false,
+    ...(d.run ? { onSelect: () => d.run!(ctx) } : {}),
+    ...(d.items ? { items: d.items.map((x) => fromData(x, ctx)).filter((x): x is MenuItem => !!x && x !== 'sep' && !('header' in x)) } : {}),
+  }
+}
+function slotMenu(list: MenuEntry[], ctx: SessionMenuCtx): MenuEntry[] {
+  const out = resolve<MenuEntry | null>('session.menu', list, (e) => (e && typeof e === 'object' && 'label' in e && e.id ? toData(e) : null), (i) => fromData(i as MenuData, ctx))
+  // Two separators in a row (an item between them hidden) or one at an end show as one or none.
+  return out.filter((e, k, a): e is MenuEntry => e != null && !(e === 'sep' && (k === 0 || k === a.length - 1 || a[k - 1] === 'sep')))
 }
 
 /** 가벼운 복제 (REQ-F-402): a new session that picks up from SESSION.md. */

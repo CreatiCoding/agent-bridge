@@ -301,6 +301,9 @@ export interface EventsPage {
 export const shownName = (me: Me) => (me.user.apple ? me.user.name || 'Apple 사용자' : me.user.login)
 
 export interface Me {
+  /** Who is signed in, and how (REQ-F-824: settings.section's user); an older server leaves them out. */
+  uid?: string
+  provider?: string
   /** `apple`: signed in with Apple (REQ-F-772); `login` is then this server's own `apple_…` name. */
   user: { login: string; name?: string; avatar?: string; apple?: boolean }
   admin: boolean

@@ -44,8 +44,9 @@ const GuidePage = lazy(() => pageFiles.guide().then((m) => ({ default: m.GuidePa
 const idle = (f: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 2500))
 idle(() => void pageFiles.newSession().then(() => idle(() => Object.values(pageFiles).forEach((f) => void f()))))
 import { shownName, type Me } from './lib/types'
-import { openLink, openSession } from './lib/builtin-actions'
+import { composerCtx, openLink, openSession } from './lib/builtin-actions'
 import { dispatch } from './lib/actions'
+import { runShortcut } from './lib/shortcuts'
 
 function ConnBanner() {
   const link = useStore((s) => s.link)
@@ -290,6 +291,16 @@ export function App({ me }: { me: Me | null }) {
   }, [need])
   // Where this page is looking, so a card on the session in front of the person is not also pushed.
   const sid = route.name === 'session' ? route.id : null
+  // Added shortcuts (REQ-F-824): told where the page is and what has the focus.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      const a = document.activeElement
+      const focused = a?.closest?.('.composer-in') ? 'composer' : a?.closest?.('.convo') ? 'timeline' : 'other'
+      runShortcut(e, { route: route.name, ...(sid ? { sid } : {}), focused, ...(focused === 'composer' && sid ? { composer: composerCtx(sid) } : {}) })
+    }
+    addEventListener('keydown', k)
+    return () => removeEventListener('keydown', k)
+  }, [route.name, sid])
   useEffect(() => {
     reportFocus(sid)
     const f = () => reportFocus(sid)

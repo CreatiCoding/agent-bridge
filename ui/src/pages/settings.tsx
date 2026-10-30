@@ -1,6 +1,6 @@
 // What a person sets for their own bridge: the default prompt every session starts with, notifications on
 // this device, the theme, plugins (each with its own settings), and the way to the site's other pages.
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
 import { CHANGES, type ChangeKind } from '../lib/changes'
 import { applyIcons, getIcons, getTheme, setTheme, type Theme } from '../lib/local'
@@ -17,6 +17,8 @@ import { AccountsPanel } from './accounts'
 import { VoiceSettings } from './voice-settings'
 import { featureOn, type Feature } from '../lib/features'
 import { copyText, linkClick, openLink } from '../lib/builtin-actions'
+import { resolve, type SlotItem } from '../lib/slots'
+import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
 
 export interface Plugin {
   id: string
@@ -538,6 +540,25 @@ const TABS: { id: SettingsTab; label: string; short?: string; icon: string; admi
   { id: 'more', label: '더 보기', icon: 'list' },
 ]
 
+/**
+ * settings.section (REQ-F-824): what an extension adds to a tab (plugins unless it names one), under the tab's own
+ * cards, one under another.
+ */
+type SettingsItem = { id: string; tab?: SettingsTab; render: () => ReactNode }
+function SettingsSlot({ me, tab }: { me: Me | null; tab: SettingsTab }) {
+  useSlots()
+  const items = resolve<SettingsItem>('settings.section', [], (i) => i as unknown as SlotItem, (i) => i as unknown as SettingsItem).filter((i) => (i.tab ?? 'plugins') === tab)
+  const ctx = useMemo(() => ({ user: me ? { uid: me.uid ?? '', login: me.user.login, provider: me.provider ?? 'github', admin: me.admin } : null, tab }), [me, tab])
+  if (!items.length) return null
+  return (
+    <SlotContext.Provider value={ctx}>
+      {items.map((i) => (
+        <SlotRender key={i.id} render={i.render} />
+      ))}
+    </SlotContext.Provider>
+  )
+}
+
 export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
   const wide = useWide()
   const [prompt, setPrompt] = useState<string | null>(null)
@@ -791,6 +812,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             </section>
           ) : null}
           {tab === 'more' ? <DeleteAccount me={me} /> : null}
+          <SettingsSlot me={me} tab={tab} />
         </div>
         )}
       </div>

@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.358',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '입력칸의 버튼 줄, 세션 메뉴, 목록의 배지, 설정 탭에 나중에 익스텐션이 항목을 더할 자리를 만들었어요. 세션 메뉴는 목록과 세션 화면이 한 목록을 같이 써요. 보이는 메뉴와 단축키는 그대로예요', refs: ['REQ-F-824'] },
+    ],
+  },
+  {
     version: '1.357',
+    commit: '4a2d75c',
     date: '2026-10-31',
     changes: [
       { kind: 'changed', scope: ['ui'], text: '보내기, 카드 답, 새 세션, 세션 끝내기·지우기도 이름 붙은 액션을 거쳐요. 지금 보이는 동작은 그대로예요', refs: ['REQ-F-823'] },

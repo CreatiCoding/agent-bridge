@@ -42,12 +42,15 @@ setDefault('message.send', async (a) => {
 
 // The composer of each session open in this window submits its own text (composer.submit).
 type Submit = (text?: string) => Promise<ActionMap['composer.submit']['result']>
-const composers = new Map<string, Submit>()
-export function registerComposer(sid: string, f: Submit) {
-  composers.set(sid, f)
-  return () => void (composers.get(sid) === f && composers.delete(sid))
+const composers = new Map<string, { submit: Submit; ctx: () => unknown }>()
+export function registerComposer(sid: string, submit: Submit, ctx: () => unknown) {
+  const c = { submit, ctx }
+  composers.set(sid, c)
+  return () => void (composers.get(sid) === c && composers.delete(sid))
 }
-setDefault('composer.submit', ({ sid, text }) => composers.get(sid)?.(text) ?? { sent: false, reason: 'no-composer' })
+/** The composer.actions context of a session's box in this window (a shortcut gets it while the box has the focus). */
+export const composerCtx = (sid: string) => composers.get(sid)?.ctx() ?? null
+setDefault('composer.submit', ({ sid, text }) => composers.get(sid)?.submit(text) ?? { sent: false, reason: 'no-composer' })
 
 setDefault('permission.answer', ({ sid, card, option }) => post(`/api/sessions/${sid}/answer`, { card: card.id, n: option.n }))
 setDefault('session.create', async (body) => ({ sid: (await post<{ ok: true; id: string }>('/api/sessions', body)).id }))
