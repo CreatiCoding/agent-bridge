@@ -417,6 +417,7 @@ func whoami(req *Req) string {
 }
 
 func signIn(req *Req, res *Res, uid string, next string, more []string) {
+	loginBefore(uid, providerOf(uid))
 	token := newSignIn(uid)
 	emitEvent("login", uid, orderedObj{{"provider", providerOf(uid)}})
 	set := []string{cookie(req, cname(req, "cb"), token, LOGIN_DAYS*86_400), cookie(req, cname(req, "cb_state"), "", 0)}

@@ -194,8 +194,11 @@ func emitEvent(name, uid string, more orderedObj) {
 	for _, t := range targets {
 		go deliverEvent(t, body, uid, login)
 	}
-	for _, t := range hooks {
-		go afterHook(name, t, body, uid, login)
+	if len(hooks) > 0 {
+		hb := jsonBytes(append(append(orderedObj{}, ev...), kv{"hook", name + ".after"}))
+		for _, t := range hooks {
+			go afterHook(name, t, hb, uid, login)
+		}
 	}
 }
 

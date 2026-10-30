@@ -121,6 +121,9 @@ func serviceAPI(req *Req, res *Res, p string) {
 	if m := serviceCloseRe.FindStringSubmatch(p); m != nil && req.Method == "POST" {
 		c := own(m[1])
 		if !truthy(c.get("closed")) {
+			sessBefore("session.close", c, kv{"kind", "end"})
+		}
+		if !truthy(c.get("closed")) {
 			closeSession(c, "종료(서비스 API)")
 			broadcastState(uid)
 		}

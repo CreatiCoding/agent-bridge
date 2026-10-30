@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.354',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 hooks 에 before 훅: 액션 직전에 묻고, 막으면 그 이유를 보여 주고, 보낼 글·세션 제목·첫 지시·권한 모드를 바꿀 수 있음. 묻는 동안 다른 요청은 기다리지 않고, 그사이 세션이 바뀌면 다시 하게 함. 확인 서버가 죽으면 기본은 그대로 진행(onError: deny 로 막기)', refs: ['REQ-F-820'] },
+      { kind: 'changed', scope: ['server'], text: '다른 질문 카드가 열려 있는데 옛 카드에 답하면 "다른 질문이 열려 있어요" 로 알림(전에는 맥이 조용히 무시)', refs: ['REQ-F-820'] },
+    ],
+  },
+  {
     version: '1.353',
+    commit: '7a86a37',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 hooks: 세션 만들기·닫기, 글 보내기, 카드 답, 설정 바꾸기 같은 액션과 턴 끝·카드 이벤트 뒤에 웹훅이나 서버 안 명령을 부름(after, 한 번, 서명). 누가 했는지(page·slack·service·delegate·system)는 요청이 들어온 길로 정함', refs: ['REQ-F-819'] },

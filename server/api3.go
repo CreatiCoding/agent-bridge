@@ -47,6 +47,11 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 			if !proofOk(meta, b["proof"]) {
 				refuse(403, "비밀번호가 맞지 않아요")
 			}
+			sessBefore("session.lock", meta, kv{"do", "unlock"})
+			if !truthy(meta.get("lock")) {
+				jsonRes(res, 200, M{"ok": true, "token": nil}) // cleared while the hook answered
+				return true
+			}
 			sessAfter("session.lock", meta, kv{"do", "unlock"})
 			jsonRes(res, 200, M{"ok": true, "token": lockToken(meta)})
 			return true
@@ -59,6 +64,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 			if !proofOk(meta, b["proof"]) {
 				refuse(403, "비밀번호가 맞지 않아요")
 			}
+			sessBefore("session.lock", meta, kv{"do", "lockclear"})
 			meta.del("lock")
 			dropUnlocks(meta.id())
 			touch(meta)
@@ -76,6 +82,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		if !proofRe.MatchString(strField(b, "proof")) {
 			refuse(400, "비밀번호가 올바르지 않아요")
 		}
+		sessBefore("session.lock", meta, kv{"do", "lock"})
 		salt := randHex(16)
 		meta.set("lock", orderedObj{{"salt", salt}, {"hash", stretch(b["proof"].(string), salt)}, {"at", float64(nowMs())}}.toM())
 		dropUnlocks(meta.id())
@@ -148,6 +155,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 			jsonRes(res, 200, M{"ok": true, "url": preview.url(uid, meta.host(), port, meta.id())})
 			return true
 		}
+		sessBefore("session.do", meta, kv{"do", "killserver"}, kv{"port", port})
 		r := ask(hostID, M{"t": "killserver", "sid": meta.id(), "port": port}, 15_000)
 		if !truthy(r["ok"]) {
 			refuse(409, orStr(r["error"], "서버를 끄지 못했어요"))
@@ -255,6 +263,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		if truthy(meta.get("moving")) {
 			refuse(409, "세션을 옮기는 중입니다")
 		}
+		sessBefore("session.close", meta, kv{"kind", "remove"})
 		toHost(meta.host(), M{"t": "close", "sid": meta.id()})
 		sessAfter("session.close", meta, kv{"kind", "remove"})
 		forgetSession(meta)
@@ -513,12 +522,14 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if jsLen(quoted) > 80 {
 			quoted = jsSliceTo(quoted, 79) + "…"
 		}
+		sessBefore("message.retract", meta, kv{"do", "retract"})
 		toHost(liveHost(meta), M{"t": "retract", "sid": meta.id(), "quoted": quoted})
 		logEvents(meta, []any{M{"k": "react", "id": idOf(last), "name": "x", "on": true}})
 		sessAfter("message.retract", meta, kv{"do", "retract"})
 		jsonRes(res, 200, M{"ok": true, "note": "멈추고 잘못 보냈다고 알렸어요"})
 		return true
 	case "sendnow", "esc":
+		sessBefore("session.do", meta, kv{"do", op})
 		toHost(liveHost(meta), M{"t": op, "sid": meta.id()})
 		if op == "esc" {
 			for _, c := range delegatesOf(meta) {
@@ -527,6 +538,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		}
 		sessAfter("session.do", meta, kv{"do", op})
 	case "dropheld":
+		sessBefore("message.retract", meta, kv{"do", "dropheld"})
 		cmd := M{"t": "dropheld", "sid": meta.id()}
 		if s, ok := b["id"].(string); ok {
 			cmd["id"] = jsSliceTo(s, 64)
@@ -573,6 +585,16 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			n = jsNumber(b["n"])
 		}
 		card, option := answerOf(meta, b["card"].(string), n)
+		if otherCardOpen(meta, b["card"].(string)) {
+			refuse(409, OTHER_CARD)
+		}
+		if len(hooksOf("permission.answer.before")) > 0 {
+			cid := b["card"].(string)
+			actionBefore("permission.answer", uid, meta.id()+"|"+cid, orderedObj{{"session", sessionOfEvent(meta)}, {"card", card}, {"option", option}, {"by", curBy()}}, func() bool {
+				cur, ok := sessions.Get(meta.id())
+				return ok && cur == meta && !otherCardOpen(meta, cid)
+			})
+		}
 		toHost(liveHost(meta), M{"t": "answer", "sid": meta.id(), "card": b["card"], "n": n})
 		noteAnswer(b["card"].(string), M{"n": n, "via": "card", "by": curBy()})
 		sessAfter("permission.answer", meta, kv{"card", card}, kv{"option", option})
@@ -583,6 +605,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if b["kind"] == "mode" && !modeOk(strField(b, "value")) {
 			refuse(403, FEATURE_OFF)
 		}
+		sessBefore("session.setting", meta, kv{"kind", b["kind"]}, kv{"value", jsSliceTo(strField(b, "value"), 60)})
 		toHost(liveHost(meta), M{"t": "setting", "sid": meta.id(), "kind": b["kind"], "value": jsSliceTo(strField(b, "value"), 60)})
 		sessAfter("session.setting", meta, kv{"kind", b["kind"]}, kv{"value", jsSliceTo(strField(b, "value"), 60)})
 	case "refresh":
@@ -590,6 +613,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if b["when"] == "later" || b["when"] == "cancel" {
 			when = b["when"].(string)
 		}
+		sessBefore("session.do", meta, kv{"do", "refresh"}, kv{"when", when})
 		refreshSession(uid, meta, liveHost(meta), when)
 		sessAfter("session.do", meta, kv{"do", "refresh"}, kv{"when", when})
 	case "report":
@@ -599,6 +623,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if q == "" {
 			refuse(400, "질문을 적어 주세요")
 		}
+		sessBefore("message.btw", meta, kv{"text", q})
 		r := ask(liveHost(meta), M{"t": "btw", "sid": meta.id(), "text": q}, 150_000)
 		sessAfter("message.btw", meta, kv{"text", q})
 		if truthy(r["ok"]) {
@@ -608,6 +633,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		}
 		return true
 	case "trash":
+		sessBefore("session.close", meta, kv{"kind", "trash"})
 		r := ask(liveHost(meta), M{"t": "trash", "sid": meta.id()}, 60_000)
 		if !truthy(r["ok"]) {
 			refuse(409, orStr(r["error"], "폴더를 휴지통으로 옮기지 못했습니다"))
@@ -630,6 +656,10 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		ownHost(uid, target)
 		if target != meta.host() {
 			needFeature("sessionMove")
+		}
+		sessBefore("session.move", meta, kv{"do", "resume"}, kv{"hostId", target})
+		if !truthy(meta.get("closed")) {
+			refuse(409, "끝난 세션이 아닙니다")
 		}
 		meta.set("closed", false)
 		meta.set("resting", false)
@@ -657,6 +687,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if !truthy(st["alive"]) || st["phase"] != "idle" {
 			refuse(409, "쉬고 있는 세션만 기록을 정리할 수 있어요")
 		}
+		sessBefore("session.do", meta, kv{"do", "trimlog"})
 		r := ask(liveHost(meta), M{"t": "trimlog", "sid": meta.id()}, 120_000)
 		if !truthy(r["ok"]) {
 			refuse(409, orStr(r["error"], "대화 기록을 정리하지 못했어요"))
@@ -670,12 +701,14 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		return true
 	case "lightfork":
 		hostID := liveHost(meta)
-		sid := uuidv4()
-		over := launchOver(uid)
 		title := meta.str("title")
 		if title == "" {
 			title = "세션"
 		}
+		title = patched(forkBefore(meta, "lightfork", title), "title", title)
+		hostID = liveHost(meta)
+		sid := uuidv4()
+		over := launchOver(uid)
 		lm := over["model"]
 		if !truthy(lm) {
 			lm = meta.get("launchModel")
@@ -747,6 +780,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 				keys = append(keys, jsStringU(k))
 			}
 		}
+		sessBefore("session.key", meta, kv{"keys", keys})
 		toHost(liveHost(meta), M{"t": "key", "sid": meta.id(), "keys": keys})
 		sessAfter("session.key", meta, kv{"keys", keys})
 	case "screen":
@@ -763,6 +797,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			refuse(400, "작업 폴더는 / 또는 ~ 로 시작하는 경로여야 해요")
 		}
 		ownHost(uid, meta.host())
+		sessBefore("session.move", meta, kv{"do", "cwd"}, kv{"cwd", cwd})
 		r := moveSession(meta, meta.host(), nil, M{"cwd": cwd})
 		sessAfter("session.move", meta, kv{"do", "cwd"}, kv{"cwd", cwd})
 		jsonRes(res, 200, r)
@@ -779,6 +814,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if v, has := b["account"]; has && !safeAccount(v) {
 			refuse(400, "계정 id 가 올바르지 않습니다")
 		}
+		sessBefore("session.move", meta, kv{"do", "move"}, kv{"hostId", hostID})
 		r := moveSession(meta, hostID.(string), b["account"], nil)
 		sessAfter("session.move", meta, kv{"do", "move"}, kv{"hostId", hostID})
 		jsonRes(res, 200, r)
@@ -791,6 +827,19 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		}
 		if v, _ := b["autoAllow"].(bool); v && !modeOk(allowMode(b["allowAll"] == true)) {
 			refuse(403, FEATURE_OFF)
+		}
+		if len(hooksOf("session.settings.before")) > 0 {
+			asked := orderedObj{}
+			for _, k := range []string{"autoAllow", "allowAll", "autoPush", "resting", "favorite", "title"} {
+				if v, ok := b[k]; ok {
+					asked = append(asked, kv{k, v})
+				}
+			}
+			if p := sessBefore("session.settings", meta, kv{"changed", asked}); p != nil {
+				if _, has := b["title"]; has {
+					b["title"] = patched(p, "title", strField(b, "title"))
+				}
+			}
 		}
 		if v, ok := b["autoPush"].(bool); ok {
 			meta.set("autoPush", v)
@@ -856,6 +905,10 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 	case "close":
 		if truthy(meta.get("moving")) {
 			refuse(409, "세션을 옮기는 중입니다")
+		}
+		sessBefore("session.close", meta, kv{"kind", "end"})
+		if truthy(meta.get("closed")) {
+			return false // closed while the hook answered
 		}
 		closeSession(meta, "")
 	default:
@@ -926,6 +979,12 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 	}
 	if jsTrim(text) == "" && len(files) == 0 && len(videos) == 0 {
 		refuse(400, "보낼 내용이 없어요")
+	}
+	if p := sessBefore("message.send", meta, kv{"text", text}, kv{"images", len(files)}, kv{"videos", len(videos)}); p != nil {
+		text = patched(p, "text", text)
+		if jsTrim(text) == "" && len(files) == 0 && len(videos) == 0 {
+			refuse(400, "보낼 내용이 없어요")
+		}
 	}
 	st := meta.state()
 	if to, ok := st["handedOffTo"].(string); ok && to != "" {
@@ -1005,12 +1064,14 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 
 func forkOp(res *Res, uid string, meta *Sess) {
 	hostID := liveHost(meta)
-	sid := uuidv4()
-	over := launchOver(uid)
 	title := meta.str("title")
 	if title == "" {
 		title = "세션"
 	}
+	title = patched(forkBefore(meta, "fork", title+"의 사본"), "title", title+"의 사본")
+	hostID = liveHost(meta)
+	sid := uuidv4()
+	over := launchOver(uid)
 	lm := over["model"]
 	if !truthy(lm) {
 		lm = meta.get("launchModel")
@@ -1022,7 +1083,7 @@ func forkOp(res *Res, uid string, meta *Sess) {
 	if acc == nil {
 		acc = ""
 	}
-	cp := newMeta(uid, sid, hostID, M{"cwd": meta.get("cwd"), "title": jsSliceTo(title+"의 사본", 80), "manualTitle": true, "launchModel": lm, "autoPush": meta.get("autoPush"), "account": acc})
+	cp := newMeta(uid, sid, hostID, M{"cwd": meta.get("cwd"), "title": jsSliceTo(title, 80), "manualTitle": true, "launchModel": lm, "autoPush": meta.get("autoPush"), "account": acc})
 	st := noState()
 	st["alive"] = true
 	st["phase"] = "starting"

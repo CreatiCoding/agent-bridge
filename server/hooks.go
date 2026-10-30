@@ -1,8 +1,9 @@
 package main
 
-// Server hooks (REQ-F-819): bridge.yaml's hooks run a webhook or a command after an action or event, told only.
-// They are a guardrail and a way to connect other systems, never a policy boundary: the Mac's owner can always go
-// around the server (SPEC). Without hooks nothing here runs.
+// Server hooks (REQ-F-819, REQ-F-820): bridge.yaml's hooks run a webhook or a command before an action (it may
+// refuse it or change a few of its fields) and after an action or event (told only). They are a guardrail and a
+// way to connect other systems, never a policy boundary: the Mac's owner can always go around the server (SPEC).
+// Without hooks nothing here runs and the lock is never let go.
 
 import (
 	"bytes"
@@ -28,7 +29,7 @@ var HOOK_EVENTS = []string{"session.done", "decision.waiting", "decision.answere
 func hookKeys() []string {
 	out := []string{}
 	for _, a := range HOOK_ACTIONS {
-		out = append(out, a+".after")
+		out = append(out, a+".before", a+".after")
 	}
 	for _, e := range HOOK_EVENTS {
 		out = append(out, e+".after")
@@ -45,6 +46,7 @@ type hookTarget struct {
 	Secret  string
 	Run     string // exec: an absolute path outside DATA
 	Timeout time.Duration
+	Deny    bool // before: a hook that fails (no answer in time, an error, an answer it cannot read) refuses
 }
 
 const (
@@ -90,7 +92,7 @@ func readHookTarget(name string, it *yNode, getenv func(string) string) (hookTar
 	if it.kind != yMap {
 		return hookTarget{}, &yamlErr{it.line, where + " 의 항목은 \"키: 값\" 이어야 합니다"}
 	}
-	fields := []string{"type", "url", "secret", "run", "timeoutMs"}
+	fields := []string{"type", "url", "secret", "run", "timeoutMs", "onError"}
 	for _, kv := range it.pairs {
 		if !contains(fields, kv.key) {
 			return hookTarget{}, &yamlErr{kv.line, "모르는 키 " + where + "." + kv.key + " (받는 키: " + strings.Join(fields, ", ") + ")"}
@@ -163,6 +165,17 @@ func readHookTarget(name string, it *yNode, getenv func(string) string) (hookTar
 			return hookTarget{}, &yamlErr{line, where + ".timeoutMs 는 1 부터 " + itoa(HOOK_TIMEOUT_MAX_MS) + " 까지의 정수(밀리초)여야 합니다"}
 		}
 		t.Timeout = time.Duration(v) * time.Millisecond
+	}
+	if oe, _, line, err := one("onError", false); err != nil {
+		return hookTarget{}, err
+	} else if oe != "" {
+		if !strings.HasSuffix(name, ".before") {
+			return hookTarget{}, &yamlErr{line, where + ".onError 는 before 훅에만 씁니다(after 는 결과를 기다리지 않습니다)"}
+		}
+		if oe != "allow" && oe != "deny" {
+			return hookTarget{}, &yamlErr{line, where + ".onError 는 allow 나 deny 여야 합니다"}
+		}
+		t.Deny = oe == "deny"
 	}
 	return t, nil
 }
@@ -488,4 +501,198 @@ func raised(name string) bool {
 		}
 	}
 	return false
+}
+
+// ---------- before ----------
+
+// PATCHABLE: the fields a before hook may change, each where the action has it (text: message.send; title:
+// session.create, session.settings; prompt, mode: session.create).
+var PATCHABLE = []string{"text", "title", "prompt", "mode"}
+
+// actionBefore asks the before hooks of one action (REQ-F-820) and returns the fields they changed (nil: none).
+// It lets the lock go while they answer; then still() must hold (the session is there, the card is still open),
+// else 409. A refusal ends the request with 403 and the hook's reason. With no before hook it returns at once,
+// holding the lock, so a server without hooks behaves as before. The server's own work (by system) is not asked,
+// and neither is an admin signing in (a policy server that is down must not lock everyone out).
+func actionBefore(name, uid, key string, more orderedObj, still func() bool) M {
+	hs := hooksOf(name + ".before")
+	if len(hs) == 0 || (curBy() == "system" && name != "login") || (name == "login" && isAdmin(uid)) {
+		return nil
+	}
+	if !firstTime(name+".before", key) {
+		return nil
+	}
+	ev, login := eventOf(name, uid, more)
+	body := jsonBytes(append(ev, kv{"hook", name + ".before"}))
+	var v hookVerdict
+	await(func() { v = askBefore(name, hs, body, uid, login) })
+	if !v.allow {
+		logLine("hooks: " + name + ".before 가 막음 (" + jsSliceTo(v.reason, 200) + ")")
+		refuse(403, v.reason)
+	}
+	if still != nil && !still() {
+		refuse(409, "확인을 기다리는 사이 세션이 바뀌었어요. 다시 해 주세요")
+	}
+	return v.patch
+}
+
+// sessBefore: actionBefore for one session: {session, ...more, by}; the session must still be there after.
+func sessBefore(name string, meta *Sess, more ...kv) M {
+	if len(hooksOf(name+".before")) == 0 {
+		return nil
+	}
+	ev := orderedObj{{"session", sessionOfEvent(meta)}}
+	ev = append(ev, more...)
+	return actionBefore(name, meta.uid(), meta.id(), append(ev, kv{"by", curBy()}), func() bool {
+		cur, ok := sessions.Get(meta.id())
+		return ok && cur == meta
+	})
+}
+
+type hookVerdict struct {
+	allow  bool
+	reason string
+	patch  M
+}
+
+// HOOK_DENIED: what a person sees when a hook says no without saying why.
+const HOOK_DENIED = "이 서버의 규칙으로 막혔어요"
+
+// askBefore runs the hooks in order, off the lock. Each answers {allow, reason?, patch?}; the first no ends it; the
+// patches are merged in order (a later hook wins). A hook that fails counts as yes, or as no with onError: deny.
+func askBefore(name string, hs []hookTarget, body []byte, uid, login string) hookVerdict {
+	out := hookVerdict{allow: true}
+	for _, t := range hs {
+		allow, reason, patch, err := oneBefore(t, body, uid, login)
+		if err != nil {
+			logLine("hooks: " + name + ".before → " + hookWhere(t) + " 실패 (" + err.Error() + ")")
+			if t.Deny {
+				return hookVerdict{reason: "확인 서버에 묻지 못해 막았어요"}
+			}
+			continue
+		}
+		if !allow {
+			if reason == "" {
+				reason = HOOK_DENIED
+			}
+			return hookVerdict{reason: reason}
+		}
+		for k, v := range patch {
+			if out.patch == nil {
+				out.patch = M{}
+			}
+			out.patch[k] = v
+		}
+	}
+	return out
+}
+
+// oneBefore: one hook's answer, read strictly: allow must be a boolean, reason a string (300 letters shown at most),
+// patch only PATCHABLE strings, and a mode one of features.permissionModes.
+func oneBefore(t hookTarget, body []byte, uid, login string) (bool, string, M, error) {
+	raw, err := callHook(t, body, uid, login)
+	if err != nil {
+		return false, "", nil, err
+	}
+	v, err := parseJSON(raw)
+	m, isMap := v.(M)
+	if err != nil || !isMap {
+		return false, "", nil, hookErr("답이 JSON 객체가 아님")
+	}
+	allow, ok := m["allow"].(bool)
+	if !ok {
+		return false, "", nil, hookErr("답에 allow(true/false)가 없음")
+	}
+	reason := ""
+	if r, has := m["reason"]; has && r != nil {
+		s, isStr := r.(string)
+		if !isStr {
+			return false, "", nil, hookErr("reason 이 글이 아님")
+		}
+		reason = jsSliceTo(jsTrim(s), 300)
+	}
+	if !allow {
+		return false, reason, nil, nil
+	}
+	var patch M
+	if p, has := m["patch"]; has && p != nil {
+		pm, isMap := p.(M)
+		if !isMap {
+			return false, "", nil, hookErr("patch 가 객체가 아님")
+		}
+		patch = M{}
+		for k, x := range pm {
+			s, isStr := x.(string)
+			if !contains(PATCHABLE, k) || !isStr {
+				return false, "", nil, hookErr("patch 의 " + k + " 는 바꿀 수 없음(바꿀 수 있는 것: " + strings.Join(PATCHABLE, ", ") + ", 글만)")
+			}
+			if k == "mode" && !contains(cfgGet("features.permissionModes").([]string), s) {
+				return false, "", nil, hookErr("patch 의 mode " + jsSliceTo(s, 20) + " 는 features.permissionModes 밖")
+			}
+			patch[k] = s
+		}
+	}
+	return true, reason, patch, nil
+}
+
+// patched: the hook's value of field when it gave one.
+func patched(p M, field string, cur string) string {
+	if s, ok := p[field].(string); ok {
+		return s
+	}
+	return cur
+}
+
+// OTHER_CARD: an answer to a card when the server knows another one is open on that session.
+const OTHER_CARD = "다른 질문이 열려 있어요. 화면을 새로 고친 뒤 답해 주세요"
+
+// otherCardOpen: the server knows a different card is open (a card it does not know at all goes on, as before).
+func otherCardOpen(meta *Sess, cid string) bool {
+	c, _ := meta.get("card").(M)
+	return c != nil && truthy(c["open"]) && safeId(c["id"]) && c["id"] != cid
+}
+
+// newSession: the session part of a session.create event before the session exists (no id yet).
+func newSession(hostID, cwd, title string) orderedObj {
+	host := ""
+	if h, ok := hosts.Get(hostID); ok {
+		host = mstr(h, "name")
+	}
+	return orderedObj{{"host", host}, {"hostId", hostID}, {"cwd", cwd}, {"title", title}}
+}
+
+// createBefore: session.create's before hooks for a session about to start on hostID; the Mac must still be there.
+func createBefore(uid, hostID, cwd, title, mode, from string) M {
+	if len(hooksOf("session.create.before")) == 0 {
+		return nil
+	}
+	return actionBefore("session.create", uid, "new:"+hostID, orderedObj{{"session", newSession(hostID, cwd, title)}, {"mode", mode}, {"from", from}, {"by", curBy()}}, func() bool { return online(hostID) })
+}
+
+// forkBefore: session.create for a copy of meta (fork, lightfork); meta must still be open.
+func forkBefore(meta *Sess, from, title string) M {
+	if len(hooksOf("session.create.before")) == 0 {
+		return nil
+	}
+	return actionBefore("session.create", meta.uid(), from+":"+meta.id(), orderedObj{{"session", newSession(meta.host(), meta.str("cwd"), title)}, {"mode", mstr(meta.state(), "mode")}, {"from", from}, {"by", curBy()}}, func() bool {
+		cur, ok := sessions.Get(meta.id())
+		return ok && cur == meta && !truthy(meta.get("closed"))
+	})
+}
+
+// hostSudoBefore: session.sudo for a Mac's admin rights; the Mac must still be connected.
+func hostSudoBefore(uid, hostID, do string) {
+	if len(hooksOf("session.sudo.before")) == 0 {
+		return
+	}
+	name := ""
+	if h, ok := hosts.Get(hostID); ok {
+		name = mstr(h, "name")
+	}
+	actionBefore("session.sudo", uid, "host:"+hostID, orderedObj{{"host", orderedObj{{"id", hostID}, {"name", name}}}, {"do", do}, {"by", curBy()}}, func() bool { return online(hostID) })
+}
+
+// loginBefore: login's before hooks (admins skip them).
+func loginBefore(uid, provider string) {
+	actionBefore("login", uid, uid, orderedObj{{"provider", provider}}, nil)
 }

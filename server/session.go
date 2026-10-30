@@ -18,6 +18,7 @@ func sudoCommand(uid string, meta *Sess, command string, opts csOptsCmd) string 
 	if command == "" {
 		refuse(400, "실행할 명령을 적어 주세요. 예: :sudo whoami")
 	}
+	sessBefore("session.sudo", meta, kv{"command", jsSliceTo(command, 2000)})
 	hostID := liveHost(meta)
 	logEvents(meta, []any{M{"k": "line", "text": "🔐 관리자 권한으로 실행: `" + jsSliceTo(collapse(command), 200) + "`"}})
 	sessAfter("session.sudo", meta, kv{"command", jsSliceTo(command, 2000)})
@@ -65,6 +66,34 @@ func startSession(uid string, b M, req *Req) string {
 	if !online(hostID) {
 		refuse(409, "호스트가 연결돼 있지 않습니다")
 	}
+	internal := req != nil && req.internal
+	from := "new"
+	if f, ok := b["from"].(startFrom); ok {
+		from = string(f)
+	} else if b["via"] == "delegate" && internal {
+		from = "delegate"
+	}
+	if from != "report" && len(hooksOf("session.create.before")) > 0 {
+		mode := orStr(b["mode"])
+		if _, has := b["mode"]; !has {
+			mode = mstr(launchOf(uid), "mode")
+		}
+		cwd := "~"
+		if truthy(b["cwd"]) {
+			cwd = jsString(b["cwd"])
+		}
+		title := jsSliceTo(orStr(b["title"]), 80)
+		if title == "" {
+			title = jsSliceTo(collapse(orStr(b["prompt"])), 80)
+		}
+		if p := createBefore(uid, hostID, cwd, title, mode, from); p != nil {
+			for _, k := range []string{"title", "prompt", "mode"} {
+				if v, ok := p[k]; ok {
+					b[k] = v
+				}
+			}
+		}
+	}
 	sid := uuidv4()
 	prompt := jsSliceTo(orStr(b["prompt"]), 100_000)
 	// The session exists from here on, as "starting".
@@ -77,13 +106,6 @@ func startSession(uid string, b M, req *Req) string {
 	st["alive"] = true
 	st["phase"] = "starting"
 	meta.set("state", st)
-	internal := req != nil && req.internal
-	from := "new"
-	if f, ok := b["from"].(startFrom); ok {
-		from = string(f)
-	} else if b["via"] == "delegate" && internal {
-		from = "delegate"
-	}
 	// One started from a Slack message is worked on in Slack until it is moved.
 	if b["via"] == "slack" && internal {
 		meta.set("seat", M{"where": "slack", "at": float64(nowMs()), "url": nil})

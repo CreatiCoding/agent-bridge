@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -80,7 +82,9 @@ func TestHooksRead(t *testing.T) {
 		{"hooks:\n  login.after:\n    - type: exec\n      run: /bin/hook\n      url: https://a.example\n", "url·secret 을 쓰지 않습니다"},
 		{"hooks:\n  login.after:\n    - type: exec\n      run: /bin/hook\n      timeoutMs: 20000\n", "timeoutMs"},
 		{"hooks:\n  login.after:\n    - type: shell\n", "모르는 종류"},
-		{"hooks:\n  login.after:\n    - type: exec\n      run: /bin/hook\n      onError: deny\n", "모르는 키"},
+		{"hooks:\n  login.after:\n    - type: exec\n      run: /bin/hook\n      onError: deny\n", "before 훅에만"},
+		{"hooks:\n  login.before:\n    - type: exec\n      run: /bin/hook\n      onError: block\n", "allow 나 deny"},
+		{"hooks:\n  session.done.before: []\n", "모르는 훅"},
 	}
 	for _, b := range bad {
 		_, err := parseBridgeConfig("/etc/bridge/bridge.yaml", []byte(b.src), envMap(nil))
@@ -163,6 +167,7 @@ func TestHooksAfter(t *testing.T) {
 	jeq(t, b["card"], `{"id":"card-0001","kind":"permission","title":"Bash","tool":{"name":"Bash","input":{"command":"ls"}}}`)
 	jeq(t, b["option"], `{"n":2,"label":"거부","kind":"deny"}`)
 	// A card the server does not know (after a reconnect) still goes to the Mac, as kind other.
+	withLock(func() { meta.set("card", M{"id": "card-0001", "open": false}) })
 	code, _ = pageCall(t, "POST", "/api/sessions/s1/answer", `{"card":"card-0009","n":1}`)
 	eq(t, code, 200)
 	got = hs.wait(t, 4)
@@ -196,4 +201,162 @@ func TestHooksRecipients(t *testing.T) {
 	ok(t, !strings.Contains(jsonStr(recipients()), "SECRET"), "경로는 싣지 않음")
 	withCfg(t, "")
 	ok(t, !raised("session.create") && len(recipients()) == 0, "설정이 없으면 아무것도 없음")
+}
+
+// answerServer: a before hook that answers what fn says (a JSON text) to each event it gets, counting them.
+type answerServer struct {
+	srv *httptest.Server
+	n   int
+	mu  chan struct{}
+}
+
+func newAnswerServer(t *testing.T, fn func(ev M) string) *answerServer {
+	a := &answerServer{mu: make(chan struct{}, 1)}
+	a.mu <- struct{}{}
+	a.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		v, _ := parseJSON(b)
+		<-a.mu
+		a.n++
+		a.mu <- struct{}{}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(fn(v.(M))))
+	}))
+	t.Cleanup(a.srv.Close)
+	return a
+}
+
+func (a *answerServer) count() int {
+	<-a.mu
+	defer func() { a.mu <- struct{}{} }()
+	return a.n
+}
+
+func beforeHook(name, url string, more string) string {
+	return "  " + name + ".before:\n    - type: webhook\n      url: " + url + "\n      secret: " + HOOK_SECRET + "\n" + more
+}
+
+// AC-1487: before hooks may refuse (403 with the reason) or change the text, title, prompt or mode; the lock is let
+// go while they answer and the session is checked again after; a failing hook counts as yes unless onError: deny;
+// the server's own work and admins signing in are not asked.
+func TestHooksBefore(t *testing.T) {
+	after := newHookServer(t)
+	send := newAnswerServer(t, func(ev M) string {
+		if ev["hook"] != "message.send.before" || ev["by"] != "page" {
+			return `{"allow":false,"reason":"본문이 이상함"}`
+		}
+		if strings.Contains(mstr(ev, "text"), "비밀") {
+			return `{"allow":false,"reason":"비밀은 보내지 마세요"}`
+		}
+		return `{"allow":true,"patch":{"text":"` + mstr(ev, "text") + ` (확인됨)"}}`
+	})
+	closeNo := newAnswerServer(t, func(ev M) string { return `{"allow":false}` })
+	badPatch := newAnswerServer(t, func(ev M) string { return `{"allow":true,"patch":{"title":"새","mode":"bypassPermissions"}}` })
+	dead := newHookServer(t, 500, 500, 500, 500)
+	// While this hook answers, another request takes the lock and removes the session.
+	var meta *Sess
+	gone := newAnswerServer(t, func(ev M) string {
+		withLock(func() { sessions.Delete("s1") })
+		return `{"allow":true}`
+	})
+	slow := newAnswerServer(t, func(ev M) string { time.Sleep(300 * time.Millisecond); return `{"allow":false}` })
+	cfg := "features:\n  permissionModes: [default, plan]\nhooks:\n" +
+		beforeHook("message.send", send.srv.URL, "") +
+		"  message.send.after:\n    - type: webhook\n      url: " + after.srv.URL + "\n      secret: " + HOOK_SECRET + "\n" +
+		beforeHook("session.close", closeNo.srv.URL, "") +
+		beforeHook("session.settings", badPatch.srv.URL, "") +
+		beforeHook("session.key", dead.srv.URL, "      onError: deny\n") +
+		beforeHook("message.btw", dead.srv.URL, "") +
+		beforeHook("session.setting", slow.srv.URL, "      timeoutMs: 50\n") +
+		beforeHook("session.do", gone.srv.URL, "")
+	meta = hookSession(t, cfg)
+
+	code, _ := pageCall(t, "POST", "/api/sessions/s1/say", `{"text":"반가워"}`)
+	eq(t, code, 200)
+	got := hookBody(t, after.wait(t, 1)[0])
+	eq(t, mstr(got, "text"), "반가워 (확인됨)", "고친 글이 맥에 감")
+	ok(t, strings.Contains(string(bridgeOut(t, "h1")), "반가워 (확인됨)"), "맥에 간 명령")
+	code, msg := pageCall(t, "POST", "/api/sessions/s1/say", `{"text":"비밀 번호는"}`)
+	ok(t, code == 403 && msg == "비밀은 보내지 마세요", msg)
+
+	code, msg = pageCall(t, "POST", "/api/sessions/s1/close", `{}`)
+	ok(t, code == 403 && msg == HOOK_DENIED, msg)
+	withLock(func() { ok(t, !truthy(meta.get("closed")), "막으면 닫지 않음") })
+	// The server's own work is not asked.
+	withLock(func() { closeSession(meta, "") })
+	eq(t, closeNo.count(), 1, "system 은 묻지 않음")
+	withLock(func() { meta.set("closed", false) })
+
+	// A patch it may not give (a mode off the list) is a failing hook: onError allow goes on without it.
+	code, _ = pageCall(t, "POST", "/api/sessions/s1/settings", `{"title":"옛"}`)
+	eq(t, code, 200)
+	withLock(func() { eq(t, meta.str("title"), "옛", "잘못된 patch 는 버림") })
+	code, msg = pageCall(t, "POST", "/api/sessions/s1/key", `{"keys":["Enter"]}`)
+	ok(t, code == 403 && msg == "확인 서버에 묻지 못해 막았어요", "onError deny: "+msg)
+	code, _ = pageCall(t, "POST", "/api/sessions/s1/setting", `{"kind":"model","value":"opus"}`)
+	eq(t, code, 200, "시간을 넘긴 훅은 실패, 기본 allow")
+
+	code, msg = pageCall(t, "POST", "/api/sessions/s1/sendnow", `{}`)
+	ok(t, code == 409 && strings.Contains(msg, "세션이 바뀌었어요"), "락을 놓은 사이 지워짐: "+msg)
+}
+
+// A card answer is refused when the server knows another card is open; a card it does not know goes on.
+func TestAnswerOtherCard(t *testing.T) {
+	meta := hookSession(t, "")
+	withLock(func() { meta.set("card", M{"id": "card-0002", "open": true, "kind": "permission"}) })
+	code, msg := pageCall(t, "POST", "/api/sessions/s1/answer", `{"card":"card-0001","n":1}`)
+	ok(t, code == 409 && msg == OTHER_CARD, msg)
+	code, _ = pageCall(t, "POST", "/api/sessions/s1/answer", `{"card":"card-0002","n":1}`)
+	eq(t, code, 200)
+	withLock(func() { meta.set("card", M{"id": "card-0002", "open": false}) })
+	code, _ = pageCall(t, "POST", "/api/sessions/s1/answer", `{"card":"card-0001","n":1}`)
+	eq(t, code, 200, "닫힌 카드뿐이면 지금처럼 넘김")
+}
+
+// login.before: a stranger may be refused; an admin is never asked.
+func TestLoginBefore(t *testing.T) {
+	no := newAnswerServer(t, func(ev M) string { return `{"allow":false,"reason":"점검 중"}` })
+	withSlotServer(t, "hooks:\n"+beforeHook("login", no.srv.URL, ""))
+	keepA := ADMINS
+	t.Cleanup(func() { ADMINS = keepA })
+	ADMINS = []string{"boss"}
+	withLock(func() {
+		users.Set("u1", M{"login": "me"})
+		users.Set("u2", M{"login": "boss"})
+	})
+	try1 := func(uid string) (code int, msg string) {
+		r := httptest.NewRequest("GET", "/api/auth/dev", nil)
+		req := newReq(r)
+		res := newRes(req)
+		withLock(func() {
+			defer func() {
+				if rf, isRefuse := recover().(*Refuse); isRefuse {
+					code, msg = rf.Status, rf.Msg
+				}
+			}()
+			signIn(req, res, uid, "/", nil)
+			code = res.status
+		})
+		return
+	}
+	code, msg := try1("u1")
+	ok(t, code == 403 && msg == "점검 중", msg)
+	code, _ = try1("u2")
+	ok(t, code != 403, "관리자는 묻지 않음")
+	eq(t, no.count(), 1)
+}
+
+// bridgeOut: what the server sent down to a Mac's link so far.
+func bridgeOut(t *testing.T, hostID string) []byte {
+	t.Helper()
+	var out []byte
+	withLock(func() {
+		b, _ := bridges.Get(hostID)
+		if s, ok := b.(*Stream); ok {
+			s.smu.Lock()
+			out = []byte(strings.Join(s.queue, ""))
+			s.smu.Unlock()
+		}
+	})
+	return out
 }

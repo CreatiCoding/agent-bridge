@@ -168,6 +168,7 @@ func csCommand(uid string, value any, opts csOptsCmd) string {
 		if !truthy(st["alive"]) || st["phase"] != "idle" {
 			refuse(409, "쉬고 있는 세션만 압축할 수 있어요")
 		}
+		sessBefore("session.do", meta, kv{"do", "compact"})
 		toHost(liveHost(meta), M{"t": "send", "sid": meta.id(), "id": uuidv4(), "text": COMPACT_TEXT})
 		sessAfter("session.do", meta, kv{"do", "compact"})
 		logEvents(meta, []any{M{"k": "notice", "tone": "info", "text": "🗜️ 컨텍스트 압축을 요청했어요. 끝나면 이 세션에서 그대로 이어가요"}})

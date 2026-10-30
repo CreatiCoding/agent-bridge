@@ -154,6 +154,7 @@ func headerSignIn(req *Req, res *Res) bool {
 	if l, has := logins.Get(sha256hexs(sessionToken(req))); has && mstr(l, "uid") == uid && jsNumber(l["exp"]) > float64(nowMs()) {
 		return false
 	}
+	loginBefore(uid, "trusted-header")
 	token := newSignIn(uid)
 	emitEvent("login", uid, orderedObj{{"provider", "trusted-header"}})
 	req.movedCb = &token

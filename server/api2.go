@@ -96,7 +96,6 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 				refuse(409, "이미 bridge 세션으로 열려 있는 대화입니다")
 			}
 		}
-		sid := uuidv4()
 		cwd := ""
 		if truthy(b["cwd"]) {
 			cwd = jsString(b["cwd"])
@@ -105,6 +104,15 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		if truthy(b["title"]) {
 			title = jsString(b["title"])
 		}
+		if p := createBefore(uid, m[1], cwd, title, "", "adopt"); p != nil {
+			title = patched(p, "title", title)
+			for _, s := range sessions.Values() {
+				if s.uid() == uid && s.get("conv") == b["conv"] && !truthy(s.get("closed")) {
+					refuse(409, "이미 bridge 세션으로 열려 있는 대화입니다")
+				}
+			}
+		}
+		sid := uuidv4()
 		meta := newMeta(uid, sid, m[1], M{"conv": b["conv"], "cwd": jsSliceTo(cwd, 1000), "title": jsSliceTo(wsRun.ReplaceAllString(title, " "), 80)})
 		st := noState()
 		st["alive"] = true
@@ -340,6 +348,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			refuse(409, NOT_CONNECTED)
 		}
 		if b["off"] == true {
+			hostSudoBefore(uid, hostID, "off")
 			ask(hostID, M{"t": "sudooff"}, 15_000)
 			st.until = 0
 			record(uid, hostID, M{"area": "sudo", "text": "관리자 권한을 닫음"})
@@ -352,6 +361,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		if password == "" || jsLen(password) > 1024 {
 			refuse(400, "비밀번호를 넣어 주세요")
 		}
+		hostSudoBefore(uid, hostID, "open")
 		r := ask(hostID, M{"t": "sudopass", "password": password}, 30_000)
 		if !truthy(r["ok"]) {
 			refuse(403, orStr(r["error"], "관리자 권한을 열지 못했어요"))
