@@ -492,7 +492,7 @@ func hostSudoAfter(uid, hostID, do string) {
 
 // raised: whether anything hears of name (notify or an after hook); the event is built only then.
 func raised(name string) bool {
-	if len(hooksOf(name+".after")) > 0 {
+	if len(hooksOf(name+".after")) > 0 || extRaised(name) {
 		return true
 	}
 	for _, t := range notifyTargets() {

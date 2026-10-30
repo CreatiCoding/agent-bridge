@@ -918,6 +918,7 @@ func demoCleanStart() {
 // ---------- 계정 삭제 (REQ-F-770) ----------
 
 func deleteAccount(uid string) {
+	extForget(uid)
 	login := ""
 	if u, ok := users.Get(uid); ok {
 		login = mstr(u, "login")

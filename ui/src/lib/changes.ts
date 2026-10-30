@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.360',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'added', scope: ['server'], text: '익스텐션이 서버에 작은 값과 비밀값을 저장하고, extension.yaml 에 적은 주소로만 서버를 거쳐 요청하고, 턴 끝·카드 이벤트를 받아 한 화면만 맡을 수 있어요', refs: ['REQ-F-826'] },
+    ],
+  },
+  {
     version: '1.359',
+    commit: '6382c70',
     date: '2026-10-31',
     changes: [
       { kind: 'added', scope: ['server'], text: '운영자가 bridge.yaml 의 extensions 로 익스텐션 폴더를 둘 수 있어요. 서버는 그 파일을 동의한 사람에게만 내주고, 받는 주소를 처리방침에 싣어요. 화면에서 불러오는 것은 다음 판이에요', refs: ['REQ-F-825'] },

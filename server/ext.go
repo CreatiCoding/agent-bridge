@@ -668,8 +668,3 @@ func apiExt(req *Req, res *Res, u *url.URL, uid string) bool {
 	extApiAgreed(req, res, u, uid, d, rest)
 	return true
 }
-
-// extApiAgreed: what an agreed extension may call. Storage, routes and claims come with REQ-F-826.
-func extApiAgreed(req *Req, res *Res, u *url.URL, uid string, d *extDef, rest string) {
-	refuse(404, "없는 주소입니다")
-}

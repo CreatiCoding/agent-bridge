@@ -212,10 +212,11 @@ func emitEvent(name, uid string, more orderedObj) {
 		}
 	}
 	hooks := hooksOf(name + ".after")
-	if len(targets) == 0 && len(hooks) == 0 {
+	if len(targets) == 0 && len(hooks) == 0 && !extRaised(name) && !(contains(HOOK_EVENTS, name) && extHears(uid)) {
 		return
 	}
 	ev, login := eventOf(name, uid, more)
+	extEmit(name, uid, ev, login) // extensions' hooks and pages (REQ-F-826)
 	body := jsonBytes(ev)
 	for _, t := range targets {
 		go deliverEvent(t, body, uid, login)

@@ -522,6 +522,9 @@ func main() {
 	demoCleanStart()
 	migrateSkillsRepo()
 	if c := handover.carried(); c != nil {
+		if e, ok := c["ext"].(M); ok {
+			extCarried(e) // who already claimed which event (REQ-F-826)
+		}
 		hs := []string{}
 		for _, h := range asArr(c["online"]) {
 			if s, ok := h.(string); ok && hosts.Has(s) {
@@ -555,7 +558,7 @@ func main() {
 			flushToDisk()
 			frozen = true
 			// peerHeader: the requests passed on carry their peer, signed (REQ-F-814), so trustFrom still holds.
-			out = M{"online": anyList(realBridges()), "peerHeader": true}
+			out = M{"online": anyList(realBridges()), "peerHeader": true, "ext": extCarry()}
 			mu.Unlock()
 			return out
 		},
