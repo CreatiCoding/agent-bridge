@@ -493,7 +493,7 @@ func savePrefs(uid string) {
 // githubLoginOf: the GitHub login of a person signed in with GitHub; "" for Apple and demo accounts.
 func githubLoginOf(uid string) any {
 	u, ok := users.Get(uid)
-	if isDemoUid(uid) || !ok || truthy(u["apple"]) || isAppleLogin(mstr(u, "login")) {
+	if isDemoUid(uid) || !ok || truthy(u["apple"]) || isAppleLogin(mstr(u, "login")) || providerOf(uid) == "trusted-header" {
 		return nil
 	}
 	return u["login"]

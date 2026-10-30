@@ -26,7 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.350',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 auth.providers trusted-header: 앞단 프록시(SSO)가 확인한 이메일로 로그인. secret 이 맞고 프록시 주소(trustFrom)에서 온 요청만 믿고, 처음이면 계정을 만들고 같은 로그인 쿠키를 줌. 허용되지 않은 사람은 승인 대기 화면', refs: ['REQ-F-814'] },
+      { kind: 'added', scope: ['server', 'ui'], text: 'bridge.yaml 의 origins.extra: 한 서버를 여러 주소로 엶(헤더 로그인이 있을 때만). 다른 주소로 온 요청은 421, 추가 주소의 페이지는 맥과 연동하지 않음', refs: ['REQ-F-815'] },
+      { kind: 'changed', scope: ['server'], text: '무중단 교체 중 넘겨받은 요청의 원래 주소를 옛 서버가 서명해 넘김(프록시 주소 확인이 교체 중에도 맞게)', refs: ['REQ-F-814'] },
+    ],
+  },
+  {
     version: '1.349',
+    commit: '465f71e',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['agent'], text: 'node agent.mjs start: 에이전트가 없을 때만 백그라운드로 띄우고 종료 0(이미 있으면 아무것도 안 함). cron·Raycast 같은 바깥 주기 실행에서 부르면 됨. 로그는 ~/.claude-bridge/detached.log', refs: ['REQ-F-813'] },

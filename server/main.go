@@ -126,13 +126,20 @@ func route(req *Req, res *Res) {
 		jsonRes(res, 200, orderedObj{{"ok", true}, {"version", VERSION}, {"instance", handover.id}})
 		return
 	}
+	service := strings.HasPrefix(p, "/api/service/")
+	if !service {
+		pickOrigin(req)
+	}
 	migrateLegacyCb(req, res)
+	if !service && headerSignIn(req, res) {
+		return
+	}
 	if strings.HasPrefix(p, "/api/auth/") {
 		auth(req, res, u)
 		return
 	}
 	// Bearer token only, no cookie: kept apart from the browser routes below.
-	if strings.HasPrefix(p, "/api/service/") {
+	if service {
 		serviceAPI(req, res, p)
 		return
 	}
@@ -236,6 +243,12 @@ func route(req *Req, res *Res) {
 		sendFile(res, filepath.Join(UI, "prepaint.js"), "")
 		return
 	case "/bridge":
+		if !linksHere(req) {
+			h := htmlHead()
+			h["Cache-Control"] = "no-store"
+			res.WriteHead(200, h).EndS(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>` + APP_NAME + `</title><link rel="stylesheet" href="/app.css"><body><div class="panel"><h1>기기와 연동</h1><p>` + NOT_LINKED_HERE + `: <a href="` + ORIGIN + `/bridge">` + ORIGIN + `</a></p></div></body></html>`)
+			return
+		}
 		sendFile(res, filepath.Join(ROOT, "web/bridge.html"), "")
 		return
 	case "/skills/version":
@@ -316,7 +329,7 @@ func route(req *Req, res *Res) {
 		if err != nil {
 			panic(err)
 		}
-		script := strings.ReplaceAll(strings.ReplaceAll(string(b), "__ORIGIN__", originOf(req)), "__FILES__", strings.Join(AGENT_FILES, " "))
+		script := strings.ReplaceAll(strings.ReplaceAll(string(b), "__ORIGIN__", siteOrigin(req)), "__FILES__", strings.Join(AGENT_FILES, " "))
 		res.WriteHead(200, M{"Content-Type": "text/x-shellscript; charset=utf-8", "Cache-Control": "no-cache"}).EndS(script)
 		return
 	case "/privacy":
@@ -335,7 +348,7 @@ func route(req *Req, res *Res) {
 	case "/recovery":
 		h := htmlHead()
 		h["Cache-Control"] = "no-cache"
-		res.WriteHead(200, h).EndS(strings.ReplaceAll(strings.Replace(RECOVERY, "__FONT_TOKENS__", FONT_TOKENS, 1), "__ORIGIN__", originOf(req)))
+		res.WriteHead(200, h).EndS(strings.ReplaceAll(strings.Replace(RECOVERY, "__FONT_TOKENS__", FONT_TOKENS, 1), "__ORIGIN__", siteOrigin(req)))
 		return
 	case "/favicon.ico":
 		sendFile(res, filepath.Join(ROOT, "web/icon.svg"), "")
@@ -511,7 +524,8 @@ func main() {
 			plug.stopAll()
 			flushToDisk()
 			frozen = true
-			out = M{"online": anyList(realBridges())}
+			// peerHeader: the requests passed on carry their peer, signed (REQ-F-814), so trustFrom still holds.
+			out = M{"online": anyList(realBridges()), "peerHeader": true}
 			mu.Unlock()
 			return out
 		},

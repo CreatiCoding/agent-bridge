@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha1"
-	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/url"
@@ -222,6 +221,9 @@ func jsonRes(res *Res, status int, obj any, headers ...M) {
 }
 
 func originOf(req *Req) string {
+	if req.origin != "" {
+		return req.origin
+	}
 	if ORIGIN != "" {
 		return ORIGIN
 	}
@@ -275,6 +277,14 @@ func cookieAll(req *Req, name string) []string {
 		}
 	}
 	return out
+}
+
+// siteOrigin: the origin Macs and scripts are given: the primary one even on a page opened at another (REQ-F-815).
+func siteOrigin(req *Req) string {
+	if ORIGIN != "" {
+		return ORIGIN
+	}
+	return originOf(req)
 }
 
 // secureSite: a page that may hold Secure cookies: https, or this machine.
@@ -369,6 +379,13 @@ func migrateLegacyCb(req *Req, res *Res) {
 }
 
 func whoami(req *Req) string {
+	// The proxy's word wins over any cookie the request carries (REQ-F-814).
+	if req.trusted {
+		if u, ok := users.Get(req.headerUid); ok && isAllowed(mstr(u, "login")) {
+			return req.headerUid
+		}
+		return ""
+	}
 	token := sessionToken(req)
 	if token == "" {
 		return ""
@@ -397,9 +414,7 @@ func whoami(req *Req) string {
 }
 
 func signIn(req *Req, res *Res, uid string, next string, more []string) {
-	token := base64.RawURLEncoding.EncodeToString(randBytes(32))
-	logins.Set(sha256hexs(token), M{"uid": uid, "exp": float64(nowMs() + LOGIN_DAYS*86_400_000)})
-	touchGlobals()
+	token := newSignIn(uid)
 	set := []string{cookie(req, cname(req, "cb"), token, LOGIN_DAYS*86_400), cookie(req, cname(req, "cb_state"), "", 0)}
 	set = append(set, more...)
 	set = append(set, legacyCbClears(req)...)

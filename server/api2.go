@@ -565,7 +565,7 @@ func apiAdmin(req *Req, res *Res, u *url.URL, uid string) bool {
 			if truthy(b["login"]) {
 				l = strings.ToLower(jsString(b["login"]))
 			}
-			if !loginNameRe.MatchString(l) && !isAppleLogin(l) {
+			if !loginNameRe.MatchString(l) && !isAppleLogin(l) && !(headerProvider() != nil && isHeaderLogin(l)) {
 				refuse(400, "GitHub 계정 이름이 올바르지 않습니다")
 			}
 			if b["status"] != "release" && (contains(ADMINS, l) || contains(ALLOWED, l)) {

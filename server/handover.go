@@ -245,8 +245,13 @@ var hopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Connection", "Trans
 
 // intercept: first thing for every request, without the lock. True when the request was passed on to the new server.
 func (h *Handover) intercept(w http.ResponseWriter, r *http.Request) bool {
+	fromOld := false
 	if v := r.Header.Get("x-bridge-handover"); v != "" && v == h.secret {
 		r.Header.Del("x-bridge-handover")
+		fromOld = true
+	}
+	acceptPeer(r, fromOld, h.secret, h.carriedVal["peerHeader"] == true)
+	if fromOld {
 		return false
 	}
 	h.smu.Lock()
@@ -279,6 +284,13 @@ func (h *Handover) intercept(w http.ResponseWriter, r *http.Request) bool {
 	out.Host = r.Host
 	out.ContentLength = r.ContentLength
 	out.Header.Set("x-bridge-handover", h.secret)
+	peer := r.Header.Get(PEER_OK_HEADER) // passed on once already: keep the first peer
+	if peer == "" {
+		peer = r.RemoteAddr
+	}
+	out.Header.Del(PEER_OK_HEADER)
+	out.Header.Set(PEER_HEADER, peer)
+	out.Header.Set(PEER_SIG_HEADER, peerSig(h.secret, peer))
 	tr := &http.Transport{DisableCompression: true, Proxy: nil}
 	resp, err := tr.RoundTrip(out)
 	if err != nil {

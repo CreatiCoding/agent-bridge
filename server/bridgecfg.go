@@ -7,6 +7,7 @@ package main
 // file means the same as the environment it came from and follows later edits of it.
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,7 +21,7 @@ import (
 type cfgKey struct {
 	key  string // dotted, as in the file
 	env  string // "" when no environment variable means the same
-	kind string // origin | list | purge | bool | hours | path | modes | src
+	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers
 	def  any    // the value when neither the file nor an environment variable gives one (env keys: unused)
 }
 
@@ -42,6 +43,8 @@ var CFG_KEYS = []cfgKey{
 	{"csp.frameSrc", "", "src", []string{}},
 	{"csp.imgSrc", "", "src", []string{}},
 	{"privacy.file", "", "path", ""},
+	{"origins.extra", "", "origins", []string{}},
+	{"auth.providers", "", "providers", []authProvider{}},
 }
 
 // cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
@@ -214,7 +217,38 @@ func parseBridgeConfig(p string, b []byte, getenv func(string) string) (*bridgeC
 			c.set[k.key] = v
 		}
 	}
+	if err := c.crossCheck(root, getenv); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// crossCheck: rules between keys (REQ-F-814, REQ-F-815). More origins need sign-in by header, because the sign-in
+// cookie is host-only and OAuth comes back to the primary origin alone.
+func (c *bridgeCfg) crossCheck(root *yNode, getenv func(string) string) error {
+	extra, _ := c.set["origins.extra"].v.([]string)
+	provs, _ := c.set["auth.providers"].v.([]authProvider)
+	line := func(sec, name string) int {
+		if n := root.get(sec).get(name); n != nil {
+			return n.line
+		}
+		return 0
+	}
+	if len(extra) > 0 {
+		if len(provs) == 0 {
+			return &yamlErr{line("origins", "extra"), "origins.extra 는 auth.providers 에 trusted-header 가 있어야 씁니다(OAuth 로그인은 origins.primary 에서만 됩니다)"}
+		}
+		primary := c.effective(CFG_KEYS[0], getenv).(string)
+		if primary == "" {
+			return &yamlErr{line("origins", "extra"), "origins.extra 를 쓰려면 origins.primary(또는 BRIDGE_ORIGIN)가 있어야 합니다"}
+		}
+		for _, o := range extra {
+			if hostOfURL(o) == hostOfURL(primary) {
+				return &yamlErr{line("origins", "extra"), "origins.extra 의 " + o + " 는 origins.primary 와 같은 호스트입니다"}
+			}
+		}
+	}
+	return nil
 }
 
 // sameRef: the scalar is exactly a reference to this key's own environment variable.
@@ -359,6 +393,26 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 			return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 .html 파일이어야 합니다(그대로 웹 페이지로 내줍니다)"}
 		}
 		return cfgVal{v, false}, true, nil // made absolute against the file's folder in parseBridgeConfig
+	}
+	switch k.kind {
+	case "providers":
+		return readProviders(k, n, getenv)
+	case "origins":
+		items, err := plainList(k, n, getenv)
+		if err != nil {
+			return cfgVal{}, false, err
+		}
+		out := []string{}
+		for _, o := range items {
+			o = strings.ToLower(strings.TrimRight(o, "/"))
+			if !originRe.MatchString(o) {
+				return cfgVal{}, false, &yamlErr{n.line, k.key + " 의 " + o + " 는 https://호스트[:포트] 모양이어야 합니다(경로 없이)"}
+			}
+			if !contains(out, o) {
+				out = append(out, o)
+			}
+		}
+		return cfgVal{out, false}, true, nil
 	}
 	// list: a scalar (a reference or a comma list) or a list whose items may be references.
 	if n.kind == yScalar {
@@ -604,4 +658,147 @@ func configFailed(err error) {
 		_ = os.Lchown(tmp, int(s.Uid), int(s.Gid))
 	}
 	_ = os.Rename(tmp, f)
+}
+
+// plainList: a list key with no environment variable of the same meaning: a list of scalars, or one scalar with
+// commas. ${NAME:-} items that come out empty are left out; case is kept.
+func plainList(k cfgKey, n *yNode, getenv func(string) string) ([]string, error) {
+	if n.kind == yScalar {
+		v, soft, err := substEnv(n.raw, n.line, getenv)
+		if err != nil || soft {
+			return nil, err
+		}
+		return splitListCase(v, false), nil
+	}
+	if n.kind != yList {
+		return nil, &yamlErr{n.line, k.key + " 는 목록이어야 합니다"}
+	}
+	out := []string{}
+	for _, it := range n.items {
+		if it.kind != yScalar || it.null {
+			return nil, &yamlErr{it.line, k.key + " 의 항목은 글자여야 합니다"}
+		}
+		v, soft, err := substEnv(it.raw, it.line, getenv)
+		if err != nil {
+			return nil, err
+		}
+		if v = strings.TrimSpace(v); soft {
+			continue
+		}
+		if v == "" {
+			return nil, &yamlErr{it.line, k.key + " 에 빈 항목이 있습니다"}
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// authProvider: one entry of auth.providers. Only trusted-header for now (REQ-F-814): a proxy in front (an SSO
+// gate) says who the person is in userHeader, and proves it is that proxy with secretHeader and its address.
+type authProvider struct {
+	Type         string
+	UserHeader   string
+	SecretHeader string
+	Secret       string
+	TrustFrom    []*net.IPNet
+	TrustText    []string // as written, for screens
+}
+
+var headerNameRe = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+
+// readProviders: auth.providers, a list of maps. Every field is required; secret is at least 16 letters.
+func readProviders(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, error) {
+	if n.kind != yList {
+		return cfgVal{}, false, &yamlErr{n.line, k.key + " 는 목록이어야 합니다(- type: trusted-header ...)"}
+	}
+	fields := []string{"type", "userHeader", "secretHeader", "secret", "trustFrom"}
+	out := []authProvider{}
+	for _, it := range n.items {
+		if it.kind != yMap {
+			return cfgVal{}, false, &yamlErr{it.line, k.key + " 의 항목은 \"키: 값\" 이어야 합니다"}
+		}
+		for _, kv := range it.pairs {
+			if !contains(fields, kv.key) {
+				return cfgVal{}, false, &yamlErr{kv.line, "모르는 키 " + k.key + "[]." + kv.key + " (받는 키: " + strings.Join(fields, ", ") + ")"}
+			}
+		}
+		one := func(name string) (string, int, error) {
+			f := it.get(name)
+			if f == nil || f.null {
+				return "", it.line, &yamlErr{it.line, k.key + " 의 항목에 " + name + " 가 없습니다"}
+			}
+			if f.kind != yScalar {
+				return "", f.line, &yamlErr{f.line, k.key + "[]." + name + " 는 값 하나여야 합니다"}
+			}
+			v, soft, err := substEnv(f.raw, f.line, getenv)
+			if err == nil && (soft || strings.TrimSpace(v) == "") {
+				err = &yamlErr{f.line, k.key + "[]." + name + " 가 비어 있습니다"}
+			}
+			return strings.TrimSpace(v), f.line, err
+		}
+		typ, line, err := one("type")
+		if err != nil {
+			return cfgVal{}, false, err
+		}
+		if typ != "trusted-header" {
+			return cfgVal{}, false, &yamlErr{line, k.key + "[].type 의 " + typ + " 는 모르는 제공자입니다(받는 값: trusted-header)"}
+		}
+		if len(out) > 0 {
+			return cfgVal{}, false, &yamlErr{line, "trusted-header 는 하나만 둘 수 있습니다"}
+		}
+		p := authProvider{Type: typ}
+		for _, h := range []struct {
+			name string
+			to   *string
+		}{{"userHeader", &p.UserHeader}, {"secretHeader", &p.SecretHeader}} {
+			v, line, err := one(h.name)
+			if err != nil {
+				return cfgVal{}, false, err
+			}
+			if !headerNameRe.MatchString(v) || strings.EqualFold(v, "cookie") || strings.EqualFold(v, "host") {
+				return cfgVal{}, false, &yamlErr{line, k.key + "[]." + h.name + " 는 헤더 이름이어야 합니다(영문·숫자·-, Cookie·Host 는 안 됨)"}
+			}
+			*h.to = v
+		}
+		if strings.EqualFold(p.UserHeader, p.SecretHeader) {
+			return cfgVal{}, false, &yamlErr{it.line, k.key + " 의 userHeader 와 secretHeader 는 달라야 합니다"}
+		}
+		sec, line, err := one("secret")
+		if err != nil {
+			return cfgVal{}, false, err
+		}
+		if len(sec) < 16 {
+			return cfgVal{}, false, &yamlErr{line, k.key + "[].secret 은 16자 이상이어야 합니다"}
+		}
+		p.Secret = sec
+		tf := it.get("trustFrom")
+		if tf == nil || tf.null {
+			return cfgVal{}, false, &yamlErr{it.line, k.key + " 의 항목에 trustFrom 이 없습니다(프록시의 주소, 예: [10.0.0.0/8])"}
+		}
+		items, err := plainList(cfgKey{key: k.key + "[].trustFrom"}, tf, getenv)
+		if err != nil {
+			return cfgVal{}, false, err
+		}
+		if len(items) == 0 {
+			return cfgVal{}, false, &yamlErr{tf.line, k.key + "[].trustFrom 이 비어 있습니다"}
+		}
+		for _, x := range items {
+			cidr := x
+			if !strings.Contains(x, "/") {
+				if ip := net.ParseIP(x); ip != nil && ip.To4() != nil {
+					cidr = x + "/32"
+				} else {
+					cidr = x + "/128"
+				}
+			}
+			_, nw, e := net.ParseCIDR(cidr)
+			if e != nil {
+				return cfgVal{}, false, &yamlErr{tf.line, k.key + "[].trustFrom 의 " + x + " 는 IP 주소나 CIDR(10.0.0.0/8)이어야 합니다"}
+			}
+			p.TrustFrom = append(p.TrustFrom, nw)
+			p.TrustText = append(p.TrustText, x)
+		}
+		out = append(out, p)
+	}
+	return cfgVal{out, false}, true, nil
 }

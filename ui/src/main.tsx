@@ -35,12 +35,13 @@ const render = (me: Me | null) =>
   )
 applyIcons(getIcons())
 render(null)
-// The demo account (REQ-F-766) never links the Mac it is opened on: it has only the server's demo Mac.
+// The demo account (REQ-F-766) never links the Mac it is opened on: it has only the server's demo Mac. Nor does a
+// page at another origin of the server (origins.extra, REQ-F-815): the agent takes the primary origin only.
 get<Me>('/api/me').then(
   (me) => {
     if (me.icons) applyIcons(me.icons)
     setFeatures(me.features)
-    if (!me.demo) startBackgroundRelay()
+    if (!me.demo && me.linkHere !== false) startBackgroundRelay()
     render(me)
   },
   () => startBackgroundRelay(),

@@ -123,6 +123,9 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		if u0, ok := users.Get(uid); !ok || u0 == nil {
 			out["user"] = nil
 		}
+		if !linksHere(req) {
+			out["linkHere"] = false // a page at origins.extra does not link Macs (REQ-F-815)
+		}
 		if isDemoUid(uid) {
 			out["demo"] = true
 		} else if appBuild != nil {
@@ -183,6 +186,9 @@ const NOT_BRIDGE_TAB = "이 탭은 더 이상 이 호스트의 연동 탭이 아
 
 func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 	p := u.Path
+	if strings.HasPrefix(p, "/api/bridge/") && !linksHere(req) {
+		refuse(403, NOT_LINKED_HERE)
+	}
 	get := req.Method == "GET"
 	post := req.Method == "POST"
 	switch {
@@ -653,6 +659,9 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 			}
 			repo := jsTrim(rs)
 			gh := githubLoginOf(uid)
+			if gh == nil && providerOf(uid) == "trusted-header" {
+				refuse(400, "GitHub 계정을 연결해야 해요. 사내 로그인(프록시)으로 들어온 계정은 스킬 저장소를 정할 수 없어요")
+			}
 			if gh == nil {
 				refuse(400, "GitHub 로 로그인한 계정만 스킬 저장소를 정할 수 있어요")
 			}

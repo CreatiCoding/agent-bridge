@@ -210,6 +210,9 @@ type Req struct {
 	hasPreset   bool
 	remote      string
 	movedCb     *string
+	origin      string // this request's origin among the server's (origins.extra, REQ-F-815), "" when only one
+	trusted     bool   // the trusted proxy vouched for this request (REQ-F-814)
+	headerUid   string // and for this person
 	httpVersion string
 	r           *http.Request
 }
