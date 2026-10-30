@@ -26,7 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.351',
+    date: '2026-10-30',
+    changes: [
+      { kind: 'added', scope: ['server', 'ui'], text: 'bridge.yaml 의 auth.headerOnly: 프록시의 헤더 로그인만 받음. GitHub·Apple·데모·QR 로그인 입구를 닫고, 헤더 없이 온 쿠키는 받지 않으며, 로그인 화면 대신 "프록시를 거쳐 다시 열어 주세요"', refs: ['REQ-F-816'] },
+      { kind: 'added', scope: ['server', 'ui'], text: '헤더 로그인만 받는 서버에서는 헤드리스 연동·화면 없는 기기 연결을 끔(켜기 409, 끄기는 열림). 기기 화면은 켜져 있는 맥에 끄는 방법을 보임', refs: ['REQ-F-816'] },
+      { kind: 'added', scope: ['server', 'ui'], text: '설정 검사가 headerOnly 를 켜는 파일이면 헤드리스 연동이 켜져 있거나 알 수 없는 맥과 화면 없는 기기를 먼저 끌 기기로 보임', refs: ['REQ-F-816'] },
+    ],
+  },
+  {
     version: '1.350',
+    commit: 'b64ffe1',
     date: '2026-10-30',
     changes: [
       { kind: 'added', scope: ['server'], text: 'bridge.yaml 의 auth.providers trusted-header: 앞단 프록시(SSO)가 확인한 이메일로 로그인. secret 이 맞고 프록시 주소(trustFrom)에서 온 요청만 믿고, 처음이면 계정을 만들고 같은 로그인 쿠키를 줌. 허용되지 않은 사람은 승인 대기 화면', refs: ['REQ-F-814'] },

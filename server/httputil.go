@@ -386,6 +386,9 @@ func whoami(req *Req) string {
 		}
 		return ""
 	}
+	if headerOnly() {
+		return "" // a cookie alone is not enough here (REQ-F-816)
+	}
 	token := sessionToken(req)
 	if token == "" {
 		return ""

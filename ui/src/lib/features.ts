@@ -8,7 +8,9 @@ export function setFeatures(f: Features | undefined) {
   current = f
 }
 
-export type Feature = 'sessionMove' | 'webpush' | 'voice' | 'preview' | 'skills' | 'slack' | 'remoteKeys'
+/** background is read-only: false on a header-only server (auth.headerOnly, REQ-F-816), where the headless browser
+ * cannot pass the proxy and the QR sign-in is closed. */
+export type Feature = 'sessionMove' | 'webpush' | 'voice' | 'preview' | 'skills' | 'slack' | 'remoteKeys' | 'background'
 
 export const featureOn = (name: Feature) => current?.[name] !== false
 

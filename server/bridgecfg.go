@@ -45,6 +45,7 @@ var CFG_KEYS = []cfgKey{
 	{"privacy.file", "", "path", ""},
 	{"origins.extra", "", "origins", []string{}},
 	{"auth.providers", "", "providers", []authProvider{}},
+	{"auth.headerOnly", "", "bool", false},
 }
 
 // cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
@@ -233,6 +234,9 @@ func (c *bridgeCfg) crossCheck(root *yNode, getenv func(string) string) error {
 			return n.line
 		}
 		return 0
+	}
+	if only, _ := c.set["auth.headerOnly"].v.(bool); only && len(provs) == 0 {
+		return &yamlErr{line("auth", "headerOnly"), "auth.headerOnly 는 auth.providers 에 trusted-header 가 있어야 씁니다(없으면 아무도 들어올 수 없습니다)"}
 	}
 	if len(extra) > 0 {
 		if len(provs) == 0 {

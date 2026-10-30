@@ -318,7 +318,7 @@ func allowMode(all bool) string {
 // featuresOf: the feature flags as /api/me gives them (REQ-F-812). background is read-only here (step 3 turns it
 // off with auth.headerOnly); it is not a bridge.yaml key.
 func featuresOf() M {
-	out := M{"background": true}
+	out := M{"background": !headerOnly()} // read-only: the headless browser cannot pass the proxy (REQ-F-816)
 	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys"} {
 		out[f] = cfgOn("features." + f)
 	}

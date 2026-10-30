@@ -18,7 +18,9 @@ interface Status {
   saveable: boolean
   masked?: string
 }
-interface Check { ok: boolean; state?: string; errors: string[]; diff: Diff[]; unsubstituted?: string[] }
+/** A host to turn the headless link off on before a file turns auth.headerOnly on (REQ-F-816). */
+interface HeaderOnlyHost { name: string; lastSeen?: number; state: 'on' | 'unknown' | 'server'; at?: number; note: string }
+interface Check { ok: boolean; state?: string; errors: string[]; diff: Diff[]; unsubstituted?: string[]; headerOnlyHosts?: HeaderOnlyHost[] }
 
 const STATE: Record<Status['state'], string> = {
   none: '없음 · 환경변수만 씀',
@@ -45,6 +47,17 @@ function CheckView({ c }: { c: Check }) {
           {d.warn ? <div style={{ color: 'var(--amber)' }}>환경변수를 고쳐도 반영되지 않아요. 이 키는 파일 값이 쓰여요.</div> : null}
         </div>
       ))}
+      {c.headerOnlyHosts?.length ? (
+        <div style={{ fontSize: 'var(--fs-small)', color: 'var(--amber)' }}>
+          <b>헤더 로그인만 받기 전에 이 기기들의 헤드리스 연동을 끄세요</b>
+          {c.headerOnlyHosts.map((h, i) => (
+            <div key={i}>
+              {h.name} · {h.note}
+              {h.at || h.lastSeen ? <span className="muted"> ({new Date((h.at ?? h.lastSeen)!).toLocaleString('ko-KR')})</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

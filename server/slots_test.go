@@ -233,3 +233,62 @@ func TestHeaderLoginElsewhere(t *testing.T) {
 	eq(t, code, 200, body)
 	ok(t, isAllowed("me@example.com"))
 }
+
+// AC-1482: header-only closes every other way in; a cookie alone is not taken; the headless link and QR sign-in
+// are off (turning the headless link off stays open); the check lists the hosts to turn off first.
+func TestHeaderOnly(t *testing.T) {
+	_, err := parseBridgeConfig("/x/bridge.yaml", []byte("auth:\n  headerOnly: true\n"), envMap(nil))
+	ok(t, err != nil && strings.Contains(err.Error(), "trusted-header 가 있어야"), "제공자 없이 headerOnly")
+
+	withSlotServer(t, PROXY+"  headerOnly: true\n  allow: [me@example.com]\n")
+	ALLOWED = cfgGet("auth.allow").([]string)
+	good := map[string]string{"X-Bridge-Proxy-Secret": "proxy-secret-0123456789", "X-Auth-Request-Email": "me@example.com"}
+	code, h, body := routeAt(t, "GET", "/api/me", "10.0.0.1:1", good)
+	eq(t, code, 200, body)
+	ok(t, strings.Contains(body, `"background":false`), body)
+	tok := strings.TrimPrefix(strings.Split(h.Values("Set-Cookie")[0], ";")[0], "cb=")
+
+	code, _, body = routeAt(t, "GET", "/api/me", "203.0.113.1:1", map[string]string{"Cookie": "cb=" + tok})
+	ok(t, code == 401 && strings.Contains(body, `"headerOnly":true`), "쿠키만으로는 안 됨: "+body)
+	for _, p := range []string{"/api/auth/github", "/api/auth/demo", "/api/auth/dev", "/api/auth/qr/0123456789abcdef0123456789abcdef", "/api/auth/apple/nonce"} {
+		code, _, _ = routeAt(t, "GET", p, "10.0.0.1:1", good)
+		eq(t, code, 404, p)
+	}
+	code, _, _ = routeAt(t, "POST", "/api/auth/logout", "10.0.0.1:1", good)
+	ok(t, code != 404, "로그아웃은 열림")
+	code, _, body = routeAt(t, "GET", "/", "203.0.113.1:1", nil)
+	ok(t, code == 401 && strings.Contains(body, "프록시를 거쳐") && !strings.Contains(body, "/api/auth/github"), body)
+	code, _, body = routeAt(t, "GET", "/settings", "203.0.113.1:1", nil)
+	ok(t, code == 401 && strings.Contains(body, "프록시를 거쳐"), "로그인 리다이렉트 대신 안내")
+
+	hosts.Set("h1", M{"uid": "gh1", "name": "mac"})
+	code, body = callAPI(t, "POST", "/api/qr", `{"headless":true}`)
+	eq(t, code, 403, body)
+	code, _ = callAPI(t, "POST", "/api/hosts/h1/background", `{"on":true}`)
+	eq(t, code, 409)
+	code, _ = callAPI(t, "POST", "/api/hosts/h1/heal", `{"action":"background-restart"}`)
+	eq(t, code, 409)
+	code, _ = callAPI(t, "POST", "/api/hosts/h1/background", `{"on":false}`)
+	eq(t, code, 409, "끄기는 막지 않음(연결이 없어 409, 문구는 끄라는 안내)")
+}
+
+func TestHeaderOnlyHosts(t *testing.T) {
+	rows := headerOnlyHosts([]M{
+		{"name": "on", "lastBackground": M{"on": true, "at": 5.0}},
+		{"name": "off", "lastBackground": M{"on": false, "at": 5.0}},
+		{"name": "never", "lastSeen": 3.0},
+		{"name": "box", "kind": "server", "lastBackground": M{"on": false, "at": 5.0}},
+	})
+	names := []string{}
+	for _, r := range rows {
+		names = append(names, jsString(r.(orderedObj)[0].V)+":"+jsString(r.(orderedObj)[2].V))
+	}
+	eq(t, strings.Join(names, ","), "on:on,never:unknown,box:server")
+
+	withSlotServer(t, PROXY)
+	hosts.Set("h1", M{"uid": "gh1", "name": "mac", "lastBackground": M{"on": true, "at": 1.0}})
+	chk := checkText("/x/bridge.yaml", []byte(PROXY+"  headerOnly: true\n"), envMap(nil), nil)
+	ok(t, chk["ok"] == true && len(asArr(chk["headerOnlyHosts"])) == 1, string(jsonBytes(chk)))
+	chk = checkText("/x/bridge.yaml", []byte(PROXY), envMap(nil), nil)
+	ok(t, chk["headerOnlyHosts"] == nil, "켜지 않는 파일은 목록 없음")
+}

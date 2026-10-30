@@ -135,6 +135,9 @@ func route(req *Req, res *Res) {
 		return
 	}
 	if strings.HasPrefix(p, "/api/auth/") {
+		if headerOnly() && p != "/api/auth/logout" {
+			refuse(404, "없는 주소입니다") // every way in but the proxy's header is closed (REQ-F-816)
+		}
 		auth(req, res, u)
 		return
 	}
@@ -163,6 +166,9 @@ func route(req *Req, res *Res) {
 			}
 		}
 		uid := whoami(req)
+		if uid == "" && headerOnly() {
+			refuseX(401, "로그인이 필요합니다", M{"headerOnly": true})
+		}
 		if uid == "" {
 			refuse(401, "로그인이 필요합니다")
 		}
@@ -184,6 +190,10 @@ func route(req *Req, res *Res) {
 	if p == "/" && whoami(req) == "" {
 		h := htmlHead()
 		h["Cache-Control"] = "no-store"
+		if headerOnly() {
+			res.WriteHead(401, h).EndS(headerOnlyPage())
+			return
+		}
 		sign := `<a class="btn primary" href="/api/auth/github">GitHub 로 로그인</a>`
 		if inApp(req) {
 			sign = `<div class="sign-pair">` + APPLE_BUTTON + sign + `</div>`
@@ -204,6 +214,12 @@ func route(req *Req, res *Res) {
 		return
 	}
 	login := func(next string) {
+		if headerOnly() {
+			h := htmlHead()
+			h["Cache-Control"] = "no-store"
+			res.WriteHead(401, h).EndS(headerOnlyPage())
+			return
+		}
 		loc := "/"
 		if GITHUB_CLIENT_ID != "" {
 			loc = "/api/auth/github?next=" + encodeURIComponent(next)

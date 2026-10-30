@@ -71,6 +71,9 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 	}
 	if post && p == "/api/qr" {
 		b := body(req, 4096)
+		if headerOnly() {
+			refuse(403, HEADER_ONLY_QR) // the QR sign-in is closed, and so is the headless one (REQ-F-816)
+		}
 		for k, v := range qrCodes {
 			if jsNumber(v["exp"]) < float64(nowMs()) {
 				delete(qrCodes, k)

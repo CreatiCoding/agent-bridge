@@ -109,7 +109,12 @@ func checkText(p string, b []byte, getenv func(string) string, limit []string) M
 	if err != nil {
 		return M{"ok": false, "errors": []any{maskConfigText(err.Error())}, "diff": []any{}}
 	}
-	return M{"ok": true, "errors": []any{}, "state": c.state, "diff": diffsJSON(c.diffs(getenv))}
+	out := M{"ok": true, "errors": []any{}, "state": c.state, "diff": diffsJSON(c.diffs(getenv))}
+	// A file that turns header-only sign-in on, on a server that is not yet: the hosts to turn off first.
+	if only, _ := c.set["auth.headerOnly"].v.(bool); only && !headerOnly() && hosts != nil {
+		out["headerOnlyHosts"] = headerOnlyHosts(hosts.Values())
+	}
+	return out
 }
 
 func anyHas(list []any, s string) bool {
@@ -322,6 +327,21 @@ func configCLI(args []string) int {
 		if c.state != "none" && uid != os.Getuid() && !readableBy(p, uid, gid) {
 			fmt.Fprintln(errw, "오류: 서버 사용자(uid "+itoa(uid)+")가 이 파일을 읽을 수 없습니다")
 			return 1
+		}
+		if only, _ := c.set["auth.headerOnly"].v.(bool); only {
+			// Read only: the hosts whose headless browser may keep the link with an old cookie (REQ-F-816).
+			hs := []M{}
+			if m, ok := readJSON(filepath.Join(data, "hosts.json"), nil).(M); ok {
+				for _, k := range sortedKeys(m) {
+					if h, ok := m[k].(M); ok {
+						hs = append(hs, h)
+					}
+				}
+			}
+			for _, x := range headerOnlyHosts(hs) {
+				r := x.(orderedObj)
+				fmt.Fprintln(out, "headerOnly 전에 끌 기기: "+jsString(r[0].V)+" · "+jsString(r[len(r)-1].V))
+			}
 		}
 		d := c.diffs(env)
 		if len(d) == 0 {

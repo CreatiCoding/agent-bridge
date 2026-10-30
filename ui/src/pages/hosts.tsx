@@ -195,9 +195,11 @@ export function HostsPage({ me }: { me: Me | null }) {
             </p>
           </section>
           </PhoneFold>
-          <PhoneFold icon="key" title="화면 없는 기기 연결" hint="리눅스 서버">
-            <ServerLink />
-          </PhoneFold>
+          {featureOn('background') ? (
+            <PhoneFold icon="key" title="화면 없는 기기 연결" hint="리눅스 서버">
+              <ServerLink />
+            </PhoneFold>
+          ) : null}
           <PhoneFold icon="qr" title="폰에서 열기" hint="QR 로그인">
             <PhoneLogin />
           </PhoneFold>
@@ -365,8 +367,14 @@ function DelegateBox({ hostId, on }: { hostId: string; on: boolean }) {
   )
 }
 
+/** On a header-only server (REQ-F-816) the agent's own words for the headless link ("켜세요") do not hold: it does not
+ * know the server, so the page says how to turn it off instead. */
+const NO_BG_ON = '헤더 로그인만 쓰는 서버라 헤드리스 연동을 쓸 수 없어요. 꺼 주세요. 끌 수 없으면 그 맥을 다시 시작하거나 헤드리스 Chrome 을 끝낸 뒤, 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 열어 끄세요'
+const NO_BG = '헤더 로그인만 쓰는 서버라 쓰지 않아요'
+
 function StatusBox({ hostId, features, repairs, online, background, awake }: { hostId: string; features: Feature[]; repairs: { at: number; id: string; text: string; ok: boolean }[]; online: boolean; background: Background | undefined; awake: Awake | undefined }) {
   const wide = useWide()
+  const bgOff = !featureOn('background')
   const [busy, setBusy] = useState<string | null>(null)
   // A switch shows what was asked until the next status says otherwise.
   const [shown, setShown] = useState<{ background?: boolean; awake?: boolean; lid?: boolean }>({})
@@ -407,7 +415,9 @@ function StatusBox({ hostId, features, repairs, online, background, awake }: { h
     <section className="card-box">
       <CardHead title="에이전트 상태" help="에이전트가 1분마다 스스로 살펴보고, 고칠 수 있는 것은 혼자 고쳐요." />
       <div className="feature-list">
-        {features.map((f) => (
+        {features.map((f0) => {
+          const f = bgOff && f0.id === 'background' ? { ...f0, detail: on.background ? NO_BG_ON : NO_BG, fix: undefined, action: undefined } : f0
+          return (
           <div key={f.id} className="feature-row">
             <span className={`dot dot-${tone(f.state)}`} />
             <span className="grow">
@@ -423,9 +433,11 @@ function StatusBox({ hostId, features, repairs, online, background, awake }: { h
                 {ACTION_LABEL[f.action]}
               </Button>
             ) : null}
-            {f.id in FEATURE_HELP ? <Switch label={f.title} checked={on[f.id] ?? f.state !== 'off'} disabled={!online || !!busy} onChange={(v) => toggle(f.id, v)} /> : null}
+            {/* Header-only: the headless switch can only be turned off. */}
+            {f.id in FEATURE_HELP && !(bgOff && f.id === 'background' && !on.background) ? <Switch label={f.title} checked={on[f.id] ?? f.state !== 'off'} disabled={!online || !!busy} onChange={(v) => toggle(f.id, v)} /> : null}
           </div>
-        ))}
+          )
+        })}
       </div>
       {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: '8px 0 0' }}>맥이 연결돼 있을 때 바꿀 수 있어요.</p>}
       {repairs.length ? (
@@ -458,6 +470,8 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
   const [busy, setBusy] = useState(false)
   const [on, setOn] = useState<boolean | null>(null)
   const checked = on ?? state?.on ?? false
+  const bgOff = !featureOn('background')
+  if (bgOff && !checked) return null
   const set = async (want: boolean) => {
     setBusy(true)
     try {
@@ -483,13 +497,13 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
         <Switch label="헤드리스 연동 모드" checked={checked} disabled={!online || busy} onChange={set} />
       </div>
       {status ? <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: '0 0 6px' }}>{status}</p> : null}
-      {state?.error ? (
+      {state?.error || bgOff ? (
         <div className="banner">
           <Icon name="warn" />
-          <div className="banner-body">{state.error}</div>
+          <div className="banner-body">{bgOff ? NO_BG_ON : state?.error}</div>
         </div>
       ) : null}
-      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>켜려면 그 맥의 브라우저에서 이 사이트를 한 번 열어 연결해 주세요.</p>}
+      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>{bgOff ? '끄려면 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 연 뒤 끄세요.' : '켜려면 그 맥의 브라우저에서 이 사이트를 한 번 열어 연결해 주세요.'}</p>}
     </section>
   )
 }

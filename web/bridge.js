@@ -23,9 +23,16 @@ if (openedByAgent) saveAgentInfo(hash.get('port'), hash.get('key'))
 else if (hash.get('port') && agentInfo()) saveAgentInfo(hash.get('port'), agentInfo().key)
 if (location.hash) history.replaceState(null, '', location.pathname)
 
-const me = await fetch('/api/me').then((r) => (r.ok ? r.json() : null))
+const meRes = await fetch('/api/me').catch(() => null)
+const me = meRes?.ok ? await meRes.json() : null
+// A header-only server (auth.headerOnly, REQ-F-816) has no sign-in page: the proxy in front signs in. Its 401 says so.
+const proxyOnly = me ? me.features?.background === false : (await meRes?.json().catch(() => null))?.headerOnly === true
+const AGAIN = '이 서버는 사내 로그인(프록시)으로만 들어와요. 프록시를 거쳐 이 페이지를 다시 열어 주세요'
 // Nobody is at a background browser to sign in: it waits, and the agent reports it is not linked.
-if (!me && !background) location.href = '/api/auth/github?next=/bridge'
+if (!me && !background) {
+  if (proxyOnly) $('summary').textContent = AGAIN
+  else location.href = '/api/auth/github?next=/bridge'
+}
 
 $('install').textContent = `curl -fsSL ${location.origin}/install.sh | bash`
 $('copy').onclick = () => navigator.clipboard.writeText($('install').textContent).then(() => ($('copy').textContent = '복사됨'))
@@ -45,7 +52,12 @@ if (me && !agentInfo()) {
     {
       link: setLink,
       log,
-      login: () => (background ? log('로그인이 끝났습니다. 기기 화면에서 "헤드리스 연동 모드" 를 껐다가 다시 켜 주세요') : (location.href = '/api/auth/github?next=/bridge')),
+      login: () =>
+        proxyOnly
+          ? log(background ? '헤더 로그인만 쓰는 서버라 헤드리스 연동을 쓸 수 없습니다. 기기 화면에서 "헤드리스 연동 모드" 를 꺼 주세요' : AGAIN)
+          : background
+            ? log('로그인이 끝났습니다. 기기 화면에서 "헤드리스 연동 모드" 를 껐다가 다시 켜 주세요')
+            : (location.href = '/api/auth/github?next=/bridge'),
       hello(msg) {
         $('summary').textContent = `${msg.name} · 세션 ${msg.sessions.length}개 · ${me.user.login}`
         document.title = `연동: ${msg.name}`

@@ -204,6 +204,9 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		if !containsAny([]any{"background-restart", "awake-apply", "check", "restart", "rekey"}, b["action"]) {
 			refuse(400, "모르는 복구 동작이에요")
 		}
+		if b["action"] == "background-restart" && headerOnly() {
+			refuse(409, HEADER_ONLY_BG)
+		}
 		if !online(m[1]) {
 			refuse(409, NOT_CONNECTED)
 		}
@@ -366,6 +369,12 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	if m := hostBgRe.FindStringSubmatch(p); post && m != nil {
 		b := body(req, 1024)
 		h := readableHost(uid, m[1])
+		if b["on"] == true && headerOnly() {
+			refuse(409, HEADER_ONLY_BG) // turning it off stays open (REQ-F-816)
+		}
+		if !online(m[1]) && headerOnly() {
+			refuse(409, "호스트가 연결돼 있지 않습니다. 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 연 뒤 끄세요")
+		}
 		if !online(m[1]) {
 			refuse(409, "호스트가 연결돼 있지 않습니다. 그 맥의 브라우저에서 이 사이트를 한 번 연 뒤 켜 주세요")
 		}
@@ -378,7 +387,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			}
 			code := randHex(16)
 			qrCodes[sha256hexs(code)] = M{"uid": h["uid"], "exp": float64(nowMs() + QR_MS), "sid": nil, "next": "/bridge", "headless": true}
-			cmd["login"] = originOf(req) + "/api/auth/qr/" + code
+			cmd["login"] = siteOrigin(req) + "/api/auth/qr/" + code // the agent takes the primary origin (REQ-F-815)
 		}
 		r := ask(m[1], cmd, 15_000)
 		onoff := "끔"
