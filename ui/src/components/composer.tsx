@@ -63,6 +63,7 @@ export interface ComposerCtx {
 interface Action {
   id: string
   builtin?: boolean
+  extId?: string
   render: () => ReactNode
   menu?: { label: string; icon?: IconName; enabled?: (ctx: ComposerCtx) => boolean; run: (ctx: ComposerCtx) => void }
 }
@@ -569,7 +570,7 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
         />
         <SlotContext.Provider value={slotCtx}>
           <div className="inputbar">
-            {actions.filter((a) => !foldedSet.has(a)).map((a) => (a.builtin ? <Fragment key={a.id}>{a.render()}</Fragment> : <SlotRender key={a.id} render={a.render} />))}
+            {actions.filter((a) => !foldedSet.has(a)).map((a) => (a.builtin ? <Fragment key={a.id}>{a.render()}</Fragment> : <SlotRender key={a.id} render={a.render} owner={a.extId} />))}
             {folded.length ? <IconButton icon="more" label="더 보기" className="glass-btn" keepFocus onClick={(e) => openMenu(folded.map((a) => ({ label: a.menu!.label, icon: a.menu!.icon, disabled: a.menu!.enabled ? !a.menu!.enabled(slotCtx) : false, onSelect: () => a.menu!.run(slotCtx) })), e.currentTarget)} /> : null}
           </div>
         </SlotContext.Provider>

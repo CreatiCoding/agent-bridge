@@ -81,7 +81,11 @@ const defaults = new Map<ActionName, (args: never) => unknown>()
 
 /** What went wrong in a handler, newest last; 운영 탭 reads it once extensions load (6단계). */
 export const actionLog: { at: number; action: string; owner: string; what: string }[] = []
+let noted: (owner: string, action: string, what: string) => void = () => {}
+/** Who hears of a handler's failure (the extension host reports it to the server). */
+export const onNoted = (f: typeof noted) => void (noted = f)
 const note = (l: { name: string; owner: string }, what: string) => {
+  noted(l.owner, l.name, what)
   actionLog.push({ at: Date.now(), action: l.name, owner: l.owner, what })
   if (actionLog.length > 100) actionLog.shift()
   console.warn(`[actions] ${l.name}${l.owner ? ` (${l.owner})` : ''}: ${what}`)

@@ -137,7 +137,7 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
  * A row's badges, the session-list.row.badges slot (REQ-F-824): what needs the person, Slack, 맡김, then what an
  * extension adds (two at most, the rest as +n). Shown only: the row is a link, so nothing in it can be pressed.
  */
-type RowBadge = { id: string; builtin?: boolean; render: () => ReactNode }
+type RowBadge = { id: string; builtin?: boolean; extId?: string; render: () => ReactNode }
 function RowBadges({ s, l }: { s: Session; l: ReturnType<typeof look> }) {
   useSlots()
   const builtin: RowBadge[] = [
@@ -152,7 +152,7 @@ function RowBadges({ s, l }: { s: Session; l: ReturnType<typeof look> }) {
   const ctx = useMemo(() => ({ session: s }), [s])
   return (
     <SlotContext.Provider value={ctx}>
-      {items.map((b) => (b.builtin ? <Fragment key={b.id}>{b.render()}</Fragment> : added.indexOf(b) < 2 ? <SlotRender key={b.id} render={b.render} /> : null))}
+      {items.map((b) => (b.builtin ? <Fragment key={b.id}>{b.render()}</Fragment> : added.indexOf(b) < 2 ? <SlotRender key={b.id} render={b.render} owner={b.extId} /> : null))}
       {more > 0 ? <Badge>+{more}</Badge> : null}
     </SlotContext.Provider>
   )

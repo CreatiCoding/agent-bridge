@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.361',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'added', scope: ['ui'], text: '이 서버에 익스텐션이 있으면 처음 열 때 켤지 물어요. 켜면 입력칸·메뉴·목록·설정에 그 기능이 더해지고, 설정 → 플러그인에서 끌 수 있어요. 주소 끝에 ?noext=1 을 붙이면 익스텐션 없이 열어요', refs: ['REQ-F-827'] },
+    ],
+  },
+  {
     version: '1.360',
+    commit: '0d7892d',
     date: '2026-10-31',
     changes: [
       { kind: 'added', scope: ['server'], text: '익스텐션이 서버에 작은 값과 비밀값을 저장하고, extension.yaml 에 적은 주소로만 서버를 거쳐 요청하고, 턴 끝·카드 이벤트를 받아 한 화면만 맡을 수 있어요', refs: ['REQ-F-826'] },

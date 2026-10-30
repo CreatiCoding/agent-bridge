@@ -10,6 +10,7 @@ import { startBackgroundRelay } from './components/relay-status'
 import { setFeatures } from './lib/features'
 import { openSession } from './lib/builtin-actions'
 import { claimPrimary } from './lib/primary'
+import { askExtensions, startExtensions } from './lib/ext-host'
 import './styles.css'
 
 // The meta theme colour follows the page's own theme, so the phone's status bar matches it.
@@ -41,11 +42,14 @@ render(null)
 // The demo account (REQ-F-766) never links the Mac it is opened on: it has only the server's demo Mac. Nor does a
 // page at another origin of the server (origins.extra, REQ-F-815): the agent takes the primary origin only.
 get<Me>('/api/me').then(
-  (me) => {
+  async (me) => {
     if (me.icons) applyIcons(me.icons)
     setFeatures(me.features)
     if (!me.demo && me.linkHere !== false) startBackgroundRelay()
+    // Extensions (REQ-F-827): the agreed ones first (up to 1.5 s, none: no wait), then the question about new ones.
+    await startExtensions(me)
     render(me)
+    setTimeout(() => void askExtensions(me), 300)
   },
   () => startBackgroundRelay(),
 )

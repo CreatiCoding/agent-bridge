@@ -17,6 +17,7 @@ import { TODO_ASK, TODO_REASK } from './session-extras'
 import { closeSession, openLink, openSession, sendMessage } from '../lib/builtin-actions'
 import { isCancel, type Cancel } from '../lib/actions'
 import { resolve, type SlotItem } from '../lib/slots'
+import { slotFailed } from '../lib/slot-view'
 import { inPane, SPLIT_MAX, splitHost, splitRoom, startSplit } from '../lib/split'
 import type { ReactNode } from 'react'
 
@@ -483,7 +484,17 @@ function fromData(d: MenuData, ctx: SessionMenuCtx): MenuEntry | null {
     danger: d.danger,
     checked: d.checked?.(ctx),
     disabled: d.enabled ? !d.enabled(ctx) : false,
-    ...(d.run ? { onSelect: () => d.run!(ctx) } : {}),
+    ...(d.run
+      ? {
+          onSelect: () => {
+            try {
+              d.run!(ctx)
+            } catch (e) {
+              slotFailed(String(d.extId ?? ''), 'session.menu', e)
+            }
+          },
+        }
+      : {}),
     ...(d.items ? { items: d.items.map((x) => fromData(x, ctx)).filter((x): x is MenuItem => !!x && x !== 'sep' && !('header' in x)) } : {}),
   }
 }

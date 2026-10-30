@@ -57,6 +57,13 @@ export function onServerToast(f: ToastListener) {
   return () => void toastListeners.delete(f)
 }
 
+/** The server's events for extensions (ext-event, REQ-F-826) and its word that their files changed (ext-reload). */
+const extListeners = new Set<(msg: { t: string; event?: unknown }) => void>()
+export function onExtMessage(f: (msg: { t: string; event?: unknown }) => void) {
+  extListeners.add(f)
+  return () => void extListeners.delete(f)
+}
+
 /** Every time the stream comes back after a gap: open views ask for what they missed. */
 const reconnectListeners = new Set<() => void>()
 export function onReconnect(f: () => void) {
@@ -132,6 +139,8 @@ export function connect() {
       set({ writing: { ...store.writing, [String(msg.sid)]: String(msg.text ?? '') } })
     } else if (msg.t === 'screen') {
       set({ screens: { ...store.screens, [String(msg.sid)]: String(msg.text ?? '') } })
+    } else if (msg.t === 'ext-event' || msg.t === 'ext-reload') {
+      for (const f of extListeners) f(msg)
     } else if (msg.t === 'notice') {
       for (const f of toastListeners) f(String(msg.text ?? ''), msg.sid ? String(msg.sid) : undefined)
     }

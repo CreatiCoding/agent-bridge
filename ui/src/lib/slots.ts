@@ -68,7 +68,8 @@ export function register(slot: SlotName, item: SlotItem, owner = '') {
   check(slot)
   if (!item || typeof item.id !== 'string' || !item.id) throw new Error('slot 항목에는 id 가 있어야 해요')
   if (BUILTIN_IDS[slot].includes(item.id) || (added.get(slot) ?? []).some((r) => r.v.id === item.id)) throw new Error(`${slot} 에 이미 있는 id 예요: ${item.id}`)
-  return put(added, slot, { owner, v: item })
+  // extId: whose item it is, for the error boundary that reports a failing render to its extension.
+  return put(added, slot, { owner, v: owner ? { ...item, extId: owner } : item })
 }
 /** Wraps or replaces an item (the page's or an added one): f gets what it is now. */
 export function replace(slot: SlotName, id: string, f: Replace, owner = '') {
