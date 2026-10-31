@@ -27,8 +27,8 @@ export interface ActionMap {
   'notify.show': { args: { text: string; sid?: string }; result: void }
 }
 export type ActionName = keyof ActionMap
-type Args<N extends ActionName> = ActionMap[N]['args']
-type Result<N extends ActionName> = ActionMap[N]['result']
+export type Args<N extends ActionName> = ActionMap[N]['args']
+export type Result<N extends ActionName> = ActionMap[N]['result']
 export type Cancel = { cancel: string }
 
 /**
@@ -128,9 +128,9 @@ function add(name: ActionName, kind: Kind, fn: Layer['fn'], o: HookOpts = {}) {
   }
 }
 
-type BeforeFn<N extends ActionName> = (args: Args<N>, ctx: Ctx) => Args<N> | Cancel | void | Promise<Args<N> | Cancel | void>
-type AfterFn<N extends ActionName> = (args: Args<N>, result: Result<N>, ctx: Ctx) => void
-type AroundFn<N extends ActionName> = (args: Args<N>, next: (args: Args<N>) => unknown, ctx: Ctx) => unknown
+export type BeforeFn<N extends ActionName> = (args: Args<N>, ctx: Ctx) => Args<N> | Cancel | void | Promise<Args<N> | Cancel | void>
+export type AfterFn<N extends ActionName> = (args: Args<N>, result: Result<N>, ctx: Ctx) => void
+export type AroundFn<N extends ActionName> = (args: Args<N>, next: (args: Args<N>) => unknown, ctx: Ctx) => unknown
 
 export const before = <N extends ActionName>(name: N, fn: BeforeFn<N>, o?: HookOpts) => add(name, 'before', fn as Layer['fn'], o)
 export const after = <N extends ActionName>(name: N, fn: AfterFn<N>, o?: HookOpts) => add(name, 'after', fn as Layer['fn'], o)

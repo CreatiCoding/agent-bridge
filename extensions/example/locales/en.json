@@ -1,0 +1,11 @@
+{
+  "ask": "Send with ?",
+  "note": "Note",
+  "noteTitle": "Session note",
+  "notePlaceholder": "Write something about this session",
+  "save": "Save",
+  "saved": "Note saved",
+  "notifyDone": "Tell me when a turn ends",
+  "notifyHint": "When on, this browser tells you once when a session's turn ends",
+  "done": "Turn ended"
+}

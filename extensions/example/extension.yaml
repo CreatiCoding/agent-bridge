@@ -1,0 +1,12 @@
+# The example extension (docs/SPEC.md "익스텐션 공개 API"). bridge.yaml:
+#   extensions:
+#     - path: ./extensions/example
+id: example
+name: 예시 익스텐션
+version: 0.1.0
+extensionApi: 1
+entry: ./dist/index.js
+uses:
+  actions: [composer.submit, renderer.block, session.done]
+  slots: [composer.actions, session.menu, session-list.row.badges, settings.section]
+# Server routes and hooks: see extensions/README.md (no routes here, so it runs on any server).

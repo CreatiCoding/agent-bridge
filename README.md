@@ -19,8 +19,9 @@
 - `web/relay.js` 중계. 맥의 브라우저에 떠 있는 이 사이트의 페이지가 에이전트와 서버를 잇는다. 조작 페이지는 뒤에서, 연동 페이지(`web/bridge.*`)는 상태를 보여 주면서 돌린다. 사이트의 탭을 모두 닫으면 끊긴다.
 - `ui/` 조작 페이지(`/`). React 로 쓰고 Vite 로 빌드한다(`ui/dist`). 서버의 bridge API(`/api/classic/stream`, `/api/sessions/…`)에 바로 붙는다. 맥에서 열면 이 페이지가 뒤에서 중계도 한다(`web/relay.js`).
 - `server/cs.mjs` Slack 플러그인이 쓰는 세션 행·이벤트·Slack 블록 카드를 만든다.
+- `extensions/` 익스텐션의 공개 타입(`agent-bridge-ext.d.ts`)과 예시 익스텐션. 쓰는 법은 [extensions/README.md](extensions/README.md).
 
-서버와 에이전트 모두 의존성이 없다(node 내장 모듈만). 빌드 단계가 있는 것은 조작 페이지(`ui/`)뿐이고, 공개 npm 패키지(react, vite, typescript)만 쓴다.
+서버와 에이전트 모두 의존성이 없다(node 내장 모듈만). 빌드 단계가 있는 것은 조작 페이지(`ui/`)와 예시 익스텐션(`extensions/example`, 빌드한 `dist/` 도 저장소에 있다)뿐이고, 공개 npm 패키지(react, vite, typescript)만 쓴다.
 
 세션을 붙이고 읽고 조작하는 방식은 예전 Slack 기반 도구에서 가져왔다. 무엇을 왜 가져왔는지는 [docs/LESSONS.md](docs/LESSONS.md) 에 있다.
 

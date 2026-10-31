@@ -1,0 +1,11 @@
+{
+  "ask": "? 붙여 보내기",
+  "note": "메모",
+  "noteTitle": "세션 메모",
+  "notePlaceholder": "이 세션에 대해 적어 두기",
+  "save": "저장",
+  "saved": "메모를 저장했어요",
+  "notifyDone": "턴이 끝나면 알림",
+  "notifyHint": "켜 두면 세션의 턴이 끝날 때 이 브라우저에 한 번 알려요",
+  "done": "턴이 끝났어요"
+}

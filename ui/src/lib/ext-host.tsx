@@ -35,6 +35,9 @@ export interface ExtInfo {
 /** The extensionApi this page gives; a newer one is not loaded. */
 export const EXT_API = 1
 const EVENTS = ['session.done', 'decision.waiting', 'decision.answered']
+// The events' shape is the server's (REQ-F-817); the page only passes them on, so it takes the published types.
+type ExtEvents = import('../../../extensions/agent-bridge-ext').EventMap
+type ExtEventName = keyof ExtEvents
 const H = { 'X-Bridge-Ext': '1' }
 
 // ---------- ?noext ----------
@@ -113,7 +116,7 @@ addEventListener('popstate', () => {
   if (top && history.state?.extSheet !== top.key) closeSheet(top.key, true)
 })
 
-function openSheet(Comp: ComponentType<Record<string, unknown>>, props: Record<string, unknown> = {}, opts: { title?: ReactNode; wide?: boolean } = {}) {
+function openSheet<P extends object>(Comp: ComponentType<P & { close: () => void }>, props: P = {} as P, opts: { title?: ReactNode; wide?: boolean } = {}) {
   if (!host) {
     host = document.createElement('div')
     document.body.appendChild(host)
@@ -123,7 +126,7 @@ function openSheet(Comp: ComponentType<Record<string, unknown>>, props: Record<s
   let done = () => {}
   const closed = new Promise<void>((r) => (done = r))
   history.pushState({ ...history.state, extSheet: key }, '')
-  setSheets([...sheets, { key, Comp, props, title: opts.title, wide: opts.wide, done }])
+  setSheets([...sheets, { key, Comp: Comp as unknown as ComponentType<Record<string, unknown>>, props: props as Record<string, unknown>, title: opts.title, wide: opts.wide, done }])
   return { closed, close: () => closeSheet(key) }
 }
 
@@ -180,9 +183,9 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
     extensionApi: EXT_API,
     id: owner,
     actions: {
-      before: (n: actions.ActionName, fn: never, o: actions.HookOpts = {}) => (usesAction(n), actions.before(n, fn, { ...o, owner })),
-      around: (n: actions.ActionName, fn: never, o: actions.HookOpts = {}) => (usesAction(n), actions.around(n, fn, { ...o, owner })),
-      after: (n: string, fn: (...a: never[]) => void, o: actions.HookOpts & { primaryOnly?: boolean } = {}) => {
+      before: <N extends Exclude<actions.ActionName, 'renderer.block'>>(n: N, fn: actions.BeforeFn<N>, o: actions.HookOpts = {}) => (usesAction(n), actions.before(n, fn, { ...o, owner })),
+      around: <N extends actions.ActionName>(n: N, fn: actions.AroundFn<N>, o: actions.HookOpts = {}) => (usesAction(n), actions.around(n, fn, { ...o, owner })),
+      after: ((n: string, fn: (...a: never[]) => void, o: actions.HookOpts & { primaryOnly?: boolean } = {}) => {
         usesAction(n)
         if (EVENTS.includes(n)) {
           const h = { name: n, fn: fn as (ev: unknown) => void, primaryOnly: !!o.primaryOnly }
@@ -190,14 +193,18 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
           return () => void evHandlers.splice(evHandlers.indexOf(h) >>> 0, 1)
         }
         return actions.after(n as actions.ActionName, fn as never, { ...o, owner })
+      }) as {
+        <N extends actions.ActionName>(n: N, fn: actions.AfterFn<N>, o?: actions.HookOpts): () => void
+        <E extends ExtEventName>(n: E, fn: (ev: ExtEvents[E]) => void, o?: { primaryOnly?: boolean }): () => void
       },
-      dispatch: (n: actions.ActionName, args: never) => actions.dispatch(n, args),
+      dispatch: actions.dispatch,
     },
     slots: {
-      register: (slot: slots.SlotName, item: slots.SlotItem) => (usesSlot(slot), slots.register(slot, item, owner)),
-      replace: (slot: slots.SlotName, id: string, f: (orig: slots.SlotItem) => slots.SlotItem) => (usesSlot(slot), slots.replace(slot, id, f, owner)),
+      // An item's other fields are the slot's own (agent-bridge-ext.d.ts SlotItems); the place that draws it reads them.
+      register: (slot: slots.SlotName, item: { id: string; order?: slots.SlotItem['order'] }) => (usesSlot(slot), slots.register(slot, item as slots.SlotItem, owner)),
+      replace: (slot: slots.SlotName, id: string, f: (orig: never) => { id: string }) => (usesSlot(slot), slots.replace(slot, id, f as unknown as (o: slots.SlotItem) => slots.SlotItem, owner)),
       hide: (slot: slots.SlotName, id: string) => (usesSlot(slot), slots.hide(slot, id, owner)),
-      useSlotContext: () => React.useContext(SlotContext),
+      useSlotContext: <C = unknown,>() => React.useContext(SlotContext) as C,
     },
     commands: { register: (s: Shortcut) => registerShortcut({ ...s, id: `${owner}.${s.id}` }, owner) },
     ui: {

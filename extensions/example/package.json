@@ -1,0 +1,13 @@
+{
+  "name": "agent-bridge-example-extension",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.9.2",
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}

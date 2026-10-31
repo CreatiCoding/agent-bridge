@@ -12,6 +12,8 @@ COPY ui/package.json ui/yarn.lock ui/.yarnrc.yml ./
 RUN yarn install --immutable
 COPY ui ./
 COPY web/relay.js web/qr.js /web/
+# The published extension types: the type check holds the page's bridge object against them.
+COPY extensions/agent-bridge-ext.d.ts /extensions/
 RUN yarn build
 
 # gofmt, go vet and the tests must pass, or the image is not built.
@@ -20,6 +22,8 @@ WORKDIR /src
 COPY server ./server
 COPY agent ./agent
 COPY web ./web
+# The example extension: a test loads it as it is.
+COPY extensions ./extensions
 COPY package.json ./
 WORKDIR /src/server
 RUN test -z "$(gofmt -l .)" || { echo "gofmt 가 고칠 파일:"; gofmt -l .; exit 1; }

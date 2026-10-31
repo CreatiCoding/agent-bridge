@@ -1,0 +1,19 @@
+{
+  // Classic JSX through the page's React: no bare import (`react`) is left in what is built.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
+    "strict": true,
+    "types": [],
+    // agent-bridge-ext.d.ts sits outside this folder: its `react` is this folder's.
+    "paths": { "react": ["./node_modules/@types/react"] },
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

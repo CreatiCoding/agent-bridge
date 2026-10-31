@@ -148,6 +148,13 @@ func snapshotDir(dir string) (map[string][]byte, error) {
 		if err != nil {
 			return err
 		}
+		// What a build leaves in the folder (node_modules) and hidden files (.git) are never served: not read.
+		if p != dir && (de.Name() == "node_modules" || strings.HasPrefix(de.Name(), ".")) {
+			if de.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if !de.Type().IsRegular() {
 			return nil
 		}
