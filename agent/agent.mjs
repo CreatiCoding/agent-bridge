@@ -39,6 +39,15 @@ const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(HOME, '.claude')
 const CLAUDE_BIN = process.env.CLAUDE_BRIDGE_CLAUDE || 'claude'
 /** A Mac, or a Linux host (a server, usually without a screen): what only macOS has is left out on Linux. */
 const IS_MAC = process.platform === 'darwin'
+// A process's command line, or '' when it is gone. Linux reads /proc: a slim system (a container) may have no ps.
+function pidCommand(pid) {
+  try {
+    if (process.platform === 'linux') return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replaceAll('\0', ' ')
+    return execFileSync('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  } catch {
+    return ''
+  }
+}
 const IS_LINUX = process.platform === 'linux'
 const DEFAULT_BRANCHES = (process.env.CLAUDE_BRIDGE_DEFAULT_BRANCHES || 'main,develop,master').split(',')
 const INSTRUCTION_FILES = (process.env.CLAUDE_BRIDGE_SYNC_FILES || 'SESSION.md,AGENTS.md,CLAUDE.md').split(',')
@@ -355,7 +364,7 @@ if (startCmd) {
   const pid = Number(readJson(PID_FILE, 0))
   let pidAgent = false
   try {
-    pidAgent = !!pid && pid !== process.pid && execFileSync('/bin/ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).includes('agent.mjs')
+    pidAgent = !!pid && pid !== process.pid && pidCommand(pid).includes('agent.mjs')
   } catch {}
   const why = pidAgent ? `에이전트가 이미 켜져 있습니다 (pid ${pid})` : fs.existsSync(SERVICE_FILE) ? `백그라운드 서비스가 설치돼 있어 서비스가 에이전트를 띄웁니다 (상태: node ${SELF} service status)` : (await pingAgent()) ? `에이전트가 이미 응답합니다 (포트 ${config.port})` : ''
   if (why) {
@@ -5137,7 +5146,7 @@ if (serviceCmd === 'install') {
   serviceOff()
   const oldPid = Number(readJson(PID_FILE, 0))
   // A pid file can outlive its process and the number can be reused: only an agent is ever signalled.
-  if (oldPid && oldPid !== process.pid && (await run('/bin/ps', ['-p', String(oldPid), '-o', 'command='])).out.includes('agent.mjs')) {
+  if (oldPid && oldPid !== process.pid && pidCommand(oldPid).includes('agent.mjs')) {
     try {
       process.kill(oldPid, 'SIGTERM')
     } catch {}
