@@ -760,7 +760,9 @@ func sweepEnded(now float64) int {
 	uids := []string{}
 	n := 0
 	for _, meta := range sessions.Values() {
-		if !truthy(meta.get("closed")) || truthy(meta.get("moving")) || now-endedAt(meta) < ENDED_KEEP_MS {
+		// A 자동 대응 session closed after its deploy (kept by a server from before such ones were removed at once) goes now.
+		deployed := meta.get("reportAuto") != nil && truthy(meta.get("reportDeployed"))
+		if !truthy(meta.get("closed")) || truthy(meta.get("moving")) || (!deployed && now-endedAt(meta) < ENDED_KEEP_MS) {
 			continue
 		}
 		forgetSession(meta)
@@ -768,7 +770,11 @@ func sweepEnded(now float64) int {
 			uids = append(uids, meta.uid())
 		}
 		n++
-		logLine("session " + meta.id() + ": 끝난 지 7일이 지나 이어서 하기에서 지움")
+		why := "끝난 지 7일이 지나"
+		if deployed {
+			why = "자동 대응이 배포를 마쳐"
+		}
+		logLine("session " + meta.id() + ": " + why + " 이어서 하기에서 지움")
 	}
 	for _, uid := range uids {
 		savePrefs(uid)
@@ -797,9 +803,12 @@ func closeWhenReportDone(meta *Sess) {
 		if truthy(meta.get("closed")) || truthy(meta.get("moving")) || cur != meta || !(ph == "idle" || ph == "ended") {
 			return
 		}
+		// Ended and taken off the list too, as 제거 does: a fix already deployed needs nobody to look at it.
 		closeSession(meta, "종료(자동 대응: 배포 완료)")
-		touch(meta)
-		logLine("report " + jsStringU(meta.get("reportAuto")) + ": 배포 완료, 자동 대응 세션 " + meta.id() + " 종료")
+		forgetSession(meta)
+		savePrefs(meta.uid())
+		broadcastState(meta.uid())
+		logLine("report " + jsStringU(meta.get("reportAuto")) + ": 배포 완료, 자동 대응 세션 " + meta.id() + " 종료·목록에서 지움")
 	})
 }
 

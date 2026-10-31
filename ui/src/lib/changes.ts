@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.364',
+    date: '2026-10-31',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '제보 자동 대응 세션이 배포를 마치고 스스로 종료하면 세션 목록(이어서 하기)에서도 바로 빠진다. 전에 그렇게 종료돼 남아 있던 세션도 정리한다. 맥의 폴더와 대화는 남는다',
+        refs: ['REQ-F-738', 'REQ-F-742'],
+      },
+    ],
+  },
+  {
     version: '1.363',
     date: '2026-10-31',
+    commit: 'a0878bc',
     changes: [
       {
         kind: 'added',
@@ -39,8 +52,8 @@ export const CHANGES: Release[] = [
   },
   {
     version: '1.362',
-    commit: '0badfa2',
     date: '2026-10-31',
+    commit: '0badfa2',
     changes: [
       {
         kind: 'security',

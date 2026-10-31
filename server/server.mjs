@@ -3060,11 +3060,13 @@ function sweepEnded(now = Date.now()) {
   const uids = new Set()
   let n = 0
   for (const meta of [...sessions.values()]) {
-    if (!meta.closed || meta.moving || now - endedAt(meta) < ENDED_KEEP_MS) continue
+    // A 자동 대응 session closed after its deploy (kept by a server from before such ones were removed at once) goes now.
+    const deployed = !!(meta.reportAuto && meta.reportDeployed)
+    if (!meta.closed || meta.moving || (!deployed && now - endedAt(meta) < ENDED_KEEP_MS)) continue
     forgetSession(meta)
     uids.add(meta.uid)
     n++
-    log(`session ${meta.id}: 끝난 지 7일이 지나 이어서 하기에서 지움`)
+    log(`session ${meta.id}: ${deployed ? '자동 대응이 배포를 마쳐' : '끝난 지 7일이 지나'} 이어서 하기에서 지움`)
   }
   for (const uid of uids) savePrefs(uid)
   return n
@@ -3085,9 +3087,12 @@ function closeWhenReportDone(meta) {
   setTimeout(() => {
     reportClosing.delete(meta.id)
     if (meta.closed || meta.moving || sessions.get(meta.id) !== meta || !['idle', 'ended'].includes(meta.state.phase)) return
+    // Ended and taken off the list too, as 제거 does: a fix already deployed needs nobody to look at it.
     closeSession(meta, '종료(자동 대응: 배포 완료)')
-    touch(meta)
-    log(`report ${meta.reportAuto}: 배포 완료, 자동 대응 세션 ${meta.id} 종료`)
+    forgetSession(meta)
+    savePrefs(meta.uid)
+    broadcastState(meta.uid)
+    log(`report ${meta.reportAuto}: 배포 완료, 자동 대응 세션 ${meta.id} 종료·목록에서 지움`)
   }, REPORT_CLOSE_MS).unref?.()
 }
 
