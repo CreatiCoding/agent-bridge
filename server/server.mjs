@@ -1560,6 +1560,16 @@ const controls = new Map()
 const pending = new Map()
 
 const online = (hostId) => bridges.has(hostId)
+/**
+ * A bridge stream that drops and is back within this long is not shown or logged as a disconnect (REQ-F-831).
+ * A Mac that runs this server's own Docker reaches it through the router's hairpin, and every container that
+ * starts or stops there cuts that connection for a moment; the page is back in a second, and the host flapped.
+ */
+const LINK_GRACE_MS = Number(process.env.BRIDGE_LINK_GRACE_MS) || 10_000
+/** hostId -> the timer that says its bridge is gone if it is not back within LINK_GRACE_MS. */
+const linkGone = new Map()
+/** What screens show: a host whose stream dropped a moment ago and is reconnecting still counts as connected. */
+const shownOnline = (hostId) => online(hostId) || linkGone.has(hostId)
 /** The connected Macs that are real: the demo Mac (REQ-F-766) is never asked anything for the whole server. */
 const realBridges = () => [...bridges.keys()].filter((h) => !isDemoHost(h))
 // What may wait for a client that stopped reading (REQ-S-087): past it the stream is cut and the page opens a fresh one.
@@ -1651,7 +1661,7 @@ function csIds(meta) {
 }
 const byThread = (uid, thread) => [...sessions.values()].find((m) => m.uid === uid && csIds(m).thread === thread)
 const byPid = (uid, pid) => [...sessions.values()].find((m) => m.uid === uid && csIds(m).pid === Number(pid))
-const csRow = (meta) => toCsSession(shielded(csIds(meta)), { thread: meta.thread, pid: meta.pid, host: hosts[meta.hostId], online: online(meta.hostId) })
+const csRow = (meta) => toCsSession(shielded(csIds(meta)), { thread: meta.thread, pid: meta.pid, host: hosts[meta.hostId], online: shownOnline(meta.hostId) })
 const csRows = (uid) => [...sessions.values()].filter((m) => m.uid === uid && !m.closed).sort((a, b) => a.createdAt - b.createdAt).map(csRow)
 /** The cards of a session by id: a fold is drawn from the card it folds. Built from the log once, then kept up. */
 const cardsOf = (meta) => (meta.cardIndex ??= new Map(readEvents(meta).filter((e) => e.k === 'card').map((e) => [e.card.id, e.card])))
@@ -2215,7 +2225,7 @@ function hostSummary(id, h, masked = false) {
   return { id, name: h.name, kind: h.kind ?? 'other', info: h.info ?? null, awake: st.health?.awake ?? null, voice: masked ? null : cleanVoiceStatus(st.health?.voice), takesWork: !delegateOff(h.uid).has(id), sudo: masked ? null : sudoView(id), background: masked && background?.error ? { ...background, error: hidePaths(background.error) } : background, // Behind, and this server will hand it the new one: not when it sends none (unsigned, seq went back, R9-I1).
     outdated: !!h.info && h.info.build !== AGENT_BUILD && AGENT_SIGNED,
     // Behind, but this server sends no update (R10-I2): said as such, not as "최신".
-    updateBlocked: !!h.info && h.info.build !== AGENT_BUILD && !AGENT_SIGNED, key: cleanKeyState(st.health?.keyState), sys: cleanSys(st.health?.sys), battery: h.battery ?? null, diskHelp: diskHelpView(h.diskHelp), problems: failing.length, problem: masked && problem ? hidePaths(problem) : problem, online: online(id), stale: online(id) && st.stale, lastSeen: h.lastSeen, healthAt: st.healthAt, rtt: st.rtt, errors: st.errors, lastError, accounts: masked ? accountsBrief(h).map(({ name: _n, ...a }) => a) : accountsBrief(h) }
+    updateBlocked: !!h.info && h.info.build !== AGENT_BUILD && !AGENT_SIGNED, key: cleanKeyState(st.health?.keyState), sys: cleanSys(st.health?.sys), battery: h.battery ?? null, diskHelp: diskHelpView(h.diskHelp), problems: failing.length, problem: masked && problem ? hidePaths(problem) : problem, online: shownOnline(id), stale: shownOnline(id) && st.stale, lastSeen: h.lastSeen, healthAt: st.healthAt, rtt: st.rtt, errors: st.errors, lastError, accounts: masked ? accountsBrief(h).map(({ name: _n, ...a }) => a) : accountsBrief(h) }
 }
 
 /** Everything known about one host, for the host screen and for the operator. */
@@ -4072,15 +4082,32 @@ async function api(req, res, url, uid) {
       touchGlobals()
       // What the host last said stays (it may come straight back), but nothing is being written or asked through a dead link.
       for (const m of sessions.values()) if (m.hostId === hostId) Object.assign(m, { card: null, writing: '' })
-      record(uid, hostId, { level: 'warn', area: 'link', text: '연동 페이지와의 연결이 끊김' })
+      const gone = () => {
+        clearTimeout(linkGone.get(hostId))
+        linkGone.delete(hostId)
+        if (online(hostId) || !hosts[hostId]) return
+        record(uid, hostId, { level: 'warn', area: 'link', text: '연동 페이지와의 연결이 끊김' })
+        broadcastState(uid)
+      }
+      // A tab that said goodbye has left: at once. A dropped stream gets a moment to come back (REQ-F-831).
+      if (live(hostId).leaving) return ((live(hostId).leaving = false), gone())
+      clearTimeout(linkGone.get(hostId))
+      linkGone.set(hostId, setTimeout(gone, LINK_GRACE_MS).unref())
       broadcastState(uid)
     })
+    // Back within the grace: said as a short drop, not as a new connection.
+    const blip = linkGone.has(hostId) ? Date.now() - (live(hostId).disconnectedAt ?? Date.now()) : -1
+    clearTimeout(linkGone.get(hostId))
+    linkGone.delete(hostId)
+    live(hostId).leaving = false
     bridges.set(hostId, res)
+    // EventSource waits 3 s by default before it reconnects: a bridge page that lost its stream comes back in 1 s.
+    res.write('retry: 1000\n\n')
     // Which web files this server has: a bridge tab that heard another one before reloads to run the new relay.
     res.write(`data: ${JSON.stringify({ t: 'web', hash: WEB_HASH })}\n\n`)
     trace(hostId, `stream open via HTTP/${req.httpVersion} ua=${String(req.headers['user-agent']).slice(0, 120)} enc=${req.headers['accept-encoding']}`)
     Object.assign(live(hostId), { connectedAt: Date.now(), connects: live(hostId).connects + 1, health: null, healthAt: null, page: null })
-    record(uid, hostId, { area: 'link', text: '연동 페이지 연결됨' })
+    record(uid, hostId, { area: 'link', text: blip < 0 ? '연동 페이지 연결됨' : `연동 페이지가 ${(blip / 1000).toFixed(1)}초 끊겼다가 다시 연결됨` })
     broadcastState(uid)
     return
   }
@@ -4096,6 +4123,9 @@ async function api(req, res, url, uid) {
     // The tab closes its stream in the same breath, so the stream may already be gone when this arrives.
     if (ownHost(uid, b.hostId).conn === b.conn) {
       record(uid, b.hostId, { level: 'warn', area: 'link', src: 'page', text: '연동 탭이 닫히거나 다른 페이지로 이동함' })
+      // Gone on purpose: shown as disconnected at once, not after the grace a dropped stream gets.
+      if (bridges.has(b.hostId)) live(b.hostId).leaving = true
+      else if (linkGone.has(b.hostId)) (clearTimeout(linkGone.get(b.hostId)), linkGone.delete(b.hostId), broadcastState(uid))
       bridges.get(b.hostId)?.end()
     }
     return json(res, 200, { ok: true })

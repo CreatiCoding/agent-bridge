@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -261,10 +262,33 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 					m.set("writing", "")
 				}
 			}
-			record(uid, hostID, M{"level": "warn", "area": "link", "text": "연동 페이지와의 연결이 끊김"})
+			gone := func() {
+				stopLinkGone(hostID)
+				if online(hostID) || !hosts.Has(hostID) {
+					return
+				}
+				record(uid, hostID, M{"level": "warn", "area": "link", "text": "연동 페이지와의 연결이 끊김"})
+				broadcastState(uid)
+			}
+			// A tab that said goodbye has left: at once. A dropped stream gets a moment to come back (REQ-F-831).
+			if truthy(st["leaving"]) {
+				st["leaving"] = false
+				gone()
+				return
+			}
+			stopLinkGone(hostID)
+			linkGone[hostID] = setTimeout(LINK_GRACE, gone)
 			broadcastState(uid)
 		})
+		// Back within the grace: said as a short drop, not as a new connection.
+		blip := -1.0
+		if stopLinkGone(hostID) {
+			blip = float64(nowMs()) - jsNumber(live(hostID)["disconnectedAt"])
+		}
+		live(hostID)["leaving"] = false
 		bridges.Set(hostID, s)
+		// EventSource waits 3 s by default before it reconnects: a bridge page that lost its stream comes back in 1 s.
+		s.Write("retry: 1000\n\n")
 		// Which web files this server has: a bridge tab that heard another one before reloads to run the new relay.
 		s.Write("data: " + jsonStr(M{"t": "web", "hash": WEB_HASH}) + "\n\n")
 		trace(hostID, "stream open via HTTP/"+req.httpVersion+" ua="+jsSliceTo(jsStringU(headerOrNil(req, "user-agent")), 120)+" enc="+jsStringU(headerOrNil(req, "accept-encoding")))
@@ -274,7 +298,11 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 		st["health"] = nil
 		st["healthAt"] = nil
 		st["page"] = nil
-		record(uid, hostID, M{"area": "link", "text": "연동 페이지 연결됨"})
+		linkText := "연동 페이지 연결됨"
+		if blip >= 0 {
+			linkText = "연동 페이지가 " + strconv.FormatFloat(blip/1000, 'f', 1, 64) + "초 끊겼다가 다시 연결됨"
+		}
+		record(uid, hostID, M{"area": "link", "text": linkText})
 		broadcastState(uid)
 		return true
 	case post && p == "/api/bridge/up":
@@ -303,8 +331,12 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 		if ownHost(uid, b["hostId"])["conn"] == b["conn"] {
 			hostID := b["hostId"].(string)
 			record(uid, hostID, M{"level": "warn", "area": "link", "src": "page", "text": "연동 탭이 닫히거나 다른 페이지로 이동함"})
+			// Gone on purpose: shown as disconnected at once, not after the grace a dropped stream gets.
 			if s, ok := bridges.Get(hostID); ok {
+				live(hostID)["leaving"] = true
 				s.End("")
+			} else if stopLinkGone(hostID) {
+				broadcastState(uid)
 			}
 		}
 		jsonRes(res, 200, M{"ok": true})

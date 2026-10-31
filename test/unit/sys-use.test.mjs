@@ -61,7 +61,8 @@ test('linuxBattery: /sys/class/power_supply entries (REQ-F-806)', () => {
 test('다른 사람 기기 배터리: 운영자만 모든 기기의 마지막 값과 시각을 보고, 끊긴 뒤에도 남는다 (REQ-F-807)', async () => {
   const { startServer } = await import('./server-harness.mjs')
   const { mac } = await import('./fake-mac.mjs')
-  const srv = await startServer()
+  // A dropped stream counts as gone after the grace (REQ-F-831): short here, so the test sees it gone in time.
+  const srv = await startServer({ env: { BRIDGE_LINK_GRACE_MS: '300' } })
   try {
     for (const who of ['alice', 'bob', 'boss']) await srv.login(who)
     const id = 'aaaaaaaa-0000-4000-8000-0000000000b7'

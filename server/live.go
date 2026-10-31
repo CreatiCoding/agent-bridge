@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -154,6 +155,35 @@ type pendingEntry struct {
 var pending = map[string]*pendingEntry{}
 
 func online(hostID string) bool { return bridges.Has(hostID) }
+
+// LINK_GRACE: a bridge stream that drops and is back within this long is not shown or logged as a disconnect
+// (REQ-F-831). A Mac that runs this server's own Docker reaches it through the router's hairpin, and every container
+// that starts or stops there cuts that connection for a moment; the page is back in a second, and the host flapped.
+var LINK_GRACE = func() time.Duration {
+	if n, err := strconv.Atoi(env("BRIDGE_LINK_GRACE_MS")); err == nil && n > 0 {
+		return time.Duration(n) * time.Millisecond
+	}
+	return 10 * time.Second
+}()
+
+// linkGone: hostId -> the timer that says its bridge is gone if it is not back within LINK_GRACE.
+var linkGone = map[string]*Timer{}
+
+// shownOnline: what screens show. A host whose stream dropped a moment ago and is reconnecting still counts.
+func shownOnline(hostID string) bool {
+	_, waiting := linkGone[hostID]
+	return online(hostID) || waiting
+}
+
+// stopLinkGone: forget a host's grace timer; true when there was one (its stream had dropped and not yet come back).
+func stopLinkGone(hostID string) bool {
+	t, ok := linkGone[hostID]
+	if ok {
+		clearTimeout(t)
+		delete(linkGone, hostID)
+	}
+	return ok
+}
 
 // realBridges: the connected Macs that are real: the demo Mac (REQ-F-766) is never asked anything.
 func realBridges() []string {
@@ -322,7 +352,7 @@ func byPid(uid string, pid any) *Sess {
 
 func csRow(meta *Sess) M {
 	csIds(meta)
-	return toCsSession(shielded(meta), M{"thread": meta.get("thread"), "pid": meta.get("pid"), "host": hostOrNil(meta.host()), "online": online(meta.host())})
+	return toCsSession(shielded(meta), M{"thread": meta.get("thread"), "pid": meta.get("pid"), "host": hostOrNil(meta.host()), "online": shownOnline(meta.host())})
 }
 
 func hostOrNil(id string) any {

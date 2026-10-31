@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.374',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'fixed', scope: ['server'], text: '맥과의 연결이 10초 안에 다시 붙으면 기기가 끊김으로 깜빡이지 않고 경고도 남지 않아요. 서버와 같은 기기에서 Docker 컨테이너가 뜰 때마다 끊겼다 붙던 것이 보이지 않아요. 다시 붙는 데도 3초 대신 1초', refs: ['REQ-F-831'] },
+    ],
+  },
+  {
     version: '1.373',
+    commit: '878d565',
     date: '2026-10-31',
     changes: [
       { kind: 'fixed', scope: ['server'], text: '처리방침의 수신처 문장에 보낸 글·누른 키 같은 동작의 내용과 익스텐션 라우트로 가는 내용도 간다고 적었어요', refs: ['REQ-F-818'] },
