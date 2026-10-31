@@ -6,9 +6,11 @@ description: Agent Bridge 서버와 맥 에이전트가 읽는 환경 변수 전
 
 이 페이지는 서버와 에이전트가 읽는 환경 변수를 빠짐없이 정리해요. 서버를 올리는 순서는 [서버 올리기](/guide/operate/self-host)를 보세요.
 
-이 페이지는 SPEC 판 1.309 기준이에요.
+이 페이지는 [1.371 판](/changelog) 기준이에요.
 
 모든 환경 변수는 프로세스가 시작할 때 한 번 읽어요. 그래서 값을 바꾸면 서버나 에이전트를 다시 시작해야 해요.
+
+서버 설정 중 일부는 환경 변수 대신 설정 파일 `bridge.yaml` 에 둘 수 있어요. 아래 [bridge.yaml 과 같은 뜻인 변수](#bridgeyaml-과-같은-뜻인-변수)와 [bridge.yaml 키](/reference/config)를 보세요.
 
 ## 서버 환경 변수
 
@@ -16,10 +18,11 @@ description: Agent Bridge 서버와 맥 에이전트가 읽는 환경 변수 전
 
 | 이름 | 기본값 | 필수 | 설명 |
 |---|---|---|---|
-| `BRIDGE_ORIGIN` | 빈 값 | GitHub 로그인을 쓰면 예 | 사이트의 공개 주소예요(예: `https://bridge.example.com`). 끝의 `/` 는 지워요. 쿠키 `Secure`, OAuth 콜백, 설치 스크립트 주소, 웹 푸시, 플러그인 링크에 써요. 비어 있으면 요청의 `X-Forwarded-Proto`(없으면 `http`)와 `Host` 로 만들어요. `GITHUB_CLIENT_ID` 가 있는데 비어 있으면 서버가 시작하지 않아요. |
+| `BRIDGE_ORIGIN` | 빈 값 | GitHub 로그인을 쓰면 예 | 사이트의 공개 주소예요(예: `https://bridge.example.com`). 끝의 `/` 는 지워요. 쿠키 `Secure`, OAuth 콜백, 설치 스크립트 주소, 웹 푸시, 플러그인 링크에 써요. 비어 있으면 요청의 `X-Forwarded-Proto`(없으면 `http`)와 `Host` 로 만들어요. `GITHUB_CLIENT_ID` 가 있는데 이 값과 `bridge.yaml` 의 `origins.primary` 가 모두 비어 있으면 서버가 시작하지 않아요. `bridge.yaml` 의 `origins.primary` 가 있으면 그 값이 이겨요. |
 | `PORT` | `4300` | 아니오 | 서버가 듣는 TCP 포트예요(모든 인터페이스). 이미지도 `4300` 이에요. |
-| `BRIDGE_DATA` | `<저장소>/data` (이미지 `/data`) | 아니오 | 서버 상태를 두는 폴더예요. 없으면 만들어요. 배치는 [맥의 파일과 경로](/reference/files#서버-데이터-폴더-bridge_data)를 보세요. |
+| `BRIDGE_DATA` | `<저장소>/data` (이미지 `/data`) | 아니오 | 서버 상태를 두는 폴더예요. 없으면 만들어요. 배치는 [기기의 파일과 경로](/reference/files#서버-데이터-폴더-bridge_data)를 보세요. |
 | `BRIDGE_ROOT` | 실행 파일 옆 또는 작업 폴더 | 아니오 | 저장소 위치(`agent/`, `web/` 가 있는 곳)예요. 비우면 실행 파일 옆과 작업 폴더에서 `agent/agent.mjs` 가 있는 곳을 찾아요. |
+| `BRIDGE_CONFIG` | `<BRIDGE_DATA>/bridge.yaml` | 아니오 | 서버 설정 파일의 위치예요. 절대 경로여야 해요(상대 경로면 시작하지 않아요). 정했는데 그 파일이 없으면 시작하지 않아요. 기본 위치에 파일이 없으면 환경 변수만 써요. [서버 설정 파일 bridge.yaml](/guide/operate/config)을 보세요. |
 | `TZ` | 없음(컨테이너는 UTC) | 아니오 | 통계의 날짜·요일·시간 경계에 쓰는 IANA 시간대 이름이에요(예: `Asia/Seoul`). |
 
 ### 로그인과 접근
@@ -28,8 +31,8 @@ description: Agent Bridge 서버와 맥 에이전트가 읽는 환경 변수 전
 |---|---|---|---|
 | `GITHUB_CLIENT_ID` | 빈 값 | GitHub 로그인을 쓰면 예 | GitHub OAuth 앱의 client id 예요. 비어 있으면 GitHub 로그인이 꺼지고 `/api/auth/github` 는 안내 페이지(503)를 내요. |
 | `GITHUB_CLIENT_SECRET` | 빈 값 | `GITHUB_CLIENT_ID` 와 함께 예 | GitHub OAuth 앱의 client secret 이에요. 토큰 교환에만 쓰고 로그에 남기지 않아요. |
-| `GITHUB_ALLOWED_LOGINS` | 빈 값 | 아니오 | 들어올 수 있는 GitHub 로그인 이름을 쉼표로 적어요. 앞뒤 공백을 지우고 소문자로 맞춰요. `*` 는 누구나예요. 목록에 없는 계정은 운영자 승인을 기다려요. |
-| `BRIDGE_ADMIN_LOGINS` | 빈 값 | 아니오 | **운영자** 계정을 쉼표로 적어요. 허용 목록에 없어도 로그인되고 운영 화면을 볼 수 있어요. |
+| `GITHUB_ALLOWED_LOGINS` | 빈 값 | 아니오 | 들어올 수 있는 GitHub 로그인 이름을 쉼표로 적어요. 앞뒤 공백을 지우고 소문자로 맞춰요. `*` 는 누구나예요. 목록에 없는 계정은 운영자 승인을 기다려요. `bridge.yaml` 의 `auth.allow` 가 있으면 그 값이 이겨요. |
+| `BRIDGE_ADMIN_LOGINS` | 빈 값 | 아니오 | **운영자** 계정을 쉼표로 적어요. 허용 목록에 없어도 로그인되고 운영 화면을 볼 수 있어요. `bridge.yaml` 의 `auth.admins` 가 있으면 그 값이 이겨요. |
 | `BRIDGE_DEMO` | 없음(꺼짐) | 아니오 | 정확히 `1` 이면 공개 데모를 켜요. 로그인 화면과 승인 대기 안내에 "데모로 둘러보기" 가 생겨요. |
 | `BRIDGE_DEV_LOGIN` | 없음(꺼짐) | 아니오 | 정확히 `1` 이면 GitHub 없이 `/api/auth/dev?login=이름` 으로 로그인돼요. 개발·시험용이에요. |
 
@@ -75,9 +78,32 @@ description: Agent Bridge 서버와 맥 에이전트가 읽는 환경 변수 전
 
 | 이름 | 기본값 | 필수 | 설명 |
 |---|---|---|---|
-| `BRIDGE_PURGE` | 없음(꺼짐) | 아니오 | 정확히 `1` 이면 운영 화면에서 기존 데이터 정리(1.277 전의 대화 파일, 기한 지난 알림·제보 등)를 실행할 수 있어요. 꺼져 있으면 409 로 거절해요. |
+| `BRIDGE_PURGE` | 없음(꺼짐) | 아니오 | 정확히 `1` 이면 운영 화면에서 기존 데이터 정리(1.277 전의 대화 파일, 기한 지난 알림·제보 등)를 실행할 수 있어요. 꺼져 있으면 409 로 거절해요. `bridge.yaml` 의 `retention.allowPurge` 가 있으면 그 값이 이겨요. |
 | `BRIDGE_RUN_AS_ROOT` | 없음 | 아니오 | 정확히 `1` 이면 root 로 시작한 서버가 그대로 root 로 돌아요. 없으면 넘겨주기가 끝난 뒤 데이터 폴더를 `node`(1000) 에게 넘기고 그 사용자로 바꿔요. |
 | `BRIDGE_TRACE` | 없음(꺼짐) | 아니오 | 정확히 `1` 이면 연동 페이지를 지나는 메시지 종류를 표준 출력에 찍어요. 내용은 찍지 않아요. |
+| `BRIDGE_EXT_DEV` | 없음(꺼짐) | 아니오 | 정확히 `1` 이면 익스텐션 개발 모드예요. 익스텐션 파일을 캐시하지 않고(`no-store`), 2초마다 폴더를 다시 읽어 바뀌면 열린 페이지를 다시 불러오게 해요. 개발용이에요. [익스텐션 두기와 만들기](/guide/operate/extensions)를 보세요. |
+
+### 서비스 API
+
+믿을 수 있는 다른 서버가 브라우저 로그인 없이 `/api/service/` 를 부를 때 써요. 둘 중 하나라도 비어 있으면 서비스 API 는 꺼져 있어요(모든 요청 401).
+
+| 이름 | 기본값 | 필수 | 설명 |
+|---|---|---|---|
+| `BRIDGE_SERVICE_TOKEN` | 빈 값(꺼짐) | 서비스 API 를 쓰면 예 | 다른 서버가 `Authorization: Bearer <토큰>` 으로 보내는 비밀이에요. 앞뒤 공백은 지워요. 32자보다 짧으면 `BRIDGE_SERVICE_TOKEN 은 32자 이상이어야 합니다.` 를 내고 서버가 시작하지 않아요. |
+| `BRIDGE_SERVICE_UID` | 빈 값(꺼짐) | 서비스 API 를 쓰면 예 | 그 토큰이 누구로 행동할지 정하는 사용자 id 예요(예: `gh12345`). 그 사람의 맥과 세션을 다뤄요. |
+
+### bridge.yaml 과 같은 뜻인 변수
+
+이 네 변수는 `bridge.yaml` 의 키와 뜻이 같아요. 환경 변수는 그 키의 기본값이고, 파일에 값을 적으면 파일이 이겨요. 파일 값이 `"${BRIDGE_ORIGIN:-}"` 처럼 그 환경 변수 참조면 환경 변수를 고칠 때 그대로 따라가요. 파일에 값을 직접 적었는데 환경 변수도 설정돼 있으면, 운영 탭 맨 위에 `환경변수 … 를 고쳐도 반영되지 않아요` 경고가 떠요.
+
+| 환경 변수 | bridge.yaml 키 |
+|---|---|
+| `BRIDGE_ORIGIN` | `origins.primary` |
+| `GITHUB_ALLOWED_LOGINS` | `auth.allow` |
+| `BRIDGE_ADMIN_LOGINS` | `auth.admins` |
+| `BRIDGE_PURGE` | `retention.allowPurge` |
+
+그 밖의 `bridge.yaml` 키(기능 끄기, 보관, CSP, 헤더 로그인, 웹훅, 익스텐션 등)는 같은 뜻의 환경 변수가 없어요.
 
 웹 푸시의 VAPID 키는 환경 변수가 아니에요. 서버가 처음 켜질 때 `BRIDGE_DATA/vapid.json` 에 만들어요. 1.219 에 없앤 `DEMO_LOGIN`·`DEMO_PASSWORD` 는 더 읽지 않으니 지워도 돼요.
 
@@ -89,7 +115,8 @@ description: Agent Bridge 서버와 맥 에이전트가 읽는 환경 변수 전
 |---|---|---|---|---|
 | `CLAUDE_BRIDGE_HOME` | `~/.claude-bridge` | 아니오 | 다시 설치 | 에이전트 폴더예요. 자동 업데이트는 에이전트 파일이 이 폴더에 있을 때만 해요. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | 아니오 | 다시 설치 | Claude Code 설정 폴더예요. 대화 기록은 `<폴더>/projects` 에서 찾아요. |
-| `CLAUDE_BRIDGE_LABEL` | `dev.claude-bridge.agent` | 아니오 | 다시 설치 | launchd 라벨과 plist 파일 이름이에요. |
+| `CLAUDE_BRIDGE_LABEL` | `dev.claude-bridge.agent` | 아니오 | 다시 설치 | launchd 라벨과 plist 파일 이름이에요. Linux 에서는 systemd 사용자 유닛 이름이에요. |
+| `XDG_CONFIG_HOME` | `~/.config` | 아니오 | 다시 설치 | Linux 에서만 써요. `service install` 이 systemd 사용자 유닛을 `<값>/systemd/user/<라벨>.service` 에 둬요. |
 | `CLAUDE_BRIDGE_CLAUDE` | `claude` | 아니오 | 쓰이지 않음 | 세션과 점검에서 부르는 claude 명령 이름이나 경로예요. |
 | `CLAUDE_BRIDGE_DEFAULT_BRANCHES` | `main,develop,master` | 아니오 | 쓰이지 않음 | 자동 push 하지 않는 기본 브랜치예요. 쉼표로 나누고 공백은 지우지 않아요. |
 | `CLAUDE_BRIDGE_SYNC_FILES` | `SESSION.md,AGENTS.md,CLAUDE.md` | 아니오 | 쓰이지 않음 | git 이 아닌 작업 폴더에서 옮길 때 따라가는 지침 파일이에요. |

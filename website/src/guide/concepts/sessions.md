@@ -51,9 +51,11 @@ stateDiagram-v2
 
 에이전트는 두 가지를 함께 읽어요.
 
-**Claude Code 훅.** 에이전트는 세션을 띄울 때마다 `~/.claude-bridge/hooks.json` 을 쓰고, `claude` 명령줄에 `--settings` 로 넘겨요. 훅은 9개예요: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `Notification`, `SessionEnd`, `PermissionRequest`. `PermissionRequest` 는 세션이 **전부 허용**일 때 확인 창이 그려지기 전에 허용을 답하는 데 써요. 훅 명령은 환경 변수 `CB_HOOK` 이 있을 때만 `127.0.0.1` 의 에이전트에 알려요. 이 변수는 에이전트가 띄운 세션의 터미널에만 넣으므로, 맥에서 직접 연 Claude Code 에는 영향이 없어요. 사람의 `~/.claude/settings.json` 도 건드리지 않아요.
+**Claude Code 훅.** 에이전트는 세션을 띄울 때마다 `~/.claude-bridge/hooks.json` 을 쓰고, `claude` 명령줄에 `--settings` 로 넘겨요. 훅은 9개예요: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`, `Notification`, `SessionEnd`, `PermissionRequest`. `PermissionRequest` 는 세션이 **안전한 전부 허용**이나 **전부 허용**일 때 확인 창이 그려지기 전에 허용을 답하는 데 써요. 안전한 전부 허용에서 위험한 호출이면 답하지 않고 카드로 물으며, 대화에 "⚠️ *안전한 전부 허용*이라 …는 물어봐요." 가 남아요. 훅 명령은 환경 변수 `CB_HOOK` 이 있을 때만 `127.0.0.1` 의 에이전트에 알려요. 이 변수는 에이전트가 띄운 세션의 터미널에만 넣으므로, 맥에서 직접 연 Claude Code 에는 영향이 없어요. 사람의 `~/.claude/settings.json` 도 건드리지 않아요.
 
 **터미널 화면.** 훅으로는 터미널에 그려진 확인 창을 알 수 없어요. 그래서 에이전트는 700 ms 마다 세션을 돌며 대화 파일을 읽고, 1,500 ms 마다 화면을 봐요. 훅이 한 번도 오지 않은 세션은 화면만으로 턴을 판정하고, 훅을 놓쳐 열린 채인 턴은 15초 뒤에 닫아요.
+
+턴이 Stop 훅 없이 중간에 끊기는 일도 있어요. 대화 파일 끝이 답이 없는 도구 결과라 턴이 열려 보이는 경우예요. 화면이 쉬고 있고 1분(60,000 ms) 넘게 화면과 대화 파일이 모두 조용하면, 에이전트는 그 턴을 닫아요. 대화에는 "⚠️ 작업이 중간에 끊겨 멈춰 있었어요." 가 남고, 기다리던 붙잡은 글이 들어가요.
 
 ## 세션 기록과 순번
 
@@ -78,7 +80,7 @@ stateDiagram-v2
 | `keyed` | 터미널 확인 | 번호 없이 화살표와 Enter 로 고르는 창 |
 | `stuck` | 지시 대기 | 중단 문구가 화면 마지막에 남아 다음 지시를 기다릴 때 |
 
-몇몇 창은 사람에게 묻지 않고 에이전트가 넘겨요. 세션이 뜨는 중일 때의 폴더 신뢰, 개발 채널, Claude in Chrome 확장 창이고, 모델을 바꾼 직후 30초 동안의 모델 전환 확인 창이에요. 넘긴 창은 대화에 한 줄로 남아요.
+몇몇 창은 사람에게 묻지 않고 에이전트가 넘겨요. 세션이 뜨는 중일 때의 폴더 신뢰, 개발 채널, Claude in Chrome 확장 창이고, 모델을 바꾼 직후 30초 동안의 모델 전환 확인 창이에요. Claude Code 가 일하는 도중에 띄우는 전체 화면 렌더러 권유 창(`Try the new fullscreen renderer?`)은 언제든 **Not now** 로 넘겨요. 넘긴 창은 대화에 한 줄로 남아요.
 
 ## 붙잡은 글
 
@@ -92,7 +94,9 @@ stateDiagram-v2
 
 ## 세션 터미널
 
-에이전트는 `claude` 를 터미널 프로그램 안에서 띄워요. 기본은 에이전트가 받아 둔 [zeropty](https://github.com/CreatiCoding/zeropty) 0.1.3 이고, 준비되지 않았거나 `--mux tmux` 로 고정했으면 [tmux](https://github.com/tmux/tmux) 예요. zeropty 는 tmux 의 명령줄을 그대로 받으므로 에이전트의 동작은 같아요.
+에이전트는 `claude` 를 터미널 프로그램 안에서 띄워요. 기본은 에이전트가 받아 둔 [zeropty](https://github.com/CreatiCoding/zeropty)(macOS 0.1.3, Linux x86_64 0.1.6)이고, 준비되지 않았거나, 그 시스템용 판이 없거나, `--mux tmux` 로 고정했으면 [tmux](https://github.com/tmux/tmux) 예요. zeropty 는 tmux 의 명령줄을 그대로 받으므로 에이전트의 동작은 같아요.
+
+`--mux tmux` 로 고정한 기기는 zeropty 를 받지 않아요. 단 예전에 zeropty 로 연 세션이 남아 있으면 그 세션을 계속 다루려고 받아요.
 
 zeropty 서버는 에이전트와 따로 돌아요. 그래서 에이전트가 업데이트로 다시 떠도 세션은 끊기지 않고, 새 에이전트가 `sessions.json` 을 읽어 이어서 다뤄요.
 

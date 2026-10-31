@@ -72,4 +72,4 @@ SITE/new?adopt=ID,ID
 
 - [폰에서 세션 다루기](/guide/use/sessions): 가져온 세션에 글을 보내고 확인 창에 답하는 방법을 알 수 있어요.
 - [목록 정리와 잠금](/guide/use/organize): 가져온 세션을 그룹으로 묶거나 잠그는 방법을 알 수 있어요.
-- [맥의 파일과 경로](/reference/files): Claude Code 대화 기록이 맥의 어디에 있는지 찾아볼 수 있어요.
+- [기기의 파일과 경로](/reference/files): Claude Code 대화 기록이 맥의 어디에 있는지 찾아볼 수 있어요.

@@ -1,12 +1,12 @@
 ---
-description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/.zeropty, launchd plist, sudoers 규칙, Claude Code 대화 기록)와 서버의 데이터 폴더(BRIDGE_DATA) 배치를 정리한 표예요.
+description: 에이전트가 기기(맥·Linux)에 쓰는 파일과 폴더(~/.claude-bridge, ~/.zeropty, launchd plist, systemd 유닛, sudoers 규칙, Claude Code 대화 기록)와 서버의 데이터 폴더(BRIDGE_DATA) 배치를 정리한 표예요.
 ---
 
-# 맥의 파일과 경로
+# 기기의 파일과 경로
 
-이 페이지는 에이전트가 **호스트**(에이전트가 설치된 맥)에 만드는 파일과 폴더, 그리고 서버가 데이터 폴더에 두는 파일을 빠짐없이 정리해요. 설치와 제거 방법은 [시작하기](/guide/getting-started)를, 서버 데이터 백업은 [서버 올리기](/guide/operate/self-host)를 보세요.
+이 페이지는 에이전트가 **호스트**(에이전트가 설치된 맥이나 Linux 기기)에 만드는 파일과 폴더, 그리고 서버가 데이터 폴더에 두는 파일을 빠짐없이 정리해요. 설치와 제거 방법은 [시작하기](/guide/getting-started)를, 서버 데이터 백업은 [서버 올리기](/guide/operate/self-host)를 보세요.
 
-이 페이지는 SPEC 판 1.309 기준이에요.
+이 페이지는 [1.371 판](/changelog) 기준이에요.
 
 ## 에이전트 폴더 `~/.claude-bridge/`
 
@@ -17,8 +17,8 @@ description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/
 | 경로 | 쓰는 쪽 | 권한 | 설명 |
 |---|---|---|---|
 | `*.mjs` (17개) | 설치 스크립트, 자동 업데이트 | — | 에이전트 프로그램이에요. 목록은 [설치 스크립트](/reference/agent-cli#설치-스크립트-installsh)를 보세요. |
-| `agent.json` | 에이전트 | 0600 | 설정과 신원(호스트 id, 에이전트 키 등)이에요. 키는 [agent.json 키](/reference/agent-cli#agentjson-키)를 보세요. |
-| `sessions.json` | 에이전트 | 0600 | 이 맥의 세션 목록이에요(작업 폴더, 대화 id, 모델, 붙잡은 글 등). |
+| `agent.json` | 에이전트 | 0600 | 설정과 신원(호스트 id, 에이전트 키, 키 교체 기록 `keyLog`, `supervisor`, `launchEnv`, `linkedAt` 등)이에요. 사람이 직접 쓰는 키는 `hooks` 하나예요([알림 웹훅과 훅](/guide/operate/hooks)). 키는 [agent.json 키](/reference/agent-cli#agentjson-키)를 보세요. |
+| `sessions.json` | 에이전트 | 0600 | 이 기기의 세션 목록이에요(작업 폴더, 대화 id, 모델, 권한 모드 `autoAllow`·`allowAll`, 터미널 `mux`, 붙잡은 글, worktree 안의 지금 폴더 `here`, 정리된 worktree `worktreeGone` 등). |
 | `hooks.json` | 에이전트 | 0600 | 브리지 세션의 Claude Code 에만 `--settings` 로 넘기는 훅·상태 줄 설정이에요. 사람의 `~/.claude/settings.json` 은 건드리지 않아요. |
 | `hook.header` | 에이전트 | 0600 | 훅이 `curl -H @파일` 로 붙이는 머리글(`x-bridge-key: <훅 키>`)이에요. 키를 명령줄에 싣지 않으려고 파일로 둬요. |
 | `askpass` | 에이전트 | 0700 | 세션 안의 `sudo` 가 관리자 비밀번호를 사이트에서 받도록 부르는 스크립트예요. |
@@ -33,7 +33,7 @@ description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/
 | 경로 | 쓰는 쪽 | 권한 | 크기 | 설명 |
 |---|---|---|---|---|
 | `events/<sid>.jsonl` | 에이전트 | — | 돌리지 않음 | 서버가 순번을 매겨 내려보낸 세션 이벤트 기록이에요. 서버는 대화를 저장하지 않고 이 맥이 원본을 가져요. |
-| `images/` | 에이전트 | 0700 | — | 페이지에서 보낸 그림과 대화 기록 속 그림이에요. |
+| `images/` | 에이전트 | 0700 | 파일마다 600 MB 까지 받음 | 페이지에서 보낸 그림, 대화 기록 속 그림, 보낸 영상·파일이에요. 영상·파일은 `<id 앞 8자>-<원래 이름>`(파일 0600)으로 둬요. |
 | `prompts/<sid>.txt` | 에이전트 | 폴더 0700, 파일 0600 | — | 세션에 붙이는 지시문(`--append-system-prompt`)이에요. 세션을 내려놓으면 지워요. |
 | `prompts/<sid>.mcp.json` | 에이전트 | — | — | 세션에 넘기는 MCP 설정(`--mcp-config`)이에요. |
 | `overwritten/<sid>-<ms>-<이름>` | 에이전트 | 폴더 0700, 파일 0600 | — | 옮기기·다시 열기 때 작업 폴더의 지침 파일(`SESSION.md`, `AGENTS.md`, `CLAUDE.md`)을 덮어쓰기 전에 둔 원래 내용이에요. |
@@ -46,7 +46,8 @@ description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/
 | 경로 | 쓰는 쪽 | 권한 | 크기 | 설명 |
 |---|---|---|---|---|
 | `agent.log` | 에이전트 | 0600 | 돌리지 않음 | 한 줄에 JSON `{ ts, level, area, text, sid }` 하나씩 덧붙여요. 내용은 줄마다 2,000자까지예요. |
-| `service.log` | launchd | — | 돌리지 않음 | 서비스 모드에서 에이전트의 표준 출력·오류 그대로예요. |
+| `service.log` | launchd, systemd | — | 돌리지 않음 | 서비스 모드에서 에이전트의 표준 출력·오류 그대로예요. |
+| `detached.log` | `start` | 0600 | 돌리지 않음 | `start` 로 떼어 띄운 에이전트의 표준 출력·오류예요. |
 | `voice.log` | 에이전트 | 0600 | 512 KB 를 넘으면 뒤쪽 절반만 남김 | 음성 입력마다 시각, 받아쓴 원문, 다듬은 글, 걸린 시간을 한 줄씩 남겨요. |
 
 ### 실행 중 상태와 내려받은 도구
@@ -56,8 +57,10 @@ description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/
 | `agent.pid` | 에이전트 | — | 돌고 있는 에이전트의 pid 예요. |
 | `browser/` | 에이전트, Chrome | Chrome 프로필 크기 | 헤드리스 연동 모드에서 띄우는 Chrome 의 프로필(`--user-data-dir`)이에요. 사이트 로그인 쿠키가 들어 있어요. |
 | `browser.pid` | 에이전트 | — | 헤드리스 Chrome 의 pid 예요. 에이전트가 다시 시작해도 같은 Chrome 을 이어받는 데 써요. |
+| `headless-login` | `agent.mjs headless` | — | 화면 없는 기기 연결의 로그인 주소예요(0600). 에이전트가 받아 헤드리스 연동 모드를 켜면서 지워요. |
+| `node/` | 설치 스크립트(Linux) | Node.js 한 벌 | Linux 에 node 가 없을 때 nodejs.org 에서 받은 Node.js 22 예요. |
 | `whisper/` | 에이전트 | 모델마다 다름 | 음성 입력용 whisper.cpp 모델(`ggml-<이름>.bin`), 말소리 감지 모델 `ggml-silero-v5.1.2.bin`(885 KB), 잡음 줄이기 모델 `rnnoise.rnnn`, `whisper-server.pid` 를 둬요. |
-| `zeropty/<버전>/` | 에이전트 | — | 에이전트가 GitHub 릴리스에서 받아 SHA-256 을 확인한 [zeropty](https://github.com/CreatiCoding/zeropty)(지금 0.1.3)예요. `zeropty`, `zeropty-tty`, `shim.dylib` 이 들어 있어요. |
+| `zeropty/<버전>/` | 에이전트 | — | 에이전트가 GitHub 릴리스에서 받아 SHA-256 을 확인한 [zeropty](https://github.com/CreatiCoding/zeropty)예요. macOS 는 0.1.3(`zeropty`, `zeropty-tty`, `shim.dylib`), Linux x86_64 는 0.1.6(`shim.so`)이에요. `--mux tmux` 로 고정한 기기에는 없을 수 있어요. |
 | `.update-XXXXXX/` | 자동 업데이트 | — | 업데이트 파일을 받는 임시 폴더예요. 끝나면 지워요. |
 | `.update.XXXXXX/` | 설치 스크립트 | — | 설치 파일을 받는 임시 폴더예요. 끝나면 지워요. |
 
@@ -65,7 +68,9 @@ description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/
 
 | 경로 | 쓰는 쪽 | 권한 | 크기 | 설명 |
 |---|---|---|---|---|
-| `~/Library/LaunchAgents/dev.claude-bridge.agent.plist` | `service install` | — | — | 백그라운드 서비스 정의예요. 파일 이름은 `CLAUDE_BRIDGE_LABEL` 을 따라요. `service uninstall` 이 지워요. |
+| `~/Library/LaunchAgents/dev.claude-bridge.agent.plist` | `service install`(macOS) | — | — | 백그라운드 서비스 정의예요. 파일 이름은 `CLAUDE_BRIDGE_LABEL` 을 따라요. `service uninstall` 이 지워요. |
+| `~/.config/systemd/user/dev.claude-bridge.agent.service` | `service install`(Linux) | — | — | systemd 사용자 서비스 유닛이에요. `XDG_CONFIG_HOME` 이 있으면 그 아래예요. `service uninstall` 이 지워요. |
+| `~/.Trash`(macOS), `~/.local/share/Trash/`(Linux) | 디스크 관리 | — | — | [디스크 관리](/guide/use/devices)에서 옮긴 항목이 가는 휴지통이에요. Linux 는 되살릴 수 있게 `info/<이름>.trashinfo` 도 써요. |
 | `/etc/sudoers.d/claude-bridge-pmset` | `awake setup` | 0440, root:wheel | — | 이 사용자가 비밀번호 없이 `pmset -a disablesleep 0`, `pmset -a disablesleep 1` 만 실행하게 하는 규칙이에요. `awake remove` 가 지워요. |
 | `~/.zeropty/tty/<해시>/bin/claude` | zeropty-tty | — | claude 한 벌 크기(약 260MB) | zeropty-tty 가 처음에 만드는 서명을 바꾼 `claude` 사본이에요. claude 가 바뀌면 다시 만들어요. |
 | `~/.zeropty/mux.sock` | zeropty | — | — | zeropty 서버의 소켓이에요(`ZEROPTY_SOCK` 으로 바꿀 수 있어요). 에이전트가 꺼져도 세션은 남아요. |
@@ -84,6 +89,8 @@ description: 에이전트가 맥에 쓰는 파일과 폴더(~/.claude-bridge, ~/
 
 ```text
 BRIDGE_DATA/
+├── bridge.yaml
+├── config-error.json
 ├── users.json
 ├── logins.json
 ├── access.json
@@ -102,6 +109,7 @@ BRIDGE_DATA/
 ├── skills-install.secret
 ├── report-auto.json
 ├── reports/
+├── ext-data/<id>/data.json
 └── u/
     └── <uid>/
         ├── prefs.json
@@ -110,6 +118,8 @@ BRIDGE_DATA/
         ├── apns.json
         ├── apple.json
         ├── plugins.json
+        ├── ext-consent.json
+        ├── ext/<id>/data.json, secrets.json
         ├── hosts/<hostId>.log, <hostId>.log.1
         ├── uploads/
         └── s/<sid>/meta.json
@@ -117,11 +127,13 @@ BRIDGE_DATA/
 
 | 경로 | 설명 |
 |---|---|
+| `bridge.yaml` | 서버 설정 파일이에요. `BRIDGE_CONFIG` 로 다른 경로를 줄 수 있어요. 키는 [bridge.yaml 키](/reference/config)를 보세요. |
+| `config-error.json` | 설정 파일 오류로 새 서버가 뜨지 못했을 때, 계속 도는 서버가 운영 화면에 보이도록 남기는 오류예요. |
 | `users.json` | 사용자 목록이에요(GitHub 로그인 이름, 표시 이름, 아바타 주소 등). |
 | `logins.json` | 로그인 토큰의 SHA-256 과 만료예요. 토큰 원문은 저장하지 않아요. |
 | `access.json` | 접근 요청 기록(처음·마지막 시각, 시도 수, 결정한 운영자)이에요. |
 | `login-pins.json` | 로그인 이름 → 처음 쓴 GitHub id 이름표예요. 이름을 바꿔 남의 허용을 얻지 못하게 해요. |
-| `hosts.json` | 호스트 목록(이름, 종류, 홈 경로, 에이전트 정보)이에요. |
+| `hosts.json` | 호스트 목록(이름, 종류, 홈 경로, 에이전트 정보)이에요. 마지막으로 받은 배터리 값(`battery`, 바뀌었을 때나 10분마다), 디스크 정리 도움 요청·허용(`diskHelp`)도 있어요. |
 | `pid.json` | Slack 형식 세션 번호 카운터예요. |
 | `vapid.json` | 웹 푸시에 쓰는 VAPID(Voluntary Application Server Identification) 키 쌍이에요. 서버가 처음 켜질 때 만들어요. |
 | `instance.json`, `handover.json`, `handover.secret` | 끊기지 않는 배포 때 두 서버가 주고받는 표시와 비밀값이에요. |
@@ -133,6 +145,7 @@ BRIDGE_DATA/
 | `skills-install.secret` | `/skills/install.sh` 서명 키예요. 처음 시작 때 만들고 0600 이에요. |
 | `report-auto.json` | 문제 제보 자동 대응 설정이에요(기본 꺼짐). |
 | `reports/` | 문제 제보와 그 그림·영상이에요. 90일 뒤 지워요. |
+| `ext-data/<id>/data.json`, `u/<uid>/ext/<id>/`, `u/<uid>/ext-consent.json` | 익스텐션의 서버 저장, 사용자 저장·비밀값, 사용자의 익스텐션 동의예요. [익스텐션 API (화면, JS)](/reference/extension-api)를 보세요. |
 | `u/<uid>/prefs.json` | 그룹, 기본 프롬프트, 음성 설정, 스킬 저장소 같은 사용자 설정이에요. |
 | `u/<uid>/notices.json` | 알림이에요. 새것부터 30개, 30일까지 둬요. |
 | `u/<uid>/push.json` | 웹 푸시 구독이에요. 20개까지 둬요. |
@@ -140,7 +153,7 @@ BRIDGE_DATA/
 | `u/<uid>/apple.json` | Apple 로 로그인한 계정의 정보예요. |
 | `u/<uid>/plugins.json` | 플러그인 설정과 상태예요. 비밀 값은 목록 응답에서 `••••••••` 로 가려요. |
 | `u/<uid>/hosts/<hostId>.log` | 호스트 로그(JSON Lines)예요. 5,242,880 byte(5 MiB)를 넘으면 `.log.1` 로 돌려요. |
-| `u/<uid>/uploads/` | 보낸 영상이에요. 맥이 받으면 바로, 늦어도 24시간 뒤 지워요. 한 개 500 MB 까지예요. |
+| `u/<uid>/uploads/` | 보낸 영상(`<40 hex>.mp4` 등)과 그 밖의 파일(`<40 hex>.bin`)이에요. 맥이 받으면 바로, 늦어도 24시간(`retention.uploadsHours`) 뒤 지워요. 한 개 512 MiB, 한 사람이 제보 영상까지 합쳐 2 GiB 까지예요. |
 | `u/<uid>/s/<sid>/meta.json` | 세션 정보(제목, 상태, 맥, 작업 폴더, 통계 숫자 등)예요. |
 
 1.277 전에 서버에 저장된 대화 파일(`transcript*.jsonl`, `events.jsonl`, `fork-skip.txt`, `u/<uid>/img/`)은 운영자가 `BRIDGE_PURGE=1` 로 켜고 지울 때까지 남아요. 자세한 내용은 [접근 관리와 운영 화면](/guide/operate/admin)을 보세요.

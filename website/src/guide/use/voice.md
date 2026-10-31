@@ -90,5 +90,5 @@ curl -L -o ~/.claude-bridge/whisper/rnnoise.rnnn \
 ## 다음 단계
 
 - [폰에서 세션 다루기](/guide/use/sessions): 글과 사진 보내기, 확인 창 답하기 같은 세션 조작을 알 수 있어요.
-- [맥의 파일과 경로](/reference/files): whisper.cpp 모델을 두는 `whisper/` 폴더 같은 맥의 경로를 찾아볼 수 있어요.
+- [기기의 파일과 경로](/reference/files): whisper.cpp 모델을 두는 `whisper/` 폴더 같은 맥의 경로를 찾아볼 수 있어요.
 - [보안 모델](/guide/concepts/security): 무엇이 어디로 오가고 어떻게 지켜지는지 알 수 있어요.

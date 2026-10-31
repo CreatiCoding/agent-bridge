@@ -4,7 +4,7 @@ description: Slack 앱을 만들어 Slack 플러그인을 켜고, 세션을 Slac
 
 # Slack 플러그인
 
-이 가이드를 마치면 세션을 Slack 전용 채널에서 이어서 다룰 수 있어요. 플러그인이 서버와 주고받는 방식은 [플러그인 API](/reference/plugin-api)를 보세요.
+이 가이드를 마치면 세션을 Slack 전용 채널에서 이어서 다룰 수 있어요. 플러그인이 서버와 주고받는 방식은 [플러그인 API (서버 안, Slack)](/reference/plugin-api)를 보세요.
 
 ## 시작하기 전에
 
@@ -84,6 +84,6 @@ Slack 에서 작업하는 동안 Agent Bridge 화면은 읽기만 돼요. **이 
 
 ## 다음 단계
 
-- [플러그인 API](/reference/plugin-api): 플러그인의 정의 모양과 서버 호출 전체를 찾아볼 수 있어요.
+- [플러그인 API (서버 안, Slack)](/reference/plugin-api): 플러그인의 정의 모양과 서버 호출 전체를 찾아볼 수 있어요.
 - [세션 옮기기](/guide/use/move): 세션을 다른 맥으로 옮기는 절차를 알 수 있어요.
 - [보안 모델](/guide/concepts/security): 잠긴 세션이 플러그인에서 어떻게 가려지는지 알 수 있어요.

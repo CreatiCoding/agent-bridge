@@ -42,7 +42,9 @@ const guide: DefaultTheme.SidebarItem[] = [
       { text: '목록 정리와 잠금', link: '/guide/use/organize' },
       { text: '알림과 웹 푸시', link: '/guide/use/notifications' },
       { text: '음성 입력', link: '/guide/use/voice' },
+      { text: '기기 상태와 디스크 관리', link: '/guide/use/devices' },
       { text: 'Slack 플러그인', link: '/guide/use/slack' },
+      { text: 'Linux 서버 연결하기', link: '/guide/use/linux' },
       { text: badge('맥을 늘 연결해 두기', '선택'), link: '/guide/use/always-on' },
     ],
   },
@@ -51,6 +53,9 @@ const guide: DefaultTheme.SidebarItem[] = [
     items: [
       { text: '서버 올리기', link: '/guide/operate/self-host' },
       { text: '접근 관리와 운영 화면', link: '/guide/operate/admin' },
+      { text: '설정 파일 bridge.yaml', link: '/guide/operate/config' },
+      { text: badge('알림 웹훅과 훅', '선택'), link: '/guide/operate/hooks' },
+      { text: badge('익스텐션 두기와 만들기', '선택'), link: '/guide/operate/extensions' },
       { text: '에이전트 서명 키', link: '/guide/operate/signing' },
       { text: '끊기지 않는 배포', link: '/guide/operate/deploy' },
       { text: '문제 해결', link: '/guide/operate/troubleshooting' },
@@ -61,19 +66,21 @@ const guide: DefaultTheme.SidebarItem[] = [
 const reference: DefaultTheme.SidebarItem[] = [
   { text: '레퍼런스 안내', link: '/reference/' },
   {
-    text: '맥 (에이전트)',
+    text: '기기 (에이전트)',
     items: [
       { text: '설치 스크립트와 에이전트 명령', link: '/reference/agent-cli' },
       { text: '점검 항목', link: '/reference/checks' },
-      { text: '맥의 파일과 경로', link: '/reference/files' },
+      { text: '기기의 파일과 경로', link: '/reference/files' },
     ],
   },
   {
     text: '서버',
     items: [
+      { text: 'bridge.yaml 키', link: '/reference/config' },
       { text: '환경 변수', link: '/reference/env' },
       { text: '주소와 HTTP API', link: '/reference/routes' },
-      { text: '플러그인 API', link: '/reference/plugin-api' },
+      { text: '플러그인 API (서버 안, Slack)', link: '/reference/plugin-api' },
+      { text: '익스텐션 API (화면, JS)', link: '/reference/extension-api' },
     ],
   },
   {

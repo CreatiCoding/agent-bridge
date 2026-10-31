@@ -4,9 +4,13 @@ description: Agent Bridge 서버 플러그인의 정의 모양(id, fields, start
 
 # 플러그인 API
 
+::: tip 화면을 넓히거나 바깥 서비스와 잇는 것은 익스텐션이에요
+조작 페이지에 버튼·메뉴·설정을 더하거나, 페이지가 하는 일에 끼어들거나, 바깥 API 를 부르려면 **익스텐션**을 쓰세요. 서버를 다시 빌드하지 않고 폴더만 두면 돼요. [익스텐션 두기와 만들기](/guide/operate/extensions)와 [익스텐션 API](/reference/extension-api)를 보세요. 이 페이지의 플러그인은 서버 안에 Go 로 빌드해 넣는 것(지금은 Slack)이에요.
+:::
+
 이 페이지는 서버 **플러그인**의 정의 모양과, 플러그인이 사용자로서 부를 수 있는 호출을 정리해요. Slack 플러그인을 켜고 쓰는 방법은 [Slack 플러그인](/guide/use/slack)을 보세요.
 
-이 페이지는 SPEC 판 1.309 기준이에요.
+이 페이지는 [1.371 판](/changelog) 기준이에요.
 
 ## 플러그인은 무엇으로 쓰나요?
 
@@ -92,6 +96,8 @@ Slack 플러그인은 계정 연결용으로 `link(code)`·`who(code)` 도 둬�
 | POST | `/api/plugins/<id>/choices` | `{key, config?}` | `{ok, choices}` 로 `pick` 칸에서 고를 수 있는 값을 줘요. 저장하지 않은 입력값(`config`)도 반영해요. |
 
 플러그인 오류는 HTTP 400 과 `{"ok":false,"note":"…"}` 로 돌아와요.
+
+`bridge.yaml` 에서 서버 기능 `features.slack` 을 끄면 Slack 플러그인의 경로(`/api/plugins/slack`, `/choices`, `/link`)는 403 이고, 설정의 플러그인 탭도 탭 줄에서 사라져요.
 
 ## 저장
 

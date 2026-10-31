@@ -46,6 +46,24 @@ docker build -t claude-bridge .
 
 서버는 Go 바이너리 하나로 `alpine:3.22` 이미지에 담겨요. `go test` 등이 실패하면 이미지가 만들어지지 않아요. `agent/*.mjs` 는 맥에 내려보낼 파일로만 들어 있어요.
 
+::: details 베이스 이미지를 다른 레지스트리에서 받으려면
+`Dockerfile` 은 세 베이스 이미지를 빌드 인자로 받아요. 미러나 다른 레지스트리를 쓰려면 `--build-arg` 로 바꾸세요. 기본값은 아래 표 그대로예요.
+
+| 빌드 인자 | 기본값 | 쓰는 단계 |
+|---|---|---|
+| `NODE_IMAGE` | `node:22.23.4-alpine` | 조작 페이지(`ui/`) 빌드 |
+| `GO_IMAGE` | `golang:1.27.3-alpine` | 서버 시험·빌드 |
+| `RUN_IMAGE` | `alpine:3.22` | 실행 이미지 |
+
+```sh [터미널]
+docker build -t claude-bridge \
+  --build-arg NODE_IMAGE=registry.example.com/library/node:22.23.4-alpine \
+  --build-arg GO_IMAGE=registry.example.com/library/golang:1.27.3-alpine \
+  --build-arg RUN_IMAGE=registry.example.com/library/alpine:3.22 \
+  .
+```
+:::
+
 ## 3. 컨테이너 실행하기
 
 `docker run` 으로 바로 띄우려면 다음을 실행하세요.
@@ -97,6 +115,10 @@ volumes:
 
 이미지에는 `PORT=4300`, `BRIDGE_DATA=/data` 가 들어 있어요. 바꿀 일이 없으면 그대로 두세요. 나머지 변수는 [환경 변수](/reference/env)를 보세요.
 
+::: tip 설정 파일 bridge.yaml
+기능 끄기, 보관 기간, 권한 모드, 웹훅, 익스텐션 같은 설정은 환경 변수가 아니라 설정 파일 `bridge.yaml` 에 둬요. 기본 위치는 `/data/bridge.yaml` 이고, 없으면 환경 변수만 써요. 위 표의 환경 변수도 그 파일로 옮길 수 있어요. [서버 설정 파일 bridge.yaml](/guide/operate/config)을 보세요.
+:::
+
 ::: warning 주의
 `GITHUB_CLIENT_ID` 를 넣고 `BRIDGE_ORIGIN` 을 비우면 서버가 시작하지 않아요. 로그에 `BRIDGE_ORIGIN 이 없습니다. GitHub 로그인을 쓰는 서버는 사이트 주소(예: https://bridge.example.com)를 BRIDGE_ORIGIN 으로 정해야 합니다.` 가 찍히고 종료 코드 1 로 끝나요.
 :::
@@ -110,6 +132,8 @@ volumes:
 - `text/event-stream` 응답을 버퍼링하거나 압축하지 않아요. 연동 페이지와 조작 페이지는 이 스트림(SSE, Server-Sent Events)으로 실시간 상태를 받아요.
 - 업스트림 읽기 유휴 한도를 60초 이상으로 둬요.
 - 요청 본문 한도를 32 MiB(33,554,432 byte) 이상으로 둬요.
+
+앞단 프록시가 SSO 로 사람을 확인한다면, 프록시가 넣은 헤더로 로그인시킬 수도 있어요. GitHub OAuth App 없이도 돼요. [앞단 프록시의 헤더 로그인과 여러 출처](/guide/operate/config#앞단-프록시의-헤더-로그인과-여러-출처)를 보세요.
 
 ::: danger 서버 포트를 인터넷에 바로 열지 마세요
 `BRIDGE_ORIGIN` 이 없으면 서버는 요청의 `Host` 와 `X-Forwarded-Proto` 를 믿고 자기 주소를 만들어요. 설치 명령, 로그인 콜백, 다른 출처 검사가 모두 이 주소를 써요. 그래서 반드시 `BRIDGE_ORIGIN` 을 정하고, 포트는 프록시만 닿게 두세요. 위 예시가 `127.0.0.1:4300` 에만 묶는 이유예요. 로그인 쿠키의 `Secure` 속성도 `BRIDGE_ORIGIN` 이 `https:` 일 때만 붙어요.
@@ -183,5 +207,6 @@ volumes:
 
 - [접근 관리와 운영 화면](/guide/operate/admin): 사람을 허용하고 모든 맥의 상태를 봐요.
 - [끊기지 않는 배포](/guide/operate/deploy): 새 버전을 요청 실패 없이 올려요.
+- [서버 설정 파일 bridge.yaml](/guide/operate/config): 기능 끄기, 보관 기간, 헤더 로그인을 정해요.
 - [에이전트 서명 키](/guide/operate/signing): 포크의 맥들이 자동 업데이트를 받게 해요.
-- [환경 변수](/reference/env), [주소와 HTTP API](/reference/routes): 전체 목록이에요.
+- [환경 변수](/reference/env), [bridge.yaml 키](/reference/config), [주소와 HTTP API](/reference/routes): 전체 목록이에요.

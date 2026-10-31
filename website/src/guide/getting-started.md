@@ -12,7 +12,7 @@ description: 돌고 있는 서버에 맥을 연결하고, 폰에서 첫 세션�
 
 - **돌고 있는 Agent Bridge 서버.** 아래에서 `SITE` 는 서버 주소예요(예: `https://bridge.example.com`). 서버가 없으면 [서버 올리기](/guide/operate/self-host)부터 하세요.
 - **GitHub 계정.** 서버 운영자가 허용한 계정만 들어갈 수 있어요.
-- **macOS 맥 한 대.** Node.js 18 이상, git, [Claude Code](https://docs.claude.com/en/docs/claude-code)(`claude`)가 필요하고, `claude` 는 로그인돼 있어야 해요.
+- **macOS 맥 한 대.** Node.js 18 이상, git, [Claude Code](https://docs.claude.com/en/docs/claude-code)(`claude`)가 필요하고, `claude` 는 로그인돼 있어야 해요. Ubuntu 같은 systemd Linux 서버도 호스트로 붙일 수 있어요([Linux 서버 연결하기](/guide/use/linux)).
 - **맥의 Google Chrome.** 맥과 서버를 잇는 탭은 Chrome 에서 열어요.
 - **폰 브라우저.** iOS·iPadOS Safari 16.4 이상, Android Chrome 111 이상이에요.
 
@@ -40,17 +40,19 @@ curl -fsSL SITE/install.sh | bash
 
 설치 스크립트는 이 순서로 일해요.
 
-1. macOS 인지 확인해요. 다른 운영체제면 멈춰요.
+1. macOS 나 Linux 인지 확인해요. 다른 운영체제면 멈춰요.
 2. 필요한 도구를 확인해요: `node`, `tmux`, `git`, `claude`. 없는 도구는 [Homebrew](https://brew.sh) 가 있으면 설치할지 물어요. `claude` 는 직접 설치하도록 안내해요.
 3. `node` 가 없거나 18 보다 낮으면 멈춰요.
 4. 에이전트 파일을 받아 `~/.claude-bridge/` 에 둬요.
 5. 처음이면 이 맥의 종류(아이맥, 맥북 등)와 사이트에 보일 이름을 물어요. 그냥 Enter 를 누르면 감지한 값을 써요.
-6. 에이전트를 [launchd](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html) 백그라운드 서비스로 설치해요. 맥에 로그인하면 에이전트가 저절로 켜져요.
+6. 에이전트를 [launchd](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html) 백그라운드 서비스로 설치해요(Linux 는 systemd 사용자 서비스). 맥에 로그인하면 에이전트가 저절로 켜져요.
 7. 브라우저로 **연동 페이지**(`SITE/bridge`)를 열어요.
 
 `백그라운드 서비스로 설치했습니다. 이 터미널은 닫아도 됩니다.` 가 보이면 설치가 끝난 것이에요.
 
-`tmux` 는 없어도 돼요. 세션은 에이전트가 직접 받아 두는 [zeropty](https://github.com/CreatiCoding/zeropty) 에서 돌고, `tmux` 는 그게 안 될 때의 대비예요.
+`tmux` 는 없어도 돼요. 세션은 에이전트가 직접 받아 두는 [zeropty](https://github.com/CreatiCoding/zeropty) 에서 돌고, `tmux` 는 그게 안 될 때의 대비예요. 단 x86_64 가 아닌 Linux 에는 zeropty 가 없어 `tmux` 가 꼭 있어야 해요.
+
+Linux 서버는 설치 뒤 화면 없이 연결하는 단계가 더 있어요. [Linux 서버 연결하기](/guide/use/linux)를 따라 하세요.
 
 ::: warning 아직 없는 도구
 끝에 `아직 없는 도구:` 가 찍혀도 에이전트는 켜져요. 그 도구를 설치하기 전에는 세션을 시작할 수 없어요. 설치한 뒤에는 에이전트를 다시 켜지 않아도 바로 돼요.
@@ -66,7 +68,7 @@ curl -fsSL SITE/install.sh | bash -s -- --kind macbook --name "작업 맥북"
 
 | 옵션 | 뜻 |
 |---|---|
-| `--kind <종류>` | 맥 종류. `imac`, `macbook`, `macmini`, `macstudio`, `other` 중 하나예요 |
+| `--kind <종류>` | 기기 종류. `imac`, `macbook`, `macmini`, `macstudio`, `server`, `other` 중 하나예요 |
 | `--name <이름>` | 사이트에 보일 이 맥의 이름이에요 |
 | `--no-open` | 끝난 뒤 브라우저를 열지 않아요 |
 | `--foreground` | 백그라운드 서비스 대신 이 터미널에서 에이전트를 돌려요 |
