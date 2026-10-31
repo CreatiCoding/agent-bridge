@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName } from '../../agent/mux.mjs'
+import { ZEROPTY, ZEROPTY_RELEASES, zeroptyFor, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName } from '../../agent/mux.mjs'
 
 /** A release-shaped archive: <top>/zeropty, zeropty-tty, shim.dylib. */
 function fakeRelease(top = 'zp-test-darwin-universal') {
@@ -24,11 +24,19 @@ function fakeRelease(top = 'zp-test-darwin-universal') {
 const fetchOf = (buf, status = 200) => async () => new Response(buf, { status })
 const stateDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'zp-state-'))
 
-test('ZEROPTY: 고정 버전과 64자리 SHA-256, 주소는 그 버전의 GitHub 릴리스', () => {
-  assert.equal(ZEROPTY.version, '0.1.3')
-  assert.match(ZEROPTY.sha256, /^[0-9a-f]{64}$/)
-  assert.equal(ZEROPTY.url, `https://github.com/CreatiCoding/zeropty/releases/download/v${ZEROPTY.version}/${ZEROPTY.top}.tar.gz`)
-  assert.ok(Object.isFrozen(ZEROPTY))
+test('ZEROPTY: 시스템마다 고정 버전과 64자리 SHA-256, 주소는 그 버전의 GitHub 릴리스', () => {
+  // 시험이 도는 시스템(macOS 맥, Linux CI)과 상관없이 표 전체를 본다.
+  assert.equal(ZEROPTY_RELEASES.darwin.version, '0.1.3')
+  assert.equal(ZEROPTY_RELEASES['linux-x64'].version, '0.1.6')
+  for (const z of Object.values(ZEROPTY_RELEASES)) {
+    assert.match(z.sha256, /^[0-9a-f]{64}$/)
+    assert.equal(z.url, `https://github.com/CreatiCoding/zeropty/releases/download/v${z.version}/${z.top}.tar.gz`)
+    assert.ok(Object.isFrozen(z))
+  }
+  assert.equal(zeroptyFor('darwin', 'arm64'), ZEROPTY_RELEASES.darwin)
+  assert.equal(zeroptyFor('linux', 'x64'), ZEROPTY_RELEASES['linux-x64'])
+  assert.equal(zeroptyFor('linux', 'arm64'), null)
+  assert.equal(ZEROPTY, zeroptyFor(process.platform, process.arch))
 })
 
 test('installZeropty: 해시가 맞으면 <state>/zeropty/<버전>/ 에 풀고, 다음엔 받지 않는다', async () => {
