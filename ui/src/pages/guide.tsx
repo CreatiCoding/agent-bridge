@@ -388,7 +388,7 @@ export function GuidePage({ me, path }: { me: Me | null; path: Path }) {
           ) : all ? (
             <div className="guide-done">
               <Icon name="check" />
-              <span className="grow">{path === 'accounts' ? '계정을 나눠 쓸 준비가 끝났어요.' : '준비 끝! 왼쪽 목록에서 세션을 골라 이어서 하세요.'}</span>
+              <span className="grow">{path === 'accounts' ? '계정을 나눠 쓸 준비가 끝났어요.' : '준비가 끝났어요. 왼쪽 목록에서 세션을 골라 이어서 하세요.'}</span>
               <Button size="sm" onClick={() => go({ name: 'home' })}>
                 세션 목록
               </Button>

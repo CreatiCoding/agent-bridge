@@ -226,7 +226,7 @@ function Welcome() {
           <span className="empty-icon">
             <Logo size={30} />
           </span>
-          <p className="empty-title">{hosts ? '첫 세션을 띄워 볼까요?' : '어서 오세요!'}</p>
+          <p className="empty-title">{hosts ? '첫 세션을 띄워 볼까요?' : '맥을 연결해 주세요'}</p>
           <div className="empty-text">{hosts ? '맥이 연결됐어요. 시작 가이드에서 남은 단계를 이어서 하세요.' : '맥 한 대를 연결하면 시작할 수 있어요. 시작 가이드가 단계마다 안내하고, 끝난 단계는 저절로 체크해요.'}</div>
           <div className="empty-action hstack" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button tone="primary" icon="info" onClick={() => go({ name: 'guide', path: 'start' })}>

@@ -331,7 +331,7 @@ function MenuList({ items, onDone, hover }: { items: MenuEntry[]; onDone: () => 
 /** A submenu beside its row: to the right, or to the left when the right has no room. */
 function FlyMenu({ item, at, onDone, onEnter }: { item: MenuItem; at: DOMRect; onDone: () => void; onEnter: () => void }) {
   const box = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState({ left: at.right + 4, top: at.top - 5, visible: false })
+  const [pos, setPos] = useState({ left: at.right + 4, top: at.top - 4, visible: false })
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
@@ -339,7 +339,7 @@ function FlyMenu({ item, at, onDone, onEnter }: { item: MenuItem; at: DOMRect; o
     const h = el.offsetHeight
     let left = at.right + 4
     if (left + w > innerWidth - 8) left = Math.max(8, at.left - w - 4)
-    const top = Math.max(8, Math.min(at.top - 5, innerHeight - h - 8))
+    const top = Math.max(8, Math.min(at.top - 4, innerHeight - h - 8))
     setPos({ left, top, visible: true })
   }, [at])
   return (

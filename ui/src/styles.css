@@ -149,6 +149,9 @@ body {
 a {
   color: var(--blue);
 }
+b, strong, h1, h2, h3, h4, h5, h6, th {
+  font-weight: 600;
+}
 button {
   font: inherit;
   color: inherit;
@@ -433,7 +436,7 @@ button:not(:disabled) {
 .segmented button {
   border: 0;
   background: transparent;
-  border-radius: 8px;
+  border-radius: 7px;
   padding: 5px 12px;
   font-size: var(--fs-small);
   font-weight: 600;
@@ -762,7 +765,7 @@ select.input {
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: var(--shadow);
-  padding: 5px;
+  padding: 4px;
   animation: fade 0.1s;
 }
 .menu-title {
@@ -1201,7 +1204,7 @@ select.input {
   font: inherit;
   color: inherit;
   padding: 0 4px;
-  margin-left: -4px;
+  margin-left: -6px;
   border-radius: 4px;
   cursor: copy;
 }
@@ -1342,7 +1345,7 @@ select.input {
 .srow-top {
   display: flex;
   gap: 6px;
-  align-items: center;
+  align-items: baseline;
 }
 .srow-title {
   flex: 1;
@@ -1365,6 +1368,7 @@ select.input {
   font-size: var(--fs-xsmall);
   color: var(--faint);
   flex: none;
+  font-variant-numeric: tabular-nums;
 }
 .host-head {
   display: flex;
@@ -1494,7 +1498,7 @@ select.input {
   color: var(--muted);
 }
 .todo-ask-head b {
-  font-weight: 650;
+  font-weight: 600;
 }
 .todo-ask ul {
   list-style: none;
@@ -1849,7 +1853,7 @@ select.input {
   color: var(--text);
 }
 .tool-name {
-  font-weight: 650;
+  font-weight: 600;
   color: var(--text);
   flex: none;
 }
@@ -1864,7 +1868,7 @@ select.input {
 }
 .tool-state {
   flex: none;
-  width: 16px;
+  width: var(--icon);
   display: grid;
   place-items: center;
 }
@@ -2004,11 +2008,11 @@ select.input {
   padding: 12px 14px 4px;
   font-size: var(--fs-small);
   color: var(--muted);
-  font-weight: 650;
+  font-weight: 600;
 }
 .dcard-title {
   padding: 2px 14px 6px;
-  font-weight: 650;
+  font-weight: 600;
   font-size: var(--fs-large);
   white-space: pre-wrap;
 }
@@ -2113,7 +2117,7 @@ select.input {
 }
 .side-q-q {
   color: var(--violet);
-  font-weight: 650;
+  font-weight: 600;
   margin-bottom: 4px;
 }
 .held {
@@ -2559,7 +2563,7 @@ select.input {
   text-decoration: line-through;
 }
 .todos li.now {
-  font-weight: 650;
+  font-weight: 600;
 }
 .todo-fold button {
   display: inline-flex;
@@ -2702,7 +2706,7 @@ li.done > .todo-mark {
 .todo-panel-head b {
   flex: 1;
   color: var(--text);
-  font-weight: 650;
+  font-weight: 600;
 }
 .todo-bar {
   height: 4px;
@@ -2770,7 +2774,7 @@ li.done > .todo-mark {
 }
 .todo-panel li.now {
   color: var(--text);
-  font-weight: 650;
+  font-weight: 600;
 }
 /* Taking an item off the list (REQ-F-784): its × shows on hover or focus, and always where there is no hover. */
 .todo-del {
@@ -2813,6 +2817,7 @@ li:hover > .todo-del,
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font-variant-numeric: tabular-nums;
 }
 .gauge-bar {
   width: 36px;
@@ -3453,7 +3458,7 @@ body.group-sorting * {
 }
 .inline-icon {
   display: inline-block;
-  vertical-align: -1px;
+  vertical-align: calc(0.35em - var(--icon) / 2);
   margin-right: 4px;
   color: var(--muted);
 }
@@ -3493,7 +3498,7 @@ body.group-sorting * {
   border: 0;
   color: #fff;
   font-size: var(--fs-small);
-  font-weight: 650;
+  font-weight: 600;
 }
 .swipe-grey {
   background: #8a867d;
@@ -3536,11 +3541,12 @@ body.group-sorting * {
   flex-wrap: wrap;
   gap: 4px 10px;
   align-items: center;
-  padding: 6px 12px 0;
+  padding: 6px 10px 0;
   /* One text line high even when empty, so a count appearing or going away does not move the list below. */
   min-height: calc(6px + 1.6em);
   font-size: var(--fs-small);
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .list-summary b {
   color: var(--text);
@@ -3550,12 +3556,12 @@ body.group-sorting * {
 }
 .sum-need {
   color: var(--amber);
-  font-weight: 650;
+  font-weight: 600;
 }
 .sum-off {
   color: var(--red);
   text-decoration: none;
-  font-weight: 650;
+  font-weight: 600;
 }
 .topbar-title .crumbs {
   display: flex;
@@ -3803,15 +3809,21 @@ body.group-sorting * {
 /* A calmer list: short group heads with the name in the text colour and the count beside it, the ⋯ only under the
    pointer (always on touch screens), and rows a little tighter. */
 .list .section-head {
-  padding: 4px 4px 2px 8px;
+  padding: 4px 4px 2px 10px;
   /* As tall without buttons as with them (28 px + the padding): a rest button appearing when another device put a
      session to rest made the head taller and moved the list under it. */
   min-height: 34px;
 }
+.list .section-head:not(.group-head) {
+  margin-top: 8px;
+}
+.split-presets-list .row {
+  padding-left: 10px;
+}
 .list .section-title {
   /* The same size as a session's title: the list reads as one list. */
   font-size: var(--fs-medium);
-  font-weight: 650;
+  font-weight: 600;
   color: var(--muted);
   letter-spacing: 0;
 }
@@ -4402,7 +4414,7 @@ body.group-sorting * {
 .q-direct {
   fill: var(--text);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
 }
 .q-tip {
   position: absolute;
@@ -4476,7 +4488,7 @@ body.group-sorting * {
   color: var(--faint);
 }
 .q-cell b {
-  font-weight: 650;
+  font-weight: 600;
 }
 .q-good b {
   color: var(--green);
@@ -4544,6 +4556,9 @@ body.group-sorting * {
   .search {
     font-size: 16px;
     height: 40px;
+  }
+  .main.sess .inputbox {
+    border-radius: 30px;
   }
 }
 /* Skip link: the first Tab stop on a PC, straight to the page's content past the rail and the list. */
