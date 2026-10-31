@@ -26,7 +26,19 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.372',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: '즐겨찾기 별·열쇠 같은 글 속 아이콘이 글자 가운데에 맞아요. 별 있는 세션 줄만 조금 높던 것도 없어졌어요', refs: ['REQ-F-782'] },
+      { kind: 'fixed', scope: ['ui'], text: '세션 줄의 제목과 시간이 같은 기준선에 놓이고, 목록 요약 줄·절 제목·상태 점·분할 조합이 한 왼쪽 선에 맞아요. 절과 절 사이를 8 px 띄웠어요', refs: ['REQ-F-698', 'REQ-F-119'] },
+      { kind: 'changed', scope: ['ui'], text: '650·700 이던 굵은 글자를 모두 600 으로 낮추고, 시간·컨텍스트·세션 수 숫자는 폭이 같은 숫자로 그려요', refs: ['REQ-F-698', 'REQ-F-119', 'REQ-F-778'] },
+      { kind: 'fixed', scope: ['ui'], text: '도구 줄 상태 아이콘이 칸을 넘지 않고, 머리줄 경로 앞 간격·정렬 단추와 메뉴 판의 안쪽 둥글기가 맞아요. 폰 입력 카드 모서리를 30 px 로 넓혀 둥근 단추가 테두리에 닿지 않아요', refs: ['REQ-F-177', 'REQ-F-724'] },
+      { kind: 'changed', scope: ['ui'], text: '빈 홈 제목 "어서 오세요!" 를 "맥을 연결해 주세요" 로, 제보·가이드 문구의 느낌표를 빼고, 제보 말풍선의 🎬 를 재생 아이콘으로 바꿨어요', refs: ['REQ-F-545', 'REQ-F-735'] },
+    ],
+  },
+  {
     version: '1.371',
+    commit: '39dd0b7',
     date: '2026-10-31',
     changes: [
       { kind: 'changed', scope: ['ui'], text: '반짝이 아이콘을 뜻에 맞는 아이콘으로 바꿨어요. 지금 압축은 새 압축 아이콘, 가벼운 복제는 번개, 할 일 정리는 문서, 큰 대화 기록 경고는 경고 아이콘이에요', refs: ['REQ-F-776', 'REQ-F-610'] },

@@ -1,5 +1,5 @@
 // What a page shows before the first picture of the Macs and sessions has arrived: a spinner while it comes, and
-// a failure with 다시 시도 when the stream cannot be reached. Never "연결된 맥이 없어요" or "어서 오세요": with
+// a failure with 다시 시도 when the stream cannot be reached. Never "연결된 맥이 없어요" or "맥을 연결해 주세요": with
 // nothing read yet, those claimed something that was not known (and sent people off to connect a Mac again).
 import { LoadError, Spinner } from '../kit'
 import { useStore } from '../lib/store'

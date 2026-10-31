@@ -175,13 +175,13 @@ export function ReportSheet({ open, onClose, sid }: { open: boolean; onClose: ()
                 </span>
               ) : null}
               {s.videos.map((name, j) => (
-                <p key={`v${j}`}>🎬 {name}</p>
+                <p key={`v${j}`}><Icon name="play" className="inline-icon" />{name}</p>
               ))}
               {s.text ? <p>{s.text}</p> : null}
             </div>
             <div className="report-msg desk">
               <Icon name="check" />
-              <p>제보되었습니다. 고마워요!</p>
+              <p>제보되었습니다. 고마워요</p>
             </div>
           </Fragment>
         ))}
