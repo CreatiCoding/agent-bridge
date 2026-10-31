@@ -67,13 +67,12 @@ const APP_SNOOZE = 'cb2.appUpdateSnooze'
 export const getAppSnooze = () => read<{ build: number; until: number } | null>(APP_SNOOZE, null)
 export const setAppSnooze = (v: { build: number; until: number }) => write(APP_SNOOZE, v)
 
-/** "하루 동안 안 보기" on the agent update dialog (REQ-F-832): until when, per Mac. */
-const AGENT_SNOOZE = 'cb2.agentUpdateSnooze'
+/**
+ * "하루 동안 안 보기" on the agent update dialog (REQ-F-832): until when, for every Mac and every build (1.379).
+ * Kept per Mac until 1.378, so another Mac taking a new deploy brought the dialog back the same day.
+ */
+const AGENT_SNOOZE = 'cb2.agentUpdateSnoozeUntil'
+write('cb2.agentUpdateSnooze', null)
 export const AGENT_UPDATE_SNOOZE_MS = 24 * 60 * 60_000
-export const getAgentSnooze = () => read<Record<string, number>>(AGENT_SNOOZE, {})
-export function setAgentSnooze(hostId: string, until: number) {
-  const all = getAgentSnooze()
-  for (const [k, v] of Object.entries(all)) if (v < Date.now()) delete all[k]
-  all[hostId] = until
-  write(AGENT_SNOOZE, all)
-}
+export const getAgentSnooze = () => read<number>(AGENT_SNOOZE, 0)
+export const setAgentSnooze = (until: number) => write(AGENT_SNOOZE, until)

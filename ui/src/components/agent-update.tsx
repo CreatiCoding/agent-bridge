@@ -1,5 +1,6 @@
 // 새 버전 안내 (REQ-F-832). A Mac that takes new agents only at night holds one it has received until then; this asks
-// once whether to put it in now. "나중에" leaves it for this page load, "하루 동안 안 보기" for a day on this browser.
+// once whether to put it in now. "나중에" leaves it for this page load, "하루 동안 안 보기" for a day on this browser,
+// both for every Mac and every build: a new deploy does not bring it back (1.379).
 import { useState } from 'react'
 import { useStore } from '../lib/store'
 import type { Host } from '../lib/types'
@@ -8,15 +9,15 @@ import { Button } from '../kit'
 import { Sheet, toast } from '../kit/overlay'
 import { errorText, post } from '../lib/api'
 
-/** Builds put off for this page load, by Mac. */
-const later = new Set<string>()
+/** "나중에" was pressed in this page load. */
+let later = false
 
-/** The first Mac holding a new agent the person may want now: online, waiting for its window, not put off. */
-export function waitingUpdate(hosts: Host[] | undefined, snooze: Record<string, number>, now: number): Host | null {
+/** The first Mac holding a new agent the person may want now: online, waiting for its window; none while put off. */
+export function waitingUpdate(hosts: Host[] | undefined, snoozeUntil: number, now: number, putOff = later): Host | null {
+  if (putOff || snoozeUntil > now) return null
   for (const h of hosts ?? []) {
     const p = h.update?.pending
     if (!h.online || !p || p.now || h.update?.mode !== 'night') continue
-    if ((snooze[h.id] ?? 0) > now || later.has(`${h.id}:${p.build}`)) continue
     return h
   }
   return null
@@ -31,11 +32,11 @@ export function AgentUpdatePrompt() {
   const { build } = host.update.pending
   const { from, to } = host.update
   const putOff = () => {
-    later.add(`${host.id}:${build}`)
+    later = true
     redraw((n) => n + 1)
   }
   const snooze = () => {
-    setAgentSnooze(host.id, Date.now() + AGENT_UPDATE_SNOOZE_MS)
+    setAgentSnooze(Date.now() + AGENT_UPDATE_SNOOZE_MS)
     putOff()
   }
   const go = async () => {

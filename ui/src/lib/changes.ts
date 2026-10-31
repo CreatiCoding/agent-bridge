@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.379',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '새 버전 안내에서 "하루 동안 안 보기"를 누르면 새로 배포돼도 24시간 동안 다시 뜨지 않는다(모든 맥 공통). "나중에"도 그 페이지를 연 동안은 새 배포에 다시 뜨지 않는다',
+        refs: ['REQ-F-832'],
+      },
+    ],
+  },
+  {
     version: '1.378',
     date: '2026-11-01',
+    commit: 'd3a6ef8',
     changes: [
       {
         kind: 'added',
