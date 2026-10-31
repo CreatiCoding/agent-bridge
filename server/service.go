@@ -117,16 +117,17 @@ func serviceAPI(req *Req, res *Res, p string) {
 		jsonRes(res, 200, out)
 		return
 	}
-	// The caller is done with it: claude stops on the Mac and frees its memory (REQ-F-799, IF-253). Closing twice is fine.
+	// The caller is done with it: claude stops on the Mac and frees its memory, and the session leaves the person's
+	// list as 제거 does (REQ-F-799, IF-253, 1.376). A second close finds no session: 404 세션이 없습니다.
 	if m := serviceCloseRe.FindStringSubmatch(p); m != nil && req.Method == "POST" {
 		c := own(m[1])
 		if !truthy(c.get("closed")) {
 			sessBefore("session.close", c, kv{"kind", "end"})
-		}
-		if !truthy(c.get("closed")) {
 			closeSession(c, "종료(서비스 API)")
-			broadcastState(uid)
 		}
+		forgetSession(c)
+		savePrefs(uid)
+		broadcastState(uid)
 		jsonRes(res, 200, M{"ok": true, "id": c.id(), "state": "closed"})
 		return
 	}

@@ -20,11 +20,13 @@ func TestSweepEndedTakesDeployedAutoFix(t *testing.T) {
 	mk("ended-auto", M{"closed": true, "closedAt": now - day, "lastAt": now - day, "reportAuto": "r1", "reportDeployed": true})
 	mk("ended-auto-undeployed", M{"closed": true, "closedAt": now - day, "lastAt": now - day, "reportAuto": "r2"})
 	mk("open-auto", M{"lastAt": now, "reportAuto": "r3", "reportDeployed": true})
+	mk("ended-service", M{"closed": true, "closedAt": now - day, "lastAt": now - day, "service": true})
+	mk("open-service", M{"lastAt": now, "service": true})
 
 	var n int
 	withLock(func() { n = sweepEnded(now) })
-	eq(t, n, 2, "removed")
-	for id, kept := range map[string]bool{"ended-recent": true, "ended-old": false, "ended-auto": false, "ended-auto-undeployed": true, "open-auto": true} {
+	eq(t, n, 3, "removed")
+	for id, kept := range map[string]bool{"ended-recent": true, "ended-old": false, "ended-auto": false, "ended-auto-undeployed": true, "open-auto": true, "ended-service": false, "open-service": true} {
 		_, has := sessions.Get(id)
 		eq(t, has, kept, id)
 	}

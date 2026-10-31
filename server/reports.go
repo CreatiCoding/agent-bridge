@@ -762,7 +762,9 @@ func sweepEnded(now float64) int {
 	for _, meta := range sessions.Values() {
 		// A 자동 대응 session closed after its deploy (kept by a server from before such ones were removed at once) goes now.
 		deployed := meta.get("reportAuto") != nil && truthy(meta.get("reportDeployed"))
-		if !truthy(meta.get("closed")) || truthy(meta.get("moving")) || (!deployed && now-endedAt(meta) < ENDED_KEEP_MS) {
+		// So does a session the service API opened (1.376): nobody keeps one to come back to.
+		service := truthy(meta.get("service"))
+		if !truthy(meta.get("closed")) || truthy(meta.get("moving")) || (!deployed && !service && now-endedAt(meta) < ENDED_KEEP_MS) {
 			continue
 		}
 		forgetSession(meta)
@@ -773,6 +775,8 @@ func sweepEnded(now float64) int {
 		why := "끝난 지 7일이 지나"
 		if deployed {
 			why = "자동 대응이 배포를 마쳐"
+		} else if service {
+			why = "서비스 API 세션이 끝나"
 		}
 		logLine("session " + meta.id() + ": " + why + " 이어서 하기에서 지움")
 	}

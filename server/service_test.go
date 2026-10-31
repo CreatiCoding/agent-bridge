@@ -117,10 +117,10 @@ func TestServiceClose(t *testing.T) {
 	})
 	eq(t, post("svc"), 200, "a session it opened")
 	withLock(func() {
-		c, _ := sessions.Get("svc")
-		ok(t, truthy(c.get("closed")), "closed after the call")
+		_, has := sessions.Get("svc")
+		ok(t, !has, "closed and off the list after the call (1.376)")
 	})
-	eq(t, post("svc"), 200, "closing again")
+	eq(t, post("svc"), 404, "closing again: already gone")
 	eq(t, post("own"), 404, "the person's own session")
 	eq(t, post("other"), 404, "someone else's session")
 	eq(t, post("nope"), 404, "no such session")

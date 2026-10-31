@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.376',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '서비스 API(자동 수정 서버)가 닫은 세션은 세션 목록(이어서 하기)에서도 바로 빠진다. 전에 닫혀 남아 있던 서비스 세션도 정리한다. 두 번째 닫기는 404. 맥의 폴더와 대화는 남는다',
+        refs: ['REQ-F-799', 'REQ-F-742', 'IF-253'],
+      },
+    ],
+  },
+  {
     version: '1.375',
     date: '2026-11-01',
+    commit: 'f6b843e',
     changes: [
       {
         kind: 'security',
