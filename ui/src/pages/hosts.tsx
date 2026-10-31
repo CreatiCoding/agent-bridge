@@ -350,16 +350,16 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i)
  * soon as one arrives, and 지금 업데이트 for one already taken.
  */
 function UpdateBox({ hostId, policy, online }: { hostId: string; policy: UpdatePolicy; online: boolean }) {
-  const [shown, setShown] = useState<Pick<UpdatePolicy, 'mode' | 'from' | 'to'> | null>(null)
+  const [shown, setShown] = useState<Pick<UpdatePolicy, 'mode' | 'from' | 'to' | 'skipBusy'> | null>(null)
   const [busy, setBusy] = useState(false)
   const now = shown ?? policy
-  const set = async (next: Pick<UpdatePolicy, 'mode' | 'from' | 'to'>) => {
+  const set = async (next: Pick<UpdatePolicy, 'mode' | 'from' | 'to' | 'skipBusy'>) => {
     if (next.from === next.to) return toast('시작과 끝 시간이 같으면 안 돼요', { tone: 'bad' })
     setBusy(true)
     try {
-      const r = await post<{ ok: true } & Pick<UpdatePolicy, 'mode' | 'from' | 'to'>>(`/api/hosts/${hostId}/update`, next)
-      setShown({ mode: r.mode, from: r.from, to: r.to })
-      toast(r.mode === 'always' ? '새 버전을 받는 대로 바꿔요' : `새 버전은 ${r.from}~${r.to}시 사이에 바꿔요`)
+      const r = await post<{ ok: true } & Pick<UpdatePolicy, 'mode' | 'from' | 'to' | 'skipBusy'>>(`/api/hosts/${hostId}/update`, next)
+      setShown({ mode: r.mode, from: r.from, to: r.to, skipBusy: r.skipBusy })
+      toast(r.mode === 'always' ? '새 버전을 받는 대로 바꿔요' : `새 버전은 ${r.from}~${r.to}시 사이에 바꿔요${r.skipBusy ? '. 작업 중인 세션이 있으면 다음 날로 미뤄요' : ''}`)
     } catch (e) {
       toast(errorText(e), { tone: 'bad' })
     }
@@ -398,6 +398,15 @@ function UpdateBox({ hostId, policy, online }: { hostId: string; policy: UpdateP
                   ))}
                 </select>
                 <span>사이에 바꿔요 (이 맥의 시각)</span>
+              </div>
+            ) : null}
+            {now.mode === 'night' ? (
+              <div className="setting-line">
+                <span className="grow">
+                  <b style={{ fontSize: 'var(--fs-medium)' }}>작업 중인 세션이 있으면 다음 날로</b>
+                  <Help>그 시간에 일하는 세션이 있으면 모두 쉴 때까지 기다려요. 끝날 때까지 쉬지 않으면 그날은 건너뛰고 다음 날 같은 시간에 다시 해요</Help>
+                </span>
+                <Switch label="작업 중인 세션이 있으면 다음 날로" checked={now.skipBusy} onChange={(skipBusy) => void set({ ...now, skipBusy })} />
               </div>
             ) : null}
           </fieldset>

@@ -3361,12 +3361,13 @@ const commands = {
     health().catch(() => {})
   },
   /** When this Mac takes a new agent (REQ-F-832): only at night (from~to o'clock) or as soon as it arrives. */
-  updatePolicy({ reqId, mode, from, to }) {
-    const error = updatePolicyError({ mode, from, to })
+  updatePolicy({ reqId, mode, from, to, skipBusy }) {
+    const error = updatePolicyError({ mode, from, to, skipBusy })
     if (error) return emit({ t: 'updatePolicy', reqId, ok: false, error })
-    config.update = { mode, from, to }
+    // An older page sends no skipBusy: what was set stays.
+    config.update = { mode, from, to, skipBusy: skipBusy ?? updatePolicyOf(config.update).skipBusy }
     writeJson(configPath, config)
-    log('info', 'update', mode === 'always' ? '업데이트: 받는 대로 바꿈' : `업데이트: ${from}~${to}시 사이에만 바꿈`)
+    log('info', 'update', mode === 'always' ? '업데이트: 받는 대로 바꿈' : `업데이트: ${from}~${to}시 사이에만 바꿈${config.update.skipBusy ? '(작업 중인 세션이 있으면 다음 날로)' : ''}`)
     emit({ t: 'updatePolicy', reqId, ok: true, ...updatePolicyOf(config.update) })
     health().catch(() => {})
   },
@@ -3792,7 +3793,7 @@ async function health() {
     repairs: repairs.slice(0, 30),
     compactWindow: compactWindowOf(config.compactWindow),
     // When this Mac takes a new agent and the one waiting for that, if any (REQ-F-832).
-    update: { ...updatePolicyOf(config.update), off: !!noAutoUpdate, pending: pendingUpdate ? { build: pendingUpdate.build, at: pendingUpdate.at, now: !!pendingUpdate.now } : null },
+    update: { ...updatePolicyOf(config.update), off: !!noAutoUpdate, busy: sessionsWorking(), pending: pendingUpdate ? { build: pendingUpdate.build, at: pendingUpdate.at, now: !!pendingUpdate.now } : null },
     awake: { idle: !!config.keepAwake, idleActive: !!keepAwake, lid: !!config.keepLidAwake, lidActive, lidReady: await lidReady(), kind: config.kind },
     load: os.loadavg()[0],
     memFree: os.freemem(),
@@ -4517,8 +4518,10 @@ async function features() {
   const bad = checks.filter((c) => c.level !== 'ok')
   add('checks', '도구·환경 점검', bad.some((c) => c.level === 'fail') ? 'fail' : bad.length ? 'warn' : 'ok', bad.length ? bad.map((c) => `${c.title}: ${c.detail}`).join(' / ') : `모두 정상 (${checks.length}개)`, { action: 'check', ...(bad.find((c) => c.fix) ? { fix: bad.find((c) => c.fix).fix } : {}) })
   const up = updatePolicyOf(config.update)
-  const upWhen = up.mode === 'always' ? '받는 대로 바꿈' : `${up.from}~${up.to}시에 바꿈`
-  add('update', '자동 업데이트', noAutoUpdate ? 'off' : pendingUpdate ? 'warn' : 'ok', noAutoUpdate ? '꺼짐 (--no-auto-update)' : pendingUpdate ? `새 버전 ${pendingUpdate.build ?? ''} 을 받음 · ${pendingUpdate.now || updateDue(up, new Date().getHours()) ? '곧 바꿈' : upWhen}` : `build ${BUILD} · ${upWhen}`)
+  const upWhen = up.mode === 'always' ? '받는 대로 바꿈' : `${up.from}~${up.to}시에 바꿈${up.skipBusy ? '(작업 중이면 다음 날)' : ''}`
+  const upHour = new Date().getHours()
+  const upBusy = pendingUpdate && !pendingUpdate.now && updateDue(up, upHour) && !updateDue(up, upHour, false, sessionsWorking())
+  add('update', '자동 업데이트', noAutoUpdate ? 'off' : pendingUpdate ? 'warn' : 'ok', noAutoUpdate ? '꺼짐 (--no-auto-update)' : pendingUpdate ? `새 버전 ${pendingUpdate.build ?? ''} 을 받음 · ${upBusy ? '작업 중인 세션이 쉬면 바꿈' : pendingUpdate.now || updateDue(up, upHour) ? '곧 바꿈' : upWhen}` : `build ${BUILD} · ${upWhen}`)
   // The key that opens this agent to the site's pages: when it was made, and a button to change it (R1-M8).
   const lastKey = config.keyLog?.[0]
   const lastKeyResult = lastKey ? rekeyResult(lastKey, Date.now(), OLD_KEY_MS) : null
@@ -4545,6 +4548,8 @@ const atRest = () => [...sessions.values()].every((s) => !s.turn && !s.held?.len
 let whisper = null
 const whisperDir = () => path.join(STATE_DIR, 'whisper')
 process.on('exit', () => whisper?.stop())
+/** A session in the middle of a turn (REQ-F-832 skipBusy): a night update waits for it, or for the next night. */
+const sessionsWorking = () => [...sessions.values()].some((s) => s.alive && s.turn)
 const midAction = () => [...sessions.values()].some((s) => s.check || s.starting || s.refreshing || s.lightforking)
 /** How long an update or a restart waits for those few-second actions before going anyway. */
 const RESTART_WAIT_MS = 60_000
@@ -4851,7 +4856,7 @@ setInterval(async () => {
   try {
     // Only when it is due (REQ-F-832): the night window, `always`, or 지금 업데이트. The 60 s wait for the agent's own
     // few-second actions counts from then, not from when the update came (hours earlier at night).
-    if (pendingUpdate && updateDue(updatePolicyOf(config.update), new Date().getHours(), pendingUpdate.now)) {
+    if (pendingUpdate && updateDue(updatePolicyOf(config.update), new Date().getHours(), pendingUpdate.now, sessionsWorking())) {
       pendingUpdate.dueAt ??= Date.now()
       if (!midAction() || Date.now() - pendingUpdate.dueAt > RESTART_WAIT_MS) return await applyUpdate()
     }

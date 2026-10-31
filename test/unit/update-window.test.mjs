@@ -4,9 +4,9 @@ import assert from 'node:assert/strict'
 import { updatePolicyOf, updatePolicyError, inUpdateWindow, updateDue, UPDATE_WINDOW_DEFAULT } from '../../agent/guard.mjs'
 
 test('the default is the night window, 4~6 o\'clock', () => {
-  assert.deepEqual(updatePolicyOf(undefined), { mode: 'night', ...UPDATE_WINDOW_DEFAULT })
-  assert.deepEqual(updatePolicyOf({ mode: 'bogus', from: 4, to: 4 }), { mode: 'night', from: 4, to: 6 })
-  assert.deepEqual(updatePolicyOf({ mode: 'always', from: 22, to: 2 }), { mode: 'always', from: 22, to: 2 })
+  assert.deepEqual(updatePolicyOf(undefined), { mode: 'night', ...UPDATE_WINDOW_DEFAULT, skipBusy: true })
+  assert.deepEqual(updatePolicyOf({ mode: 'bogus', from: 4, to: 4 }), { mode: 'night', from: 4, to: 6, skipBusy: true })
+  assert.deepEqual(updatePolicyOf({ mode: 'always', from: 22, to: 2, skipBusy: false }), { mode: 'always', from: 22, to: 2, skipBusy: false })
 })
 
 test('a window takes its start hour and not its end hour, and may run past midnight', () => {
@@ -34,4 +34,16 @@ test('a policy from the site is checked', () => {
   assert.ok(updatePolicyError({ mode: 'night', from: 4, to: 24 }))
   assert.ok(updatePolicyError({ mode: 'night', from: 4.5, to: 6 }))
   assert.ok(updatePolicyError({ mode: 'night', from: 5, to: 5 }))
+})
+
+test('at night a working session puts the update off, unless skipBusy is off (1.378)', () => {
+  const night = updatePolicyOf({})
+  assert.equal(night.skipBusy, true)
+  assert.equal(updateDue(night, 5, false, true), false)
+  assert.equal(updateDue(night, 5, false, false), true)
+  assert.equal(updateDue(night, 5, true, true), true, '지금 업데이트는 기다리지 않는다')
+  assert.equal(updateDue(updatePolicyOf({ mode: 'night', from: 4, to: 6, skipBusy: false }), 5, false, true), true)
+  assert.equal(updateDue(updatePolicyOf({ mode: 'always', from: 4, to: 6 }), 13, false, true), true)
+  assert.equal(updatePolicyError({ mode: 'night', from: 4, to: 6, skipBusy: 'yes' }) !== null, true)
+  assert.equal(updatePolicyError({ mode: 'night', from: 4, to: 6, skipBusy: false }), null)
 })

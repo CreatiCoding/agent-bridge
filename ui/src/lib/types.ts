@@ -212,6 +212,10 @@ export interface UpdatePolicy {
   mode: 'night' | 'always'
   from: number
   to: number
+  /** At night, wait while a session is working; a window that ends busy goes to the next night (on by default). */
+  skipBusy: boolean
+  /** A session is in the middle of a turn now. */
+  busy: boolean
   /** --no-auto-update: nothing is taken. */
   off: boolean
   /** The new agent taken and waiting to go in. `now`: 지금 업데이트 was asked. */

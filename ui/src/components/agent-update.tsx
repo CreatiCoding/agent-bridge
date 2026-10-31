@@ -62,7 +62,7 @@ export function AgentUpdatePrompt() {
       }
     >
       <p style={{ marginTop: 0 }}>
-        <b>{host.name}</b> 이 에이전트 새 버전({build})을 받아 뒀어요. 그대로 두면 그 맥의 시각으로 <b>{from}~{to}시</b> 사이에 바꿔요.
+        <b>{host.name}</b> 이 에이전트 새 버전({build})을 받아 뒀어요. 그대로 두면 그 맥의 시각으로 <b>{from}~{to}시</b> 사이에 바꿔요{host.update.skipBusy ? '(그때 작업 중인 세션이 있으면 다음 날로)' : ''}.
       </p>
       <p className="muted" style={{ marginBottom: 0 }}>
         지금 바꾸면 에이전트가 몇 초 동안 다시 시작해요. 세션은 그대로 이어지지만, 그 사이에 쓰던 화면은 잠깐 끊긴 것처럼 보일 수 있어요. 바꾸는 시간은 맥 화면의 자동 업데이트에서 고칠 수 있어요.

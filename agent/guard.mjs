@@ -642,11 +642,15 @@ export const UPDATE_MODES = ['night', 'always']
 export const UPDATE_WINDOW_DEFAULT = Object.freeze({ from: 4, to: 6 })
 const hourOk = (h) => Number.isInteger(h) && h >= 0 && h <= 23
 
-/** The policy kept in agent.json, with the defaults filled in; anything malformed falls back to the default. */
+/**
+ * The policy kept in agent.json, with the defaults filled in; anything malformed falls back to the default.
+ * `skipBusy` (on unless turned off): at night, not while a session is working; a window that ends busy is skipped
+ * and the update waits for the next night.
+ */
 export function updatePolicyOf(c) {
   const mode = UPDATE_MODES.includes(c?.mode) ? c.mode : 'night'
   const ok = hourOk(c?.from) && hourOk(c?.to) && c.from !== c.to
-  return { mode, from: ok ? c.from : UPDATE_WINDOW_DEFAULT.from, to: ok ? c.to : UPDATE_WINDOW_DEFAULT.to }
+  return { mode, from: ok ? c.from : UPDATE_WINDOW_DEFAULT.from, to: ok ? c.to : UPDATE_WINDOW_DEFAULT.to, skipBusy: c?.skipBusy !== false }
 }
 
 /** Why a policy the site sends is refused, or null when it is fine. */
@@ -654,11 +658,15 @@ export function updatePolicyError(p) {
   if (!UPDATE_MODES.includes(p?.mode)) return '업데이트 방식은 night 또는 always 예요'
   if (!hourOk(p.from) || !hourOk(p.to)) return '업데이트 시간은 0~23시예요'
   if (p.from === p.to) return '시작과 끝 시간이 같아요'
+  if (p.skipBusy !== undefined && typeof p.skipBusy !== 'boolean') return 'skipBusy 는 참·거짓이에요'
   return null
 }
 
 /** Whether hour (0~23) falls in [from, to); a window like 22~2 runs past midnight. */
 export const inUpdateWindow = (hour, from, to) => (from < to ? hour >= from && hour < to : hour >= from || hour < to)
 
-/** Whether a pending update may go in now: asked for by hand, always, or inside the night window. */
-export const updateDue = (policy, hour, now = false) => !!now || policy.mode === 'always' || inUpdateWindow(hour, policy.from, policy.to)
+/**
+ * Whether a pending update may go in now: asked for by hand, always, or inside the night window, and then not while
+ * a session is working (`busy`) when the policy says so.
+ */
+export const updateDue = (policy, hour, now = false, busy = false) => !!now || policy.mode === 'always' || (inUpdateWindow(hour, policy.from, policy.to) && !(policy.skipBusy && busy))

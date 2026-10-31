@@ -510,19 +510,28 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		from, okFrom := hour("from")
 		to, okTo := hour("to")
-		if (mode != "night" && mode != "always") || !okFrom || !okTo || from == to {
-			refuse(400, "mode 는 night·always, from·to 는 서로 다른 0~23 시예요")
+		skip, hasSkip := b["skipBusy"]
+		_, skipOk := skip.(bool)
+		if (mode != "night" && mode != "always") || !okFrom || !okTo || from == to || (hasSkip && !skipOk) {
+			refuse(400, "mode 는 night·always, from·to 는 서로 다른 0~23 시, skipBusy 는 참·거짓이에요")
 		}
-		r := ask(m[1], M{"t": "updatePolicy", "mode": mode, "from": from, "to": to}, 15_000)
+		cmd := M{"t": "updatePolicy", "mode": mode, "from": from, "to": to}
+		if hasSkip {
+			cmd["skipBusy"] = skip
+		}
+		r := ask(m[1], cmd, 15_000)
 		if !truthy(r["ok"]) {
 			refuse(409, orStr(r["error"], "업데이트 시간을 바꾸지 못했습니다(에이전트가 이 기능보다 오래된 버전일 수 있어요)"))
 		}
 		said := "받는 대로"
 		if r["mode"] == "night" {
 			said = numStr(jsNumber(r["from"])) + "~" + numStr(jsNumber(r["to"])) + "시"
+			if r["skipBusy"] != false {
+				said += "(작업 중이면 다음 날)"
+			}
 		}
 		record(mstr(h, "uid"), m[1], M{"level": "info", "area": "update", "text": "자동 업데이트 " + said + byOperator(uid, h)})
-		jsonRes(res, 200, M{"ok": true, "mode": r["mode"], "from": r["from"], "to": r["to"]})
+		jsonRes(res, 200, M{"ok": true, "mode": r["mode"], "from": r["from"], "to": r["to"], "skipBusy": r["skipBusy"] != false})
 		return true
 	}
 	if m := hostDelegateRe.FindStringSubmatch(p); post && m != nil {

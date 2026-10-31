@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.378',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '새벽 자동 업데이트는 작업 중인 세션이 있으면 모두 쉴 때까지 기다리고, 시간이 끝날 때까지 바쁘면 다음 날로 미룬다. 맥 화면에서 켜고 끌 수 있고 기본은 켜짐',
+        refs: ['REQ-F-832', 'IF-258'],
+      },
+    ],
+  },
+  {
     version: '1.377',
     date: '2026-11-01',
+    commit: 'ce3eed8',
     changes: [
       {
         kind: 'changed',

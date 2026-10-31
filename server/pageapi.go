@@ -556,7 +556,8 @@ func cleanUpdate(v any) any {
 	if p, ok := u["pending"].(M); ok {
 		pending = M{"build": jsSliceTo(jsString(p["build"]), 40), "at": numOrNull(p["at"]), "now": truthy(p["now"])}
 	}
-	return M{"mode": mode, "from": numOrNull(u["from"]), "to": numOrNull(u["to"]), "off": truthy(u["off"]), "pending": pending}
+	// skipBusy: on unless the agent says false (an agent of 1.377 sends none).
+	return M{"mode": mode, "from": numOrNull(u["from"]), "to": numOrNull(u["to"]), "skipBusy": u["skipBusy"] != false, "busy": truthy(u["busy"]), "off": truthy(u["off"]), "pending": pending}
 }
 
 // hostSummary: a Mac at a glance. `masked`: for an operator on someone else's Mac, the error texts lose their paths.
