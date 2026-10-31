@@ -142,7 +142,7 @@ export function CwdSheet() {
             />
           </Field>
           <div className="hstack" style={{ gap: 8, marginTop: -8, marginBottom: 8, flexWrap: 'wrap' }}>
-            <Button size="sm" tone="ghost" icon="sparkle" onClick={() => void newDefault()}>
+            <Button size="sm" tone="ghost" icon="plus" onClick={() => void newDefault()}>
               새 기본 폴더
             </Button>
             <Button size="sm" tone="ghost" icon="folder" onClick={() => void browse(folderPath(s.cwd, s.home))}>

@@ -100,7 +100,7 @@ function SlackStep({ slack, onSaved }: { slack: Plugin; onSaved: (list: Plugin[]
       {slack.prompt ? (
         <div className="guide-ai">
           <div className="hstack" style={{ alignItems: 'flex-start' }}>
-            <Icon name="sparkle" />
+            <Icon name="terminal" />
             <div className="grow">
               <b>{slack.prompt.label}</b>
               <p className="muted" style={{ margin: '2px 0 8px', fontSize: 'var(--fs-small)' }}>

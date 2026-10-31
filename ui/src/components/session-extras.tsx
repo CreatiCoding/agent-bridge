@@ -230,7 +230,7 @@ export function TodoPanel({ items, onClose, onAsk, onRun, onRemove, disabled, no
             <Spinner /> 정리하는 중…
           </span>
         ) : (
-          <Button size="sm" tone={items.length ? 'ghost' : 'primary'} icon={items.length ? 'refresh' : 'sparkle'} disabled={!!disabled} title={disabled} onClick={() => void ask()}>
+          <Button size="sm" tone={items.length ? 'ghost' : 'primary'} icon={items.length ? 'refresh' : 'doc'} disabled={!!disabled} title={disabled} onClick={() => void ask()}>
             {items.length ? '다시 정리' : '지금까지 한 일로 정리'}
           </Button>
         )}
