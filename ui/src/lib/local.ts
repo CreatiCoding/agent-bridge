@@ -66,3 +66,14 @@ export const setPref = (key: string, v: unknown) => write(`cb2.${key}`, v)
 const APP_SNOOZE = 'cb2.appUpdateSnooze'
 export const getAppSnooze = () => read<{ build: number; until: number } | null>(APP_SNOOZE, null)
 export const setAppSnooze = (v: { build: number; until: number }) => write(APP_SNOOZE, v)
+
+/** "하루 동안 안 보기" on the agent update dialog (REQ-F-832): until when, per Mac. */
+const AGENT_SNOOZE = 'cb2.agentUpdateSnooze'
+export const AGENT_UPDATE_SNOOZE_MS = 24 * 60 * 60_000
+export const getAgentSnooze = () => read<Record<string, number>>(AGENT_SNOOZE, {})
+export function setAgentSnooze(hostId: string, until: number) {
+  const all = getAgentSnooze()
+  for (const [k, v] of Object.entries(all)) if (v < Date.now()) delete all[k]
+  all[hostId] = until
+  write(AGENT_SNOOZE, all)
+}

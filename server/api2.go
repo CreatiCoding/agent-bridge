@@ -21,6 +21,7 @@ var (
 	hostBgRe       = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/background$`)
 	hostAwakeRe    = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/awake$`)
 	hostCompactRe  = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/compact$`)
+	hostUpdateRe   = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/update$`)
 	hostDelegateRe = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/delegate$`)
 	hostCheckRe    = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/check$`)
 	hostStatusRe   = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/status$`)
@@ -483,6 +484,45 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		record(mstr(h, "uid"), m[1], M{"level": "info", "area": "compact", "text": "자동 압축 시점 " + said + byOperator(uid, h)})
 		jsonRes(res, 200, M{"ok": true, "window": r["window"]})
+		return true
+	}
+	// When the Mac takes a new agent, and 지금 업데이트 (REQ-F-832). {now:true} puts the one it has taken in place now;
+	// {mode, from, to} sets when it does that by itself.
+	if m := hostUpdateRe.FindStringSubmatch(p); post && m != nil {
+		b := body(req, 1024)
+		h := readableHost(uid, m[1])
+		if !online(m[1]) {
+			refuse(409, NOT_CONNECTED)
+		}
+		if now, _ := b["now"].(bool); now {
+			r := ask(m[1], M{"t": "updateNow"}, 15_000)
+			if !truthy(r["ok"]) {
+				refuse(409, orStr(r["error"], "지금 업데이트하지 못했습니다"))
+			}
+			record(mstr(h, "uid"), m[1], M{"level": "info", "area": "update", "text": "지금 업데이트 " + jsString(r["build"]) + byOperator(uid, h)})
+			jsonRes(res, 200, M{"ok": true, "build": r["build"]})
+			return true
+		}
+		mode, _ := b["mode"].(string)
+		hour := func(k string) (float64, bool) {
+			f, ok := b[k].(float64)
+			return f, ok && isInteger(f) && f >= 0 && f <= 23
+		}
+		from, okFrom := hour("from")
+		to, okTo := hour("to")
+		if (mode != "night" && mode != "always") || !okFrom || !okTo || from == to {
+			refuse(400, "mode 는 night·always, from·to 는 서로 다른 0~23 시예요")
+		}
+		r := ask(m[1], M{"t": "updatePolicy", "mode": mode, "from": from, "to": to}, 15_000)
+		if !truthy(r["ok"]) {
+			refuse(409, orStr(r["error"], "업데이트 시간을 바꾸지 못했습니다(에이전트가 이 기능보다 오래된 버전일 수 있어요)"))
+		}
+		said := "받는 대로"
+		if r["mode"] == "night" {
+			said = numStr(jsNumber(r["from"])) + "~" + numStr(jsNumber(r["to"])) + "시"
+		}
+		record(mstr(h, "uid"), m[1], M{"level": "info", "area": "update", "text": "자동 업데이트 " + said + byOperator(uid, h)})
+		jsonRes(res, 200, M{"ok": true, "mode": r["mode"], "from": r["from"], "to": r["to"]})
 		return true
 	}
 	if m := hostDelegateRe.FindStringSubmatch(p); post && m != nil {

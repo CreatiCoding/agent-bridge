@@ -632,3 +632,33 @@ export function runHook(run, body, cwd, onFail, ms = AGENT_HOOK_MS) {
     onFail(e.message)
   }
 }
+
+/**
+ * When this Mac takes a new agent (REQ-F-832). `night` (the default) only between `from` and `to` o'clock, this
+ * Mac's local time; `always` as soon as one arrives. An update restarts the agent for a few seconds, and doing that
+ * in the middle of someone's work broke a turn on a Mac whose restart took longer than the hooks wait.
+ */
+export const UPDATE_MODES = ['night', 'always']
+export const UPDATE_WINDOW_DEFAULT = Object.freeze({ from: 4, to: 6 })
+const hourOk = (h) => Number.isInteger(h) && h >= 0 && h <= 23
+
+/** The policy kept in agent.json, with the defaults filled in; anything malformed falls back to the default. */
+export function updatePolicyOf(c) {
+  const mode = UPDATE_MODES.includes(c?.mode) ? c.mode : 'night'
+  const ok = hourOk(c?.from) && hourOk(c?.to) && c.from !== c.to
+  return { mode, from: ok ? c.from : UPDATE_WINDOW_DEFAULT.from, to: ok ? c.to : UPDATE_WINDOW_DEFAULT.to }
+}
+
+/** Why a policy the site sends is refused, or null when it is fine. */
+export function updatePolicyError(p) {
+  if (!UPDATE_MODES.includes(p?.mode)) return '업데이트 방식은 night 또는 always 예요'
+  if (!hourOk(p.from) || !hourOk(p.to)) return '업데이트 시간은 0~23시예요'
+  if (p.from === p.to) return '시작과 끝 시간이 같아요'
+  return null
+}
+
+/** Whether hour (0~23) falls in [from, to); a window like 22~2 runs past midnight. */
+export const inUpdateWindow = (hour, from, to) => (from < to ? hour >= from && hour < to : hour >= from || hour < to)
+
+/** Whether a pending update may go in now: asked for by hand, always, or inside the night window. */
+export const updateDue = (policy, hour, now = false) => !!now || policy.mode === 'always' || inUpdateWindow(hour, policy.from, policy.to)

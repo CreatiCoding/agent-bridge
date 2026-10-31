@@ -541,6 +541,24 @@ func cleanKeyState(k any) any {
 	return M{"gen": num(m["gen"]), "latest": num(m["latest"]), "at": num(m["at"]), "oldUntil": num(m["oldUntil"]), "next": num(m["next"]), "retired": retired, "linked": linked, "stale": event(m["stale"]), "reopen": event(m["reopen"]), "log": changes}
 }
 
+// cleanUpdate: when the Mac takes a new agent and the one it holds (REQ-F-832), only the known fields; nil from an
+// agent older than that.
+func cleanUpdate(v any) any {
+	u, ok := v.(M)
+	if !ok {
+		return nil
+	}
+	mode, _ := u["mode"].(string)
+	if mode != "night" && mode != "always" {
+		return nil
+	}
+	var pending any
+	if p, ok := u["pending"].(M); ok {
+		pending = M{"build": jsSliceTo(jsString(p["build"]), 40), "at": numOrNull(p["at"]), "now": truthy(p["now"])}
+	}
+	return M{"mode": mode, "from": numOrNull(u["from"]), "to": numOrNull(u["to"]), "off": truthy(u["off"]), "pending": pending}
+}
+
 // hostSummary: a Mac at a glance. `masked`: for an operator on someone else's Mac, the error texts lose their paths.
 func hostSummary(id string, h M, masked bool) M {
 	st := live(id)
@@ -589,7 +607,7 @@ func hostSummary(id string, h M, masked bool) M {
 			accts[i] = m
 		}
 	}
-	return M{"id": id, "name": h["name"], "kind": kind, "info": info, "awake": health["awake"], "voice": voice, "takesWork": !delegateOff(mstr(h, "uid"))[id], "sudo": sudo, "background": background,
+	return M{"id": id, "name": h["name"], "kind": kind, "info": info, "awake": health["awake"], "voice": voice, "takesWork": !delegateOff(mstr(h, "uid"))[id], "sudo": sudo, "background": background, "update": cleanUpdate(health["update"]),
 		// Behind, and this server will hand it the new one: not when it sends none (R9-I1).
 		"outdated": behind && AGENT_SIGNED,
 		// Behind, but this server sends no update (R10-I2).

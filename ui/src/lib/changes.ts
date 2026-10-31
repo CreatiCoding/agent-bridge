@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.377',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '에이전트 자동 업데이트가 기본으로 그 맥의 새벽 4~6시에만 새 버전으로 바뀐다. 작업 중에 다시 시작해 하던 일이 끊기지 않게',
+        refs: ['REQ-F-832', 'REQ-F-368'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '맥 화면의 자동 업데이트: 정해진 시간에만·받는 대로, 시작·끝 시각 고르기, 받아 둔 새 버전을 지금 업데이트',
+        refs: ['REQ-F-832', 'IF-258'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '새 버전을 받아 둔 맥이 있으면 "새 버전이 있어요" 안내: 지금 업데이트·나중에·하루 동안 안 보기',
+        refs: ['REQ-F-832'],
+      },
+    ],
+  },
+  {
     version: '1.376',
     date: '2026-11-01',
+    commit: '9ad1eb3',
     changes: [
       {
         kind: 'changed',

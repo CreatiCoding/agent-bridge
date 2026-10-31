@@ -203,6 +203,19 @@ export interface Host {
   takesWork?: boolean
   /** 관리자 권한 (REQ-F-764): until when root is open on it (0: closed), and who waits for its password. */
   sudo?: { until: number; asks: { id: string; sid: string; title: string; what: string; at: number }[] } | null
+  /** When it takes a new agent and the one it holds (REQ-F-832). null from an agent older than that. */
+  update?: UpdatePolicy | null
+}
+
+/** 자동 업데이트 (REQ-F-832): `night` only between from and to o'clock (the Mac's time), `always` as one arrives. */
+export interface UpdatePolicy {
+  mode: 'night' | 'always'
+  from: number
+  to: number
+  /** --no-auto-update: nothing is taken. */
+  off: boolean
+  /** The new agent taken and waiting to go in. `now`: 지금 업데이트 was asked. */
+  pending: { build: string; at: number; now: boolean } | null
 }
 
 export interface VoiceStatus {

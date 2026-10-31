@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit } from './guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -3342,10 +3342,31 @@ const commands = {
     // Also against an update already taken and waiting to be put in place (R8-I1).
     const floor = Math.max(config.updateSeq ?? 0, pendingUpdate?.seq ?? 0)
     if (seq < floor) return refuse(`새 버전(${got})이 지금 것보다 먼저 서명된 것(${seq} < ${floor})이라 버림`)
+    // The same one offered again on a reconnect while it waits for the night: kept as it is (when it came, 지금 업데이트).
+    if (pendingUpdate?.build === build) return
     // The number is kept only once the update is in place (applyUpdate): a failed install leaves it, so the version
     // before can still be sent to this Mac (R7-L1).
-    pendingUpdate = { build, files, seq, at: Date.now() }
-    log('info', 'update', `새 버전 ${build} 을 받음(관리자 서명 확인 · 순번 ${seq}). 곧 바꿉니다(일하는 세션은 그대로 이어짐)`)
+    pendingUpdate = { build, files, seq, at: Date.now(), now: false, dueAt: null }
+    const p = updatePolicyOf(config.update)
+    log('info', 'update', `새 버전 ${build} 을 받음(관리자 서명 확인 · 순번 ${seq}). ${p.mode === 'always' ? '곧 바꿉니다' : `${p.from}~${p.to}시 사이에 바꿉니다(사이트에서 지금 바꿀 수도 있음)`}(일하는 세션은 그대로 이어짐)`)
+    health().catch(() => {})
+  },
+  /** When this Mac takes a new agent (REQ-F-832): only at night (from~to o'clock) or as soon as it arrives. */
+  updatePolicy({ reqId, mode, from, to }) {
+    const error = updatePolicyError({ mode, from, to })
+    if (error) return emit({ t: 'updatePolicy', reqId, ok: false, error })
+    config.update = { mode, from, to }
+    writeJson(configPath, config)
+    log('info', 'update', mode === 'always' ? '업데이트: 받는 대로 바꿈' : `업데이트: ${from}~${to}시 사이에만 바꿈`)
+    emit({ t: 'updatePolicy', reqId, ok: true, ...updatePolicyOf(config.update) })
+    health().catch(() => {})
+  },
+  /** 지금 업데이트 (REQ-F-832): put the update already taken in place now, whatever the policy says. */
+  updateNow({ reqId }) {
+    if (!pendingUpdate) return emit({ t: 'updateNow', reqId, ok: false, error: noAutoUpdate ? '이 맥은 자동 업데이트가 꺼져 있어요(--no-auto-update)' : '받아 둔 새 버전이 없어요' })
+    pendingUpdate.now = true
+    log('info', 'update', `사이트의 요청으로 새 버전 ${pendingUpdate.build} 을 지금 바꿉니다`)
+    emit({ t: 'updateNow', reqId, ok: true, build: pendingUpdate.build })
   },
   resync({ sid, lines }) {
     const s = sessions.get(sid)
@@ -3761,6 +3782,8 @@ async function health() {
     voice: voiceStatus({ dir: whisperDir(), local: whisper }),
     repairs: repairs.slice(0, 30),
     compactWindow: compactWindowOf(config.compactWindow),
+    // When this Mac takes a new agent and the one waiting for that, if any (REQ-F-832).
+    update: { ...updatePolicyOf(config.update), off: !!noAutoUpdate, pending: pendingUpdate ? { build: pendingUpdate.build, at: pendingUpdate.at, now: !!pendingUpdate.now } : null },
     awake: { idle: !!config.keepAwake, idleActive: !!keepAwake, lid: !!config.keepLidAwake, lidActive, lidReady: await lidReady(), kind: config.kind },
     load: os.loadavg()[0],
     memFree: os.freemem(),
@@ -4484,7 +4507,9 @@ async function features() {
   add('sessions', '세션', deaf ? 'warn' : 'ok', `살아 있음 ${alive} · 멈춤 ${list.length - alive}${deaf ? ` · 훅이 오지 않는 세션 ${deaf}` : ''}`, deaf ? { fix: '그 세션의 메뉴에서 새로고침하세요(훅 설정을 다시 읽음)' } : {})
   const bad = checks.filter((c) => c.level !== 'ok')
   add('checks', '도구·환경 점검', bad.some((c) => c.level === 'fail') ? 'fail' : bad.length ? 'warn' : 'ok', bad.length ? bad.map((c) => `${c.title}: ${c.detail}`).join(' / ') : `모두 정상 (${checks.length}개)`, { action: 'check', ...(bad.find((c) => c.fix) ? { fix: bad.find((c) => c.fix).fix } : {}) })
-  add('update', '자동 업데이트', noAutoUpdate ? 'off' : pendingUpdate ? 'warn' : 'ok', noAutoUpdate ? '꺼짐 (--no-auto-update)' : pendingUpdate ? `새 버전 ${pendingUpdate.build ?? ''} 을 받음 · 곧 바꿈` : `build ${BUILD}`)
+  const up = updatePolicyOf(config.update)
+  const upWhen = up.mode === 'always' ? '받는 대로 바꿈' : `${up.from}~${up.to}시에 바꿈`
+  add('update', '자동 업데이트', noAutoUpdate ? 'off' : pendingUpdate ? 'warn' : 'ok', noAutoUpdate ? '꺼짐 (--no-auto-update)' : pendingUpdate ? `새 버전 ${pendingUpdate.build ?? ''} 을 받음 · ${pendingUpdate.now || updateDue(up, new Date().getHours()) ? '곧 바꿈' : upWhen}` : `build ${BUILD} · ${upWhen}`)
   // The key that opens this agent to the site's pages: when it was made, and a button to change it (R1-M8).
   const lastKey = config.keyLog?.[0]
   const lastKeyResult = lastKey ? rekeyResult(lastKey, Date.now(), OLD_KEY_MS) : null
@@ -4815,7 +4840,12 @@ setInterval(async () => {
   if (ticking || !client || !welcomed) return
   ticking = true
   try {
-    if (pendingUpdate && (!midAction() || Date.now() - pendingUpdate.at > RESTART_WAIT_MS)) return await applyUpdate()
+    // Only when it is due (REQ-F-832): the night window, `always`, or 지금 업데이트. The 60 s wait for the agent's own
+    // few-second actions counts from then, not from when the update came (hours earlier at night).
+    if (pendingUpdate && updateDue(updatePolicyOf(config.update), new Date().getHours(), pendingUpdate.now)) {
+      pendingUpdate.dueAt ??= Date.now()
+      if (!midAction() || Date.now() - pendingUpdate.dueAt > RESTART_WAIT_MS) return await applyUpdate()
+    }
     if (restartWanted && (!midAction() || Date.now() - restartWanted > RESTART_WAIT_MS)) {
       log('info', 'agent', asService ? '사이트의 요청으로 다시 시작합니다 (launchd 가 다시 띄움)' : '사이트의 요청으로 다시 시작합니다 (후속 프로세스를 띄움)')
       saveSessions()

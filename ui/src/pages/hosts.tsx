@@ -5,13 +5,14 @@ import { ago, batteryLine, batteryLow, bytes, hostBattery, clock, duration, shor
 import { back, go } from '../lib/router'
 import { hostIcon, KINDS } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
-import type { Me, Session } from '../lib/types'
+import type { Me, Session, UpdatePolicy } from '../lib/types'
 import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmented, Spinner, Switch, useWide } from '../kit'
 import { toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { featureOn } from '../lib/features'
 import { copyText, openSession } from '../lib/builtin-actions'
+import { updateNow } from '../components/agent-update'
 
 export function Copy({ text }: { text: string }) {
   return (
@@ -341,6 +342,84 @@ function CompactBox({ hostId, window, online }: { hostId: string; window: number
   )
 }
 
+/** 0~23 as the hours a night window may start or end at. */
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+/**
+ * When this Mac takes a new agent (REQ-F-832): only at night (the default, 4~6 o'clock on that Mac's clock) or as
+ * soon as one arrives, and 지금 업데이트 for one already taken.
+ */
+function UpdateBox({ hostId, policy, online }: { hostId: string; policy: UpdatePolicy; online: boolean }) {
+  const [shown, setShown] = useState<Pick<UpdatePolicy, 'mode' | 'from' | 'to'> | null>(null)
+  const [busy, setBusy] = useState(false)
+  const now = shown ?? policy
+  const set = async (next: Pick<UpdatePolicy, 'mode' | 'from' | 'to'>) => {
+    if (next.from === next.to) return toast('시작과 끝 시간이 같으면 안 돼요', { tone: 'bad' })
+    setBusy(true)
+    try {
+      const r = await post<{ ok: true } & Pick<UpdatePolicy, 'mode' | 'from' | 'to'>>(`/api/hosts/${hostId}/update`, next)
+      setShown({ mode: r.mode, from: r.from, to: r.to })
+      toast(r.mode === 'always' ? '새 버전을 받는 대로 바꿔요' : `새 버전은 ${r.from}~${r.to}시 사이에 바꿔요`)
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setBusy(false)
+  }
+  return (
+    <section className="card-box">
+      <CardHead title="자동 업데이트" help="새 버전으로 바꿀 때 에이전트가 몇 초 동안 다시 시작해요. 세션은 그대로 이어지지만, 작업 중에는 끊긴 것처럼 보일 수 있어서 기본은 새벽에만 바꿔요." />
+      {policy.off ? (
+        <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>
+          이 맥은 --no-auto-update 로 켜져 있어 새 버전을 받지 않아요.
+        </p>
+      ) : (
+        <>
+          <fieldset disabled={!online || busy} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+            <Segmented
+              label="업데이트 방식"
+              value={now.mode}
+              options={[
+                { value: 'night', label: '정해진 시간에만' },
+                { value: 'always', label: '받는 대로' },
+              ]}
+              onChange={(mode) => void set({ ...now, mode })}
+            />
+            {now.mode === 'night' ? (
+              <div className="hstack" style={{ flexWrap: 'wrap', gap: 8 }}>
+                <select className="input" style={{ width: 'auto' }} aria-label="시작 시각" value={now.from} onChange={(e) => void set({ ...now, from: Number(e.target.value) })}>
+                  {HOURS.map((x) => (
+                    <option key={x} value={x}>{`${x}시`}</option>
+                  ))}
+                </select>
+                <span>부터</span>
+                <select className="input" style={{ width: 'auto' }} aria-label="끝 시각" value={now.to} onChange={(e) => void set({ ...now, to: Number(e.target.value) })}>
+                  {HOURS.map((x) => (
+                    <option key={x} value={x}>{`${x}시`}</option>
+                  ))}
+                </select>
+                <span>사이에 바꿔요 (이 맥의 시각)</span>
+              </div>
+            ) : null}
+          </fieldset>
+          {policy.pending ? (
+            <div className="setting-line">
+              <span className="grow">
+                <b style={{ fontSize: 'var(--fs-medium)' }}>새 버전 {policy.pending.build} 을 받아 뒀어요</b>
+                <Help>{policy.pending.now ? '곧 바꿔요' : `${ago(policy.pending.at)} 받았어요. 지금 바꾸면 에이전트가 몇 초 다시 시작하고, 세션은 그대로 이어져요`}</Help>
+              </span>
+              <Button size="sm" tone="primary" disabled={!online || policy.pending.now} onClick={() => void updateNow(hostId)}>
+                지금 업데이트
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
+      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>맥이 연결돼 있을 때 바꿀 수 있어요.</p>}
+    </section>
+  )
+}
+
+
 /** Whether this Mac takes work a session on another of the person's Macs hands over (REQ-F-760). */
 function DelegateBox({ hostId, on }: { hostId: string; on: boolean }) {
   const [shown, setShown] = useState<boolean | null>(null)
@@ -513,7 +592,7 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
 }
 
 interface Detail {
-  host: { id: string; name: string; kind: string; online: boolean; user: string; home: string; info: { version: string; build: string; node: string; os: string } | null; updateBlocked?: boolean; outdated: boolean; latest?: string; takesWork?: boolean }
+  host: { id: string; name: string; kind: string; online: boolean; user: string; home: string; info: { version: string; build: string; node: string; os: string } | null; updateBlocked?: boolean; outdated: boolean; latest?: string; takesWork?: boolean; update?: UpdatePolicy | null }
   link: { connectedAt: number | null; disconnectedAt: number | null; connects: number; rtt: number | null }
   health: null | { version: string; uptime: number; tools?: { zeropty?: string | null; tmux?: string | null }; checks: { id: string; level: string; title: string; detail: string; fix?: string }[]; load: number; memFree: number; memTotal: number; sys?: SysUse | null; rss: number; keepAwake: boolean; compactWindow?: number | null; awake?: Awake; background?: Background; features?: Feature[]; repairs?: { at: number; id: string; text: string; ok: boolean }[]; at: number; lastCommand?: { t: string; at: number } | null }
   page: null | { visible: string; queue: number; ua: string; upFail: number; agentReconnects: number; at: number }
@@ -597,7 +676,8 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                 </div>
               ) : null}
               {h ? <CompactBox key={`cw-${h.id}`} hostId={h.id} window={detail.health?.compactWindow ?? null} online={h.online} /> : null}
-              {h?.outdated ? (
+              {h?.update ? <UpdateBox key={`up-${h.id}`} hostId={h.id} policy={h.update} online={h.online} /> : null}
+              {h?.outdated && !h.update?.pending ? (
                 <div className="banner">
                   <Icon name="info" />
                   <div className="banner-body">에이전트가 서버와 다른 버전이에요. 세션이 모두 쉴 때 스스로 바꿔요. 안 바뀌면 그 맥에서 설치 명령을 다시 실행하세요.</div>

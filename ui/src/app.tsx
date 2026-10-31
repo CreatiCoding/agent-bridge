@@ -10,6 +10,7 @@ import { Button, Icon, IconButton, Logo, Spinner, useWide } from './kit'
 import { confirmDialog, openMenu, OverlayHost, type MenuEntry } from './kit/overlay'
 import { PermissionModal } from './components/permission-modal'
 import { SudoGate } from './components/sudo-gate'
+import { AgentUpdatePrompt } from './components/agent-update'
 import { NoticeSheet } from './components/notices'
 import { appPushOff } from './components/push'
 import { openReport, ReportSheet } from './components/report-sheet'
@@ -474,6 +475,7 @@ export function App({ me }: { me: Me | null }) {
       {/* Asked once for the whole screen, by the page around the panes (a pane would ask it again in each). */}
       {!inPane ? <PermissionModal current={route.name === 'split' ? (paneIds ?? route.ids) : sid} /> : null}
       {!inPane ? <SudoGate /> : null}
+      {!inPane && !me?.demo ? <AgentUpdatePrompt /> : null}
       {!inPane ? <SessionPicker /> : null}
       <NoticeSheet open={notices} onClose={() => setNotices(false)} />
       <ReportSheet open={reporting} onClose={() => setReporting(false)} sid={sid} />
