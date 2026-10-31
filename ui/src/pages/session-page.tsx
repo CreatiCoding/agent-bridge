@@ -226,14 +226,14 @@ function BigLogNudge({ s }: { s: Session }) {
   if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || size < LOG_NUDGE_AT) return null
   return (
     <div className="banner" role="status" style={{ background: 'var(--violet-soft)' }}>
-      <Icon name="sparkle" />
+      <Icon name="warn" />
       <div className="banner-body">
         대화 기록이 <b>{bytes(size)}</b> 예요{size >= LOG_BLOCK ? '. 100MB 가 넘어 입력을 막았어요' : '. 100MB 가 되면 입력을 막아요'}. 압축은 컨텍스트만 줄이고 기록 파일은 줄이지 않아요. 압축한 뒤 대화 기록 정리로 압축 전 기록을 덜어 내면 이 세션에서 그대로 이어가요. 가벼운 복제는 SESSION.md 를 넘겨받은 새 세션에서 이어가요.
         <div className="banner-actions">
           <Button size="sm" tone="primary" icon="doc" disabled={s.state.phase !== 'idle'} onClick={() => void trimLog(s)}>
             대화 기록 정리
           </Button>
-          <Button size="sm" icon="sparkle" onClick={() => void lightCopy(s)}>
+          <Button size="sm" icon="bolt" onClick={() => void lightCopy(s)}>
             가벼운 복제
           </Button>
         </div>
@@ -266,11 +266,11 @@ function LightNudge({ s }: { s: Session }) {
   }
   return (
     <div className="banner" role="status" style={{ background: 'var(--violet-soft)' }}>
-      <Icon name="sparkle" />
+      <Icon name="compress" />
       <div className="banner-body">
         컨텍스트가 <b>{tokens(ctx)}</b> 토큰이에요. Claude 는 부를 때마다 이만큼 다시 읽어요. 일이 한 단락 끝났으면 지금 압축해서 이 세션에서 그대로 이어가면 한도를 덜 써요.
         <div className="banner-actions">
-          <Button size="sm" tone="primary" icon="sparkle" onClick={compact}>
+          <Button size="sm" tone="primary" icon="compress" onClick={compact}>
             지금 압축
           </Button>
           <Button size="sm" tone="ghost" onClick={close}>
@@ -316,7 +316,7 @@ function StateBanner({ s }: { s: Session }) {
   if (s.state.handedOffTo)
     return (
       <div className="banner" style={{ background: 'var(--violet-soft)' }}>
-        <Icon name="sparkle" />
+        <Icon name="bolt" />
         <div className="banner-body">
           이 세션은 더 가벼운 새 세션으로 넘겨졌어요.
           <div className="banner-actions">

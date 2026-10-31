@@ -294,7 +294,7 @@ button:not(:disabled) {
   font-size: var(--fs-xsmall);
   font-weight: 600;
   line-height: 1;
-  padding: 4px 7px;
+  padding: 4px 8px;
   border-radius: 6px;
   white-space: nowrap;
   background: var(--hover);
@@ -434,7 +434,7 @@ button:not(:disabled) {
   border: 0;
   background: transparent;
   border-radius: 8px;
-  padding: 5px 11px;
+  padding: 5px 12px;
   font-size: var(--fs-small);
   font-weight: 600;
   color: var(--muted);
@@ -1446,7 +1446,7 @@ select.input {
 .bubble {
   background: var(--bubble);
   border-radius: 16px 16px 4px 16px;
-  padding: 9px 13px;
+  padding: 9px 12px;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
@@ -1916,7 +1916,7 @@ select.input {
   color: var(--muted);
   background: var(--hover);
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 1px 8px;
 }
 .tool-run.open > .tool-head {
   color: var(--text);
@@ -2427,7 +2427,7 @@ select.input {
   .main.sess .glass-group {
     flex: none;
     min-width: 56px;
-    padding: 0 5px;
+    padding: 0 4px;
     justify-content: center;
   }
   /* The title and the status line under it start at the same left edge. */
@@ -4221,7 +4221,7 @@ body.group-sorting * {
 .change-scope {
   font-family: var(--mono);
   font-size: var(--fs-small);
-  padding: 0 5px;
+  padding: 0 4px;
   border-radius: 4px;
   background: var(--code-bg);
   color: var(--muted);

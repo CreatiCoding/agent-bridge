@@ -26,7 +26,17 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.371',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '반짝이 아이콘을 뜻에 맞는 아이콘으로 바꿨어요. 지금 압축은 새 압축 아이콘, 가벼운 복제는 번개, 할 일 정리는 문서, 큰 대화 기록 경고는 경고 아이콘이에요', refs: ['REQ-F-776', 'REQ-F-610'] },
+      { kind: 'changed', scope: ['server'], text: '권한 모드 목록의 "전부 허용" 앞 🔴 를 뺐어요. 빨간 글자로 그대로 구분돼요', refs: ['REQ-F-796'] },
+      { kind: 'changed', scope: ['ui'], text: '배지·말풍선·세그먼트 버튼 등의 좌우 여백을 4 px 단위로 맞췄어요', refs: ['REQ-F-724'] },
+    ],
+  },
+  {
     version: '1.370',
+    commit: '20c3786',
     date: '2026-10-31',
     changes: [
       { kind: 'changed', scope: ['ui'], text: '즐겨찾기 별을 노란색에서 흐린 회색으로 바꿔, 세션 줄마다 상태 점만 색을 띠어요', refs: ['REQ-F-782'] },

@@ -346,7 +346,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
     {
       id: 'compact',
       label: '지금 압축',
-      icon: 'sparkle',
+      icon: 'compress',
       hint: !alive ? undefined : s.state.phase !== 'idle' ? '쉬고 있을 때만' : s.state.cache?.ctx ? `컨텍스트 ${tokens(s.state.cache.ctx)} · 이 세션에서 그대로` : '대화를 요약해 이 세션에서 그대로',
       disabled: !alive || s.state.phase !== 'idle',
       onSelect: () => act(() => command(s, 'compact')),
@@ -362,7 +362,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
     {
       id: 'lightfork',
       label: '가벼운 복제',
-      icon: 'sparkle',
+      icon: 'bolt',
       hint: 'SESSION.md 로 새 세션',
       disabled: !alive,
       onSelect: () => void lightCopy(s),

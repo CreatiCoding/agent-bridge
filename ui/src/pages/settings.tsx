@@ -784,7 +784,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
                 { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더', to: href({ name: 'disk' }) },
                 { icon: 'chart', label: '사용 통계', hint: '일한 시간·PR', to: href({ name: 'stats' }) },
                 { icon: 'chart', label: '성능 리포트', hint: '화면별 점수·개선 기록', to: href({ name: 'quality' }) },
-                ...(featureOn('skills') ? [{ icon: 'sparkle', label: '스킬', hint: '골라서 설치', to: '/skills' }] : []),
+                ...(featureOn('skills') ? [{ icon: 'plugin', label: '스킬', hint: '골라서 설치', to: '/skills' }] : []),
                 { icon: 'info', label: '시작 가이드', hint: '처음 시작 · 멀티 계정', to: href({ name: 'guide', path: 'start' }) },
                 { icon: 'shield', label: '개인정보 처리방침', hint: '저장하는 것·보관·제3자', to: '/privacy' },
                 // AGPL-3.0 section 13 (REQ-F-791): the source of what this server runs.
