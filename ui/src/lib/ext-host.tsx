@@ -284,7 +284,8 @@ export type Bridge = ReturnType<typeof makeBridge>
 // ---------- loading ----------
 
 async function localeOf(x: ExtInfo) {
-  const dir = x.entry.slice(0, x.entry.lastIndexOf('/'))
+  // The extension folder's locales/, wherever its entry is (/ext/<id>/<hash>/dist/index.js).
+  const dir = `/ext/${x.id}/${x.hash}`
   for (const lang of [navigator.language?.split('-')[0] || 'ko', 'ko']) {
     const r = await fetch(`${dir}/locales/${lang}.json`, { credentials: 'same-origin' }).catch(() => null)
     if (r?.ok) return (await r.json().catch(() => ({}))) as Record<string, string>

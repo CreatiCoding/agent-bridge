@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.367',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'fixed', scope: ['ui'], text: 'entry 가 하위 폴더(dist/ 등)에 있는 익스텐션의 글이 번역 키 그대로 보이던 것을 고쳤어요. 언어 파일은 익스텐션 폴더의 locales/ 에서 읽어요', refs: ['REQ-F-827'] },
+    ],
+  },
+  {
     version: '1.366',
+    commit: '2abb630',
     date: '2026-10-31',
     changes: [
       { kind: 'added', scope: ['ui', 'server'], text: '익스텐션을 만드는 사람을 위한 타입 정의와 예시 익스텐션을 저장소에 두었어요(extensions/). 익스텐션 폴더의 node_modules 와 숨김 파일은 서버가 읽지 않아요', refs: ['REQ-F-829', 'REQ-F-825'] },

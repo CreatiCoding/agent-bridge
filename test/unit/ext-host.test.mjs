@@ -48,3 +48,9 @@ test('오류: 버스·slot·메뉴 실행의 오류를 그 익스텐션의 이�
   assert.match(read('ui/src/components/session-menu.tsx'), /slotFailed\(String\(d\.extId \?\? ''\), 'session\.menu', e\)/)
   assert.match(read('ui/src/lib/slot-view.tsx'), /componentDidCatch\(e: unknown\) \{\s+failed\(this\.props\.owner, 'slot', e\)/)
 })
+
+test('언어 파일은 entry 가 어디 있든 익스텐션 폴더의 locales/ 에서 읽는다', () => {
+  assert.match(host, /const dir = `\/ext\/\$\{x\.id\}\/\$\{x\.hash\}`/)
+  assert.match(host, /fetch\(`\$\{dir\}\/locales\/\$\{lang\}\.json`/)
+  assert.doesNotMatch(host, /x\.entry\.slice\(0, x\.entry\.lastIndexOf/)
+})
