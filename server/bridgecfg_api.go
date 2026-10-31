@@ -97,18 +97,36 @@ var refNameRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)`)
 // checkText: the start checks on a text. With limited names, ${OTHER} is not resolved (a pasted text must not
 // probe the server's other variables, like secrets), and those names are listed instead.
 func checkText(p string, b []byte, getenv func(string) string, limit []string) M {
+	other := []any{}
+	unsubstituted := func() M {
+		return M{"ok": false, "errors": []any{"검사에서 치환하지 않는 이름이 있습니다(이 서버의 다른 환경변수는 붙여 넣은 글로 확인하지 않습니다). 저장한 뒤 \"지금 파일 검사\" 로 확인하세요"}, "unsubstituted": other, "diff": []any{}}
+	}
 	if limit != nil {
-		other := []any{}
 		for _, m := range refNameRe.FindAllStringSubmatch(strings.ReplaceAll(string(b), "$${", ""), -1) {
 			if !contains(limit, m[1]) && !anyHas(other, m[1]) {
 				other = append(other, m[1])
 			}
 		}
 		if len(other) > 0 {
-			return M{"ok": false, "errors": []any{"검사에서 치환하지 않는 이름이 있습니다(이 서버의 다른 환경변수는 붙여 넣은 글로 확인하지 않습니다). 저장한 뒤 \"지금 파일 검사\" 로 확인하세요"}, "unsubstituted": other, "diff": []any{}}
+			return unsubstituted()
+		}
+		// The reading is held to the names as well (REQ-S-088): a value the YAML unescapes (${…}) becomes a
+		// reference the text above never showed, and its value would come back in an error.
+		full := getenv
+		getenv = func(name string) string {
+			if !contains(limit, name) {
+				if !anyHas(other, name) {
+					other = append(other, name)
+				}
+				return ""
+			}
+			return full(name)
 		}
 	}
 	c, err := parseBridgeConfig(p, b, getenv)
+	if len(other) > 0 {
+		return unsubstituted()
+	}
 	if err != nil {
 		return M{"ok": false, "errors": []any{maskConfigText(err.Error())}, "diff": []any{}}
 	}

@@ -88,6 +88,13 @@ func TestExtLoad(t *testing.T) {
 	bad("unknown", base+"color: red\n", "모르는 키 color")
 	bad("env", extYaml, "허락하지 않은 환경변수를 읽습니다: WIKI_SIGNING, TEAM", "OTHER")
 	bad("envsecret", base+"server:\n  routes:\n    - path: /a/\n      upstream: https://a.example\n      signingSecret: ${GITHUB_CLIENT_SECRET}\n", "GITHUB_CLIENT_SECRET")
+	// REQ-S-088: a `$` the YAML unescapes is a reference too, refused as the plain one is, and its value never read.
+	esc := base + "server:\n  routes:\n    - path: /a/\n      upstream: \"https://a.example/\\u0024{GITHUB_CLIENT_SECRET}/\"\n      signingSecret: 0123456789abcdef-signing\n      headers:\n        X-T: \"\\u0024{TEAM:-}\"\n"
+	bad("envescape", esc, "허락하지 않은 환경변수를 읽습니다: GITHUB_CLIENT_SECRET")
+	bad("envescape2", esc, "GITHUB_CLIENT_SECRET", "TEAM")
+	if x := loadExtensions([]extEntry{{Path: filepath.Join(root, "envescape")}}, extEnv)[0]; len(x.Routes) > 0 && strings.Contains(x.Routes[0].Upstream, "never") {
+		t.Error("허락하지 않은 값이 읽혔음: " + x.Routes[0].Upstream)
+	}
 	bad("api", strings.Replace(base, "extensionApi: 1", "extensionApi: 2", 1), "extensionApi 2 를 요구")
 	bad("entry", strings.Replace(base, "index.js", "nope.js", 1), "entry nope.js")
 	bad("id", strings.Replace(base, "x-ext", "errors", 1), "쓸 수 없습니다")

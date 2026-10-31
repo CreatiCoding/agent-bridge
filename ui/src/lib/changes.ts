@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.362',
+    date: '2026-10-31',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '익스텐션이 읽는 환경변수 제한을 YAML 이스케이프(\\u0024{…})로 지나가 허락하지 않은 서버 환경변수를 보내는 곳에 넣을 수 있던 것: 치환 자체가 extensions[].env 의 이름만 읽고, 다른 이름이면 불러오지 않는다',
+        refs: ['REQ-S-088', 'REQ-F-825', 'AC-1495'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '운영 탭의 붙여 넣고 검사가 같은 이스케이프로 이 서버의 다른 환경변수 값을 오류 문구에 보이던 것: 치환이 허락한 이름만 읽고 다른 이름은 unsubstituted 로 돌려준다',
+        refs: ['REQ-S-088', 'REQ-F-810', 'IF-257'],
+      },
+    ],
+  },
+  {
     version: '1.361',
     date: '2026-10-31',
+    commit: 'e68099a',
     changes: [
       { kind: 'added', scope: ['ui'], text: '이 서버에 익스텐션이 있으면 처음 열 때 켤지 물어요. 켜면 입력칸·메뉴·목록·설정에 그 기능이 더해지고, 설정 → 플러그인에서 끌 수 있어요. 주소 끝에 ?noext=1 을 붙이면 익스텐션 없이 열어요', refs: ['REQ-F-827'] },
     ],

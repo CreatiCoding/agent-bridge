@@ -93,6 +93,18 @@ func TestConfigExportSaveCheck(t *testing.T) {
 	jeq(t, oget(js(body), "ok"), "false", body)
 	jeq(t, oget(js(body), "unsubstituted"), `["GITHUB_CLIENT_SECRET"]`, body)
 	ok(t, !strings.Contains(body, "s3cr3t"), "값이 나오면 안 됨")
+	// REQ-S-088: a `$` the YAML unescapes (\u0024) is held to the same names, wherever its value would come back.
+	for _, y := range []string{
+		`hooks:\n  session.done.after:\n    - type: \"\\u0024{GITHUB_CLIENT_SECRET}\"\n`,
+		`notify:\n  - type: \"\\u0024{GITHUB_CLIENT_SECRET:-}\"\n`,
+		`features:\n  permissionModes: [\"\\u0024{GITHUB_CLIENT_SECRET}\"]\n`,
+	} {
+		code, body, _ = callConfig(t, "POST", "/api/admin/config/check", `{"yaml":"`+y+`"}`)
+		eq(t, code, 200)
+		jeq(t, oget(js(body), "ok"), "false", body)
+		jeq(t, oget(js(body), "unsubstituted"), `["GITHUB_CLIENT_SECRET"]`, body)
+		ok(t, !strings.Contains(body, "s3cr3t"), "이스케이프로도 값이 나오면 안 됨: "+body)
+	}
 	code, body, _ = callConfig(t, "POST", "/api/admin/config/check", `{"yaml":"auth:\n  admins: [a, \"${BRIDGE_ADMIN_LOGINS:-}\"]\n"}`)
 	jeq(t, oget(js(body), "ok"), "true", body)
 	ok(t, strings.Contains(body, `"key":"auth.admins"`), "차이 목록에 키")

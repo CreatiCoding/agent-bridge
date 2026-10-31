@@ -184,7 +184,7 @@ func hashFiles(files map[string][]byte) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-func (d *extDef) load(getenv func(string) string) error {
+func (d *extDef) load(getenv func(string) string) (err error) {
 	st, err := os.Stat(d.Dir)
 	if err != nil || !st.IsDir() {
 		return errf("폴더가 없습니다: " + d.Dir)
@@ -214,10 +214,28 @@ func (d *extDef) load(getenv func(string) string) error {
 			bad = append(bad, m[1])
 		}
 	}
-	if len(bad) > 0 {
-		return errf("bridge.yaml 이 이 익스텐션에 허락하지 않은 환경변수를 읽습니다: " + strings.Join(bad, ", ") + " (extensions[].env 에 넣어야 합니다)")
+	refused := func(names []string) error {
+		return errf("bridge.yaml 이 이 익스텐션에 허락하지 않은 환경변수를 읽습니다: " + strings.Join(names, ", ") + " (extensions[].env 에 넣어야 합니다)")
 	}
-	allowed := getenv
+	if len(bad) > 0 {
+		return refused(bad)
+	}
+	// The reading itself is held to the names too (REQ-S-088): a value the YAML unescapes (${…}) becomes a
+	// reference the text above never showed. Any other name reads as nothing, and the extension does not load.
+	allowed := func(name string) string {
+		if !contains(d.Env, name) {
+			if !contains(bad, name) {
+				bad = append(bad, name)
+			}
+			return ""
+		}
+		return getenv(name)
+	}
+	defer func() {
+		if len(bad) > 0 {
+			err = refused(bad)
+		}
+	}()
 	top := []string{"id", "name", "version", "extensionApi", "entry", "uses", "server"}
 	for _, kv := range root.pairs {
 		if !contains(top, kv.key) {
