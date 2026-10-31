@@ -963,7 +963,7 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 	}
 	vids := asArr(b["videos"])
 	if len(vids) > 3 {
-		refuse(400, "영상은 한 번에 3개까지 보낼 수 있어요")
+		refuse(400, "영상·파일은 한 번에 3개까지 보낼 수 있어요")
 	}
 	videos := []M{}
 	for _, v := range vids {
@@ -973,7 +973,7 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 		}
 		up := uploadOf(uid, id)
 		if up == nil {
-			refuse(400, "올린 영상을 찾지 못했어요. 다시 골라 주세요")
+			refuse(400, "올린 영상·파일을 찾지 못했어요. 다시 골라 주세요")
 		}
 		videos = append(videos, up)
 	}
@@ -1017,7 +1017,11 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 		parts = append(parts, t)
 	}
 	for _, v := range videos {
-		parts = append(parts, "🎬 "+jsStringU(v["name"]))
+		mark := "🎬 "
+		if v["type"] == FILE_TYPE {
+			mark = "📎 "
+		}
+		parts = append(parts, mark+jsStringU(v["name"]))
 	}
 	via := "web"
 	if b["via"] == "slack" {

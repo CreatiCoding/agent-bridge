@@ -798,13 +798,16 @@ const imgInfoOf = (uid) => (imgInfoCache.has(uid) ? imgInfoCache : imgInfoCache.
 
 /** Videos a page may send, as they are, to be handed to the session's Mac by its bridge tab. */
 const VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v']
-const VIDEO_EXT = { 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-m4v': 'm4v' }
-const UPLOAD_MAX = 500 * 1024 * 1024
+/** Any other file a message carries (REQ-F-830): sent as application/octet-stream, kept as `<40 hex>.bin`. */
+const FILE_TYPE = 'application/octet-stream'
+const UPLOAD_TYPES = [...VIDEO_TYPES, FILE_TYPE]
+const VIDEO_EXT = { 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/x-m4v': 'm4v', [FILE_TYPE]: 'bin' }
+const UPLOAD_MAX = 512 * 1024 * 1024
 /** How long an upload is kept for its Mac to take: a message sent later than this has to send it again. */
 const UPLOAD_TTL_MS = 24 * 3600_000
 const uploadsDir = (uid) => path.join(DATA, 'u', uid, 'uploads')
-const uploadId = (s) => typeof s === 'string' && /^[0-9a-f]{40}\.(mp4|mov|webm|m4v)$/.test(s)
-const uploadName = (s) => String(s ?? '').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'video'
+const uploadId = (s) => typeof s === 'string' && /^[0-9a-f]{40}\.(mp4|mov|webm|m4v|bin)$/.test(s)
+const uploadName = (s) => String(s ?? '').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'file'
 
 /** What one person's videos may take on the server at once (REQ-S-086): uploads kept, in progress, and their reports'. */
 const UPLOAD_USER_MAX = 2 * 1024 * 1024 * 1024
@@ -825,7 +828,7 @@ function uploadsUsed(uid) {
   for (const r of readReports()) if (r.uid === uid) for (const v of Array.isArray(r.videos) ? r.videos : []) if (uploadId(v?.id)) n += fileSize(reportVideoFile(v.id))
   return n
 }
-const TOO_MANY_UPLOADS = '올려 둔 영상이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요'
+const TOO_MANY_UPLOADS = '올려 둔 영상·파일이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요'
 
 /** The request's body straight into a file (not held in memory), up to UPLOAD_MAX and what is left of UPLOAD_USER_MAX. */
 async function saveUpload(uid, req, url) {
@@ -851,7 +854,7 @@ async function saveUploadUpTo(uid, req, url, type, max) {
   try {
     for await (const c of req) {
       size += c.length
-      if (size > max) throw new Refuse(413, max < UPLOAD_MAX ? TOO_MANY_UPLOADS : `영상은 ${UPLOAD_MAX / 1024 / 1024}MB 까지 보낼 수 있어요`)
+      if (size > max) throw new Refuse(413, max < UPLOAD_MAX ? TOO_MANY_UPLOADS : `${type === FILE_TYPE ? '파일' : '영상'}은 ${UPLOAD_MAX / 1024 / 1024}MB 까지 보낼 수 있어요`)
       if (!out.write(c)) await new Promise((r) => out.once('drain', r))
     }
     await new Promise((ok, bad) => out.end((e) => (e ? bad(e) : ok())))
@@ -860,7 +863,7 @@ async function saveUploadUpTo(uid, req, url, type, max) {
     fs.rmSync(file, { force: true })
     throw e
   }
-  if (!size) throw (fs.rmSync(file, { force: true }), new Refuse(400, '영상이 비어 있어요'))
+  if (!size) throw (fs.rmSync(file, { force: true }), new Refuse(400, type === FILE_TYPE ? '파일이 비어 있어요' : '영상이 비어 있어요'))
   const name = uploadName(url.searchParams.get('name'))
   writeJson(`${file}.json`, { name, type, size, at: Date.now() })
   return { id, name, size }
@@ -4102,7 +4105,7 @@ async function api(req, res, url, uid) {
     const hostId = url.searchParams.get('hostId')
     if (ownHost(uid, hostId).conn !== url.searchParams.get('conn')) throw new Refuse(409, '이 탭은 더 이상 이 호스트의 연동 탭이 아닙니다')
     const up = uploadOf(uid, url.searchParams.get('id'))
-    if (!up) throw new Refuse(404, '영상이 없어요')
+    if (!up) throw new Refuse(404, '영상·파일이 없어요')
     res.writeHead(200, { 'Content-Type': up.type, 'Content-Length': up.size, 'Cache-Control': 'no-store' })
     fs.createReadStream(up.file).pipe(res)
     return
@@ -4631,6 +4634,8 @@ async function api(req, res, url, uid) {
   // A video for a report, sent as it is before the report (as a message's are, REQ-F-761).
   if (post && p === '/api/reports/upload') {
     if (limited(req, 20, 'report-upload')) throw new Refuse(429, '너무 자주 올렸어요. 잠시 뒤에 다시 해 주세요')
+    // A report takes videos only: it shows them in <video> (REQ-F-739). Other files go with messages (REQ-F-830).
+    if (!VIDEO_TYPES.includes(String(req.headers['content-type']).split(';')[0].trim())) throw new Refuse(415, '지원하지 않는 영상 형식이에요')
     return json(res, 200, { ok: true, ...(await saveUpload(uid, req, url)) })
   }
   if (post && p === '/api/reports') {
@@ -4954,8 +4959,8 @@ async function api(req, res, url, uid) {
       if (files.reduce((n, f) => n + f.data.length, 0) > 3_145_728) throw new Refuse(413, '이 메시지에 담기에는 그림이 너무 커요')
       // Videos (REQ-F-761): sent before, by id; the bridge tab fetches each and hands it to the Mac.
       const vids = Array.isArray(b.videos) ? b.videos : []
-      if (vids.length > 3) throw new Refuse(400, '영상은 한 번에 3개까지 보낼 수 있어요')
-      const videos = vids.map((v) => uploadOf(uid, String(v?.id ?? '')) ?? (() => { throw new Refuse(400, '올린 영상을 찾지 못했어요. 다시 골라 주세요') })())
+      if (vids.length > 3) throw new Refuse(400, '영상·파일은 한 번에 3개까지 보낼 수 있어요')
+      const videos = vids.map((v) => uploadOf(uid, String(v?.id ?? '')) ?? (() => { throw new Refuse(400, '올린 영상·파일을 찾지 못했어요. 다시 골라 주세요') })())
       if (!text.trim() && !files.length && !videos.length) throw new Refuse(400, '보낼 내용이 없어요')
       if (meta.state.handedOffTo && sessions.get(meta.state.handedOffTo) && !sessions.get(meta.state.handedOffTo).closed && !/^[/:]/.test(text.trim())) throw new Refuse(409, '🧵 이 세션은 더 가벼운 새 세션으로 넘겨졌어요. 거기서 이어가세요.')
       if (!meta.state.alive) {
@@ -4975,7 +4980,7 @@ async function api(req, res, url, uid) {
       // Logged now, as said from the page; its echo from the transcript is recognised and not logged again.
       // 'delegate': said by the session that handed this one its work (REQ-F-760), never from a page.
       // 'delegated': the answer of a session this one handed work to, when its turn ended (rule 11).
-      logSaid(meta, id, [text.trim(), ...videos.map((v) => `🎬 ${v.name}`)].filter(Boolean).join('\n'), { via: b.via === 'slack' ? 'slack' : (b.via === 'delegate' || b.via === 'delegated') && req.internal ? b.via : 'web', images: files.map((f) => f.id).filter(Boolean) })
+      logSaid(meta, id, [text.trim(), ...videos.map((v) => `${v.type === FILE_TYPE ? '📎' : '🎬'} ${v.name}`)].filter(Boolean).join('\n'), { via: b.via === 'slack' ? 'slack' : (b.via === 'delegate' || b.via === 'delegated') && req.internal ? b.via : 'web', images: files.map((f) => f.id).filter(Boolean) })
       if (videos.length) sentUploads.set(id, videos.map((v) => [uid, v.id]))
       toHost(hostId, { t: 'send', sid: meta.id, id, text: text.slice(0, 100_000), ...(files.length ? { files: files.map(({ id, data }) => ({ id, data })) } : {}), ...(videos.length ? { videos: videos.map(({ id, name, type, size }) => ({ id, name, type, size })) } : {}) })
     } else if (op === 'retract') {
@@ -5453,7 +5458,7 @@ const server = http.createServer(async (req, res) => {
       const upload = req.method === 'POST' && (/^\/api\/sessions\/[\w-]+\/upload$/.test(p) || p === '/api/reports/upload')
       if (req.method !== 'GET') {
         if ((req.headers.origin || form || upload) && req.headers.origin !== originOf(req)) throw new Refuse(403, '다른 출처의 요청입니다')
-        if (upload && !VIDEO_TYPES.includes(String(req.headers['content-type']).split(';')[0].trim())) throw new Refuse(415, '지원하지 않는 영상 형식이에요')
+        if (upload && !UPLOAD_TYPES.includes(String(req.headers['content-type']).split(';')[0].trim())) throw new Refuse(415, '지원하지 않는 영상 형식이에요')
         if (req.method === 'POST' && !upload && !String(req.headers['content-type']).startsWith(form ? 'application/x-www-form-urlencoded' : 'application/json')) throw new Refuse(415, 'application/json 만 받습니다')
       }
       const uid = whoami(req)

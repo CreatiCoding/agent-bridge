@@ -137,7 +137,7 @@ export type EventName = keyof EventMap
 export interface ComposerCtx {
   sid: string
   text: string
-  attachments: { kind: 'image' | 'video'; name: string; pct?: number }[]
+  attachments: { kind: 'image' | 'video' | 'file'; name: string; pct?: number }[]
   sending: boolean
   busy: boolean
   disabled: boolean

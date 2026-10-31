@@ -467,16 +467,21 @@ func imgInfoOf(uid string) M {
 // ---------- 영상 (REQ-F-761) ----------
 
 var VIDEO_TYPES = []string{"video/mp4", "video/quicktime", "video/webm", "video/x-m4v"}
-var VIDEO_EXT = map[string]string{"video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "video/x-m4v": "m4v"}
 
-const UPLOAD_MAX = 500 * 1024 * 1024
+// FILE_TYPE: any other file a message carries (REQ-F-830), kept as `<40 hex>.bin`.
+const FILE_TYPE = "application/octet-stream"
+
+var UPLOAD_TYPES = append(append([]string{}, VIDEO_TYPES...), FILE_TYPE)
+var VIDEO_EXT = map[string]string{"video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "video/x-m4v": "m4v", FILE_TYPE: "bin"}
+
+const UPLOAD_MAX = 512 * 1024 * 1024
 
 // uploadTTL: how long an upload the Mac has not taken is kept, retention.uploadsHours (REQ-F-812, default 24).
 func uploadTTL() float64 { return float64(cfgGet("retention.uploadsHours").(int)) * 3600_000 }
 
 func uploadsDir(uid string) string { return filepath.Join(DATA, "u", uid, "uploads") }
 
-var uploadIDRe = regexp.MustCompile(`^[0-9a-f]{40}\.(mp4|mov|webm|m4v)$`)
+var uploadIDRe = regexp.MustCompile(`^[0-9a-f]{40}\.(mp4|mov|webm|m4v|bin)$`)
 
 func uploadId(s any) bool {
 	str, ok := s.(string)
@@ -505,7 +510,7 @@ func uploadName(s any) string {
 	}
 	out := jsSliceTo(b.String(), 120)
 	if out == "" {
-		return "video"
+		return "file"
 	}
 	return out
 }
@@ -544,13 +549,19 @@ func uploadsUsed(uid string) int64 {
 	return n
 }
 
+const TOO_MANY_UPLOADS = "올려 둔 영상·파일이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요"
+
 // saveUpload: the request's body straight into a file (not held in memory), up to UPLOAD_MAX, and up to what is
 // left of the person's UPLOAD_USER_MAX.
 func saveUpload(uid string, req *Req, u *url.URL) M {
 	typ := jsTrim(strings.Split(req.H("content-type"), ";")[0])
 	left := int64(UPLOAD_USER_MAX) - uploadsUsed(uid) - uploadsHeld[uid]
+	what := "영상"
+	if typ == FILE_TYPE {
+		what = "파일"
+	}
 	if left <= 0 {
-		refuse(413, "올려 둔 영상이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요")
+		refuse(413, TOO_MANY_UPLOADS)
 	}
 	max := int64(UPLOAD_MAX)
 	if left < max {
@@ -587,9 +598,9 @@ func saveUpload(uid string, req *Req, u *url.URL) M {
 	if tooBig {
 		_ = os.Remove(file)
 		if max < UPLOAD_MAX {
-			refuse(413, "올려 둔 영상이 너무 많아요. 보낸 뒤나 하루 뒤에 다시 올려 주세요")
+			refuse(413, TOO_MANY_UPLOADS)
 		}
-		refuse(413, "영상은 "+itoa(UPLOAD_MAX/1024/1024)+"MB 까지 보낼 수 있어요")
+		refuse(413, what+"은 "+itoa(UPLOAD_MAX/1024/1024)+"MB 까지 보낼 수 있어요")
 	}
 	if werr != nil {
 		_ = os.Remove(file)
@@ -597,7 +608,7 @@ func saveUpload(uid string, req *Req, u *url.URL) M {
 	}
 	if size == 0 {
 		_ = os.Remove(file)
-		refuse(400, "영상이 비어 있어요")
+		refuse(400, what+"이 비어 있어요")
 	}
 	name := uploadName(nilIfEmpty(u.Query(), "name"))
 	writeJson(file+".json", M{"name": name, "type": typ, "size": float64(size), "at": float64(nowMs())})

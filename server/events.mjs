@@ -18,6 +18,8 @@ const LOCAL_OUTPUT_RE = /<(?:local-command|bash)-(stdout|stderr)>([\s\S]*?)<\/(?
 const ATTACHED_RE = /\n?\[(?:Image|File) attached: [^\]]*?([0-9a-f]{40}\.[a-z0-9]{1,5})\]/g
 /** A video the page sent (REQ-F-761), saved on the Mac as `<8 hex>-<name>`: shown as "🎬 <name>". */
 const VIDEO_RE = /\[Video attached: [^\]\n]*?\/(?:[0-9a-f]{8}-)?([^/\]\n]+)\](?: \([^)\n]*\))?/g
+/** Any other file the page sent (REQ-F-830), saved the same way: shown as "📎 <name>". */
+const FILE_RE = /\[Attached file: [^\]\n]*?\/(?:[0-9a-f]{8}-)?([^/\]\n]+)\]/g
 const ROUTINE_RE = /^(Agent .* finished|Background command .* completed \(exit code 0\))$/i
 const DENIED_RE = /denied by the Claude Code auto mode classifier\.?\s*(?:Reason:\s*)?(\[[^\]]+\])?/i
 /** A task notification Claude wrote into its own answer: it imitates the harness, nothing finished. */
@@ -148,7 +150,7 @@ export function lineToEvents(line, ctx = {}) {
       // What the page attached reads "[Image attached: <path>]" by the time it comes back: the picture is shown
       // from the server's own copy (the file name is its id), the line is not.
       const attached = [...text.matchAll(ATTACHED_RE)].map((m) => m[1])
-      const said = text.replace(ATTACHED_RE, '').replace(/\[Image #\d+\]/g, '').replace(VIDEO_RE, (_, name) => `🎬 ${name}`).trim()
+      const said = text.replace(ATTACHED_RE, '').replace(/\[Image #\d+\]/g, '').replace(VIDEO_RE, (_, name) => `🎬 ${name}`).replace(FILE_RE, (_, name) => `📎 ${name}`).trim()
       const all = [...attached, ...images]
       if (said || all.length) push({ k: 'user', text: truncate(said, MAX_TEXT), ...(all.length ? { images: all } : {}) })
       return

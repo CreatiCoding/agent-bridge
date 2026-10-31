@@ -316,7 +316,7 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		up := uploadOf(uid, qnil(u, "id"))
 		if up == nil {
-			refuse(404, "영상이 없어요")
+			refuse(404, "영상·파일이 없어요")
 		}
 		res.WriteHead(200, M{"Content-Type": up["type"], "Content-Length": up["size"], "Cache-Control": "no-store"})
 		res.file = &fileSend{path: mstr(up, "file")}

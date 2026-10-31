@@ -49,6 +49,7 @@ var (
 	localOpenRe       = regexp.MustCompile(`<(?:local-command|bash)-(stdout|stderr)>`)
 	ATTACHED_RE       = regexp.MustCompile(`\n?\[(?:Image|File) attached: [^\]]*?([0-9a-f]{40}\.[a-z0-9]{1,5})\]`)
 	VIDEO_RE          = regexp.MustCompile(`\[Video attached: [^\]\n]*?/(?:[0-9a-f]{8}-)?([^/\]\n]+)\](?: \([^)\n]*\))?`)
+	FILE_RE           = regexp.MustCompile(`\[Attached file: [^\]\n]*?/(?:[0-9a-f]{8}-)?([^/\]\n]+)\]`)
 	ROUTINE_RE        = regexp.MustCompile(`(?i)^(Agent .* finished|Background command .* completed \(exit code 0\))$`)
 	DENIED_RE         = re(`(?i)denied by the Claude Code auto mode classifier\.?\s*(?:Reason:\s*)?(\[[^\]]+\])?`)
 	FAKE_NOTIFICATION = re(`\s*<task-notification>[\s\S]*?</task-notification>`)
@@ -487,6 +488,7 @@ func lineToEvents(line string, ctx evOpts) []any {
 			said := ATTACHED_RE.ReplaceAllString(text, "")
 			said = imageNumRe.ReplaceAllString(said, "")
 			said = VIDEO_RE.ReplaceAllStringFunc(said, func(m string) string { return "🎬 " + VIDEO_RE.FindStringSubmatch(m)[1] })
+			said = FILE_RE.ReplaceAllStringFunc(said, func(m string) string { return "📎 " + FILE_RE.FindStringSubmatch(m)[1] })
 			said = jsTrim(said)
 			all := append(attached, images...)
 			if said != "" || len(all) > 0 {

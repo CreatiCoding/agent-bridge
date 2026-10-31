@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.369',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'added', scope: ['ui', 'server', 'agent'], text: '사진·영상 말고 아무 파일이나 보낼 수 있어요(하나에 512MB, 영상과 합쳐 한 번에 3개). 입력창 + 와 새 세션의 "사진·파일 붙이기", 끌어 놓기로 붙이면 원본 그대로 올라가 세션의 맥 ~/.claude-bridge/images 에 원래 이름으로 놓이고, 메시지에 그 경로가 붙어요. 대화에는 📎 이름', refs: ['REQ-F-830', 'IF-218'] },
+      { kind: 'changed', scope: ['ui', 'server'], text: '영상 한도도 500MB 에서 512MB 로', refs: ['REQ-F-761'] },
+    ],
+  },
+  {
     version: '1.368',
+    commit: 'b9ac6be',
     date: '2026-10-31',
     changes: [
       { kind: 'changed', scope: ['server'], text: '익스텐션 라우트 경로가 틀렸을 때 오류 문구의 예시가 /docs/ 로 바뀌었어요', refs: ['REQ-F-825'] },

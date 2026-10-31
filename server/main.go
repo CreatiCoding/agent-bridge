@@ -154,7 +154,7 @@ func route(req *Req, res *Res) {
 			if (origin != "" || form || upload) && origin != originOf(req) {
 				refuse(403, "다른 출처의 요청입니다")
 			}
-			if upload && !contains(VIDEO_TYPES, strings.TrimSpace(strings.Split(ctype(req), ";")[0])) {
+			if upload && !contains(UPLOAD_TYPES, strings.TrimSpace(strings.Split(ctype(req), ";")[0])) {
 				refuse(415, "지원하지 않는 영상 형식이에요")
 			}
 			want := "application/json"

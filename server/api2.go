@@ -769,6 +769,10 @@ func apiAdmin(req *Req, res *Res, u *url.URL, uid string) bool {
 		if limited(req, 20, "report-upload") {
 			refuse(429, "너무 자주 올렸어요. 잠시 뒤에 다시 해 주세요")
 		}
+		// A report takes videos only: it shows them in <video> (REQ-F-739). Other files go with messages (REQ-F-830).
+		if !contains(VIDEO_TYPES, strings.TrimSpace(strings.Split(ctype(req), ";")[0])) {
+			refuse(415, "지원하지 않는 영상 형식이에요")
+		}
 		out := M{"ok": true}
 		for k, v := range saveUpload(uid, req, u) {
 			out[k] = v

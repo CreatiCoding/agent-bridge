@@ -155,3 +155,15 @@ func TestVideoLine(t *testing.T) {
 	}
 	eq(t, user["text"], any("봐 줘\n🎬 화면 녹화.mov"))
 }
+
+// 파일 보내기 (REQ-F-830): any other file's line from the Mac shows as "📎 name".
+func TestFileLine(t *testing.T) {
+	text := "읽어 줘\n[Attached file: /Users/x/.claude-bridge/images/0123abcd-보고서.pdf]"
+	var user M
+	for _, e := range evs(jsonStr(M{"type": "user", "message": M{"role": "user", "content": text}})) {
+		if e["k"] == "user" {
+			user = e
+		}
+	}
+	eq(t, user["text"], any("읽어 줘\n📎 보고서.pdf"))
+}

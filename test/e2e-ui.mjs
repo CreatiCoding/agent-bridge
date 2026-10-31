@@ -81,7 +81,7 @@ await app.evaluate(async () => {
   const blob = await new Promise((r) => c.toBlob(r, 'image/png'))
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
 })
-await app.getByRole('button', { name: '사진 첨부' }).click()
+await app.getByRole('button', { name: '사진·파일 첨부' }).click()
 await app.getByText('클립보드에서 붙여넣기').click()
 await app.waitForSelector('.attach-row .attach img', { timeout: 5000 })
 ok((await app.locator('.attach-row .attach').count()) === 1, '사진 버튼 → 클립보드에서 붙여넣기로 그림이 붙음')

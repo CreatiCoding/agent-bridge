@@ -16,7 +16,7 @@ import { confirmDialog, toast } from '../kit/overlay'
 import { openSession, sendMessage } from '../lib/builtin-actions'
 import { dispatch, isCancel } from '../lib/actions'
 import { shrinkImage } from '../lib/image'
-import { uploadVideo, VIDEO_MAX, VIDEO_TYPES, type SentVideo } from '../lib/video'
+import { isVideo, uploadable, uploadVideo, UPLOADS, type SentVideo } from '../lib/video'
 
 interface Dirs {
   ok: true
@@ -102,13 +102,9 @@ export function NewSessionPage() {
   }, [host?.id])
 
   const addFiles = async (files: FileList | File[]) => {
-    const vids = [...files].filter((f) => f.type.startsWith('video/'))
-    if (vids.length) {
-      const ok = vids.filter((f) => VIDEO_TYPES.includes(f.type) && f.size <= VIDEO_MAX)
-      if (ok.length < vids.length) toast(`mp4·mov·webm 영상, ${VIDEO_MAX / 1024 / 1024}MB 까지 보낼 수 있어요`)
-      if (videos.length + ok.length > 3) toast('영상은 한 번에 3개까지 보낼 수 있어요')
-      setVideos((now) => [...now, ...ok.map((f) => ({ file: f, pct: null }))].slice(0, 3))
-    }
+    // Videos and any other file go up as they are (REQ-F-830); pictures ride in the message.
+    const ups = uploadable([...files], videos.length)
+    if (ups.length) setVideos((now) => [...now, ...ups.map((f) => ({ file: f, pct: null }))].slice(0, UPLOADS))
     const list = [...files].filter((f) => f.type.startsWith('image/'))
     if (!list.length) return
     if (images.length + list.length > 8) toast('그림은 한 번에 8장까지 보낼 수 있어요')
@@ -279,7 +275,7 @@ export function NewSessionPage() {
               </>
             )}
           </div>
-          <Field label="첫 메시지" hint="비워 두면 세션만 띄워요. 사진·영상은 붙여 넣거나 끌어 놓아도 돼요">
+          <Field label="첫 메시지" hint="비워 두면 세션만 띄워요. 사진·영상·파일은 붙여 넣거나 끌어 놓아도 돼요">
             <textarea
               className="input"
               {...NO_AUTOFILL}
@@ -302,14 +298,14 @@ export function NewSessionPage() {
           </Field>
           <div className="hstack" style={{ flexWrap: 'wrap', alignItems: 'flex-start', marginTop: -8, marginBottom: 16 }}>
             <Button size="sm" tone="ghost" icon="image" disabled={busy} onClick={() => file.current?.click()}>
-              사진·영상 붙이기
+              사진·파일 붙이기
             </Button>
-            <input ref={file} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => (e.target.files && void addFiles(e.target.files), (e.target.value = ''))} />
+            <input ref={file} type="file" multiple hidden onChange={(e) => (e.target.files && void addFiles(e.target.files), (e.target.value = ''))} />
             {attached ? (
               <div className="attach-row" style={{ paddingTop: 6 }}>
                 {videos.map((v, i) => (
                   <span key={`v${i}`} className="attach attach-video">
-                    <span className="attach-video-name">🎬 {v.file.name}</span>
+                    <span className="attach-video-name">{isVideo(v.file) ? '🎬' : '📎'} {v.file.name}</span>
                     <span className="muted">{v.pct === null ? `${(v.file.size / 1024 / 1024).toFixed(1)}MB` : `올리는 중 ${v.pct}%`}</span>
                     {busy ? null : (
                       <button type="button" aria-label="빼기" onClick={() => setVideos(videos.filter((_, j) => j !== i))}>

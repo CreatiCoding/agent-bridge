@@ -92,16 +92,16 @@ export function startRelay(ui = {}, opts = {}) {
         cmd.files[name] = await r.text()
       }
     }
-    // Videos sent with a message (REQ-F-761) are too big to ride in it: each is fetched here and handed to the agent
+    // Videos and other files sent with a message (REQ-F-761, REQ-F-830) are too big to ride in it: each is fetched here and handed to the agent
     // on its own, and the message then names where the agent put it. Sent without a type, like the commands, so
     // the browser asks no preflight on the way to 127.0.0.1.
     if (cmd.t === 'send' && Array.isArray(cmd.videos)) {
       for (const v of cmd.videos) {
         const got = await fetch(`/api/bridge/upload?${new URLSearchParams({ id: v.id, hostId, conn })}`)
-        if (!got.ok) throw new Error(`영상을 받지 못함 (HTTP ${got.status})`)
+        if (!got.ok) throw new Error(`영상·파일을 받지 못함 (HTTP ${got.status})`)
         const put = await fetch(agentUrl(`/file?${new URLSearchParams({ sid: cmd.sid, id: v.id, name: v.name })}`), { method: 'POST', body: (await got.blob()).slice(0, undefined, ''), signal: AbortSignal.timeout(600_000) })
         const j = await put.json().catch(() => ({}))
-        if (!put.ok || !j.path) throw new Error(`에이전트가 영상을 받지 못함 (HTTP ${put.status})`)
+        if (!put.ok || !j.path) throw new Error(`에이전트가 영상·파일을 받지 못함 (HTTP ${put.status})`)
         v.path = j.path
       }
     }

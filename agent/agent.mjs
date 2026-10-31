@@ -2455,7 +2455,9 @@ const commands = {
     // Videos the bridge tab already put here (/file, REQ-F-761). Claude cannot watch one: it is told how to look.
     for (const v of Array.isArray(videos) ? videos.slice(0, 3) : []) {
       const ok = typeof v?.path === 'string' && insideAny(v.path, [path.join(STATE_DIR, 'images')])
-      lines.push(ok ? `[Video attached: ${v.path}] (영상은 바로 볼 수 없어요. 필요하면 ffmpeg 로 장면을 뽑아 보세요)` : `[영상을 받지 못했어요: ${String(v?.name ?? '').slice(0, 120)}. 연동 탭을 새로 고친 뒤 다시 보내 주세요]`)
+      // Any other file (REQ-F-830, id `<40 hex>.bin`) is named as it is: Claude reads it from there.
+      const file = /\.bin$/.test(String(v?.id ?? ''))
+      lines.push(ok ? (file ? `[Attached file: ${v.path}]` : `[Video attached: ${v.path}] (영상은 바로 볼 수 없어요. 필요하면 ffmpeg 로 장면을 뽑아 보세요)`) : `[${file ? '파일' : '영상'}을 받지 못했어요: ${String(v?.name ?? '').slice(0, 120)}. 연동 탭을 새로 고친 뒤 다시 보내 주세요]`)
     }
     for (const f of Array.isArray(files) ? files.slice(0, 8) : []) {
       if (!/^[0-9a-f]{40}\.(png|jpg|gif|webp)$/.test(f.id || '')) continue
@@ -4918,21 +4920,22 @@ const server = http.createServer(async (req, res) => {
     }
     return
   }
-  // A video for a message, from the bridge tab (REQ-F-761): saved with the pictures, where a session may read.
+  // A video or other file for a message, from the bridge tab (REQ-F-761, REQ-F-830): saved with the pictures, where a session may read.
   if (req.method === 'POST' && url.pathname === '/file') {
     const id = url.searchParams.get('id') || ''
-    if (!/^[0-9a-f]{40}\.(mp4|mov|webm|m4v)$/.test(id)) return void res.writeHead(400, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: '영상 id 가 올바르지 않아요' }))
-    const name = String(url.searchParams.get('name') || 'video').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'video'
+    if (!/^[0-9a-f]{40}\.(mp4|mov|webm|m4v|bin)$/.test(id)) return void res.writeHead(400, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: '영상·파일 id 가 올바르지 않아요' }))
+    const name = String(url.searchParams.get('name') || 'file').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'file'
     const dir = path.join(STATE_DIR, 'images')
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
     const ext = id.split('.').pop()
-    const file = path.join(dir, `${id.slice(0, 8)}-${name.toLowerCase().endsWith(`.${ext}`) ? name : `${name}.${ext}`}`)
+    // A file keeps its own name (its .bin is only the server's); a video gets its extension when the name has none.
+    const file = path.join(dir, `${id.slice(0, 8)}-${ext === 'bin' || name.toLowerCase().endsWith(`.${ext}`) ? name : `${name}.${ext}`}`)
     const out = fs.createWriteStream(file, { mode: 0o600 })
     let size = 0
     try {
       for await (const c of req) {
         size += c.length
-        if (size > 600 * 1024 * 1024) throw new Error('영상이 너무 커요')
+        if (size > 600 * 1024 * 1024) throw new Error('너무 커요')
         if (!out.write(c)) await new Promise((r) => out.once('drain', r))
       }
       await new Promise((ok, bad) => out.end((e) => (e ? bad(e) : ok())))
@@ -4941,7 +4944,7 @@ const server = http.createServer(async (req, res) => {
       fs.rmSync(file, { force: true })
       return void res.writeHead(413, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: e.message }))
     }
-    log('info', 'send', `영상 받음 (${Math.round(size / 1024)} KB)`, url.searchParams.get('sid') || undefined)
+    log('info', 'send', `${ext === 'bin' ? '파일' : '영상'} 받음 (${Math.round(size / 1024)} KB)`, url.searchParams.get('sid') || undefined)
     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, path: file }))
     return
   }
