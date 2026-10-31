@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.375',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '안전한 전부 허용이 커밋 안 한 작업을 버리는 명령(git clean -f, git checkout -- ./-f, git restore)과 find -delete·-exec rm 도 묻고 실행해요. git restore --staged 만 쓴 것은 그대로 허용',
+        refs: ['REQ-F-759', 'AC-1500'],
+      },
+    ],
+  },
+  {
     version: '1.374',
     date: '2026-10-31',
+    commit: '37a2851',
     changes: [
       { kind: 'fixed', scope: ['server'], text: '맥과의 연결이 10초 안에 다시 붙으면 기기가 끊김으로 깜빡이지 않고 경고도 남지 않아요. 서버와 같은 기기에서 Docker 컨테이너가 뜰 때마다 끊겼다 붙던 것이 보이지 않아요. 다시 붙는 데도 3초 대신 1초', refs: ['REQ-F-831'] },
     ],

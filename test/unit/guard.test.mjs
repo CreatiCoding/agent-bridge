@@ -78,3 +78,16 @@ test('안전한 전부 허용이 놓치던 sudo·강제 push 쓰는 법도 묻�
   for (const c of ['cat /etc/sudoers', 'echo pseudo', 'git push -u origin feat', 'git push origin feat:main', 'git push --tags', 'git push origin main --dry-run', 'git push --no-verify'])
     assert.equal(bash(c), null, c)
 })
+
+test('안전한 전부 허용은 작업 버리기·일괄 삭제도 묻는다: git clean -f, checkout --/./-f, restore, find -delete (1.375)', async () => {
+  const { riskyCall } = await import('../../agent/guard.mjs')
+  const bash = (command) => riskyCall({ name: 'Bash', input: { command } }, { cwd: '/Users/u/p', home: '/Users/u' })
+  for (const c of ['git clean -f', 'git clean -fd', 'git clean -xdf', 'git clean --force -d', 'git -C ui clean -fdx', 'git checkout -- .', 'git checkout -- src/a.ts', 'git checkout .', 'git checkout main -- a.ts', 'git checkout -f main', 'git checkout --force', 'git restore .', 'git restore src/a.ts', 'git restore --worktree a.ts', 'git restore -S -W a.ts', 'git status && git restore .', 'cd ui; git clean -fd'])
+    assert.equal(bash(c), '작업 버리기(git clean·checkout·restore)', c)
+  for (const c of ['find . -name "*.log" -delete', 'find dist -type f -exec rm {} +', 'find . -execdir /bin/rm -f {} \\;'])
+    assert.equal(bash(c), '파일 일괄 삭제(find)', c)
+  for (const c of ['git clean -n', 'git clean -nd', 'git checkout main', 'git checkout -b feat', 'git checkout -b feat origin/main', 'git restore --staged a.ts', 'git restore -S .', 'git commit -m "restore files and git clean -f"', 'git log -- a.ts', 'git diff -- .', 'find . -name "*.ts"', 'find . -type f -exec grep -l x {} +'])
+    assert.equal(bash(c), null, c)
+  // Wrapped in bash -c '…' it still runs, so a git written after another word is read too (an echo of one asks once more).
+  assert.equal(bash("bash -c 'git clean -fd'"), '작업 버리기(git clean·checkout·restore)')
+})

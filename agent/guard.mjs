@@ -129,6 +129,24 @@ export function manifestSigned(files, seq, msig, keys = UPDATE_KEYS) {
 }
 
 /**
+ * Whether a command throws away changes not committed (REQ-F-759, 1.375): `git clean` with a force flag, a
+ * `git checkout` of paths (`-- …`, `.`) or forced, and a `git restore` of the working tree (one with only
+ * `--staged`/`-S` just unstages and keeps the changes).
+ */
+function discardsWork(c) {
+  for (const part of c.split(/[;&|\n]/)) {
+    // The subcommand right after git and its own options (-C dir, -c k=v, --no-pager): a word in a commit message is not one.
+    const m = /(?:^|[\s(`'"/])git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+([\w-]+)(.*)$/.exec(part)
+    if (!m) continue
+    const [, , sub, rest] = m
+    if (sub === 'clean' && /\s(-[a-zA-Z]*f[a-zA-Z]*|--force)\b/.test(rest)) return true
+    if (sub === 'checkout' && /\s--(\s|$)|\s\.(\s|$)|\s(-f|--force)\b/.test(rest)) return true
+    if (sub === 'restore' && !(/\s(--staged|-S)\b/.test(rest) && !/\s(--worktree|-W)\b/.test(rest))) return true
+  }
+  return false
+}
+
+/**
  * What 전부 허용 still asks the person about (REQ-F-759): a tool call that deletes outside the session's folder,
  * rewrites git history on a remote or throws away work, runs as root, reads this Mac's secrets, or changes Claude
  * Code's own settings or what macOS starts at login. Returns why in a few words, or null. A command is only read
@@ -148,6 +166,9 @@ export function riskyCall(tool, { cwd = '', home = '' } = {}) {
     // `:<ref>`, `--prune`) rewrite the remote as much as `-f` does (1.338).
     if (/\bgit\b[^;&|\n]*\spush\b[^;&|\n]*(\s(--force(-with-lease|-if-includes)?|--mirror|--delete|--prune|-[a-zA-Z]*[fd][a-zA-Z]*)\b|\s\+[\w./-]+|\s:[\w./-]+)/.test(c)) return 'git 강제 push'
     if (/\bgit\b[^;&|\n]*\sreset\b[^;&|\n]*\s--hard\b/.test(c)) return 'git reset --hard'
+    if (discardsWork(c)) return '작업 버리기(git clean·checkout·restore)'
+    // In the session's folder too: removesOutside only sees rm, and a find that deletes picks its files by a pattern.
+    if (/\bfind\b[^;&|\n]*\s(-delete\b|-exec(dir)?\s+(\S*\/)?rm\b)/.test(c)) return '파일 일괄 삭제(find)'
     if (secret.test(c)) return '비밀 파일'
     if (settings.test(c)) return 'Claude 설정·로그인 항목 바꾸기'
     if (removesOutside(c, cwd, home)) return '세션 폴더 밖 삭제'
