@@ -26,7 +26,20 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.363',
+    date: '2026-10-31',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '새 세션의 첫 메시지에 사진·영상을 붙일 수 있음("사진·영상 붙이기" 버튼, 붙여 넣기·끌어 놓기, 그림 8장·영상 3개). 붙인 것이 있으면 세션을 띄운 뒤 영상을 올리고 글·그림·영상을 한 번에 보냄',
+        refs: ['REQ-F-828', 'AC-1496'],
+      },
+    ],
+  },
+  {
     version: '1.362',
+    commit: '0badfa2',
     date: '2026-10-31',
     changes: [
       {

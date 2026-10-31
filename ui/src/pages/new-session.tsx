@@ -13,8 +13,10 @@ import { AdoptList, presetAdopt } from './adopt-list'
 import { confirmLaunchMode } from '../components/auto-allow-confirm'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { confirmDialog, toast } from '../kit/overlay'
-import { openSession } from '../lib/builtin-actions'
+import { openSession, sendMessage } from '../lib/builtin-actions'
 import { dispatch, isCancel } from '../lib/actions'
+import { shrinkImage } from '../lib/image'
+import { uploadVideo, VIDEO_MAX, VIDEO_TYPES, type SentVideo } from '../lib/video'
 
 interface Dirs {
   ok: true
@@ -41,6 +43,10 @@ export function NewSessionPage() {
   const [dirs, setDirs] = useState<Dirs | null>(null)
   const [dirsError, setDirsError] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
+  // Pictures and videos for the first message (REQ-F-828), as the session's box takes them: 8 pictures, 3 videos.
+  const [images, setImages] = useState<{ data: string; name: string }[]>([])
+  const [videos, setVideos] = useState<{ file: File; pct: number | null }[]>([])
+  const file = useRef<HTMLInputElement>(null)
   const [opts, setOpts] = useState<Options | null>(null)
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
@@ -95,6 +101,22 @@ export function NewSessionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host?.id])
 
+  const addFiles = async (files: FileList | File[]) => {
+    const vids = [...files].filter((f) => f.type.startsWith('video/'))
+    if (vids.length) {
+      const ok = vids.filter((f) => VIDEO_TYPES.includes(f.type) && f.size <= VIDEO_MAX)
+      if (ok.length < vids.length) toast(`mp4·mov·webm 영상, ${VIDEO_MAX / 1024 / 1024}MB 까지 보낼 수 있어요`)
+      if (videos.length + ok.length > 3) toast('영상은 한 번에 3개까지 보낼 수 있어요')
+      setVideos((now) => [...now, ...ok.map((f) => ({ file: f, pct: null }))].slice(0, 3))
+    }
+    const list = [...files].filter((f) => f.type.startsWith('image/'))
+    if (!list.length) return
+    if (images.length + list.length > 8) toast('그림은 한 번에 8장까지 보낼 수 있어요')
+    const made = await Promise.all(list.slice(0, 8 - images.length).map((f) => shrinkImage(f).catch(() => null)))
+    setImages((now) => [...now, ...made.filter((x): x is { data: string; name: string } => !!x)].slice(0, 8))
+  }
+  const attached = images.length + videos.length > 0
+
   const start = async (retry = false) => {
     if (!host) return
     // 전부 허용: allowed without asking from the first request on. Said before it starts, not after.
@@ -103,11 +125,25 @@ export function NewSessionPage() {
     const create = retry || auto
     setBusy(true)
     try {
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, prompt, model, effort, mode, create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
+      // With pictures or videos the session starts empty (named after the words) and the first message goes the way
+      // the session's box sends one: videos up first, then words, pictures and videos together. The Mac holds a
+      // message said while the session is still starting and hands it over once it is up.
+      const first = attached ? { prompt: '', title: prompt } : { prompt }
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, model, effort, mode, create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       setPref('newAccount', account)
       if (!auto) setPref('newCwd', cwd)
+      if (attached) {
+        try {
+          const sent: SentVideo[] = []
+          for (const [i, v] of videos.entries()) sent.push(await uploadVideo(`/api/sessions/${encodeURIComponent(r.sid)}/upload`, v.file, (pct) => setVideos((now) => now.map((x, j) => (j === i ? { ...x, pct } : x)))))
+          await sendMessage(r.sid, prompt.trim(), images, sent)
+        } catch (e) {
+          // The session is there already: it opens, and what did not go is said.
+          toast(`세션은 띄웠지만 첫 메시지를 보내지 못했어요: ${errorText(e)}`, { tone: 'bad' })
+        }
+      }
       openSession(r.sid, 'new', { replace: true })
     } catch (e) {
       if (e instanceof ApiError && e.data.missing && !create) {
@@ -243,9 +279,58 @@ export function NewSessionPage() {
               </>
             )}
           </div>
-          <Field label="첫 메시지" hint="비워 두면 세션만 띄워요">
-            <textarea className="input" {...NO_AUTOFILL} rows={5} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="무엇을 할까요?" onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && start()} />
+          <Field label="첫 메시지" hint="비워 두면 세션만 띄워요. 사진·영상은 붙여 넣거나 끌어 놓아도 돼요">
+            <textarea
+              className="input"
+              {...NO_AUTOFILL}
+              rows={5}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="무엇을 할까요?"
+              onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && start()}
+              onPaste={(e) => {
+                const files = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
+                if (files.length) (e.preventDefault(), void addFiles(files))
+              }}
+              onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
+              onDrop={(e) => {
+                if (!e.dataTransfer.files.length) return
+                e.preventDefault()
+                void addFiles(e.dataTransfer.files)
+              }}
+            />
           </Field>
+          <div className="hstack" style={{ flexWrap: 'wrap', alignItems: 'flex-start', marginTop: -8, marginBottom: 16 }}>
+            <Button size="sm" tone="ghost" icon="image" disabled={busy} onClick={() => file.current?.click()}>
+              사진·영상 붙이기
+            </Button>
+            <input ref={file} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => (e.target.files && void addFiles(e.target.files), (e.target.value = ''))} />
+            {attached ? (
+              <div className="attach-row" style={{ paddingTop: 6 }}>
+                {videos.map((v, i) => (
+                  <span key={`v${i}`} className="attach attach-video">
+                    <span className="attach-video-name">🎬 {v.file.name}</span>
+                    <span className="muted">{v.pct === null ? `${(v.file.size / 1024 / 1024).toFixed(1)}MB` : `올리는 중 ${v.pct}%`}</span>
+                    {busy ? null : (
+                      <button type="button" aria-label="빼기" onClick={() => setVideos(videos.filter((_, j) => j !== i))}>
+                        <Icon name="close" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+                {images.map((im, i) => (
+                  <span key={i} className="attach">
+                    <img src={im.data} alt={im.name} />
+                    {busy ? null : (
+                      <button type="button" aria-label="빼기" onClick={() => setImages(images.filter((_, j) => j !== i))}>
+                        <Icon name="close" />
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
           {more && opts ? (
             <>
               <Field label="모델">
