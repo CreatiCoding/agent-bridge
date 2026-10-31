@@ -3,7 +3,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clock, duration, shortLabel } from '../lib/format'
-import { Markdown, MarkdownContext, setHtmlBlock } from '../lib/markdown'
+import { Markdown, MarkdownContext } from '../lib/markdown'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { Badge, Button, Collapse, Icon, IconButton, Spinner } from '../kit'
@@ -13,9 +13,6 @@ import { HtmlPreview, isHtmlDocument } from './html-preview'
 import { act, command, sessionPost } from './session-menu'
 import { TodoAskCard, todoAskOf } from './session-extras'
 import { copyText } from '../lib/builtin-actions'
-
-// A ```html block in an answer is drawn, not only shown as code.
-setHtmlBlock((code) => <HtmlPreview html={code} />)
 
 export function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
   const [zoom, setZoom] = useState(1)

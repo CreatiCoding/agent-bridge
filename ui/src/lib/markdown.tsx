@@ -200,12 +200,9 @@ function lines(text: string, key: string) {
   ))
 }
 
-/** How a ```html block is drawn; set by the page (components/html-preview), plain code until then. */
-let htmlBlock: ((code: string) => ReactNode) | null = null
-export const setHtmlBlock = (f: (code: string) => ReactNode) => void (htmlBlock = f)
-
 // renderer.block (REQ-F-822): a fenced block goes through the bus, so a handler around it can draw it its own way.
-setDefault('renderer.block', ({ lang, text }) => (lang === 'html' && htmlBlock ? htmlBlock(text) : <CodeBlock code={text} lang={lang} />))
+// The page's own ```html preview is one such handler (components/html-preview).
+setDefault('renderer.block', ({ lang, text }) => <CodeBlock code={text} lang={lang} />)
 
 /**
  * Where a piece of Markdown is drawn: the session it belongs to and whether it is that session's last message.

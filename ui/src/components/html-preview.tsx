@@ -1,6 +1,7 @@
 // HTML in an answer (a ```html block, or an answer that is a whole document) drawn read-only: in a frame
 // with no scripts, no network, nothing from this site.
 import { useRef, useState } from 'react'
+import { around } from '../lib/actions'
 import { CodeBlock } from '../lib/markdown'
 import { Button, Icon } from '../kit'
 import { Sheet } from '../kit/overlay'
@@ -52,3 +53,7 @@ export function HtmlPreview({ html }: { html: string }) {
 }
 
 export const isHtmlDocument = (text: string) => /^\s*<(!doctype html|html)[\s>]/i.test(text)
+
+// A ```html block in an answer is drawn, not only shown as code. It hooks the block the way an extension would,
+// innermost of all, so an extension's handler (priority 0 and up) sees html blocks first.
+around('renderer.block', (a, next) => (a.lang === 'html' ? <HtmlPreview html={a.text} /> : next(a)), { priority: -1000, owner: 'builtin' })

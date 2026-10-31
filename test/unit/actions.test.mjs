@@ -188,3 +188,23 @@ test('호출 지점: 보내기·카드 답·세션 만들기·닫기는 기본 �
   assert.match(readFileSync(new URL('../../ui/src/pages/session-page.tsx', import.meta.url), 'utf8'), /onSending\(s\.id,/)
   assert.match(readFileSync(new URL('../../ui/src/components/decision-card.tsx', import.meta.url), 'utf8'), /n === 'esc' \? \{ n, label: 'Esc', kind: 'deny' \} : n === 'enter' \? \{ n, label: '확정', kind: 'other' \}/)
 })
+
+test('html 미리보기는 익스텐션과 같은 around 로 붙고 가장 안쪽이라, 익스텐션이 html 블록을 먼저 본다', () => {
+  const preview = readFileSync(new URL('../../ui/src/components/html-preview.tsx', import.meta.url), 'utf8')
+  const md = readFileSync(new URL('../../ui/src/lib/markdown.tsx', import.meta.url), 'utf8')
+  assert.match(preview, /around\('renderer\.block', \(a, next\) => \(a\.lang === 'html' \? <HtmlPreview html=\{a\.text\} \/> : next\(a\)\), \{ priority: -1000, owner: 'builtin' \}\)/)
+  assert.doesNotMatch(md, /setHtmlBlock|htmlBlock/)
+  assert.match(md, /setDefault\('renderer\.block', \(\{ lang, text \}\) => <CodeBlock code=\{text\} lang=\{lang\} \/>\)/)
+  // The same shape run on the bus: the page's preview inside, an extension at its default priority outside.
+  setDefault('renderer.block', (a) => `code:${a.lang}`)
+  const offs = [
+    around('renderer.block', (a, next) => (a.lang === 'html' ? 'preview' : next(a)), { priority: -1000, owner: 'builtin' }),
+    around('renderer.block', (a, next) => (a.text.includes('chart') ? 'ext-chart' : next(a)), { owner: 'charts' }),
+  ]
+  const b = (lang, text) => dispatch('renderer.block', { lang, text, closed: true, isLast: false })
+  assert.equal(b('html', '<p>hi</p>'), 'preview')
+  assert.equal(b('html', '<div class="chart">'), 'ext-chart')
+  assert.equal(b('js', 'x'), 'code:js')
+  offs.forEach((f) => f())
+  assert.equal(b('html', '<p>hi</p>'), 'code:html')
+})

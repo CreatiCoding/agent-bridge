@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.365',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '답 안 html 미리보기가 익스텐션과 같은 렌더러 처리기로 붙어요. 익스텐션이 html 블록을 대신 그릴 수 있고, 익스텐션이 없으면 보이는 것은 그대로예요', refs: ['REQ-F-604', 'REQ-F-822'] },
+    ],
+  },
+  {
     version: '1.364',
+    commit: 'b9857cf',
     date: '2026-10-31',
     changes: [
       {
