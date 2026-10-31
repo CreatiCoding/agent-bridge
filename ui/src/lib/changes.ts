@@ -26,7 +26,19 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.370',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['ui'], text: '즐겨찾기 별을 노란색에서 흐린 회색으로 바꿔, 세션 줄마다 상태 점만 색을 띠어요', refs: ['REQ-F-782'] },
+      { kind: 'changed', scope: ['ui'], text: '로고·읽지 않은 세션 제목·절 제목 같은 굵은 글자를 600 으로 낮추고, 절 제목의 넓힌 자간을 없앴어요' },
+      { kind: 'changed', scope: ['ui'], text: '확인 창과 설명 글의 🔴·⚠️ 이모지를 빼고, 첨부 이름 앞의 🎬·📎 는 재생·문서 아이콘으로 바꿨어요', refs: ['REQ-F-702', 'REQ-F-796'] },
+      { kind: 'changed', scope: ['ui'], text: '알림이 튀어 오르지 않고 부드럽게 나타나요. 떠 있는 유리 막대가 뒤 색을 더 진하게 만들지 않아요', refs: ['REQ-F-724'] },
+      { kind: 'removed', scope: ['ui'], text: '예전 화면에서 쓰이지 않던 무지개 활동 상자 스타일을 지우고, 시작 페이지 카드 제목의 이모지를 뺐어요' },
+    ],
+  },
+  {
     version: '1.369',
+    commit: '8ba5f22',
     date: '2026-10-31',
     changes: [
       { kind: 'added', scope: ['ui', 'server', 'agent'], text: '사진·영상 말고 아무 파일이나 보낼 수 있어요(하나에 512MB, 영상과 합쳐 한 번에 3개). 입력창 + 와 새 세션의 "사진·파일 붙이기", 끌어 놓기로 붙이면 원본 그대로 올라가 세션의 맥 ~/.claude-bridge/images 에 원래 이름으로 놓이고, 메시지에 그 경로가 붙어요. 대화에는 📎 이름', refs: ['REQ-F-830', 'IF-218'] },

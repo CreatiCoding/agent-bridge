@@ -50,7 +50,7 @@
   --glass-edge: color-mix(in srgb, var(--text) 9%, transparent);
   --glass-hi: rgba(255, 255, 255, 0.85);
   --glass-shadow: 0 0 #0000;
-  --glass-blur: blur(12px) saturate(180%);
+  --glass-blur: blur(12px);
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
@@ -356,7 +356,7 @@ button:not(:disabled) {
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: 28px;
   padding: 0 10px;
   border-radius: 999px;
@@ -552,9 +552,8 @@ select.input {
   align-items: center;
   gap: 4px;
   font-size: var(--fs-small);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--faint);
-  letter-spacing: 0.02em;
   border: 0;
   background: none;
   padding: 0;
@@ -593,7 +592,7 @@ select.input {
 }
 .empty-title {
   font-size: var(--fs-large);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   margin: 8px 0 0;
 }
@@ -665,7 +664,7 @@ select.input {
   flex: 1;
   font-size: var(--fs-large);
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
   min-width: 0;
 }
 .sheet-body {
@@ -769,7 +768,7 @@ select.input {
 .menu-title {
   padding: 6px 10px 4px;
   font-size: var(--fs-xsmall);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -865,7 +864,7 @@ select.input {
 .menu-header {
   padding: 8px 10px 2px;
   font-size: var(--fs-xsmall);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--faint);
 }
 .toasts {
@@ -900,7 +899,7 @@ select.input {
   font-size: var(--fs-medium);
   line-height: 1.4;
   box-shadow: var(--shadow);
-  animation: toast-in 0.32s cubic-bezier(0.2, 1.3, 0.35, 1);
+  animation: toast-in 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   transition: transform 0.2s ease, opacity 0.2s ease;
   cursor: grab;
 }
@@ -940,7 +939,7 @@ select.input {
   background: var(--tone-soft);
   color: var(--tone);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.1s ease;
 }
@@ -1225,7 +1224,7 @@ select.input {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 800;
+  font-weight: 600;
   font-size: var(--fs-large);
   padding: 0 6px;
   color: var(--accent);
@@ -1355,11 +1354,11 @@ select.input {
   font-size: var(--fs-medium);
 }
 .srow.unread .srow-title {
-  font-weight: 750;
+  font-weight: 600;
 }
 /* A favourite (REQ-F-782): a filled star before the title. */
 .srow-star.inline-icon {
-  color: var(--amber);
+  color: var(--faint);
   fill: currentColor;
 }
 .srow-time {
@@ -1374,7 +1373,7 @@ select.input {
   padding: 10px 12px 2px;
   font-size: var(--fs-small);
   color: var(--faint);
-  font-weight: 700;
+  font-weight: 600;
 }
 .host-head .grow {
   flex: 1;
@@ -1923,7 +1922,7 @@ select.input {
   color: var(--text);
 }
 .tool-run-body {
-  margin: 2px 0 4px 13px;
+  margin: 2px 0 4px 12px;
   padding-left: 4px;
   border-left: 1px solid var(--line-strong);
   display: flex;
@@ -2592,7 +2591,7 @@ li.now > .todo-mark {
 /* Key words Claude bolds stand out in the accent colour; the trailing "(…)" note steps back (REQ-F-778 규칙 5). */
 :is(.todos, .todo-panel) li strong {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: 600;
 }
 :is(.todos, .todo-panel) li.done strong {
   color: inherit;
@@ -2813,7 +2812,7 @@ li:hover > .todo-del,
 .gauge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 .gauge-bar {
   width: 36px;
@@ -3194,7 +3193,7 @@ li:hover > .todo-del,
   background: var(--red);
   color: #fff;
   font-size: var(--fs-xsmall);
-  font-weight: 700;
+  font-weight: 600;
   display: grid;
   place-items: center;
   padding: 0 4px;
@@ -3522,7 +3521,7 @@ body.group-sorting * {
   border-bottom: 0;
 }
 .feature-row .dot {
-  margin-top: 7px;
+  margin-top: 8px;
 }
 .feature-detail {
   font-size: var(--fs-small);
@@ -3668,7 +3667,7 @@ body.group-sorting * {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-weight: 700;
+  font-weight: 600;
   font-size: var(--fs-medium);
   background: var(--accent-soft);
   color: var(--accent-text);
@@ -4102,7 +4101,7 @@ body.group-sorting * {
 .stab-main {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
   height: 100%;
   padding: 0 4px 0 12px;
@@ -4743,7 +4742,7 @@ body.group-sorting * {
 }
 .report-msg.desk > .icon {
   flex: none;
-  margin-top: 9px;
+  margin-top: 8px;
   color: var(--accent);
 }
 .report-msg.desk p {

@@ -218,7 +218,7 @@ export async function trash(s: Session) {
   if (!info) return
   const risky = info.repos.filter((r) => r.uncommitted || r.unpushed)
   const ok = await confirmDialog('폴더를 휴지통으로 옮기고 끝낼까요?', {
-    text: `${info.cwd}\n${risky.length ? `\n⚠️ 아직 올리지 않은 것이 있어요:\n${risky.map((r) => `· ${r.dir}: 커밋 안 한 변경 ${r.uncommitted}개, push 안 한 커밋 ${r.unpushed}개`).join('\n')}` : '\n커밋 안 한 변경이나 push 안 한 커밋은 없어요.'}\n\n맥의 휴지통에서 되살릴 수 있어요.`,
+    text: `${info.cwd}\n${risky.length ? `\n아직 올리지 않은 것이 있어요:\n${risky.map((r) => `· ${r.dir}: 커밋 안 한 변경 ${r.uncommitted}개, push 안 한 커밋 ${r.unpushed}개`).join('\n')}` : '\n커밋 안 한 변경이나 push 안 한 커밋은 없어요.'}\n\n맥의 휴지통에서 되살릴 수 있어요.`,
     ok: '휴지통으로',
     danger: true,
   })

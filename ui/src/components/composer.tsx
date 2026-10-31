@@ -484,7 +484,7 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
         <div className="attach-row">
           {videos.map((v, i) => (
             <span key={`v${i}`} className="attach attach-video">
-              <span className="attach-video-name">{isVideo(v.file) ? '🎬' : '📎'} {v.file.name}</span>
+              <span className="attach-video-name"><Icon name={isVideo(v.file) ? 'play' : 'doc'} className="inline-icon" />{v.file.name}</span>
               <span className="muted">{v.pct === null ? `${(v.file.size / 1024 / 1024).toFixed(1)}MB` : `올리는 중 ${v.pct}%`}</span>
               {sending ? null : (
                 <button type="button" aria-label="빼기" onClick={() => setVideos(videos.filter((_, j) => j !== i))}>
