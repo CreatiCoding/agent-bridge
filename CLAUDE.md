@@ -44,8 +44,8 @@
 사용자가 허락했다(2026-10-10): **커밋, `main` push, 배포 확인, 재시작까지 묻지 않고 한 번에 끝낸다.** 받은 작업은 그 턴에 배포까지 마친다.
 
 1. 위 §1(SPEC)·§2(금지)·§3(검증)을 모두 통과한 뒤 커밋한다. 하나라도 실패하면 push 하지 않고 고친다.
-2. `git push origin main`. `main` 에 push 하면 Dokploy 가 서버를 자동 배포한다(start-first, 끊김 없음).
-3. 배포가 끝났는지 확인한다: Dokploy 의 최신 배포 상태가 `done` 이고, `https://bridge.creco.dev/api/health` 가 200 이며, 바뀐 화면·경로가 실제로 보이는지 본다. `error` 면 로그를 보고 고쳐서 다시 올린다.
+2. `git push origin main`. `main` 에 push 하면 **ci.creco.dev** 가 webhook 으로 받아 `npm test`(Linux)를 돌리고, 통과하면 Dokploy 로 서버와 문서 사이트를 배포하고 `/api/health` 까지 본다(2026-11-01 부터, Dokploy 의 push 자동 배포는 꺼져 있다). start-first 라 끊김은 없다.
+3. 배포가 끝났는지 확인한다: push 한 커밋의 ci 상태를 기다린다 — `gh api repos/CreatiCoding/agent-bridge/commits/<sha>/status --jq '.statuses[]|select(.context=="ci.creco.dev")|.state+" "+.description'`. `success 배포 완료` 면 배포와 health 까지 끝난 것이고, 그다음 바뀐 화면·경로가 실제로 보이는지 본다. `pending` 이면 기다리고(테스트·배포까지 보통 5~8분), `failure`·`error` 면 설명을 보고 고쳐서 다시 올린다(시험은 Linux 에서 돈다: macOS 만 가정한 시험은 깨진다). 직접 Dokploy deploy 를 부르지 않는다. 다른 세션이 그사이 올리면 내 커밋은 "배포 넘김"(더 새 커밋이 배포)일 수 있다: 그때는 최신 커밋의 상태를 본다.
 4. 에이전트(`agent/`)를 고쳤으면: 배포되면 맥의 에이전트가 새 버전을 받아 두고, 그 맥의 자동 업데이트 설정(기본 새벽 4~6시, "받는 대로"면 바로)에 따라 스스로 바뀐다(SPEC REQ-F-368, REQ-F-832). 바로 확인해야 하면 맥 화면의 "지금 업데이트"(`POST /api/hosts/<id>/update` `{now:true}`)를 쓴다. 세션이 쉬기를 기다리지 않는다. 에이전트 자신의 몇 초짜리 동작(전달 확인·뜨는 중·다시 여는 중)만 끝나면, 길어도 60 s 뒤 바로 바꾼다. 일하던 세션의 턴·카드·대기·화면 값은 handoff.json 으로 넘어가고, 헤드리스 연동 Chrome 은 다음 에이전트가 이어받아 연결이 끊기지 않는다. 그러니 일하는 세션이 있어도 기다리지 않는다. 확인할 것: `~/.claude-bridge/agent.mjs` 에 바뀐 코드가 들어갔는지, 호스트가 연결돼 있는지. 바로 바꿔야 하면 사이트의 "다시 시작"(`POST /api/hosts/<id>/heal` `{action:'restart'}`)을 쓴다. `kill`·`launchctl kickstart` 는 쓰지 않는다(handoff 를 쓰지 않고 끝나 Chrome 까지 닫힌다).
 5. 끝나면 무엇을 올렸고 어떻게 확인했는지 사용자에게 알린다.
 
