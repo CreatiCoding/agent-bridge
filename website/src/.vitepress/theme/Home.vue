@@ -9,7 +9,7 @@ const { frontmatter: fm } = useData()
   <div class="zp-home">
     <div class="zp-grid" aria-hidden="true" />
     <section class="zp-hero">
-      <p class="zp-badge"><span class="zp-dot" />{{ fm.badge }}</p>
+      <p class="zp-badge">{{ fm.badge }}</p>
       <h1 class="zp-title">
         <span>{{ fm.headline[0] }}</span><br />
         <span class="zp-dim">{{ fm.headline[1] }}</span> <span>{{ fm.headline[2] }}</span>

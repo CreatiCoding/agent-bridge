@@ -6,7 +6,7 @@ description: 맥에서 도는 Claude Code 세션을 폰에서 다루고, 맥 사
 sidebar: false
 github: https://github.com/CreatiCoding/agent-bridge
 badge: macOS · Claude Code · 셀프호스팅 · AGPL-3.0
-headline: [맥의 Claude Code 를, 폰에서, 이어서.]
+headline: [맥의 Claude Code 를, 폰에서, 이어서]
 tagline: Agent Bridge 는 맥에서 도는 진짜 Claude Code 세션을 웹에 이어요. 폰으로 대화하고 권한 요청에 답하고, 세션을 맥북에서 아이맥으로 옮겨 이어서 작업해요.
 start: { text: 시작하기, link: /guide/getting-started }
 arch:
