@@ -113,7 +113,7 @@ export function ReportSheet({ open, onClose, sid }: { open: boolean; onClose: ()
             <div className="attach-row">
               {videos.map((v, i) => (
                 <span key={`v${i}`} className="attach attach-video">
-                  <span className="attach-video-name">🎬 {v.file.name}</span>
+                  <span className="attach-video-name"><Icon name="play" className="inline-icon" />{v.file.name}</span>
                   <span className="muted">{v.pct === null ? `${(v.file.size / 1024 / 1024).toFixed(1)}MB` : `올리는 중 ${v.pct}%`}</span>
                   {busy ? null : (
                     <button type="button" aria-label="빼기" onClick={() => setVideos(videos.filter((_, j) => j !== i))}>

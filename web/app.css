@@ -250,31 +250,6 @@ strong, b, em, code, a { display: inline; vertical-align: baseline; }
 .notice > .ic { margin-top: .2em; }
 .notice .md p { margin: 0; }
 
-/* ---------------------------------------------------------------- activity box */
-@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-.activity { position: relative; border-radius: 14px; padding: 10px 16px; isolation: isolate;
-  background: radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, #c96442 7%, transparent), transparent 60%),
-              radial-gradient(120% 90% at 100% 100%, color-mix(in srgb, #7f9cf5 7%, transparent), transparent 60%), var(--bg); }
-.activity::before, .activity::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: conic-gradient(from var(--spin), #c96442, #e6a15c, #b98bd9, #7f9cf5, #c96442); animation: spin 6s linear infinite; }
-.activity::before { padding: 1.5px; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
-.activity::after { z-index: -1; filter: blur(18px); opacity: .28; }
-@keyframes spin { to { --spin: 360deg; } }
-.activity .ahead { display: flex; align-items: center; gap: 8px; font-size: var(--fs-s); white-space: nowrap; overflow: hidden; }
-.activity .ahead .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600;
-  background: linear-gradient(90deg, #c96442, #e6a15c, #b98bd9, #7f9cf5, #c96442); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: flow 2.4s linear infinite; }
-.activity .ahead > .ic { color: #c96442; }
-.activity .ahead .secs { flex: none; color: var(--muted); }
-@keyframes flow { to { background-position: -200% 0; } }
-/* 15: the whole growing block as markdown, not a clamped two-line tail — it is the answer being written. */
-.activity .tail { margin-top: 4px; font-size: var(--fs-m); color: var(--text); }
-.activity .tail > :first-child { margin-top: 0; }
-.activity .tail > :last-child { margin-bottom: 0; }
-.activity .think-sub { margin-top: 6px; display: flex; align-items: center; gap: 6px; font-size: var(--fs-s); color: var(--muted); }
-.activity .think-sub > .ic { color: #c96442; }
-.activity .now { margin-top: 6px; }
-.activity .now pre { max-height: 200px; }
-
 /* ---------------------------------------------------------------- composer */
 .composer { flex: none; background: var(--bg); padding: 8px var(--gutter) calc(10px + env(safe-area-inset-bottom)); }
 /* 20: the on-screen keyboard already covers the home-indicator area, so its own safe-area padding would
@@ -442,7 +417,7 @@ html.kbd-open .composer { padding-bottom: 10px; }
 }
 @media (hover: none) { .copy { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .activity::before, .activity::after, .activity .ahead .txt, .sdot { animation: none !important; }
+  .sdot { animation: none !important; }
   * { transition: none !important; }
 }
 .ic.down { transform: rotate(90deg); }
@@ -686,7 +661,6 @@ body > .crash { position: fixed; font: var(--fs-large)/1.5 -apple-system, system
 /* notices sit under the top bar; the terminal screen keeps its colours */
 .notices { top: calc(var(--top-h) + 8px); }
 .screen-card pre b { font-weight: 700; }
-.activity .quiet { margin-top: 6px; font-size: var(--fs-s); color: var(--yellow); display: flex; align-items: center; gap: 6px; }
 .ns-path { position: relative; flex-wrap: wrap; }
 .ns-path .ns-suggest { flex-basis: 100%; }
 

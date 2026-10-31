@@ -45,7 +45,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
 
   const adopt = async (c: Conversation) => {
     const ok = await confirmDialog('이 대화를 bridge 에서 이어 갈까요?', {
-      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '⚠️ 1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요. 같은 대화를 둘이 쓰면 기록이 엇갈려요.\n\n' : ''}그 폴더에서 claude --resume 으로 열어요. 지금까지의 대화도 함께 보여요.`,
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요. 같은 대화를 둘이 쓰면 기록이 엇갈려요.\n\n' : ''}그 폴더에서 claude --resume 으로 열어요. 지금까지의 대화도 함께 보여요.`,
       ok: '이어 가기',
       danger: c.active,
     })
@@ -64,7 +64,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const adoptPicked = async (items: Conversation[]) => {
     const active = items.filter((c) => c.active).length
     const ok = await confirmDialog(`${items.length}개 대화를 bridge 에서 이어 갈까요?`, {
-      text: `하나씩 차례로 그 폴더에서 claude --resume 으로 열어요.${active ? `\n\n⚠️ ${active}개는 1분 안에 쓰인 기록이 있어요. 다른 곳에서 쓰는 중이면 그쪽을 먼저 끝내세요.` : ''}`,
+      text: `하나씩 차례로 그 폴더에서 claude --resume 으로 열어요.${active ? `\n\n${active}개는 1분 안에 쓰인 기록이 있어요. 다른 곳에서 쓰는 중이면 그쪽을 먼저 끝내세요.` : ''}`,
       ok: `${items.length}개 이어 가기`,
       danger: active > 0,
     })

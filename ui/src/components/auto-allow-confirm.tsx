@@ -23,7 +23,7 @@ export const confirmAutoAllow = () =>
   })
 
 export const confirmAllowAll = (start = true) =>
-  confirmDialog(start ? '🔴 전부 허용 모드로 시작됩니다.' : '🔴 전부 허용으로 바꿀까요?', {
+  confirmDialog(start ? '전부 허용 모드로 시작됩니다.' : '전부 허용으로 바꿀까요?', {
     text: <>위험한 호출(폴더 밖 삭제·강제 push·sudo·비밀 파일)까지 하나도 묻지 않고 바로 허용해요. 이 세션이 맡기거나 복제한 세션도 같이 그래요. {start ? toSettings : null}</>,
     ok: start ? '확인' : '바꾸기',
     danger: true,
@@ -47,6 +47,6 @@ export async function confirmCopyMode(s: Session): Promise<boolean> {
 
 /** What the session's 권한 모드 means when it is one of the two 전부 허용. */
 export function AllowHint({ mode }: { mode: string }) {
-  if (mode === 'allowAll') return <span className="allow-all-text">🔴 전부 허용: 위험한 호출(폴더 밖 삭제·강제 push·sudo·비밀 파일)까지 묻지 않고 바로 허용해요. 맡기거나 복제한 세션도 같아요</span>
+  if (mode === 'allowAll') return <span className="allow-all-text">전부 허용: 위험한 호출(폴더 밖 삭제·강제 push·sudo·비밀 파일)까지 묻지 않고 바로 허용해요. 맡기거나 복제한 세션도 같아요</span>
   return <>안전한 전부 허용: 권한 요청을 에이전트가 바로 허용하고 대화에 남겨요. 위험한 호출만 물어요. 설정에 남는 '다시 묻지 않기' 는 누르지 않아요</>
 }
