@@ -52,6 +52,22 @@ func serviceAPI(req *Req, res *Res, p string) {
 	if !serviceUidActive(uid) {
 		refuse(403, "서비스 토큰의 계정이 허용돼 있지 않아요")
 	}
+	// The person's Macs for an asset list (IF-259, 1.380): names, versions and whether each is connected, nothing
+	// that opens or reads anything on them.
+	if p == "/api/service/hosts" && req.Method == "GET" {
+		list := []any{}
+		for _, id := range hosts.Keys() {
+			h := hosts.Val(id)
+			if mstr(h, "uid") != uid || isDemoHost(id) {
+				continue
+			}
+			info := asM(h["info"])
+			list = append(list, M{"id": id, "name": jsStringU(h["name"]), "kind": jsStringU(h["kind"]), "online": online(id), "lastSeen": mnum(h, "lastSeen"),
+				"version": jsStringU(info["version"]), "build": jsStringU(info["build"]), "node": jsStringU(info["node"]), "os": jsStringU(info["os"])})
+		}
+		jsonRes(res, 200, M{"hosts": list})
+		return
+	}
 	if p == "/api/service/sessions" && req.Method == "POST" {
 		if !strings.HasPrefix(ctype(req), "application/json") {
 			refuse(415, "application/json 만 받습니다")

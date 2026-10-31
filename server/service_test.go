@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"testing"
 )
@@ -130,4 +131,61 @@ func TestServiceClose(t *testing.T) {
 			ok(t, !truthy(c.get("closed")), sid+" left open")
 		}
 	})
+}
+
+// AC-1503 (IF-259): the token lists only that person's Macs, with versions and whether each is connected.
+func TestServiceHosts(t *testing.T) {
+	keepT, keepU, keepA, keepUsers, keepAccess, keepH, keepB := SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, hosts, bridges
+	defer func() {
+		SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, hosts, bridges = keepT, keepU, keepA, keepUsers, keepAccess, keepH, keepB
+	}()
+	tok := "0123456789abcdef0123456789abcdef"
+	SERVICE_TOKEN, SERVICE_UID = tok, "gh1"
+	users, access, hosts, bridges = newOMap[M](), newOMap[M](), newOMap[M](), newOMap[Sink]()
+	call := func(method string) (int, string) {
+		r := httptest.NewRequest(method, "/api/service/hosts", nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		req := newReq(r)
+		res := newRes(req)
+		status := 0
+		withLock(func() {
+			defer func() {
+				if e, isRefuse := recover().(*Refuse); isRefuse {
+					status = e.Status
+				}
+			}()
+			serviceAPI(req, res, r.URL.Path)
+			status = res.status
+		})
+		return status, string(res.body)
+	}
+	withLock(func() {
+		ALLOWED = []string{"svc-one"}
+		users.Set("gh1", M{"login": "svc-one", "name": "svc-one", "avatar": ""})
+		hosts.Set("h1", M{"uid": "gh1", "name": "맥 미니", "kind": "mac", "lastSeen": float64(1000), "home": "/Users/me", "info": M{"version": "1.2", "build": "b9", "node": "v22", "os": "darwin 24.6.0"}})
+		hosts.Set("h2", M{"uid": "gh1", "name": "맥북", "lastSeen": float64(2000)})
+		hosts.Set("h3", M{"uid": "gh2", "name": "남의 맥"})
+		bridges.Set("h1", newStream(nil))
+	})
+	code, body := call("GET")
+	eq(t, code, 200, body)
+	var out struct {
+		Hosts []map[string]any `json:"hosts"`
+	}
+	if err := json.Unmarshal([]byte(body), &out); err != nil {
+		t.Fatal(err, body)
+	}
+	eq(t, len(out.Hosts), 2, body)
+	by := map[string]map[string]any{}
+	for _, h := range out.Hosts {
+		by[h["id"].(string)] = h
+	}
+	eq(t, by["h1"]["online"], true)
+	eq(t, by["h1"]["os"], "darwin 24.6.0")
+	eq(t, by["h1"]["version"], "1.2")
+	eq(t, by["h2"]["online"], false)
+	_, hasHome := by["h1"]["home"]
+	ok(t, !hasHome, "no home folder")
+	code, _ = call("POST")
+	eq(t, code, 404, "only GET")
 }

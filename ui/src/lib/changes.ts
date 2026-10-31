@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.380',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '자동 수정 서버 같은 믿을 수 있는 서버가 서비스 토큰으로 내 맥 목록(이름·연결 여부·OS·에이전트 버전)을 읽을 수 있다. 자산 목록을 손으로 적지 않으려는 것',
+        refs: ['REQ-F-799', 'IF-259'],
+      },
+    ],
+  },
+  {
     version: '1.379',
     date: '2026-11-01',
+    commit: 'bd194de',
     changes: [
       {
         kind: 'fixed',
