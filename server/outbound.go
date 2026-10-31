@@ -313,7 +313,7 @@ func privacyWithRecipients(html string) string {
 		itemsEn += "<li>" + escPage(jsString(o[0].V)) + " (" + escPage(strings.Join(names, ", ")) + ")</li>"
 	}
 	slack := "이 전송은 제7조에 적습니다.</p>"
-	html = strings.Replace(html, slack, slack+"\n<p>③ 이 서버의 운영자가 정한 수신처로 아래 이벤트를 보냅니다. 이벤트에는 계정(uid·로그인 이름), 세션의 맥 이름·작업 폴더·제목, 권한·질문 카드의 제목과 선택지가 들어갑니다. 이 목록은 서버 설정(bridge.yaml 의 notify)에서 자동으로 만듭니다.</p>\n<ul>"+items+"</ul>", 1)
+	html = strings.Replace(html, slack, slack+"\n<p>③ 이 서버의 운영자가 정한 수신처로 아래 이벤트를 보냅니다. 이벤트에는 계정(uid·로그인 이름), 세션의 맥 이름·작업 폴더·제목, 권한·질문 카드의 제목과 선택지, 그리고 이벤트에 따라 보낸 글·누른 키 같은 그 동작의 내용이 들어갑니다. 익스텐션의 라우트로는 그 익스텐션이 보내는 내용이 갑니다. 이 목록은 서버 설정(bridge.yaml 의 notify·hooks·extensions)에서 자동으로 만듭니다.</p>\n<ul>"+items+"</ul>", 1)
 	html = strings.Replace(html, "<p>① 운영자는 개인정보 처리 업무를 위탁하지 않습니다.</p>", "<p>① 운영자는 운영자가 지정한 수신처(제5조 ③의 목록) 외에는 개인정보 처리 업무를 위탁하지 않습니다.</p>", 1)
 	html = strings.Replace(html, "<li>No data is given to third parties, and no processing is outsourced.</li>", "<li>Data is sent only to the destinations the operator of this server set, with the events listed: <ul>"+itemsEn+"</ul></li>", 1)
 	return html

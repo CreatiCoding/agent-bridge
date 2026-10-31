@@ -211,6 +211,7 @@ func TestPrivacyRecipients(t *testing.T) {
 	ok(t, !strings.Contains(out, "개인정보 처리 업무를 위탁하지 않습니다.</p>") || strings.Contains(out, "외에는 개인정보 처리 업무를 위탁하지 않습니다"), "위탁 문장 바뀜")
 	ok(t, strings.Contains(out, "외에는 개인정보 처리 업무를 위탁하지 않습니다") && !strings.Contains(out, "No data is given to third parties, and no processing is outsourced."), "한국어·영어 문장 모두 바뀜")
 	ok(t, strings.Contains(out, "제5조 ③") && strings.Count(out, "hooks.slack.com") == 2, "조항과 영어 요약에 한 번씩")
+	ok(t, strings.Contains(out, "보낸 글·누른 키 같은 그 동작의 내용"), "보낸 글도 간다고 적음")
 	code, body := callAPI(t, "GET", "/api/me", "")
 	ok(t, code == 200 && strings.Contains(body, `"recipients":[{"origin":"https://hooks.slack.com","events":["decision.waiting"]}]`), body)
 }

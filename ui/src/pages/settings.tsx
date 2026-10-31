@@ -533,8 +533,8 @@ const TABS: { id: SettingsTab; label: string; short?: string; icon: string; admi
   { id: 'prompt', label: '프롬프트', icon: 'doc' },
   { id: 'accounts', label: 'Claude 계정', short: '계정', icon: 'user' },
   { id: 'device', label: '이 기기', icon: 'phone' },
-  // The only plugin is Slack; the tab goes with features.slack (REQ-F-812).
-  { id: 'plugins', label: '플러그인', icon: 'plugin', feature: 'slack' },
+  // Slack and the extensions' switches live here: shown when features.slack is on or the server has an extension (REQ-F-812).
+  { id: 'plugins', label: '플러그인', icon: 'plugin' },
   { id: 'voice', label: '음성', icon: 'mic', feature: 'voice' },
   { id: 'admin', label: '운영', icon: 'shield', admin: true },
   { id: 'changes', label: '변경 기록', icon: 'clock' },
@@ -562,6 +562,7 @@ function SettingsSlot({ me, tab }: { me: Me | null; tab: SettingsTab }) {
 
 export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
   const wide = useWide()
+  const hasExt = !!(me as { extensions?: unknown[] } | null)?.extensions?.length
   const [prompt, setPrompt] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [plugins, setPlugins] = useState<Plugin[] | null>(null)
@@ -602,7 +603,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
       {/* Tabs (REQ-F-708): one part of the settings at a time, so nothing is far down a long page. Each tab has its
           own address (/settings/<tab>), so a link can open the right one. */}
       <div className="page-tabs" role="tablist" aria-label="설정">
-        {TABS.filter((t) => (!t.admin || me?.admin) && (!t.feature || featureOn(t.feature))).map((t) => (
+        {TABS.filter((t) => (!t.admin || me?.admin) && (!t.feature || featureOn(t.feature)) && (t.id !== 'plugins' || featureOn('slack') || hasExt)).map((t) => (
           <a key={t.id} role="tab" aria-selected={tab === t.id} className={`page-tab${tab === t.id ? ' on' : ''}`} href={href({ name: 'settings', tab: t.id })} onClick={(e) => (e.preventDefault(), go({ name: 'settings', tab: t.id }, { replace: true }))}>
             <Icon name={t.icon} />
             {t.short ? (

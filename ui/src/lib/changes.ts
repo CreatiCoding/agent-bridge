@@ -26,7 +26,16 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.373',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'fixed', scope: ['server'], text: '처리방침의 수신처 문장에 보낸 글·누른 키 같은 동작의 내용과 익스텐션 라우트로 가는 내용도 간다고 적었어요', refs: ['REQ-F-818'] },
+      { kind: 'fixed', scope: ['ui'], text: 'Slack 을 끈 서버에서도 익스텐션이 있으면 설정의 플러그인 탭이 보여요', refs: ['REQ-F-812'] },
+    ],
+  },
+  {
     version: '1.372',
+    commit: '1a97016',
     date: '2026-10-31',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: '즐겨찾기 별·열쇠 같은 글 속 아이콘이 글자 가운데에 맞아요. 별 있는 세션 줄만 조금 높던 것도 없어졌어요', refs: ['REQ-F-782'] },

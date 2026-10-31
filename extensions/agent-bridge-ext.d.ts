@@ -39,7 +39,7 @@ export interface Current {
 // ---------- actions (§6) ----------
 
 export interface ActionMap {
-  /** The send button, Enter, ⌘Enter. sent false when nothing went (reason: 'empty', 'busy', 'no-composer' …). */
+  /** The send button, Enter, ⌘Enter. sent false when nothing went (reason: 'empty', 'sending', 'duplicate', 'upload', 'no-composer'). */
   'composer.submit': { args: { sid: string; text?: string }; result: { sent: boolean; reason?: string } }
   'message.send': {
     args: { sid: string; text: string; kind: 'text' | 'command'; images: { data: string; name: string }[]; videos: { id: string; name: string }[] }
