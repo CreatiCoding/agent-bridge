@@ -33,22 +33,22 @@ func TestFeatureKeysDefaultsAndValues(t *testing.T) {
 	eq(t, cfgGet("privacy.file").(string), "")
 	eq(t, cspMore("csp.frameSrc"), "")
 
-	withCfg(t, "features:\n  voice: false\n  permissionModes: [plan, acceptEdits]\nretention:\n  uploadsHours: 2\n  previews: false\ncsp:\n  frameSrc: [https://wiki.example.com, \"https://*.docs.example.com:8443/a/B\"]\nprivacy:\n  file: ./privacy.html\n")
+	withCfg(t, "features:\n  voice: false\n  permissionModes: [plan, acceptEdits]\nretention:\n  uploadsHours: 2\n  previews: false\ncsp:\n  frameSrc: [https://frame.example.com, \"https://*.docs.example.com:8443/a/B\"]\nprivacy:\n  file: ./privacy.html\n")
 	ok(t, !cfgOn("features.voice") && cfgOn("features.webpush"))
 	ok(t, reflect.DeepEqual(cfgGet("features.permissionModes"), []string{"default", "plan", "acceptEdits"}), "default 는 늘 들어 있고 대소문자 그대로")
 	eq(t, cfgGet("retention.uploadsHours").(int), 2)
 	eq(t, uploadTTL(), 2*3600_000.0)
 	ok(t, !cfgOn("retention.previews"))
 	eq(t, cfgGet("privacy.file").(string), "/etc/bridge/privacy.html", "설정 파일 폴더 기준")
-	eq(t, cspMore("csp.frameSrc"), " https://wiki.example.com https://*.docs.example.com:8443/a/B")
+	eq(t, cspMore("csp.frameSrc"), " https://frame.example.com https://*.docs.example.com:8443/a/B")
 	keepP, keepSec := preview, SECURITY
 	defer func() { preview, SECURITY = keepP, keepSec }()
 	preview = &Preview{ORIGINS: []string{"https://lp1.bridge.test"}}
 	initSecurity()
 	csp := SECURITY["Content-Security-Policy"].(string)
-	ok(t, strings.Contains(csp, "frame-src 'self' ") && strings.Contains(csp, "https://wiki.example.com"), csp)
+	ok(t, strings.Contains(csp, "frame-src 'self' ") && strings.Contains(csp, "https://frame.example.com"), csp)
 	connect := strings.Split(strings.Split(csp, "connect-src")[1], ";")[0]
-	ok(t, !strings.Contains(connect, "wiki") && !strings.Contains(csp, "script-src"), "connect-src 는 넓히지 않고 script-src 는 생기지 않음")
+	ok(t, !strings.Contains(connect, "frame.example.com") && !strings.Contains(csp, "script-src"), "connect-src 는 넓히지 않고 script-src 는 생기지 않음")
 }
 
 func TestFeatureKeysRefuse(t *testing.T) {

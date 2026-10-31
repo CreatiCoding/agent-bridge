@@ -46,7 +46,7 @@ type extEntry struct {
 }
 
 type extRoute struct {
-	Path     string // "/wiki/": what follows /api/ext/<id>/call
+	Path     string // "/docs/": what follows /api/ext/<id>/call
 	Upstream string // ends in "/"
 	Secret   string
 	Headers  [][2]string // the value may still hold ${user.KEY}
@@ -373,7 +373,7 @@ func (d *extDef) readRoutes(n *yNode, getenv func(string) string) error {
 			return err
 		}
 		if !extPathRe.MatchString(r.Path) || strings.Contains(r.Path, "/../") || strings.Contains(r.Path, "/./") {
-			return &yamlErr{line, "server.routes[].path 는 / 로 시작하고 끝나야 합니다(예: /wiki/): " + r.Path}
+			return &yamlErr{line, "server.routes[].path 는 / 로 시작하고 끝나야 합니다(예: /docs/): " + r.Path}
 		}
 		for _, o := range d.Routes {
 			if strings.HasPrefix(r.Path, o.Path) || strings.HasPrefix(o.Path, r.Path) {

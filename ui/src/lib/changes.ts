@@ -26,7 +26,15 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.368',
+    date: '2026-10-31',
+    changes: [
+      { kind: 'changed', scope: ['server'], text: '익스텐션 라우트 경로가 틀렸을 때 오류 문구의 예시가 /docs/ 로 바뀌었어요', refs: ['REQ-F-825'] },
+    ],
+  },
+  {
     version: '1.367',
+    commit: 'b76f363',
     date: '2026-10-31',
     changes: [
       { kind: 'fixed', scope: ['ui'], text: 'entry 가 하위 폴더(dist/ 등)에 있는 익스텐션의 글이 번역 키 그대로 보이던 것을 고쳤어요. 언어 파일은 익스텐션 폴더의 locales/ 에서 읽어요', refs: ['REQ-F-827'] },

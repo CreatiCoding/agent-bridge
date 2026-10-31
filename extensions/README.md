@@ -12,7 +12,7 @@
 ```yaml
 extensions:
   - path: ./extensions/example        # bridge.yaml 이 있는 폴더 기준
-    env: [WIKI_SIGNING]               # 이 익스텐션의 extension.yaml 이 ${…} 로 읽어도 되는 환경변수
+    env: [EXAMPLE_SIGNING]               # 이 익스텐션의 extension.yaml 이 ${…} 로 읽어도 되는 환경변수
 extensionConsent: true                # 기본. 사람마다 해시에 동의해야 그 사람의 페이지가 불러온다
 ```
 
@@ -49,15 +49,15 @@ export default function setup(bridge: Bridge) {
 ```yaml
 server:
   routes:
-    - path: /wiki/                              # bridge.api.json('/wiki/pages') → upstream + pages
-      upstream: https://wiki.internal/api/
-      signingSecret: ${WIKI_SIGNING}            # 16자 이상. 서버가 X-Bridge-User·Signature 등을 붙여 서명
+    - path: /docs/                              # bridge.api.json('/docs/pages') → upstream + pages
+      upstream: https://api.example.com/v1/
+      signingSecret: ${EXAMPLE_SIGNING}            # 16자 이상. 서버가 X-Bridge-User·Signature 등을 붙여 서명
       headers:
-        Authorization: "Bearer ${user.wikiToken}"   # 그 사람이 bridge.storage.secrets.set('wikiToken', …) 로 둔 값
+        Authorization: "Bearer ${user.apiToken}"   # 그 사람이 bridge.storage.secrets.set('apiToken', …) 로 둔 값
   hooks:
     session.done.after:                         # 동의한 사람의 이벤트만 간다
       - type: webhook
-        url: https://notifier.internal/done
+        url: https://hooks.example.com/done
         secret: ${NOTIFY_SECRET}
 ```
 

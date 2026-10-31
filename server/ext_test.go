@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-const extYaml = `id: wiki
-name: 사내 위키
+const extYaml = `id: sample
+name: 예시 연동
 version: 0.1.0
 extensionApi: 1
 entry: ./index.js
@@ -18,17 +18,17 @@ uses:
   slots: [composer.actions]
 server:
   routes:
-    - path: /wiki/
-      upstream: https://wiki.example/api
-      signingSecret: ${WIKI_SIGNING}
+    - path: /docs/
+      upstream: https://api.example.com/v1
+      signingSecret: ${EXAMPLE_SIGNING}
       headers:
-        Authorization: "Bearer ${user.wikiToken}"
+        Authorization: "Bearer ${user.apiToken}"
         X-Team: ${TEAM}
   hooks:
     session.done.after:
       - type: webhook
         url: https://notify.example/done
-        secret: ${WIKI_SIGNING}
+        secret: ${EXAMPLE_SIGNING}
 `
 
 // extDir makes an extension folder under dir with extension.yaml and the files given.
@@ -45,13 +45,13 @@ func extDir(t *testing.T, dir, yaml string, files map[string]string) string {
 	return dir
 }
 
-var extEnv = envMap(map[string]string{"WIKI_SIGNING": "0123456789abcdef-signing", "TEAM": "core", "GITHUB_CLIENT_SECRET": "never"})
+var extEnv = envMap(map[string]string{"EXAMPLE_SIGNING": "0123456789abcdef-signing", "TEAM": "core", "GITHUB_CLIENT_SECRET": "never"})
 
 // AC-1492: bridge.yaml's extensions and extension.yaml: what is read, what is refused and why.
 func TestExtLoad(t *testing.T) {
 	root := t.TempDir()
-	good := extDir(t, filepath.Join(root, "wiki"), extYaml, map[string]string{"index.js": "export default () => {}", "a/b.css": "x{}", "page.html": "<p>"})
-	c, err := parseBridgeConfig(filepath.Join(root, "bridge.yaml"), []byte("extensionConsent: false\nextensions:\n  - path: ./wiki\n    env: [WIKI_SIGNING, TEAM]\n"), extEnv)
+	good := extDir(t, filepath.Join(root, "sample"), extYaml, map[string]string{"index.js": "export default () => {}", "a/b.css": "x{}", "page.html": "<p>"})
+	c, err := parseBridgeConfig(filepath.Join(root, "bridge.yaml"), []byte("extensionConsent: false\nextensions:\n  - path: ./sample\n    env: [EXAMPLE_SIGNING, TEAM]\n"), extEnv)
 	ok(t, err == nil, "parse", errS(err))
 	es := c.set["extensions"].v.([]extEntry)
 	eq(t, es[0].Path, good)
@@ -64,14 +64,14 @@ func TestExtLoad(t *testing.T) {
 	ds := loadExtensions(es, extEnv)
 	d := ds[0]
 	eq(t, d.Err, "")
-	eq(t, d.ID, "wiki")
+	eq(t, d.ID, "sample")
 	eq(t, d.Entry, "index.js")
 	eq(t, len(d.Hash), 16)
 	jeq(t, d.Actions, `["link.open","composer.submit","session.done"]`)
-	eq(t, d.Routes[0].Upstream, "https://wiki.example/api/")
+	eq(t, d.Routes[0].Upstream, "https://api.example.com/v1/")
 	eq(t, d.Routes[0].Secret, "0123456789abcdef-signing")
 	// ${user.KEY} waits for each request; the allowed ${TEAM} is read now.
-	jeq(t, d.Routes[0].Headers, `[["Authorization","Bearer ${user.wikiToken}"],["X-Team","core"]]`)
+	jeq(t, d.Routes[0].Headers, `[["Authorization","Bearer ${user.apiToken}"],["X-Team","core"]]`)
 	eq(t, len(d.Hooks["session.done.after"]), 1)
 	// The hash covers every file: one byte more is another hash.
 	_ = os.WriteFile(filepath.Join(good, "a/b.css"), []byte("x{ }"), 0o644)
@@ -86,7 +86,7 @@ func TestExtLoad(t *testing.T) {
 	}
 	base := "id: x-ext\nname: x\nversion: 1\nextensionApi: 1\nentry: index.js\n"
 	bad("unknown", base+"color: red\n", "모르는 키 color")
-	bad("env", extYaml, "허락하지 않은 환경변수를 읽습니다: WIKI_SIGNING, TEAM", "OTHER")
+	bad("env", extYaml, "허락하지 않은 환경변수를 읽습니다: EXAMPLE_SIGNING, TEAM", "OTHER")
 	bad("envsecret", base+"server:\n  routes:\n    - path: /a/\n      upstream: https://a.example\n      signingSecret: ${GITHUB_CLIENT_SECRET}\n", "GITHUB_CLIENT_SECRET")
 	// REQ-S-088: a `$` the YAML unescapes is a reference too, refused as the plain one is, and its value never read.
 	esc := base + "server:\n  routes:\n    - path: /a/\n      upstream: \"https://a.example/\\u0024{GITHUB_CLIENT_SECRET}/\"\n      signingSecret: 0123456789abcdef-signing\n      headers:\n        X-T: \"\\u0024{TEAM:-}\"\n"
@@ -114,9 +114,9 @@ func withExt(t *testing.T, consent bool) *extDef {
 	_ = withConfigServer(t)
 	keep := EXTS
 	t.Cleanup(func() { EXTS = keep })
-	dir := extDir(t, filepath.Join(t.TempDir(), "wiki"), extYaml, map[string]string{"index.js": "export default () => {}", "page.html": "<p>", "img/a.webp": "w"})
+	dir := extDir(t, filepath.Join(t.TempDir(), "sample"), extYaml, map[string]string{"index.js": "export default () => {}", "page.html": "<p>", "img/a.webp": "w"})
 	withCfg(t, map[bool]string{true: "", false: "extensionConsent: false\n"}[consent])
-	EXTS = loadExtensions([]extEntry{{Path: dir, Env: []string{"WIKI_SIGNING", "TEAM"}}}, extEnv)
+	EXTS = loadExtensions([]extEntry{{Path: dir, Env: []string{"EXAMPLE_SIGNING", "TEAM"}}}, extEnv)
 	return EXTS[0]
 }
 
@@ -159,7 +159,7 @@ func TestExtGateConsent(t *testing.T) {
 		serveExtAs(res, p, uid)
 		return res.status, res
 	}
-	at := "/ext/wiki/" + d.Hash + "/"
+	at := "/ext/sample/" + d.Hash + "/"
 	code, _ := file(at+"index.js", "")
 	eq(t, code, 401)
 	code, _ = file(at+"index.js", "gh1")
@@ -168,10 +168,10 @@ func TestExtGateConsent(t *testing.T) {
 	eq(t, code, 403) // no X-Bridge-Ext
 	code, body := extCall(t, "GET", "/api/ext", "", extH, "gh1")
 	eq(t, code, 200)
-	ok(t, strings.Contains(body, `"entry":"/ext/wiki/`+d.Hash+`/index.js"`) && strings.Contains(body, `"consented":false`) && strings.Contains(body, `"upstream":"https://wiki.example"`) && !strings.Contains(body, "signing"), body)
-	code, _ = extCall(t, "POST", "/api/ext/wiki/consent", `{"hash":"0000000000000000"}`, extH, "gh1")
+	ok(t, strings.Contains(body, `"entry":"/ext/sample/`+d.Hash+`/index.js"`) && strings.Contains(body, `"consented":false`) && strings.Contains(body, `"upstream":"https://api.example.com"`) && !strings.Contains(body, "signing"), body)
+	code, _ = extCall(t, "POST", "/api/ext/sample/consent", `{"hash":"0000000000000000"}`, extH, "gh1")
 	eq(t, code, 409)
-	code, _ = extCall(t, "POST", "/api/ext/wiki/consent", `{"hash":"`+d.Hash+`"}`, extH, "gh1")
+	code, _ = extCall(t, "POST", "/api/ext/sample/consent", `{"hash":"`+d.Hash+`"}`, extH, "gh1")
 	eq(t, code, 200)
 	code, res := file(at+"index.js", "gh1")
 	eq(t, code, 200)
@@ -181,7 +181,7 @@ func TestExtGateConsent(t *testing.T) {
 	code, res = file(at+"img/a.webp", "gh1")
 	eq(t, code, 200)
 	eq(t, res.header.Get("Content-Type"), "image/webp")
-	for _, p := range []string{at + "page.html", at + "extension.yaml", at + "../wiki/index.js", "/ext/wiki/0000000000000000/index.js", "/ext/other/" + d.Hash + "/index.js"} {
+	for _, p := range []string{at + "page.html", at + "extension.yaml", at + "../sample/index.js", "/ext/sample/0000000000000000/index.js", "/ext/other/" + d.Hash + "/index.js"} {
 		code, _ = file(p, "gh1")
 		eq(t, code, 404, p)
 	}
@@ -189,16 +189,16 @@ func TestExtGateConsent(t *testing.T) {
 	eq(t, code, 403) // consent is the person's own
 	_, body = callAPI(t, "GET", "/api/me", "")
 	ok(t, strings.Contains(body, `"consented":true`), body)
-	code, _ = extCall(t, "DELETE", "/api/ext/wiki/consent", "", extH, "gh1")
+	code, _ = extCall(t, "DELETE", "/api/ext/sample/consent", "", extH, "gh1")
 	eq(t, code, 200)
 	code, _ = file(at+"index.js", "gh1")
 	eq(t, code, 403)
 	// The demo account never gets one.
 	_, body = extCall(t, "GET", "/api/me", "", nil, "demo-000000000000")
-	ok(t, !strings.Contains(body, `"id":"wiki"`), body)
+	ok(t, !strings.Contains(body, `"id":"sample"`), body)
 	// The privacy page's list names where the extension sends (origins only).
 	rs := jsonStr(recipients())
-	ok(t, strings.Contains(rs, `"origin":"https://wiki.example","events":["익스텐션 wiki 의 요청"]`) && strings.Contains(rs, `"origin":"https://notify.example","events":["session.done.after (익스텐션 wiki)"]`), rs)
+	ok(t, strings.Contains(rs, `"origin":"https://api.example.com","events":["익스텐션 sample 의 요청"]`) && strings.Contains(rs, `"origin":"https://notify.example","events":["session.done.after (익스텐션 sample)"]`), rs)
 }
 
 // AC-1492: extensionConsent: false runs it for everyone without asking; page errors are kept, ten a minute.
@@ -206,17 +206,17 @@ func TestExtNoConsentAndErrors(t *testing.T) {
 	d := withExt(t, false)
 	r := httptest.NewRequest("GET", "/", nil)
 	res := newRes(newReq(r))
-	serveExtAs(res, "/ext/wiki/"+d.Hash+"/index.js", "gh2")
+	serveExtAs(res, "/ext/sample/"+d.Hash+"/index.js", "gh2")
 	eq(t, res.status, 200)
 	extErrors = map[string][]orderedObj{}
 	for i := 0; i < 10; i++ {
-		code, _ := extCall(t, "POST", "/api/ext/errors", `{"id":"wiki","message":"boom","stack":"`+strings.Repeat("s", 3000)+`"}`, extH, "gh2")
+		code, _ := extCall(t, "POST", "/api/ext/errors", `{"id":"sample","message":"boom","stack":"`+strings.Repeat("s", 3000)+`"}`, extH, "gh2")
 		eq(t, code, 200)
 	}
-	code, _ := extCall(t, "POST", "/api/ext/errors", `{"id":"wiki","message":"boom"}`, extH, "gh2")
+	code, _ := extCall(t, "POST", "/api/ext/errors", `{"id":"sample","message":"boom"}`, extH, "gh2")
 	eq(t, code, 429)
-	eq(t, len(extErrors["wiki"]), 10)
-	eq(t, len(extErrors["wiki"][0][3].V.(string)), 1024)
+	eq(t, len(extErrors["sample"]), 10)
+	eq(t, len(extErrors["sample"][0][3].V.(string)), 1024)
 	_, body := extCall(t, "GET", "/api/ext", "", extH, "gh1") // gh1 is an admin
 	ok(t, strings.Contains(body, `"errors":[{"at":`), body)
 	_, body = extCall(t, "GET", "/api/ext", "", extH, "gh2")
