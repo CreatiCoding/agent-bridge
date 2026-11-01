@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { ZEROPTY, ZEROPTY_RELEASES, zeroptyFor, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, SOCK_MAX } from '../../agent/mux.mjs'
+import { ZEROPTY, ZEROPTY_RELEASES, zeroptyFor, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, SOCK_MAX, TTY_ADAPTER, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from '../../agent/mux.mjs'
 
 /** A release-shaped archive: <top>/zeropty, zeropty-tty, shim.dylib. */
 function fakeRelease(top = 'zp-test-darwin-universal') {
@@ -196,6 +196,75 @@ test('kill-server without a socket (AC-1522): does not reach the bridge socket, 
   } finally {
     zp(ownEnv, 'kill-server')
     zp(base, 'kill-server')
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+})
+
+// ---------- claude's terminal in zeropty: the runtime adapter (REQ-F-794 규칙 5, 1.388) ----------
+
+test('ttyAdapterPath·writeTtyAdapter·adapterPrefix: 0600 파일로 쓰고, 바뀌면 다시 쓰고, 공백 있는 폴더면 /tmp 로', () => {
+  const dir = stateDir()
+  try {
+    const f = ttyAdapterPath(dir)
+    assert.equal(f, path.join(dir, 'zeropty', 'tty-adapter.cjs'))
+    writeTtyAdapter(f)
+    assert.equal(fs.readFileSync(f, 'utf8'), TTY_ADAPTER)
+    assert.equal(fs.statSync(f).mode & 0o777, 0o600)
+    assert.equal(fs.statSync(path.dirname(f)).mode & 0o777, 0o700)
+    fs.writeFileSync(f, 'tampered')
+    writeTtyAdapter(f)
+    assert.equal(fs.readFileSync(f, 'utf8'), TTY_ADAPTER, '바뀐 파일은 다시 쓴다')
+    assert.equal(ttyAdapterPath('/Users/a b/.claude-bridge', { uid: 501 }), '/tmp/cb-zeropty-501/tty-adapter.cjs')
+    const q = (x) => `'${x}'`
+    assert.equal(adapterPrefix('/s/tty-adapter.cjs', q), "BUN_OPTIONS='--preload /s/tty-adapter.cjs' NODE_OPTIONS='--require /s/tty-adapter.cjs' ")
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('NO_TERMINAL: 터미널을 못 본 claude 의 화면만 (2.1.316 에서 받아 적은 문구)', () => {
+  assert.match('Warning: no stdin data received in 3s, proceeding without it.', NO_TERMINAL)
+  assert.match('Error: --resume requires a valid session ID or session title when used with --print. Usage:', NO_TERMINAL)
+  assert.match('Error: Input must be provided either through stdin or as a prompt argument when using --print', NO_TERMINAL)
+  assert.doesNotMatch(' ▐▛███▜▌   Claude Code v2.1.316\n────\n❯ \n────\n  ⏵⏵ auto mode on', NO_TERMINAL)
+})
+
+test('agent: zeropty 의 claude 는 어댑터로, zeropty-tty 는 쓰지 않고, 터미널을 못 보면 tmux 로 다시', () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.doesNotMatch(src, /ZP\.tty/, 'zeropty-tty(서명 바꾼 사본)를 쓰지 않는다')
+  assert.match(src, /writeTtyAdapter\(TTY_ADAPTER_FILE\)\n  return adapterPrefix\(TTY_ADAPTER_FILE, shq\)/)
+  assert.match(src, /if \(s\.mux === 'zeropty' && NO_TERMINAL\.test\(screen\)\) \{\n[^]*?zeroptyNoTerminal = true[^]*?return launchNow\(sid, s, claudeArgs\)/)
+  assert.match(src, /const newMux = \(\) => pickMux\(\{ force: zeroptyNoTerminal \? 'tmux' : config\.mux/)
+  assert.doesNotMatch(src, /'C-z'/, 'C-z 는 보내지 않는다: claude 가 프로세스 그룹 전체를 멈춘다')
+})
+
+test('runtime adapter in a real zeropty: node 가 터미널을 보고, 크기 변경을 따르고, 자식에게는 넘기지 않는다', { skip: realZp ? false : 'zeropty 가 받아져 있지 않음' }, async () => {
+  const home = fs.mkdtempSync(path.join('/tmp', 'zpa-'))
+  const env = { PATH: process.env.PATH, HOME: home, TMPDIR: home, ZEROPTY_SOCK: path.join(home, 's') }
+  const zp = (...argv) => execFileSync(realZp, argv, { env, encoding: 'utf8', timeout: 20_000 })
+  const adapter = ttyAdapterPath(home)
+  writeTtyAdapter(adapter)
+  const prog = 'const s=()=>console.log(`tty ${process.stdout.isTTY} ${process.stdout.columns}x${process.stdout.rows} child ${require("child_process").execSync("env").toString().split("\\n").filter(l=>/^(BUN|NODE)_OPTIONS=/.test(l)).length}`);s();process.stdout.on("resize",s);process.stdin.setRawMode(true);process.stdin.on("data",d=>console.log("key "+d))'
+  const q = (x) => `'${x.replaceAll("'", `'\\''`)}'`
+  const screen = async (want) => {
+    for (let i = 0; i < 100; i++) {
+      const out = zp('capture-pane', '-p', '-t', '=a:')
+      if (out.includes(want)) return out
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    assert.fail(`화면에 ${want} 가 없음:\n${zp('capture-pane', '-p', '-t', '=a:')}`)
+  }
+  try {
+    zp('new-session', '-d', '-s', 'a', '-x', '60', '-y', '8', `${adapterPrefix(adapter, q)}exec ${q(process.execPath)} -e ${q(prog)}`)
+    await screen('tty true 60x8 child 0')
+    zp('resize-window', '-t', '=a:', '-x', '50', '-y', '9')
+    await screen('tty true 50x9')
+    zp('send-keys', '-t', '=a:', '-l', 'x')
+    await screen('key x')
+  } finally {
+    try {
+      zp('kill-server')
+    } catch {}
     fs.rmSync(home, { recursive: true, force: true })
   }
 })

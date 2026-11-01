@@ -24,7 +24,7 @@ import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
-import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv } from './mux.mjs'
+import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -519,10 +519,24 @@ function placeTerminal(name, mux) {
     zeroptyNames.set(name, ZP_SOCK)
   } else zeroptyNames.delete(name)
 }
+/**
+ * Set when claude in zeropty saw no terminal (the runtime adapter did not load: a claude built without BUN_OPTIONS,
+ * or a machine that strips it): from then on, until the agent restarts, terminals start in tmux.
+ */
+let zeroptyNoTerminal = false
 /** The backend a terminal that starts now gets. */
-const newMux = () => pickMux({ force: config.mux, ready: zeroptyReady })
-/** In zeropty a terminal is a socket, not a PTY: claude is started through zeropty-tty to see a terminal. */
-const ttyPrefix = (mux) => (mux === 'zeropty' ? `${shq(ZP.tty)} ` : '')
+const newMux = () => pickMux({ force: zeroptyNoTerminal ? 'tmux' : config.mux, ready: zeroptyReady })
+/** The runtime adapter claude loads in zeropty (mux.mjs TTY_ADAPTER). */
+const TTY_ADAPTER_FILE = ttyAdapterPath(STATE_DIR)
+/**
+ * In zeropty a terminal is a socket, not a PTY: claude loads the runtime adapter to see a terminal, its binary left
+ * as it is (no re-signed copy, no DYLD_INSERT_LIBRARIES). The file is written again if it is missing or changed.
+ */
+const ttyPrefix = (mux) => {
+  if (mux !== 'zeropty') return ''
+  writeTtyAdapter(TTY_ADAPTER_FILE)
+  return adapterPrefix(TTY_ADAPTER_FILE, shq)
+}
 /** A tmux-style command for the terminal `name`, run by that terminal's program. */
 const muxAt = (name, ...argv) => {
   const m = muxProgram(name)
@@ -923,9 +937,17 @@ async function launchNow(sid, s, claudeArgs) {
     '-e', 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false', ...accountEnv, cmd)
   await stillOpen(true)
   if (!r.ok) throw new Error(`${s.mux}: ${r.err}`)
-  await sleep(3000)
+  // claude with no terminal says so after waiting 3 s for stdin: in zeropty the check waits past that.
+  await sleep(s.mux === 'zeropty' ? 4500 : 3000)
   await stillOpen(true)
   const screen = await term.capture(pane(s))
+  if (s.mux === 'zeropty' && NO_TERMINAL.test(screen)) {
+    // The adapter did not load: this session and the next ones start in tmux instead.
+    zeroptyNoTerminal = true
+    log('warn', 'zeropty', 'claude 가 zeropty 에서 터미널을 보지 못함 (런타임 어댑터가 불리지 않음): 이 세션과 다음 세션은 tmux 로', sid)
+    await tmux('kill-session', '-t', `=${s.tmux}`)
+    return launchNow(sid, s, claudeArgs)
+  }
   if (!(await alive(s)) || /\[claude exited \d+\]/.test(screen)) {
     throw new Error(`claude 가 바로 끝났습니다: ${screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'}`)
   }

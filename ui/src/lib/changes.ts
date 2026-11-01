@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.389',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: 'zeropty 세션의 claude 는 zeropty-tty(서명을 바꾼 claude 사본 + DYLD_INSERT_LIBRARIES) 대신 런타임 어댑터(BUN_OPTIONS=--preload)로 터미널을 본다. claude 바이너리·서명은 그대로. 어댑터가 막혀 터미널을 못 보면 그 세션과 다음 세션은 tmux 로',
+        refs: ['REQ-F-794'],
+      },
+    ],
+  },
+  {
     version: '1.388',
     date: '2026-11-02',
+    commit: 'bbcc606',
     changes: [
       {
         kind: 'fixed',

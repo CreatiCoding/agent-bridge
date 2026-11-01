@@ -161,3 +161,84 @@ export const sockOf = (s, legacy) => (typeof s?.zsock === 'string' && s.zsock ? 
 
 /** The environment a zeropty command runs with: always naming its socket. */
 export const zeroptyEnv = (base, sock) => ({ ...base, ZEROPTY_SOCK: sock })
+
+// ---------- claude's terminal in zeropty: a runtime adapter, not zeropty-tty (REQ-F-794 규칙 5) ----------
+// A zeropty terminal is a socket, not a PTY, and claude with no terminal falls back to --print and exits. Up to 1.387
+// claude was started through zeropty-tty, which runs a hardened program from a copy of it re-signed ad hoc and loads
+// the shim with DYLD_INSERT_LIBRARIES: machines that forbid either could not start it. claude's native build is a Bun
+// program, so instead Bun loads this script before claude (BUN_OPTIONS=--preload; NODE_OPTIONS=--require for a claude
+// installed from npm, which runs on node). The binary, its signature and its hardened runtime stay as they are.
+// The same script as zeropty's examples/node/tty-adapter.cjs; it uses only what every zeropty session has.
+
+/** The adapter's source. Written to the agent's own folder (0700) by writeTtyAdapter. */
+export const TTY_ADAPTER = String.raw`// Loaded by the runtime before the program (NODE_OPTIONS=--require, BUN_OPTIONS=--preload): makes the
+// zeropty session's socket a terminal to the program's tty module and process.stdout/stderr/stdin.
+(() => {
+  const id = /^(-?\d+):(\d+)$/.exec(process.env.ZEROPTY_TTY_ID || '');
+  // The programs it starts do not load the adapter again.
+  delete process.env.NODE_OPTIONS;
+  delete process.env.BUN_OPTIONS;
+  if (!id) return;
+  const fs = require('fs'), tty = require('tty');
+  // st_dev is negative on macOS (-1:...) and ino can pass 2^53: compare as bigints.
+  const ours = (fd) => {
+    try {
+      const s = fs.fstatSync(fd, { bigint: true });
+      return BigInt.asIntN(32, s.dev) === BigInt.asIntN(32, BigInt(id[1])) && s.ino === BigInt(id[2]);
+    } catch { return false }
+  };
+  const size = () => {
+    let cols = Number(process.env.ZEROPTY_COLS) || 80, rows = Number(process.env.ZEROPTY_ROWS) || 24;
+    try { [cols, rows] = fs.readFileSync(process.env.ZEROPTY_SIZE_FILE, 'utf8').trim().split(/\s+/).map(Number) } catch {}
+    return [cols, rows];
+  };
+  const isatty = tty.isatty;
+  tty.isatty = (fd) => ours(fd) || isatty(fd);
+  const out = [process.stdout, process.stderr].filter((s) => ours(s.fd));
+  for (const s of out) {
+    s.isTTY = true;
+    Object.defineProperty(s, 'columns', { get: () => size()[0], configurable: true });
+    Object.defineProperty(s, 'rows', { get: () => size()[1], configurable: true });
+    s.getWindowSize = size;
+    s.hasColors = () => true;
+    s.getColorDepth = () => 8;
+  }
+  process.on('SIGWINCH', () => out.forEach((s) => s.emit('resize')));
+  if (out.length && ours(0)) {
+    process.stdin.isTTY = true;
+    // Raw (0) or a new terminal's modes (15), told to zeropty in the output stream.
+    process.stdin.setRawMode = function (on) {
+      out[0].write(on ? '\x1b]zeropty-tty;0\x07' : '\x1b]zeropty-tty;15\x07');
+      this.isRaw = !!on;
+      return this;
+    };
+  }
+})();
+`
+
+/**
+ * Where the adapter is kept: `<state>/zeropty/tty-adapter.cjs`, or beside the bridge's socket under /tmp when the
+ * folder has whitespace in it (BUN_OPTIONS is split at whitespace, so such a path would not reach Bun whole).
+ */
+export function ttyAdapterPath(stateDir, { uid = process.getuid?.() ?? 0, tmp = '/tmp' } = {}) {
+  const p = path.join(stateDir, 'zeropty', 'tty-adapter.cjs')
+  return /\s/.test(p) ? path.join(tmp, `cb-zeropty-${uid}`, 'tty-adapter.cjs') : p
+}
+
+/** Writes the adapter at `file` (its folder 0700, the file 0600) unless it is there as it should be. */
+export function writeTtyAdapter(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+  fs.chmodSync(path.dirname(file), 0o700)
+  try {
+    if (fs.readFileSync(file, 'utf8') === TTY_ADAPTER) return
+  } catch {}
+  const tmp = `${file}.${process.pid}.tmp`
+  fs.writeFileSync(tmp, TTY_ADAPTER, { mode: 0o600 })
+  fs.renameSync(tmp, file)
+}
+
+/** What goes before claude in a zeropty terminal: the adapter for Bun (native claude) and for node (claude from npm). */
+export const adapterPrefix = (file, q) => `BUN_OPTIONS=${q(`--preload ${file}`)} NODE_OPTIONS=${q(`--require ${file}`)} `
+
+/** A screen that says claude saw no terminal and fell back to --print (the adapter did not load). */
+export const NO_TERMINAL = /no stdin data received|when used with --print|Input must be provided either through stdin/
