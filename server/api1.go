@@ -350,7 +350,7 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 		if up == nil {
 			refuse(404, "영상·파일이 없어요")
 		}
-		res.WriteHead(200, M{"Content-Type": up["type"], "Content-Length": up["size"], "Cache-Control": "no-store"})
+		res.WriteHead(200, M{"Content-Type": up["type"], "Content-Length": up["size"], "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Disposition": "attachment"})
 		res.file = &fileSend{path: mstr(up, "file")}
 		res.ended = true
 		return true

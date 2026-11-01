@@ -91,3 +91,12 @@ test('안전한 전부 허용은 작업 버리기·일괄 삭제도 묻는다: g
   // Wrapped in bash -c '…' it still runs, so a git written after another word is read too (an echo of one asks once more).
   assert.equal(bash("bash -c 'git clean -fd'"), '작업 버리기(git clean·checkout·restore)')
 })
+
+test('작업 버리기 판별은 값을 띄어 쓴 git 전역 옵션(--git-dir 경로 등) 뒤의 하위 명령도 읽는다 (1.381)', async () => {
+  const { riskyCall } = await import('../../agent/guard.mjs')
+  const bash = (command) => riskyCall({ name: 'Bash', input: { command } }, { cwd: '/Users/u/p', home: '/Users/u' })
+  for (const c of ['git --git-dir .git clean -fdx', 'git --work-tree . clean -fd', 'git --git-dir .git --work-tree . checkout -- .', 'git --namespace x restore .', 'git -C ui --work-tree . clean -f'])
+    assert.equal(bash(c), '작업 버리기(git clean·checkout·restore)', c)
+  for (const c of ['git --git-dir .git status', 'git --work-tree . clean -n', 'git --git-dir .git checkout main', 'git --work-tree . restore --staged a.ts'])
+    assert.equal(bash(c), null, c)
+})

@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.381',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '안전한 전부 허용이 `git --git-dir <폴더> clean -f` 처럼 값을 띄어 쓴 git 전역 옵션 뒤의 작업 버리기(clean·checkout·restore)도 묻는다',
+        refs: ['REQ-F-759'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: 'GitHub 로그인 설정 없음·로그인 콜백 오류·QR 만료 페이지에도 CSP·nosniff 등 보안 머리글과 no-store, 연동 탭이 받는 올린 파일에 nosniff·attachment',
+        refs: ['REQ-S-011', 'IF-219'],
+      },
+    ],
+  },
+  {
     version: '1.380',
     date: '2026-11-01',
+    commit: 'b83b5c6',
     changes: [
       {
         kind: 'added',

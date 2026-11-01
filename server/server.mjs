@@ -3867,7 +3867,7 @@ async function appleAuth(req, res, url) {
 async function auth(req, res, url) {
   if (limited(req)) return res.writeHead(429).end('too many requests')
   if (url.pathname === '/api/auth/github') {
-    if (!GITHUB_CLIENT_ID) return res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' }).end(page('GitHub 로그인이 설정되지 않았습니다', '서버에 GITHUB_CLIENT_ID 와 GITHUB_CLIENT_SECRET 을 넣어 주세요.'))
+    if (!GITHUB_CLIENT_ID) return res.writeHead(503, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(page('GitHub 로그인이 설정되지 않았습니다', '서버에 GITHUB_CLIENT_ID 와 GITHUB_CLIENT_SECRET 을 넣어 주세요.'))
     const state = crypto.randomBytes(16).toString('hex')
     const to = new URL('https://github.com/login/oauth/authorize')
     to.search = new URLSearchParams({ client_id: GITHUB_CLIENT_ID, redirect_uri: `${originOf(req)}/api/auth/github/callback`, state, allow_signup: 'false' })
@@ -3875,7 +3875,7 @@ async function auth(req, res, url) {
   }
   if (url.pathname === '/api/auth/github/callback') {
     const [state, next] = (cookies(req)[cname(req, 'cb_state')] || '').split('.')
-    const html = (status, title, text) => res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Set-Cookie': cookie(req, cname(req, 'cb_state'), '', 0) }).end(page(title, text))
+    const html = (status, title, text) => res.writeHead(status, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': cookie(req, cname(req, 'cb_state'), '', 0) }).end(page(title, text))
     if (!state || state !== url.searchParams.get('state')) return html(400, '로그인을 다시 시도해 주세요', '로그인 요청이 만료됐거나 맞지 않습니다.')
     const tok = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -3938,7 +3938,7 @@ async function auth(req, res, url) {
     }
     qrCodes.delete(key)
     if (!entry || entry.exp < Date.now() || !users[entry.uid] || !isAllowed(users[entry.uid].login))
-      return res.writeHead(410, { 'Content-Type': 'text/html; charset=utf-8' }).end(page('QR 코드를 쓸 수 없습니다', '만료됐거나 이미 한 번 쓰인 코드입니다. 컴퓨터 화면에서 폰 아이콘을 다시 눌러 새 코드를 받아 주세요.'))
+      return res.writeHead(410, { ...SECURITY, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(page('QR 코드를 쓸 수 없습니다', '만료됐거나 이미 한 번 쓰인 코드입니다. 컴퓨터 화면에서 폰 아이콘을 다시 눌러 새 코드를 받아 주세요.'))
     log(`qr sign-in: ${users[entry.uid].login}`)
     return signIn(req, res, entry.uid, entry.next ?? (entry.sid ? `/s/${entry.sid}` : '/'))
   }
@@ -4136,7 +4136,7 @@ async function api(req, res, url, uid) {
     if (ownHost(uid, hostId).conn !== url.searchParams.get('conn')) throw new Refuse(409, '이 탭은 더 이상 이 호스트의 연동 탭이 아닙니다')
     const up = uploadOf(uid, url.searchParams.get('id'))
     if (!up) throw new Refuse(404, '영상·파일이 없어요')
-    res.writeHead(200, { 'Content-Type': up.type, 'Content-Length': up.size, 'Cache-Control': 'no-store' })
+    res.writeHead(200, { 'Content-Type': up.type, 'Content-Length': up.size, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'attachment' })
     fs.createReadStream(up.file).pipe(res)
     return
   }

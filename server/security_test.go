@@ -96,3 +96,23 @@ func TestUploadUserMax(t *testing.T) {
 	eq(t, save("u1", 1), 413)
 	eq(t, len(uploadsHeld), 0)
 }
+
+// The sign-in pages that say what went wrong carry the page policy too (REQ-S-011, 1.381): no frame of another
+// site, no type sniffing, not kept in a cache.
+func TestAuthErrorPagesPolicy(t *testing.T) {
+	withSlotServer(t, "")
+	keepID, keepSec := GITHUB_CLIENT_ID, SECURITY
+	defer func() { GITHUB_CLIENT_ID, SECURITY = keepID, keepSec }()
+	initSecurity()
+	check := func(target string, want int) {
+		code, h, body := routeAt(t, "GET", target, "203.0.113.1:1", nil)
+		eq(t, code, want, target+" "+body)
+		ok(t, strings.Contains(h.Get("Content-Security-Policy"), "frame-ancestors 'self'"), target+" CSP: "+h.Get("Content-Security-Policy"))
+		eq(t, h.Get("X-Content-Type-Options"), "nosniff", target)
+		eq(t, h.Get("Cache-Control"), "no-store", target)
+	}
+	GITHUB_CLIENT_ID = ""
+	check("/api/auth/github", 503)
+	GITHUB_CLIENT_ID = "test-client"
+	check("/api/auth/github/callback?state=x", 400)
+}

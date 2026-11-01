@@ -171,7 +171,7 @@ func auth(req *Req, res *Res, u *url.URL) {
 	switch {
 	case u.Path == "/api/auth/github":
 		if GITHUB_CLIENT_ID == "" {
-			res.WriteHead(503, M{"Content-Type": "text/html; charset=utf-8"}).EndS(page("GitHub 로그인이 설정되지 않았습니다", "서버에 GITHUB_CLIENT_ID 와 GITHUB_CLIENT_SECRET 을 넣어 주세요."))
+			res.WriteHead(503, SECURITY, M{"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}).EndS(page("GitHub 로그인이 설정되지 않았습니다", "서버에 GITHUB_CLIENT_ID 와 GITHUB_CLIENT_SECRET 을 넣어 주세요."))
 			return
 		}
 		state := randHex(16)
@@ -188,7 +188,7 @@ func auth(req *Req, res *Res, u *url.URL) {
 			next = parts[1]
 		}
 		html := func(status int, title, text string) {
-			res.WriteHead(status, M{"Content-Type": "text/html; charset=utf-8", "Set-Cookie": cookie(req, cname(req, "cb_state"), "", 0)}).EndS(page(title, text))
+			res.WriteHead(status, SECURITY, M{"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Set-Cookie": cookie(req, cname(req, "cb_state"), "", 0)}).EndS(page(title, text))
 		}
 		if state == "" || nilIfEmpty(q, "state") != any(state) {
 			html(400, "로그인을 다시 시도해 주세요", "로그인 요청이 만료됐거나 맞지 않습니다.")
@@ -302,7 +302,7 @@ func auth(req *Req, res *Res, u *url.URL) {
 		}
 		delete(qrCodes, key)
 		if entry == nil || jsNumber(entry["exp"]) < float64(nowMs()) || !users.Has(eu) || !isAllowed(mstr(users.Val(eu), "login")) {
-			res.WriteHead(410, M{"Content-Type": "text/html; charset=utf-8"}).EndS(page("QR 코드를 쓸 수 없습니다", "만료됐거나 이미 한 번 쓰인 코드입니다. 컴퓨터 화면에서 폰 아이콘을 다시 눌러 새 코드를 받아 주세요."))
+			res.WriteHead(410, SECURITY, M{"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store"}).EndS(page("QR 코드를 쓸 수 없습니다", "만료됐거나 이미 한 번 쓰인 코드입니다. 컴퓨터 화면에서 폰 아이콘을 다시 눌러 새 코드를 받아 주세요."))
 			return
 		}
 		logLine("qr sign-in: " + mstr(users.Val(eu), "login"))

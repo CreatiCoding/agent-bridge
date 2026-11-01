@@ -33,6 +33,9 @@ test('파일: octet-stream 으로 올리면 .bin id 로 받고, 메시지에 �
     const conn = (await s.api('alice', '/api/bridge/hello', { method: 'POST', body: { hostId: A, name: 'mac-a' } })).json.conn
     const got = await fetch(`${s.origin}/api/bridge/upload?${new URLSearchParams({ id: j.id, hostId: A, conn })}`, { headers: { cookie: s.jar('alice') } })
     assert.equal(got.status, 200)
+    // Never read as a page by a browser (1.381): the stored type with nosniff, and saved rather than shown.
+    assert.equal(got.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(got.headers.get('content-disposition'), 'attachment')
     assert.deepEqual(Buffer.from(await got.arrayBuffer()), bytes)
   } finally {
     a?.close()

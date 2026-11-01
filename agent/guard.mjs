@@ -135,8 +135,9 @@ export function manifestSigned(files, seq, msig, keys = UPDATE_KEYS) {
  */
 function discardsWork(c) {
   for (const part of c.split(/[;&|\n]/)) {
-    // The subcommand right after git and its own options (-C dir, -c k=v, --no-pager): a word in a commit message is not one.
-    const m = /(?:^|[\s(`'"/])git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+([\w-]+)(.*)$/.exec(part)
+    // The subcommand right after git and its own options (-C dir, -c k=v, --no-pager, and the ones whose value may
+    // follow after a space: --git-dir dir, --work-tree dir, …, 1.381): a word in a commit message is not one.
+    const m = /(?:^|[\s(`'"/])git((?:\s+-[Cc]\s+\S+|\s+--(?:git-dir|work-tree|namespace|super-prefix|config-env)\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+([\w-]+)(.*)$/.exec(part)
     if (!m) continue
     const [, , sub, rest] = m
     if (sub === 'clean' && /\s(-[a-zA-Z]*f[a-zA-Z]*|--force)\b/.test(rest)) return true
