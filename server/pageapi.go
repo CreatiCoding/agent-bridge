@@ -230,7 +230,7 @@ func refreshSession(uid string, meta *Sess, hostID string, when string) {
 		}
 		interrupted = append(interrupted, name+": "+jsString(mget(t, "label")))
 	}
-	toHost(hostID, M{"t": "refresh", "sid": meta.id(), "bg": float64(len(bg)), "sysPrompt": sysPromptOf(uid), "interrupted": interrupted, "when": when})
+	toHost(hostID, M{"t": "refresh", "sid": meta.id(), "bg": float64(len(bg)), "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "interrupted": interrupted, "when": when})
 	if when == "now" {
 		meta.set("bg", []any{})
 	}

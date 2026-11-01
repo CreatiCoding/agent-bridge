@@ -686,6 +686,23 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		jsonRes(res, 200, out)
 		return true
+	case "/api/prefs/routing":
+		// 모델 라우팅 (REQ-F-834): a value that is not as expected is dropped for its default, not refused.
+		if get {
+			jsonRes(res, 200, routingView(uid))
+			return true
+		}
+		if !post {
+			refuse(405, "지원하지 않는 요청입니다")
+		}
+		v := cleanRouting(body(req, 8192))
+		prefsOf(uid)["routing"] = v
+		savePrefs(uid)
+		out := routingView(uid)
+		out["ok"] = true
+		out["note"] = "저장했어요. 새로 여는 세션부터 적용돼요."
+		jsonRes(res, 200, out)
+		return true
 	case "/api/prefs/skills":
 		needFeature("skills")
 		// 스킬 저장소 (REQ-F-792): only a repo the person owns on GitHub.

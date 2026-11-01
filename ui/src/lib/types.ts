@@ -61,6 +61,8 @@ export interface SessionState {
   refreshAfter?: boolean
   /** The bridge MCP tools the session's process started with (null: an agent before 1.245 did not say). */
   bridgeTools?: string[] | null
+  /** Started with 모델 라우팅 on (REQ-F-834). */
+  routing?: boolean
   size?: number | null
   quietSince?: number | null
   usage?: Usage | null

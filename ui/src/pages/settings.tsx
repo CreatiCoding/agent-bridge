@@ -6,7 +6,7 @@ import { CHANGES, type ChangeKind } from '../lib/changes'
 import { applyIcons, getIcons, getTheme, setTheme, type Theme } from '../lib/local'
 import { back, go, href, type SettingsTab } from '../lib/router'
 import { shownName, type IconPrefs, type Me, type Options } from '../lib/types'
-import { Badge, Button, CardHead, Empty, Field, Icon, IconButton, LoadError, NO_AUTOFILL, Segmented, Spinner, Switch, useWide } from '../kit'
+import { Badge, Button, CardHead, Empty, Field, Help, Icon, IconButton, LoadError, NO_AUTOFILL, Segmented, Spinner, Switch, useWide } from '../kit'
 import { chooseDialog, Sheet, toast } from '../kit/overlay'
 import { inHomeApp, safariHref } from '../lib/safari'
 import { appVersion } from '../lib/app-version'
@@ -246,6 +246,116 @@ function LaunchDefaults({ opts, initial }: { opts: Options | null; initial: Laun
         </Button>
       </div>
     </>
+  )
+}
+
+/** 모델 라우팅 (REQ-F-834), as /api/prefs/routing gives it. */
+interface Routing {
+  on: boolean
+  subagentModel: string
+  workers: Record<string, { model: string; effort: string }>
+  defaults: { workers: { name: string; model: string; effort: string }[]; subagentModel: string }
+}
+
+/** What each worker is for, in the settings page's words (the model reads the agent's own description). */
+const WORKER_USE: Record<string, string> = {
+  checker: '상태·로그·파일 확인(읽기 전용)',
+  Explore: '코드 위치 찾기(기본 Explore 대신)',
+  researcher: '생활·제품 비교, 사실 찾기 조사',
+  'ops-runner': '절차가 정해진 반복 운영, 배포 확인',
+  'doc-writer': '일반 문서·요약',
+  reviewer: '코드·보안·설계 리뷰, 리뷰 루프의 검토자',
+}
+
+/**
+ * 모델 라우팅 (REQ-F-834): off by default. On, a session that starts from then on gets the workers below as its own
+ * subagents, the default subagent model, and a short rule in its system prompt; sessions already up keep how they
+ * started until they are opened again.
+ */
+function RoutingSettings({ opts }: { opts: Options | null }) {
+  const [v, setV] = useState<Routing | null>(null)
+  const [err, setErr] = useState<unknown>(null)
+  const [saving, setSaving] = useState(false)
+  const load = () => {
+    setErr(null)
+    get<Routing>('/api/prefs/routing').then(setV, (e) => setErr(e ?? true))
+  }
+  useEffect(load, [])
+  if (err) return <LoadError what="모델 라우팅을" error={err} onRetry={load} />
+  if (!v) return <Spinner />
+  // The three aliases first (they follow the newest model of each), then the catalog; a saved value the list does not
+  // have is still shown, so saving does not silently drop it.
+  const models = (cur: string) => {
+    const list = [{ label: 'opus', value: 'opus' }, { label: 'sonnet', value: 'sonnet' }, { label: 'haiku', value: 'haiku' }, ...(opts?.models ?? [])]
+    const seen = new Set<string>()
+    const out = list.filter((m) => !seen.has(m.value) && seen.add(m.value))
+    return out.some((m) => m.value === cur) ? out : [...out, { label: cur, value: cur }]
+  }
+  const efforts = opts?.efforts?.length ? opts.efforts : ['low', 'medium', 'high', 'xhigh', 'max']
+  const setWorker = (name: string, k: 'model' | 'effort', x: string) => setV({ ...v, workers: { ...v.workers, [name]: { ...v.workers[name], [k]: x } } })
+  const reset = () => setV({ ...v, subagentModel: v.defaults.subagentModel, workers: Object.fromEntries(v.defaults.workers.map((w) => [w.name, { model: w.model, effort: w.effort }])) })
+  const save = async (next: Routing) => {
+    setSaving(true)
+    try {
+      const r = await post<Routing & { note: string }>('/api/prefs/routing', { on: next.on, subagentModel: next.subagentModel, workers: next.workers })
+      setV(r)
+      toast(r.note)
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setSaving(false)
+  }
+  return (
+    <div className="stack">
+      <div className="setting-line">
+        <span className="grow">
+          <b style={{ fontSize: 'var(--fs-medium)' }}>모델 라우팅 켜기</b>
+          <Help>켜면 새로 여는 세션부터 적용돼요. 이미 떠 있는 세션은 다시 열 때 적용돼요.</Help>
+        </span>
+        <Switch label="모델 라우팅" checked={v.on} disabled={saving} onChange={(on) => void save({ ...v, on })} />
+      </div>
+      <p className="muted" style={{ margin: 0 }}>
+        메인 세션은 지금 모델로 판단·조율하고, 아래 일은 맞는 일꾼(서브에이전트)에 맡겨요. 설계, 원인 모를 디버깅, 리뷰, 되돌리기 어려운 작업은 맡겨도 opus 로 해요.
+      </p>
+      {v.defaults.workers.map((w) => (
+        <Field key={w.name} label={<span className="mono">{w.name}</span>} hint={WORKER_USE[w.name]}>
+          <div className="hstack" style={{ flexWrap: 'wrap' }}>
+            <select className="input" style={{ flex: '1 1 140px' }} aria-label={`${w.name} 모델`} value={v.workers[w.name]?.model ?? w.model} onChange={(e) => setWorker(w.name, 'model', e.target.value)}>
+              {models(v.workers[w.name]?.model ?? w.model).map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <select className="input" style={{ flex: '0 1 120px' }} aria-label={`${w.name} effort`} value={v.workers[w.name]?.effort ?? w.effort} onChange={(e) => setWorker(w.name, 'effort', e.target.value)}>
+              {efforts.map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </div>
+        </Field>
+      ))}
+      <Field label="서브에이전트 기본 모델" hint="모델을 정하지 않고 부른 서브에이전트(general-purpose 등)가 쓰는 모델">
+        <select className="input" value={v.subagentModel} onChange={(e) => setV({ ...v, subagentModel: e.target.value })}>
+          {models(v.subagentModel).map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-small)' }}>
+        이름이 같은 내 서브에이전트(~/.claude/agents)가 있으면 bridge 로 연 세션에서는 이 설정이 그것을 덮어써요. 내 파일은 바꾸지 않아요.
+      </p>
+      <div className="hstack" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <Button onClick={reset} disabled={saving}>
+          기본값으로 되돌리기
+        </Button>
+        <Button tone="primary" busy={saving} onClick={() => void save(v)}>
+          저장
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -632,6 +742,12 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             ) : (
               <LaunchDefaults opts={opts ?? null} initial={launch!} />
             )}
+          </section>
+          ) : null}
+          {tab === 'launch' ? (
+          <section className="card-box">
+            <CardHead title="모델 라우팅" help="메인 세션은 기본 모델로 판단하고, 가벼운 일은 맞는 모델·effort 의 서브에이전트에 맡겨 비용을 줄여요. 기본은 꺼짐이고, 켜면 새로 여는 세션부터 적용돼요." />
+            <RoutingSettings opts={opts ?? null} />
           </section>
           ) : null}
           {tab === 'prompt' ? (

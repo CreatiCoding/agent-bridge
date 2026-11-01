@@ -425,6 +425,8 @@ function FolderInfo({ s }: { s: Session }) {
       <dd>
         {modelName(s.launchModel || s.model)} · {s.state.effort ?? '?'} · {MODE_NAMES[s.state.mode ?? ''] ?? s.state.mode ?? '?'}
       </dd>
+      <dt>모델 라우팅</dt>
+      <dd>{s.state.routing ? '켜짐' : '꺼짐'}</dd>
       <dt>싱크</dt>
       <dd>
         {s.lines}줄{s.syncedAt ? ` · ${clock(s.syncedAt)}` : ''}

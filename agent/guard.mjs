@@ -454,7 +454,7 @@ export function sessionPrompt(bridge, s) {
   const fork = s?.forkOf && /^[\w-]{8}$/.test(String(s.forkOf))
     ? `[복제된 세션] 이 세션은 ${s.forkOf} 세션이 일하던 도중에 복제한 것입니다. 복제할 때 진행 중이던 작업과 대화에 남아 있는 할 일(요약의 남은 일 포함)은 원본 세션이 계속 맡고 있습니다. 사용자가 이 세션에서 그 일을 하라고 직접 말하지 않는 한 그 일을 이어서 하거나 마저 할지 묻지 말고, 이 세션에 새로 온 요청만 처리하세요. 원본이 쓰는 worktree·브랜치·임시 파일도 건드리지 마세요.`
     : ''
-  return [bridge, String(s?.sysPrompt ?? '').trim(), fork, worktreeGoneNote(s?.worktreeGone)].filter(Boolean).join('\n\n')
+  return [bridge, String(s?.sysPrompt ?? '').trim(), routingPrompt(s?.routing), fork, worktreeGoneNote(s?.worktreeGone)].filter(Boolean).join('\n\n')
 }
 
 /**
@@ -691,3 +691,70 @@ export const inUpdateWindow = (hour, from, to) => (from < to ? hour >= from && h
  * a session is working (`busy`) when the policy says so.
  */
 export const updateDue = (policy, hour, now = false, busy = false) => !!now || policy.mode === 'always' || (inUpdateWindow(hour, policy.from, policy.to) && !(policy.skipBusy && busy))
+
+// ---------- 모델 라우팅 (REQ-F-834): the session-only subagents a session is started with when the person turned it on ----------
+
+/** What the main session must keep for itself: said in every worker's description, so it is not handed down. */
+const ROUTING_KEEP = 'Do not use it for judgment calls, design decisions, unexplained debugging, reviews before a deploy, or anything hard to undo (security or infrastructure settings, deleting data, force pushes, permissions or keys): the main session does those itself or with an opus worker.'
+const RO = 'You only read and report. Never write, edit, delete, restart, deploy or push anything.'
+const COMMON = 'Report facts you checked, not guesses, briefly. Mask any secret (token, key, password) as ***. Write the report in the language the person uses.'
+/**
+ * The workers, in the order the settings page shows them: name, the model and effort they run with unless the
+ * person chose others, and the tools they get. Explore takes the place of Claude Code's own Explore. A worker named
+ * like one in the person's ~/.claude/agents wins over it for these sessions (--agents comes first).
+ */
+export const ROUTING_WORKERS = [
+  { name: 'checker', model: 'haiku', effort: 'low', tools: ['Read', 'Grep', 'Glob', 'Bash'], description: 'Read-only checks of state, logs and files: is it running, what does the log say, what is in this file.', prompt: RO },
+  { name: 'Explore', model: 'haiku', effort: 'medium', tools: ['Read', 'Grep', 'Glob', 'Bash'], description: 'Finds where things are in a codebase: files, functions, call sites, naming. Returns locations and short excerpts, not reviews.', prompt: RO },
+  { name: 'researcher', model: 'sonnet', effort: 'medium', tools: ['WebSearch', 'WebFetch', 'Read', 'Grep', 'Glob', 'Bash'], description: 'Research on the web: comparing products or options, everyday questions, finding facts with their sources.', prompt: `${RO} Name the source of each fact.` },
+  { name: 'ops-runner', model: 'sonnet', effort: 'low', tools: ['Read', 'Grep', 'Glob', 'Bash'], description: 'Repeated operations whose steps are already fixed: running a given script, checking that a deploy finished.', prompt: 'Run only the steps you were given, in order. Stop and report at the first failure; do not improvise fixes, delete data or change settings.' },
+  { name: 'doc-writer', model: 'sonnet', effort: 'medium', tools: ['Read', 'Grep', 'Glob', 'Write', 'Edit'], description: 'Ordinary documents and summaries: notes, READMEs, write-ups of what was found.', prompt: 'Write only the files you were asked to. Do not touch code or settings.' },
+  { name: 'reviewer', model: 'opus', effort: 'medium', tools: ['Read', 'Grep', 'Glob', 'Bash', 'WebFetch'], description: 'Code, security and design review; the reviewer in a review loop. Finds real problems with evidence.', prompt: `${RO} Report each problem with its file and line and why it matters.` },
+]
+export const ROUTING_SUBAGENT_MODEL = 'sonnet'
+const ROUTING_MODEL_RE = /^[\w.[\]-]{1,60}$/
+const ROUTING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * The routing a session runs with, or null when it is off. Anything not as expected falls back to that worker's
+ * default (the server checks too; this is what reaches the command line).
+ */
+export function cleanRouting(r) {
+  if (!r || typeof r !== 'object' || r.on !== true) return null
+  const workers = {}
+  for (const w of ROUTING_WORKERS) {
+    const got = r.workers?.[w.name] ?? {}
+    workers[w.name] = { model: ROUTING_MODEL_RE.test(got.model ?? '') ? got.model : w.model, effort: ROUTING_EFFORTS.includes(got.effort) ? got.effort : w.effort }
+  }
+  return { on: true, subagentModel: ROUTING_MODEL_RE.test(r.subagentModel ?? '') ? r.subagentModel : ROUTING_SUBAGENT_MODEL, workers }
+}
+
+/** The JSON claude's --agents takes: one session-only subagent per worker. */
+export function routingAgents(r) {
+  const c = cleanRouting(r)
+  if (!c) return null
+  return Object.fromEntries(ROUTING_WORKERS.map((w) => [w.name, { description: `${w.description} ${ROUTING_KEEP}`, prompt: `${w.prompt} ${COMMON}`, tools: w.tools, model: c.workers[w.name].model, effort: c.workers[w.name].effort }]))
+}
+
+/** The rule added to the system prompt of a session with routing on; '' when it is off. */
+export function routingPrompt(r) {
+  const c = cleanRouting(r)
+  if (!c) return ''
+  const list = ROUTING_WORKERS.map((w) => `${w.name} (${c.workers[w.name].model})`).join(', ')
+  return [
+    `[Model routing] You are the main session: you judge and coordinate. Hand light work to the matching subagent and take back only its result: ${list}. When you hand work to another Mac with the bridge delegate tool, give it a model and an effort.`,
+    'Work with a quality risk stays on opus even when handed off: design and structure decisions (effort high), debugging with an unknown cause or the same failure twice, code, security and design review and checks before a deploy, operations that are hard to undo (security or infrastructure settings, deleting data, force pushes, permissions or keys), large changes across many files, and long unattended work. When unsure, opus.',
+    'When you call general-purpose, give it a model. Do not hand off what is shorter to do yourself (a file or two, one command) or a live back-and-forth with the person.',
+  ].join(' ')
+}
+
+/**
+ * What the shell command that starts claude gets for routing: the agents JSON read from a file by the shell (like
+ * the system prompt, so the tmux command line stays short and nothing in the JSON needs quoting), and the model of
+ * a subagent that names none. Both empty when routing is off: then nothing is added at all.
+ */
+export function routingShell(r, agentsFile) {
+  const c = cleanRouting(r)
+  if (!c) return { prefix: '', args: '' }
+  return { prefix: `export CLAUDE_CODE_SUBAGENT_MODEL=${shq1(c.subagentModel)}; `, args: ` --agents "$(cat ${shq1(agentsFile)})"` }
+}

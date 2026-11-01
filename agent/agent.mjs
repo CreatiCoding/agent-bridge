@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue } from './guard.mjs'
+import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -446,7 +446,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -888,7 +888,14 @@ async function launchNow(sid, s, claudeArgs) {
   // The tools this process starts with: a session started before a tool was added does not have it until it is
   // reopened, and the page offers to reopen it (REQ-F-778, 할 일 정리).
   s.bridgeTools = BRIDGE_TOOLS.map((t) => t.name)
-  const cmd = `${clean}; export PATH=${shq(sudoBinDir)}:"$PATH"; ${ttyPrefix(s.mux)}${CLAUDE_BIN} --settings ${shq(hookSettingsPath)} --mcp-config ${shq(mcpFile)} --add-dir ${shq(imagesDir)} --append-system-prompt "$(cat ${shq(promptFile)})" ${claudeArgs.map(shq).join(' ')}; echo "[claude exited $?]"; sleep 6`
+  // 모델 라우팅 (REQ-F-834): session-only subagents and the default subagent model, only while it is on. The
+  // variable is exported in the command, not given with -e, so it reaches claude the same way in tmux and zeropty.
+  const agentsFile = path.join(promptsDir, `${sid}.agents.json`)
+  const agents = routingAgents(s.routing)
+  if (agents) fs.writeFileSync(agentsFile, JSON.stringify(agents), { mode: 0o600 })
+  else fs.rmSync(agentsFile, { force: true })
+  const routing = routingShell(s.routing, agentsFile)
+  const cmd = `${clean}; export PATH=${shq(sudoBinDir)}:"$PATH"; ${routing.prefix}${ttyPrefix(s.mux)}${CLAUDE_BIN} --settings ${shq(hookSettingsPath)} --mcp-config ${shq(mcpFile)} --add-dir ${shq(imagesDir)} --append-system-prompt "$(cat ${shq(promptFile)})"${routing.args} ${claudeArgs.map(shq).join(' ')}; echo "[claude exited $?]"; sleep 6`
   // Tall, so Claude Code draws more of the answer it is writing (the preview is read off the screen).
   const r = await tmux('new-session', '-d', '-s', s.tmux, '-x', '220', '-y', '80', '-c', s.cwd, '-e', `CB_HOOK=http://127.0.0.1:${config.port}/hook?sid=${sid}`,
     // The suggested next prompt is drawn in the input box like typed text: an idle prompt would not read as empty.
@@ -1174,6 +1181,7 @@ function publish(sid, s) {
     model: s.model ?? null,
     refreshAfter: !!s.refreshAfter,
     bridgeTools: s.bridgeTools ?? null,
+    routing: !!s.routing,
     size: s.size ?? null,
     handedOffTo: s.handedOffTo ?? null,
     usage: s.usage ?? null,
@@ -1725,6 +1733,12 @@ const FIRST_PROMPT_MAX = 8000
  * person's own default); otherwise --chrome while the agent's `chrome` is on (default), so a session can read sites
  * only the person's signed-in Chrome can. Every session that has it shares the one Chrome extension.
  */
+/** 모델 라우팅 (REQ-F-834): kept with the session while on, gone when off, so a reopen starts it as it is set. */
+function setRouting(s, routing) {
+  const r = cleanRouting(routing)
+  if (r) s.routing = r
+  else delete s.routing
+}
 const settingsArgs = (s) => [...(/^[\w.[\]-]+$/.test(s.model || '') ? ['--model', s.model] : []), ...(EFFORTS.includes(s.effort) ? ['--effort', s.effort] : []), ...(MODES.includes(s.mode) ? ['--permission-mode', s.mode] : []), ...(s.chrome === false ? ['--no-chrome'] : config.chrome !== false ? ['--chrome'] : [])]
 
 /**
@@ -2363,7 +2377,7 @@ const commands = {
     emit({ t: 'pong', ts })
   },
   rehello: hello,
-  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account }) {
+  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing }) {
     try {
       if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
       const want = expandHome(cwd || '~')
@@ -2381,6 +2395,7 @@ const commands = {
       if (['default', 'acceptEdits', 'plan', 'auto'].includes(mode)) s.mode = mode
       if (chrome === false) s.chrome = false
       if (account) s.account = account
+      if (cleanRouting(routing)) s.routing = cleanRouting(routing)
       // In the map before claude starts: its first hooks (SessionStart, the first prompt) arrive while it launches.
       resetRuntime(s)
       sessions.set(sid, s)
@@ -2408,7 +2423,7 @@ const commands = {
     }
   },
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
-  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account }) {
+  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing }) {
     try {
       // Ids go into file names (the transcript): no path in them (R1-L7).
       if (!safeConvId(sid) || (conv && !safeConvId(conv))) throw new Error('세션 id 가 올바르지 않아요')
@@ -2436,7 +2451,7 @@ const commands = {
       if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
       if (account && accountAuth.get(account)?.loggedIn === false) throw new Error('그 Claude 계정은 로그인돼 있지 않아요. 설정 → Claude 계정에서 먼저 로그인해 주세요')
       if (old) await tmux('kill-session', '-t', `=${old.tmux}`)
-      const s = { cwd: dir, autoPush: autoPush !== false, autoAllow: !!autoAllow, ...(autoAllow && allowAll === true ? { allowAll: true } : {}), conv: conv || sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(chrome === false ? { chrome: false } : {}), ...(isMdName(mdFile) ? { mdFile } : {}), ...(account ? { account } : {}) }
+      const s = { cwd: dir, autoPush: autoPush !== false, autoAllow: !!autoAllow, ...(autoAllow && allowAll === true ? { allowAll: true } : {}), conv: conv || sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(chrome === false ? { chrome: false } : {}), ...(isMdName(mdFile) ? { mdFile } : {}), ...(account ? { account } : {}), ...(cleanRouting(routing) ? { routing: cleanRouting(routing) } : {}) }
       // Moving to another account on this Mac: what Claude Code keeps beside the transcript goes along.
       if (old && (old.account ?? '') !== (account ?? '') && accountDir(old.account ?? '')) {
         const copied = copySessionState(s.conv, accountDir(old.account ?? ''), accountDir(account ?? ''))
@@ -2637,13 +2652,14 @@ const commands = {
     s.bgCount = Number(n) || 0
     maybeRefresh(sid, s)
   },
-  async refresh({ sid, when, sysPrompt, interrupted, bg }) {
+  async refresh({ sid, when, sysPrompt, interrupted, bg, routing }) {
     const s = sessions.get(sid)
     if (!s) return
     // What runs in the background is cut off by reopening: the session that comes back is told what it lost.
     if (when !== 'cancel' && Array.isArray(interrupted) && interrupted.length) s.interrupted = interrupted.slice(0, 20).map((x) => String(x).slice(0, 200))
-    // A reopened session takes the default prompt as it is now.
+    // A reopened session takes the default prompt as it is now, and the model routing (a server before it sent none).
     if (typeof sysPrompt === 'string') s.sysPrompt = sysPrompt.slice(0, 8000)
+    if (routing !== undefined && when !== 'cancel') setRouting(s, routing)
     if (typeof bg === 'number') s.bgCount = bg
     if (when === 'cancel') {
       if (s.refreshAfter) toast(sid, '새로고침 예약을 취소했어요')
@@ -2660,7 +2676,7 @@ const commands = {
     if (when === 'cancel') releaseHeld(sid, s, 'refresh cancelled')
   },
   /** A second session that starts from a copy of this conversation, in the same folder. The original goes on. */
-  async fork({ reqId, sid, newSid, sysPrompt, launch: defaults, copyLog }) {
+  async fork({ reqId, sid, newSid, sysPrompt, launch: defaults, copyLog, routing }) {
     const from = sessions.get(sid)
     try {
       if (!from) throw new Error('이 맥에 그 세션이 없습니다')
@@ -2668,6 +2684,7 @@ const commands = {
       for (let i = 0; i < 60 && from.refreshing; i++) await sleep(500)
       tail(sid, from)
       const s = { cwd: from.cwd, autoPush: from.autoPush, conv: newSid, sysPrompt: String(sysPrompt ?? from.sysPrompt ?? '').slice(0, 8000), ...(from.model ? { model: from.model } : {}), ...(from.effort ? { effort: from.effort } : {}), ...(from.mode ? { mode: from.mode } : {}), ...(from.chrome === false ? { chrome: false } : {}), ...(from.account ? { account: from.account } : {}), ...launchOver(defaults) }
+      setRouting(s, routing === undefined ? from.routing : routing)
       // Copied while the original works: that work stays the original's, and the copy is told so (sessionPrompt).
       if (from.turn || from.running?.size) s.forkOf = sid.slice(0, 8)
       resetRuntime(s)
@@ -2697,7 +2714,7 @@ const commands = {
    * A light copy: the session writes what matters into SESSION.md, and a new session starts from that file
    * instead of from the whole conversation. The original goes on in its terminal.
    */
-  async lightfork({ reqId, sid, newSid, sysPrompt, mode, launch: defaults }) {
+  async lightfork({ reqId, sid, newSid, sysPrompt, mode, launch: defaults, routing }) {
     const from = sessions.get(sid)
     const fail = (error, more = {}) => emit({ t: 'opened', reqId, sid: newSid, ok: false, error, ...more })
     if (!from) return fail('이 맥에 그 세션이 없습니다')
@@ -2733,6 +2750,7 @@ const commands = {
       if (bytes > max) content = Buffer.from(content).subarray(0, max).toString('utf8').replace(/\uFFFD+$/, '')
       // The new session carries the work on, so the file goes with it; the original, if used again, gets its own.
       const s = { cwd: from.cwd, autoPush: from.autoPush, conv: newSid, mdFile: name, sysPrompt: String(sysPrompt ?? from.sysPrompt ?? '').slice(0, 8000), ...(from.model ? { model: from.model } : {}), ...(from.effort ? { effort: from.effort } : {}), ...(from.mode ? { mode: from.mode } : {}), ...(from.chrome === false ? { chrome: false } : {}), ...(from.account ? { account: from.account } : {}), ...launchOver(defaults) }
+      setRouting(s, routing === undefined ? from.routing : routing)
       resetRuntime(s)
       sessions.set(newSid, s)
       try {
@@ -3139,7 +3157,7 @@ const commands = {
     }
   },
   /** Take a conversation this Mac already has into a bridge session: `claude --resume` in its own folder. */
-  async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt }) {
+  async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt, routing }) {
     try {
       if (!/^[0-9a-f-]{36}$/.test(String(conv))) throw new Error('대화 id 가 올바르지 않습니다')
       if ([...sessions.values()].some((x) => x.conv === conv)) throw new Error('이미 bridge 세션으로 열려 있는 대화입니다')
@@ -3158,6 +3176,7 @@ const commands = {
       }
       if (!file) throw new Error('이 맥에서 그 대화의 기록을 찾지 못했습니다')
       const s = { cwd: fs.realpathSync(want), autoPush: autoPush !== false, conv, transcript: file, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(account ? { account } : {}) }
+      setRouting(s, routing)
       // The whole conversation so far is read and synced from its first line: the server's copy is what a move
       // to another Mac resumes from.
       Object.assign(s, { offset: 0, lineNo: 0, skip: 0 })

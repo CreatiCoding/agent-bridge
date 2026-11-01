@@ -725,7 +725,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		st["alive"] = true
 		st["phase"] = "starting"
 		cp.set("state", st)
-		cmd := M{"t": "lightfork", "sid": meta.id(), "newSid": sid, "sysPrompt": sysPromptOf(uid), "launch": over}
+		cmd := M{"t": "lightfork", "sid": meta.id(), "newSid": sid, "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "launch": over}
 		if b["mode"] == "shrink" || b["mode"] == "cut" {
 			cmd["mode"] = b["mode"]
 		}
@@ -1107,7 +1107,7 @@ func forkOp(res *Res, uid string, meta *Sess) {
 	cp.set("agentLog", true)
 	besideInGroup(uid, meta.id(), sid)
 	savePrefs(uid)
-	cmd := M{"t": "fork", "sid": meta.id(), "newSid": sid, "sysPrompt": sysPromptOf(uid), "launch": over}
+	cmd := M{"t": "fork", "sid": meta.id(), "newSid": sid, "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "launch": over}
 	if !legacy {
 		cmd["copyLog"] = seq
 	}

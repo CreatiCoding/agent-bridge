@@ -639,7 +639,7 @@ func statusFromAgent(uid, hostID string, msg M) {
 		"held": held, "tool": tool, "tools": numOr0(msg["tools"]), "running": running, "sessionMd": sessionMd, "mdFile": mdFile,
 		"mdMax": mdMax, "plugins": plugins, "turnAt": orNull(msg["turnAt"]), "mode": str(msg["mode"], 40), "effort": str(msg["effort"], 20),
 		"context": str(msg["context"], 20), "autoAllow": truthy(msg["autoAllow"]), "allowAll": truthy(msg["autoAllow"]) && truthy(msg["allowAll"]), "refreshAfter": truthy(msg["refreshAfter"]),
-		"bridgeTools": bridgeTools, "size": orNull(msg["size"]), "quietSince": orNull(msg["quietSince"]), "usage": usage,
+		"bridgeTools": bridgeTools, "routing": msg["routing"] == true, "size": orNull(msg["size"]), "quietSince": orNull(msg["quietSince"]), "usage": usage,
 		"handedOffTo": handed, "cache": cacheOf(msg["cache"]), "servers": servers,
 	}
 	// A session left with 전부 허용 that permissionModes no longer has (the file changed, the server restarted):

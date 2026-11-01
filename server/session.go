@@ -157,7 +157,7 @@ func startSession(uid string, b M, req *Req) string {
 		cwd = jsString(b["cwd"])
 	}
 	mode, autoAllow := startMode(jsSliceTo(orStr(b["mode"]), 20))
-	cmd := M{"t": "new", "sid": sid, "sysPrompt": sysPromptOf(uid), "create": b["create"] == true, "cwd": jsSliceTo(cwd, 1000), "prompt": prompt, "autoPush": true, "model": jsSliceTo(orStr(b["model"]), 60), "effort": jsSliceTo(orStr(b["effort"]), 10), "mode": mode}
+	cmd := M{"t": "new", "sid": sid, "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "create": b["create"] == true, "cwd": jsSliceTo(cwd, 1000), "prompt": prompt, "autoPush": true, "model": jsSliceTo(orStr(b["model"]), 60), "effort": jsSliceTo(orStr(b["effort"]), 10), "mode": mode}
 	if b["chrome"] == false {
 		cmd["chrome"] = false
 	}
@@ -437,7 +437,7 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 		cwd = newCwdS
 		home = nil
 	}
-	open := M{"t": "open", "sysPrompt": sysPromptOf(meta.uid()), "sid": meta.id(), "conv": conv, "cwd": cwd, "home": home, "folder": folder, "autoPush": meta.get("autoPush"), "autoAllow": meta.get("autoAllow"), "allowAll": truthy(meta.get("autoAllow")) && truthy(meta.get("allowAll")), "model": orStr(meta.get("launchModel")), "effort": orStr(st["effort"]), "mode": orStr(st["mode"])}
+	open := M{"t": "open", "sysPrompt": sysPromptOf(meta.uid()), "routing": routingCmd(meta.uid()), "sid": meta.id(), "conv": conv, "cwd": cwd, "home": home, "folder": folder, "autoPush": meta.get("autoPush"), "autoAllow": meta.get("autoAllow"), "allowAll": truthy(meta.get("autoAllow")) && truthy(meta.get("allowAll")), "model": orStr(meta.get("launchModel")), "effort": orStr(st["effort"]), "mode": orStr(st["mode"])}
 	if home == nil {
 		delete(open, "home")
 	}

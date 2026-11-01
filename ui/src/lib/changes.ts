@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.384',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '모델 라우팅(설정 → 새 세션, 기본 꺼짐): 켜면 새로 여는 세션에 일꾼 서브에이전트 6개(checker·Explore·researcher·ops-runner·doc-writer·reviewer, 각자 모델·effort)를 --agents 로, 서브에이전트 기본 모델을 CLAUDE_CODE_SUBAGENT_MODEL 로 넣고, 시스템 프롬프트에 맡기는 규칙(품질 위험 일은 opus)을 덧붙임. 세션 설정에 라우팅 켜짐 여부',
+        refs: ['REQ-F-834', 'IF-261'],
+      },
+    ],
+  },
+  {
     version: '1.383',
     date: '2026-11-01',
+    commit: 'f476784',
     changes: [
       {
         kind: 'added',

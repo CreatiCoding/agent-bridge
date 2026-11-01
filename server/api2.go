@@ -120,7 +120,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		st["phase"] = "starting"
 		meta.set("state", st)
 		broadcastState(uid)
-		r := ask(m[1], M{"t": "adopt", "sid": sid, "conv": b["conv"], "cwd": meta.get("cwd"), "sysPrompt": sysPromptOf(uid), "autoPush": true}, 90_000)
+		r := ask(m[1], M{"t": "adopt", "sid": sid, "conv": b["conv"], "cwd": meta.get("cwd"), "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "autoPush": true}, 90_000)
 		if !truthy(r["ok"]) {
 			sessions.Delete(sid)
 			dirty.Delete(sid)
