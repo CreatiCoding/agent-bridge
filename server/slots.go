@@ -195,14 +195,16 @@ func pickOrigin(req *Req) {
 	refuse(421, "이 서버의 주소가 아니에요")
 }
 
-// headerOnly: only the proxy's header signs in (auth.headerOnly, REQ-F-816). Every other way in is closed, a
-// cookie without the header is not taken, and so is the headless browser, which cannot pass the SSO gate.
+// headerOnly: only the proxy's header signs in (auth.headerOnly, REQ-F-816). Every other way in is closed and a
+// cookie without the header is not taken. The headless link signs in at the proxy through a visible window of its
+// own profile on the Mac (REQ-F-833).
 func headerOnly() bool { return cfgOn("auth.headerOnly") }
 
 const (
-	HEADER_ONLY_BG    = "헤더 로그인만 쓰는 서버에서는 백그라운드 연동을 쓸 수 없어요"
 	HEADER_ONLY_QR    = "헤더 로그인만 쓰는 서버에서는 QR 로그인을 쓸 수 없어요. 다른 기기도 프록시를 거쳐 들어와요"
-	HEADER_ONLY_AGAIN = "이 서버는 사내 로그인(프록시)으로만 들어와요. 프록시를 거쳐 다시 열어 주세요"
+	HEADER_ONLY_AGAIN = "이 서버는 앞단 프록시 로그인으로만 들어와요. 프록시를 거쳐 다시 열어 주세요"
+	// VISIBLE_LOGIN: what signs the headless link in at the proxy (REQ-F-833), as said to people.
+	VISIBLE_LOGIN = "node ~/.claude-bridge/agent.mjs link --visible"
 )
 
 // headerOnlyPage: what a person who came without the proxy sees instead of a sign-in button.
@@ -215,10 +217,10 @@ func linksHere(req *Req) bool { return req.origin == "" || req.origin == ORIGIN 
 
 const NOT_LINKED_HERE = "이 주소에서는 연동하지 않아요. 맥과의 연동은 처음 주소의 탭이 이어요"
 
-// headerOnlyHosts: before a file turns auth.headerOnly on, the hosts whose headless browser may still hold the link
-// with an old cookie, so the operator turns those off first (REQ-F-816). From hosts.json, which keeps the last
-// background state a host told (REQ-F-811): on, or never told (unknown); a screenless host is always listed, as it
-// has no visible Chrome to turn it off from afterwards.
+// headerOnlyHosts: before a file turns auth.headerOnly on, the hosts whose headless browser holds the link with a
+// cookie the change makes worthless (REQ-F-816). From hosts.json, which keeps the last background state a host told
+// (REQ-F-811): on, or never told (unknown), sign in once at the proxy afterwards (REQ-F-833); a screenless host is
+// always listed, as it has no window to sign in from and no visible Chrome to turn it off from.
 func headerOnlyHosts(hs []M) []any {
 	out := []any{}
 	for _, h := range hs {
@@ -228,9 +230,9 @@ func headerOnlyHosts(hs []M) []any {
 		case mstr(h, "kind") == "server":
 			row = append(row, kv{"state", "server"}, kv{"note", "화면 없는 기기예요. 바꾸기 전에 사이트에서 헤드리스 연동을 끄거나, 바꾼 뒤에는 그 기기에서 에이전트를 멈추고 agent.json 의 background 를 지운 뒤 다시 띄우세요"})
 		case !told:
-			row = append(row, kv{"state", "unknown"}, kv{"note", "알 수 없음 · 마지막 접속 시각을 보세요. 켜 두었다면 바꾸기 전에 끄세요"})
+			row = append(row, kv{"state", "unknown"}, kv{"note", "알 수 없음 · 마지막 접속 시각을 보세요. 헤드리스 연동을 켜 두었다면 바꾼 뒤 그 맥에서 " + VISIBLE_LOGIN + " 로 프록시 로그인을 한 번 하세요"})
 		case lb["on"] == true:
-			row = append(row, kv{"state", "on"}, kv{"at", lb["at"]}, kv{"note", "헤드리스 연동이 켜져 있어요(마지막으로 알린 값). 바꾸기 전에 끄세요"})
+			row = append(row, kv{"state", "on"}, kv{"at", lb["at"]}, kv{"note", "헤드리스 연동이 켜져 있어요(마지막으로 알린 값). 바꾼 뒤 그 맥에서 " + VISIBLE_LOGIN + " 로 프록시 로그인을 한 번 하세요"})
 		default:
 			continue
 		}

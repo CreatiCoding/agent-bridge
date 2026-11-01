@@ -211,11 +211,8 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	if m := hostHealRe.FindStringSubmatch(p); post && m != nil {
 		b := body(req, 1024)
 		h := readableHost(uid, m[1])
-		if !containsAny([]any{"background-restart", "awake-apply", "check", "restart", "rekey"}, b["action"]) {
+		if !containsAny([]any{"background-restart", "visible-login", "awake-apply", "check", "restart", "rekey"}, b["action"]) {
 			refuse(400, "모르는 복구 동작이에요")
-		}
-		if b["action"] == "background-restart" && headerOnly() {
-			refuse(409, HEADER_ONLY_BG)
 		}
 		if !online(m[1]) {
 			refuse(409, NOT_CONNECTED)
@@ -383,17 +380,19 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	if m := hostBgRe.FindStringSubmatch(p); post && m != nil {
 		b := body(req, 1024)
 		h := readableHost(uid, m[1])
-		if b["on"] == true && headerOnly() {
-			refuse(409, HEADER_ONLY_BG) // turning it off stays open (REQ-F-816)
-		}
 		if !online(m[1]) && headerOnly() {
-			refuse(409, "호스트가 연결돼 있지 않습니다. 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 연 뒤 끄세요")
+			refuse(409, "호스트가 연결돼 있지 않습니다. 그 맥에서 "+VISIBLE_LOGIN+" 로 프록시 로그인을 다시 하거나, 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 열어 주세요")
 		}
 		if !online(m[1]) {
 			refuse(409, "호스트가 연결돼 있지 않습니다. 그 맥의 브라우저에서 이 사이트를 한 번 연 뒤 켜 주세요")
 		}
 		cmd := M{"t": "background", "on": b["on"] == true}
-		if b["on"] == true {
+		if b["on"] == true && headerOnly() {
+			// No one-time sign-in here: the QR way in is closed. The headless browser goes to the primary origin's
+			// bridge page (the agent's own site) and passes the proxy with the cookies a person left in its profile
+			// through a visible window (REQ-F-833).
+			cmd["proxy"] = true
+		} else if b["on"] == true {
 			for k, v := range qrCodes {
 				if jsNumber(v["exp"]) < float64(nowMs()) {
 					delete(qrCodes, k)

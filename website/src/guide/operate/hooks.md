@@ -31,6 +31,7 @@ description: 서버가 내는 이벤트를 웹훅으로 받고, 액션 앞뒤에
 | 일어난 일 | `session.done` | 세션의 턴이 끝났을 때(일하는 중에서 쉬는 중으로) |
 | | `decision.waiting` | 맥이 권한·질문 같은 확인 창(카드)을 열었을 때 |
 | | `decision.answered` | 열려 있던 카드가 닫혔을 때 |
+| | `host.login_required` | 맥의 헤드리스 브라우저가 앞단 프록시 로그인을 지나지 못했다는 보고가 서버에 닿았을 때 |
 | 사람이 한 액션 | `login`, `session.create`, `message.send` 등 14개 | 서버를 거쳐 그 일이 실제로 일어났을 때 |
 
 이벤트는 받는 곳이 하나라도 있을 때만 만들어져요. 받는 곳이 없으면 서버는 지금과 똑같이 움직여요.
@@ -55,6 +56,7 @@ description: 서버가 내는 이벤트를 웹훅으로 받고, 액션 앞뒤에
 | `session.done` | — | 턴 끝 |
 | `decision.waiting` | `card` | `{id, kind, title, tool?, options:[{n, label, kind}]}`. `tool` 은 도구 이름이에요 |
 | `decision.answered` | `card`, `n`, `via`, `by` | `via` 는 `card`(이 서버로 답함)·`message`(글을 보내서)·`auto`(자동 허용)·`terminal`(맥에서 직접) |
+| `host.login_required` | `host`, `since`, `reason`, `fix` | `host` 는 `{id, name}`, `fix` 는 `node ~/.claude-bridge/agent.mjs link --visible`, `url` 은 그 맥의 기기 화면이에요. 로그인이 풀린 그 탭으로는 서버에 닿을 수 없어서, 그 맥의 다른 브라우저 탭이 넘겨받을 때만 와요 |
 :::
 
 ::: details 본문의 모양
@@ -194,7 +196,7 @@ http.createServer((req, res) => {
 :::
 
 ::: details hooks 의 키와 이름
-**이름**은 `<액션>.before`, `<액션>.after`, `<일어난 일>.after` 예요. 액션은 위 전체 목록의 14개, 일어난 일은 `session.done`·`decision.waiting`·`decision.answered` 셋이에요. 그 밖의 이름이 있으면 서버가 뜨지 않아요. 이름마다 5개까지 적을 수 있어요.
+**이름**은 `<액션>.before`, `<액션>.after`, `<일어난 일>.after` 예요. 액션은 위 전체 목록의 14개, 일어난 일은 `session.done`·`decision.waiting`·`decision.answered`·`host.login_required` 넷이에요. 그 밖의 이름이 있으면 서버가 뜨지 않아요. 이름마다 5개까지 적을 수 있어요.
 
 | 키 | webhook | exec | 뜻 |
 |---|---|---|---|

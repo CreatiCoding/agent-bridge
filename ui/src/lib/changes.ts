@@ -26,8 +26,45 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.382',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'ui'],
+        text: '`node agent.mjs link --visible` 과 기기 화면의 "보이는 창으로 로그인": 헤드리스와 같은 Chrome 프로필로 보이는 창을 열어 앞단 프록시 로그인을 마치면, 40초 뒤 창을 닫고 그 쿠키로 헤드리스를 다시 띄움',
+        refs: ['REQ-F-833', 'IF-178'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '헤드리스 페이지의 연동 요청이 다른 주소로 넘어가거나 401·HTML 이면 "로그인 필요"로 표시(기기 화면·점검)하고, 서버가 받으면 새 이벤트 host.login_required(notify·hooks)를 냄',
+        refs: ['REQ-F-833', 'REQ-F-817', 'REQ-F-818', 'REQ-F-819'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'ui'],
+        text: 'auth.headerOnly 서버도 헤드리스 연동 켜기·다시 띄우기를 막지 않음(409 없앰). features.background 는 늘 참, 새 features.proxyLogin. 화면은 화면 없는 기기 연결·폰에서 열기만 숨김',
+        refs: ['REQ-F-816', 'REQ-F-812'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: 'agent.json 의 chromeFlags.localNetwork·mockKeychain 을 false 로 두면 헤드리스 Chrome 에 --disable-features=LocalNetworkAccessChecks·--use-mock-keychain 을 붙이지 않음(기본은 그대로)',
+        refs: ['REQ-F-833'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '프록시 로그인 안내 문구를 일반 표현으로: "이 서버는 앞단 프록시 로그인으로만 들어와요"',
+        refs: ['REQ-F-816', 'REQ-F-814'],
+      },
+    ],
+  },
+  {
     version: '1.381',
     date: '2026-11-01',
+    commit: '7c3ceff',
     changes: [
       {
         kind: 'security',

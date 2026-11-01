@@ -10,7 +10,7 @@ import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmen
 import { toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
-import { featureOn } from '../lib/features'
+import { featureOn, proxyLogin } from '../lib/features'
 import { copyText, openSession } from '../lib/builtin-actions'
 import { updateNow } from '../components/agent-update'
 
@@ -197,13 +197,14 @@ export function HostsPage({ me }: { me: Me | null }) {
             </p>
           </section>
           </PhoneFold>
-          {featureOn('background') ? (
+          {/* A header-only server closes the QR sign-in (REQ-F-816): other devices come in through the proxy, and a
+              host with no screen cannot sign its headless browser in at the proxy (REQ-F-833). */}
+          {!proxyLogin() ? (
             <PhoneFold icon="key" title="화면 없는 기기 연결" hint="리눅스 서버">
               <ServerLink />
             </PhoneFold>
           ) : null}
-          {/* A header-only server closes the QR sign-in too (REQ-F-816): other devices come in through the proxy. */}
-          {featureOn('background') ? (
+          {!proxyLogin() ? (
             <PhoneFold icon="qr" title="폰에서 열기" hint="QR 로그인">
               <PhoneLogin />
             </PhoneFold>
@@ -286,10 +287,10 @@ interface Feature {
   state: 'ok' | 'warn' | 'fail' | 'off'
   detail: string
   fix?: string
-  action?: 'background-restart' | 'awake-apply' | 'check' | 'restart' | 'rekey'
+  action?: 'background-restart' | 'visible-login' | 'awake-apply' | 'check' | 'restart' | 'rekey'
 }
 
-const ACTION_LABEL: Record<NonNullable<Feature['action']>, string> = { 'background-restart': '다시 띄우기', 'awake-apply': '다시 적용', check: '다시 점검', restart: '다시 시작', rekey: '키 바꾸기' }
+const ACTION_LABEL: Record<NonNullable<Feature['action']>, string> = { 'background-restart': '다시 띄우기', 'visible-login': '보이는 창으로 로그인', 'awake-apply': '다시 적용', check: '다시 점검', restart: '다시 시작', rekey: '키 바꾸기' }
 
 /** What each switchable part does, shown when pointing at its name (the row itself says only where it stands). */
 const FEATURE_HELP: Record<string, string> = {
@@ -459,14 +460,14 @@ function DelegateBox({ hostId, on }: { hostId: string; on: boolean }) {
   )
 }
 
-/** On a header-only server (REQ-F-816) the agent's own words for the headless link ("켜세요") do not hold: it does not
- * know the server, so the page says how to turn it off instead. */
-const NO_BG_ON = '헤더 로그인만 쓰는 서버라 헤드리스 연동을 쓸 수 없어요. 꺼 주세요. 끌 수 없으면 그 맥을 다시 시작하거나 헤드리스 Chrome 을 끝낸 뒤, 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 열어 끄세요'
-const NO_BG = '헤더 로그인만 쓰는 서버라 쓰지 않아요'
+/** On a header-only server (REQ-F-833) the headless browser signs in at the proxy through a visible window on the Mac. */
+const VISIBLE_LOGIN = 'node ~/.claude-bridge/agent.mjs link --visible'
+const PROXY_OFFLINE = `연결이 끊겼어요. 헤드리스 연동의 프록시 로그인이 풀렸다면 그 맥에서 ${VISIBLE_LOGIN} 을 실행해 보이는 창에서 다시 로그인하세요.`
+const PROXY_ON = '처음 켰다면 그 맥에서 보이는 창으로 프록시 로그인을 한 번 해 주세요'
 
 function StatusBox({ hostId, features, repairs, online, background, awake }: { hostId: string; features: Feature[]; repairs: { at: number; id: string; text: string; ok: boolean }[]; online: boolean; background: Background | undefined; awake: Awake | undefined }) {
   const wide = useWide()
-  const bgOff = !featureOn('background')
+  const proxy = proxyLogin()
   const [busy, setBusy] = useState<string | null>(null)
   // A switch shows what was asked until the next status says otherwise.
   const [shown, setShown] = useState<{ background?: boolean; awake?: boolean; lid?: boolean }>({})
@@ -481,7 +482,7 @@ function StatusBox({ hostId, features, repairs, online, background, awake }: { h
       if (id === 'background') {
         const r = await post<{ ok: true; on: boolean }>(`/api/hosts/${hostId}/background`, { on: want })
         setShown((s) => ({ ...s, background: r.on }))
-        toast(r.on ? '헤드리스 연동 모드를 켰어요. 잠시 뒤 연결돼요' : '헤드리스 연동 모드를 껐어요')
+        toast(r.on ? (proxy ? `헤드리스 연동 모드를 켰어요. ${PROXY_ON}` : '헤드리스 연동 모드를 켰어요. 잠시 뒤 연결돼요') : '헤드리스 연동 모드를 껐어요')
       } else {
         const which = id === 'awake' ? 'idle' : 'lid'
         const r = await post<{ ok: true; idle: boolean; lid: boolean }>(`/api/hosts/${hostId}/awake`, { [which]: want })
@@ -507,8 +508,7 @@ function StatusBox({ hostId, features, repairs, online, background, awake }: { h
     <section className="card-box">
       <CardHead title="에이전트 상태" help="에이전트가 1분마다 스스로 살펴보고, 고칠 수 있는 것은 혼자 고쳐요." />
       <div className="feature-list">
-        {features.map((f0) => {
-          const f = bgOff && f0.id === 'background' ? { ...f0, detail: on.background ? NO_BG_ON : NO_BG, fix: undefined, action: undefined } : f0
+        {features.map((f) => {
           return (
           <div key={f.id} className="feature-row">
             <span className={`dot dot-${tone(f.state)}`} />
@@ -525,13 +525,20 @@ function StatusBox({ hostId, features, repairs, online, background, awake }: { h
                 {ACTION_LABEL[f.action]}
               </Button>
             ) : null}
-            {/* Header-only: the headless switch can only be turned off. */}
-            {f.id in FEATURE_HELP && !(bgOff && f.id === 'background' && !on.background) ? <Switch label={f.title} checked={on[f.id] ?? f.state !== 'off'} disabled={!online || !!busy} onChange={(v) => toggle(f.id, v)} /> : null}
+            {f.id in FEATURE_HELP ? <Switch label={f.title} checked={on[f.id] ?? f.state !== 'off'} disabled={!online || !!busy} onChange={(v) => toggle(f.id, v)} /> : null}
           </div>
           )
         })}
       </div>
-      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: '8px 0 0' }}>맥이 연결돼 있을 때 바꿀 수 있어요.</p>}
+      {background?.login === 'required' ? (
+        <div className="banner" style={{ marginTop: 8 }}>
+          <Icon name="warn" />
+          <div className="banner-body">
+            로그인 필요 · 헤드리스 브라우저가 프록시 로그인을 지나지 못했어요{background.loginSince ? ` (${ago(background.loginSince)})` : ''}. 그 맥에서 보이는 창으로 다시 로그인하세요. <Copy text={VISIBLE_LOGIN} />
+          </div>
+        </div>
+      ) : null}
+      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: '8px 0 0' }}>{proxy && background?.on ? PROXY_OFFLINE : '맥이 연결돼 있을 때 바꿀 수 있어요.'}</p>}
       {repairs.length ? (
         <details style={{ marginTop: 10 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 'var(--fs-medium)' }}>자동 복구 기록 · {repairs.length}</summary>
@@ -555,6 +562,12 @@ interface Background {
   since: number | null
   restarts: number
   error: string | null
+  /** 1.382: the headless page could not pass the proxy's sign-in, and since when (REQ-F-833). */
+  login?: 'required'
+  loginSince?: number
+  loginWhy?: string
+  /** 1.382: the visible sign-in window is open on the Mac. */
+  visible?: boolean
 }
 
 /** 헤드리스 연동 모드: the agent keeps a headless browser on this site's bridge page, so no tab has to stay open. */
@@ -562,14 +575,13 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
   const [busy, setBusy] = useState(false)
   const [on, setOn] = useState<boolean | null>(null)
   const checked = on ?? state?.on ?? false
-  const bgOff = !featureOn('background')
-  if (bgOff && !checked) return null
+  const proxy = proxyLogin()
   const set = async (want: boolean) => {
     setBusy(true)
     try {
       const r = await post<{ ok: true; on: boolean }>(`/api/hosts/${hostId}/background`, { on: want })
       setOn(r.on)
-      toast(r.on ? '헤드리스 연동 모드를 켰어요. 잠시 뒤 연결돼요' : '헤드리스 연동 모드를 껐어요')
+      toast(r.on ? (proxy ? `헤드리스 연동 모드를 켰어요. ${PROXY_ON}` : '헤드리스 연동 모드를 켰어요. 잠시 뒤 연결돼요') : '헤드리스 연동 모드를 껐어요')
     } catch (e) {
       toast(errorText(e), { tone: 'bad' })
     }
@@ -589,13 +601,13 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
         <Switch label="헤드리스 연동 모드" checked={checked} disabled={!online || busy} onChange={set} />
       </div>
       {status ? <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: '0 0 6px' }}>{status}</p> : null}
-      {state?.error || bgOff ? (
+      {state?.error ? (
         <div className="banner">
           <Icon name="warn" />
-          <div className="banner-body">{bgOff ? NO_BG_ON : state?.error}</div>
+          <div className="banner-body">{state.error}</div>
         </div>
       ) : null}
-      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>{bgOff ? '끄려면 그 맥의 Chrome 에서 프록시를 거쳐 이 사이트를 연 뒤 끄세요.' : '켜려면 그 맥의 브라우저에서 이 사이트를 한 번 열어 연결해 주세요.'}</p>}
+      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>{proxy ? PROXY_OFFLINE : '켜려면 그 맥의 브라우저에서 이 사이트를 한 번 열어 연결해 주세요.'}</p>}
     </section>
   )
 }

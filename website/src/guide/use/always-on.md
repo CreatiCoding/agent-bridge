@@ -57,6 +57,28 @@ node ~/.claude-bridge/agent.mjs awake setup
 
 **헤드리스 연동 모드를 켰어요. 잠시 뒤 연결돼요** 알림이 떠요. 켤 때 서버가 일회용 로그인 코드(5분, 한 번)를 에이전트에 건네고, 헤드리스 Chrome 이 그 코드로 로그인해요. 로그인은 전용 프로필 `~/.claude-bridge/browser` 에 남아요.
 
+::: tip 헤더 로그인만 받는 서버라면
+서버가 앞단 프록시의 로그인만 받으면(`auth.headerOnly`) 일회용 코드가 없어요. 스위치를 켠 뒤 그 맥에서 다음을 실행하거나 기기 화면의 **보이는 창으로 로그인** 을 누르세요.
+
+```bash
+node ~/.claude-bridge/agent.mjs link --visible
+```
+
+같은 프로필로 보이는 Chrome 창이 떠요. 그 창에서 프록시 로그인을 마치면 연동이 붙고, 40초쯤 뒤 창이 닫힌 뒤 헤드리스가 그 쿠키로 다시 붙어요. 프록시의 로그인 쿠키에 만료가 없으면(세션 쿠키) Chrome 이 닫힐 때 버려져서 이 방식이 되지 않아요. 나중에 로그인이 풀리면 기기 화면의 에이전트 상태에 **로그인 필요** 가 보여요. 같은 명령으로 다시 로그인하세요.
+:::
+
+::: details 헤드리스 Chrome 의 두 플래그 끄기
+헤드리스 Chrome 은 `--disable-features=LocalNetworkAccessChecks` 와(macOS) `--use-mock-keychain` 을 붙여 떠요. 보안 정책상 이 플래그를 쓰기 어렵다면 `~/.claude-bridge/agent.json` 에 다음을 더하고 에이전트를 다시 시작하세요.
+
+```json
+"chromeFlags": { "localNetwork": false, "mockKeychain": false }
+```
+
+- `localNetwork: false`: Chrome 의 로컬 네트워크 접근 검사가 켜져요. 그 프로필에 "로컬 네트워크 접근" 허락이 없으면 페이지가 127.0.0.1 의 에이전트에 붙지 못해요. 헤드리스 Chrome 은 그 질문에 답할 수 없어요.
+- `mockKeychain: false`: 쿠키가 macOS 로그인 키체인의 키로 저장돼요. 헤드리스 Chrome 은 키체인 질문에 답할 수 없어서, 다시 시작한 뒤 로그인이 남지 않을 수 있어요.
+- 두 설정은 보이는 로그인 창에도 똑같이 쓰여요. 실제 Chrome 에서 두 경우를 끝까지 시험하지는 않았어요.
+:::
+
 ::: warning 바깥 연결에 대해
 Agent Bridge 의 에이전트는 원래 혼자서 바깥과 연결하지 않아요. 이 모드를 켠 맥에서는 그렇지 않아요. 에이전트가 띄운 브라우저가 서버에 연결해요. 또 프로필 폴더가 곧 로그인 정보예요. 자세한 내용은 [보안 모델](/guide/concepts/security)을 보세요.
 :::

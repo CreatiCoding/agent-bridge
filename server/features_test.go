@@ -125,7 +125,7 @@ func callAPI(t *testing.T, method, path, body string) (int, string) {
 	r.Header.Set("Content-Type", "application/json")
 	req := newReq(r)
 	res := newRes(req)
-	code := 0
+	code, msg := 0, ""
 	func() {
 		defer func() {
 			if x := recover(); x != nil {
@@ -133,13 +133,13 @@ func callAPI(t *testing.T, method, path, body string) (int, string) {
 				if !isRefuse {
 					panic(x)
 				}
-				code = rf.Status
+				code, msg = rf.Status, rf.Msg
 			}
 		}()
 		withLock(func() { api(req, res, r.URL, "gh1") })
 	}()
 	if code != 0 {
-		return code, ""
+		return code, msg
 	}
 	return res.status, string(res.body)
 }
@@ -150,7 +150,7 @@ func TestFeaturesOffAtAPI(t *testing.T) {
 	withCfg(t, "features:\n  webpush: false\n  voice: false\n  skills: false\n  slack: false\n  permissionModes: [plan]\n")
 	code, body := callAPI(t, "GET", "/api/me", "")
 	eq(t, code, 200)
-	jeq(t, oget(js(body), "features"), `{"background":true,"permissionModes":["default","plan"],"preview":true,"remoteKeys":true,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
+	jeq(t, oget(js(body), "features"), `{"background":true,"permissionModes":["default","plan"],"preview":true,"proxyLogin":false,"remoteKeys":true,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
 	// Who is signed in, and how (REQ-F-824: an extension's settings section gets them).
 	uid, _ := oget(js(body), "uid").(string)
 	ok(t, uid != "", body)

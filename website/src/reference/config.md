@@ -26,7 +26,7 @@ description: 서버 설정 파일 bridge.yaml 이 받는 모든 키를 형식, �
 | `auth.allow` | 로그인 이름 목록 | 환경 변수 값 | `GITHUB_ALLOWED_LOGINS` | 처음부터 허용할 계정이에요. `"*"` 는 누구나예요. 헤더 로그인이면 이메일을 적어요. |
 | `auth.admins` | 로그인 이름 목록 | 환경 변수 값 | `BRIDGE_ADMIN_LOGINS` | **운영자** 계정이에요. 운영 탭을 봐요. |
 | `auth.providers` | 목록(항목 하나) | 빈 목록 | — | 앞단 프록시가 확인한 사람을 헤더로 받아 로그인시켜요. 지금은 `type: trusted-header` 만 받아요. |
-| `auth.headerOnly` | `true`·`false` | `false` | — | 헤더 로그인만 받아요. GitHub·Apple·데모·QR 로그인과 헤드리스 연동을 닫아요. |
+| `auth.headerOnly` | `true`·`false` | `false` | — | 헤더 로그인만 받아요. GitHub·Apple·데모·QR 로그인을 닫아요. 헤드리스 연동은 맥에서 보이는 창으로 프록시 로그인을 한 번 해요(`link --visible`). |
 
 `auth.providers` 의 항목에는 다섯 필드가 모두 있어야 해요.
 

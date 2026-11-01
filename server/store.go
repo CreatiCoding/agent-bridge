@@ -315,10 +315,11 @@ func allowMode(all bool) string {
 	return "autoAllow"
 }
 
-// featuresOf: the feature flags as /api/me gives them (REQ-F-812). background is read-only here (step 3 turns it
-// off with auth.headerOnly); it is not a bridge.yaml key.
+// featuresOf: the feature flags as /api/me gives them (REQ-F-812). background and proxyLogin are read-only and not
+// bridge.yaml keys: background is always on from 1.382 (a header-only server signs the headless browser in through a
+// visible window, REQ-F-833), proxyLogin says the server takes only its proxy's header sign-in (REQ-F-816).
 func featuresOf() M {
-	out := M{"background": !headerOnly()} // read-only: the headless browser cannot pass the proxy (REQ-F-816)
+	out := M{"background": true, "proxyLogin": headerOnly()}
 	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys"} {
 		out[f] = cfgOn("features." + f)
 	}

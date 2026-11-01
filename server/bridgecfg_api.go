@@ -374,7 +374,7 @@ func configCLI(args []string) int {
 			}
 			for _, x := range headerOnlyHosts(hs) {
 				r := x.(orderedObj)
-				fmt.Fprintln(out, "headerOnly 전에 끌 기기: "+jsString(r[0].V)+" · "+jsString(r[len(r)-1].V))
+				fmt.Fprintln(out, "headerOnly 전에 볼 기기: "+jsString(r[0].V)+" · "+jsString(r[len(r)-1].V))
 			}
 		}
 		d := c.diffs(env)

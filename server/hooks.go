@@ -23,7 +23,7 @@ import (
 var HOOK_ACTIONS = []string{"login", "session.create", "session.close", "message.send", "message.btw", "message.retract", "session.key", "session.do", "session.setting", "session.settings", "session.move", "session.lock", "session.sudo", "permission.answer"}
 
 // HOOK_EVENTS: what happens on its own, said by the Mac (not trustworthy as an audit record).
-var HOOK_EVENTS = []string{"session.done", "decision.waiting", "decision.answered"}
+var HOOK_EVENTS = []string{"session.done", "decision.waiting", "decision.answered", "host.login_required"}
 
 // hookKeys: the names hooks takes.
 func hookKeys() []string {
@@ -306,6 +306,11 @@ func eventOf(name, uid string, more orderedObj) (orderedObj, string) {
 	ev = append(ev, more...)
 	link := ORIGIN
 	for _, x := range more {
+		if x.K == "host" {
+			if h, ok := x.V.(orderedObj); ok && ORIGIN != "" && len(h) > 0 && h[0].K == "id" {
+				link = ORIGIN + "/hosts/" + jsString(h[0].V)
+			}
+		}
 		if x.K == "session" {
 			if s, ok := x.V.(orderedObj); ok && ORIGIN != "" && len(s) > 0 && s[0].K == "id" {
 				link = ORIGIN + "/s/" + jsString(s[0].V)

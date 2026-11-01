@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue } from './guard.mjs'
+import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -86,6 +86,8 @@ const noChromeArg = bool('no-chrome')
 const chromeArg = bool('chrome')
 const keepAwakeArg = bool('keep-awake')
 const allowSleepArg = bool('allow-sleep')
+/** `link --visible`: the running agent opens the headless browser's profile in a visible window to sign in (REQ-F-833). */
+const visibleArg = bool('visible')
 /** Started by launchd as the background service: never asks, never opens a browser. */
 const asService = bool('service')
 /** Started by `start` (cron, Raycast, a login item) with no terminal: not saved, like --service (REQ-F-813). */
@@ -201,6 +203,7 @@ if (!/^https?:\/\//.test(config.site) && !doctorOnly && !['status', 'uninstall']
   node agent.mjs <사이트 주소> service install   백그라운드 서비스로 설치 (로그인하면 자동으로 켜짐, 터미널 불필요)
   node agent.mjs service status | uninstall     서비스 상태 보기 / 제거
   node agent.mjs link                           연동 페이지 링크를 다시 열기
+  node agent.mjs link --visible                 헤드리스 연동의 Chrome 프로필을 보이는 창으로 열어 프록시 로그인
   node agent.mjs doctor                         점검만 하고 끝냄
   node agent.mjs <사이트 주소>                   이 터미널에서 직접 실행 (터미널을 닫으면 꺼짐)
   node agent.mjs headless '<로그인 주소>'          화면 없는 기기: 헤드리스 브라우저를 그 주소로 로그인시켜 연동
@@ -263,6 +266,22 @@ if (serviceCmd === 'uninstall') {
   fs.rmSync(SERVICE_FILE, { force: true })
   if (IS_LINUX) systemctl('daemon-reload')
   console.log('서비스를 제거했습니다. 에이전트는 더 이상 자동으로 켜지지 않습니다. 설정과 로그는 ~/.claude-bridge 에 남아 있습니다.')
+  process.exit(0)
+}
+if (linkOnly && visibleArg) {
+  // The running agent owns the headless browser and its profile, so it is the one that opens the visible window.
+  const r = await fetch(`http://127.0.0.1:${config.port}/visible-login`, { method: 'POST', headers: { 'X-Bridge-Key': config.key ?? '' }, signal: AbortSignal.timeout(20_000) })
+    .then((x) => x.json())
+    .catch(() => null)
+  if (!r) {
+    console.error(`에이전트가 응답하지 않습니다 (127.0.0.1:${config.port}). 에이전트를 켠 뒤 다시 실행해 주세요 (상태: node ${SELF} service status).`)
+    process.exit(1)
+  }
+  if (!r.ok) {
+    console.error(r.error || '보이는 창을 열지 못했습니다')
+    process.exit(1)
+  }
+  console.log(r.note)
   process.exit(0)
 }
 if (linkOnly) {
@@ -2309,6 +2328,15 @@ const commands = {
       s.statusKey = null
     }
     welcomed = true
+    // The profile's page reached the server, so it got past the proxy: the sign-in is no longer needed (REQ-F-833).
+    // A visible tab of another browser that took over does not say so: it is what carries the report to the server.
+    if (bg.loginNeed && clientBg) {
+      log('info', 'background', '연동 페이지가 다시 서버에 붙어 로그인 필요 표시를 지움')
+      bg.loginNeed = null
+    }
+    // The visible sign-in window linked. Chrome writes its cookies to the profile's database only every so often (a
+    // window closed a few seconds after signing in left none for the headless one), so it stays VISIBLE_KEEP_MS first.
+    if (clientBg && bg.visible) setTimeout(() => endVisibleLogin('보이는 창이 연동되어 창을 닫고 헤드리스로 다시 띄움'), VISIBLE_KEEP_MS).unref?.()
     // `start` says how to link only until a bridge tab has linked once.
     if (!config.linkedAt) {
       config.linkedAt = Date.now()
@@ -3250,18 +3278,27 @@ const commands = {
     }
   },
 
-  async background({ reqId, on, login }) {
+  async background({ reqId, on, login, proxy }) {
     config.background = !!on
+    // proxy: the server takes only its proxy's header sign-in (REQ-F-833): no one-time address, and a page that
+    // does not link is most likely at the proxy's sign-in page.
+    if (on) config.backgroundProxy = proxy === true
     writeJson(configPath, config)
     if (on) {
       // Exactly the site's own QR sign-in address: the agent key goes on it (R1-M7).
       const ok = siteLogin(login, config.site)
       if (ok) bg.login = ok
       bg.restarts = 0
+      if (!bg.visible) {
+        await stopBackground()
+        startBackground()
+      }
+    } else {
+      endVisibleLogin('헤드리스 연동 모드를 꺼서 보이는 창을 닫음')
+      bg.loginNeed = null
       stopBackground()
-      startBackground()
-    } else stopBackground()
-    emit({ t: 'background', reqId, ok: !on || !!bg.child, ...backgroundState(), ...(on && !bg.child ? { error: bg.error ?? '헤드리스 연동 모드의 브라우저를 띄우지 못했습니다' } : {}) })
+    }
+    emit({ t: 'background', reqId, ok: !on || !!bg.child || !!bg.visible, ...backgroundState(), ...(on && !bg.child && !bg.visible ? { error: bg.error ?? '헤드리스 연동 모드의 브라우저를 띄우지 못했습니다' } : {}) })
     health().catch(() => {})
   },
   /** "지금 복구" from the site: one repair, now. */
@@ -3275,6 +3312,10 @@ const commands = {
         setTimeout(startBackground, 2000)
         text = '헤드리스 브라우저를 다시 띄워요'
       }
+    } else if (action === 'visible-login') {
+      const r = await startVisibleLogin()
+      if (!r.ok) return emit({ t: 'heal', reqId, ok: false, error: r.error })
+      text = r.note
     } else if (action === 'awake-apply') {
       lidActive = !config.keepLidAwake
       if (keepAwake && !config.keepAwake) keepAwake.kill()
@@ -4273,7 +4314,11 @@ const CHROME_BIN =
 // Not snap's Chromium: a snap may not write under a hidden folder of the home (~/.claude-bridge/browser).
 const CHROME_FIX = IS_MAC ? 'Chrome 을 설치하세요: https://www.google.com/chrome' : 'Google Chrome 을 설치하세요: wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo apt install -y /tmp/chrome.deb'
 const BG_PROFILE = path.join(STATE_DIR, 'browser')
-const bg = { child: null, startedAt: null, restarts: 0, error: null, login: null, timer: null, firstKey: false }
+/**
+ * visible: the Chrome window `link --visible` opened on the same profile, for a person to pass the proxy's sign-in
+ * (REQ-F-833). loginNeed: the headless page said the proxy turned it away ({since, why}), until a page links again.
+ */
+const bg = { child: null, startedAt: null, restarts: 0, error: null, login: null, timer: null, firstKey: false, visible: null, visibleAt: null, visibleTimer: null, loginNeed: null }
 /**
  * A restart of the agent (an update, the site's "restart") leaves the headless browser running, and the next agent
  * takes it over: closing it dropped the link to the server for the seconds a new Chrome takes to load and link, and
@@ -4295,7 +4340,8 @@ function profileChrome() {
   } catch {}
   for (const line of out.split('\n')) {
     const m = /^\s*(\d+)\s+(.*)$/.exec(line)
-    if (m && m[2].includes(`--user-data-dir=${BG_PROFILE} `) && !m[2].includes('--type=')) return Number(m[1])
+    // Only the headless one: the visible sign-in window (REQ-F-833) runs on the same profile.
+    if (m && m[2].includes(`--user-data-dir=${BG_PROFILE} `) && m[2].includes('--headless') && !m[2].includes('--type=')) return Number(m[1])
   }
   return 0
 }
@@ -4335,38 +4381,31 @@ function takeBgOpen(t) {
   bgOpen = null
   return o.to
 }
+/**
+ * The one-time first address of a link Chrome (headless or the visible sign-in window). Chrome's command line is for
+ * anyone on the machine to see (`ps`, /proc): it gets a one-time address of this agent, which sends it on to the real
+ * one with the key (REQ-S-081). Always the current key: a key the page took just before its browser was closed may
+ * never have reached the profile on disk.
+ */
+function bgFirstAddress(start) {
+  const fragment = `#port=${config.port}&key=${encodeURIComponent(config.key)}&bg=1`
+  const t = crypto.randomBytes(16).toString('hex')
+  bgOpen = { t, to: `${start ?? `${config.site}/bridge`}${fragment}`, until: Date.now() + BG_OPEN_MS }
+  return `http://127.0.0.1:${config.port}/bg-open?t=${t}`
+}
 function startBackground() {
-  if (bg.child || !config.background || doctorOnly || serviceCmd || linkOnly || awakeCmd) return
+  if (bg.child || bg.visible || !config.background || doctorOnly || serviceCmd || linkOnly || awakeCmd) return
   if (!CHROME_BIN) return void (bg.error = IS_MAC ? 'Chrome 이 없습니다. https://www.google.com/chrome 에서 설치해 주세요' : `Chrome 이나 Chromium 이 없습니다. ${CHROME_FIX}`)
   const kept = bg.login ? null : adoptBackground()
   if (kept) return watchBackground(kept)
-  // Always the current key: it is on no command line (/bg-open below), and a key the page took just before its
-  // browser was closed may never have reached the profile on disk.
-  const fragment = `#port=${config.port}&key=${encodeURIComponent(config.key)}&bg=1`
-  const target = `${bg.login ?? `${config.site}/bridge`}${fragment}`
+  const first = bgFirstAddress(bg.login)
   bg.login = null
-  // Chrome's command line is for anyone on the machine to see (`ps`, /proc): it gets a one-time address of this agent,
-  // which sends it on to the real one with the key (REQ-S-081).
-  const t = crypto.randomBytes(16).toString('hex')
-  bgOpen = { t, to: target, until: Date.now() + BG_OPEN_MS }
   fs.mkdirSync(BG_PROFILE, { recursive: true, mode: 0o700 })
-  const child = spawn(CHROME_BIN, [
-    '--headless=new',
-    `--user-data-dir=${BG_PROFILE}`,
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--disable-features=LocalNetworkAccessChecks',
-    // A headless Chrome cannot answer the keychain's prompt, and without the keychain it keeps no cookies, so the
-    // sign-in would be gone after a restart. Cookies of this profile are kept under a fixed key instead: the
-    // profile folder (0700) is then what holds the sign-in. On Linux the same for a desktop's keyring, which a
-    // server does not have.
-    IS_MAC ? '--use-mock-keychain' : '--password-store=basic',
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-backgrounding-occluded-windows',
-    '--mute-audio',
-    `http://127.0.0.1:${config.port}/bg-open?t=${t}`,
-  ], { stdio: 'ignore', detached: true })
+  // A headless Chrome cannot answer the keychain's prompt, and without the keychain it keeps no cookies, so the
+  // sign-in would be gone after a restart. Cookies of this profile are kept under a fixed key instead
+  // (--use-mock-keychain): the profile folder (0700) is then what holds the sign-in. On Linux the same for a
+  // desktop's keyring, which a server does not have. agent.json chromeFlags can leave two flags out (chromeArgs).
+  const child = spawn(CHROME_BIN, [...chromeArgs(BG_PROFILE, { mac: IS_MAC, headless: true, flags: config.chromeFlags }), first], { stdio: 'ignore', detached: true })
   if (child.pid) fs.writeFileSync(BG_PID, String(child.pid))
   log('info', 'background', `헤드리스 브라우저를 띄움 (pid ${child.pid})`)
   child.on('error', (e) => (bg.error = `Chrome 을 띄우지 못했습니다: ${e.message}`))
@@ -4417,26 +4456,108 @@ function stopBackground() {
   const child = bg.child
   bg.child = null
   fs.rmSync(BG_PID, { force: true })
-  if (!child) return
-  // Chrome itself is asked to quit (SIGTERM to its main process): it then writes its cookies, the sign-in among
-  // them, before it goes. Only if it is still there 5 s later does its whole process group go.
-  try {
-    child.kill('SIGTERM')
-  } catch {}
-  const force = setTimeout(() => {
-    try {
-      process.kill(-child.pid, 'SIGKILL')
-    } catch {}
-  }, 5000)
-  force.unref()
-  child.once('exit', () => clearTimeout(force))
+  if (!child) return Promise.resolve()
   log('info', 'background', '헤드리스 브라우저를 닫음')
+  return quitChrome(child)
+}
+/**
+ * Chrome itself is asked to quit (SIGTERM to its main process): it then writes its cookies, the sign-in among them,
+ * before it goes. Only if it is still there 5 s later does its whole process group go. Resolves once it is gone
+ * (at most 8 s), so the profile is free for the next Chrome.
+ */
+function quitChrome(child) {
+  return new Promise((resolve) => {
+    const done = setTimeout(resolve, 8000)
+    done.unref()
+    child.once('exit', () => (clearTimeout(force), clearTimeout(done), resolve()))
+    try {
+      child.kill('SIGTERM')
+    } catch {}
+    const force = setTimeout(() => {
+      try {
+        process.kill(-child.pid, 'SIGKILL')
+      } catch {}
+    }, 5000)
+    force.unref()
+  })
+}
+
+// ---------- the visible sign-in window (REQ-F-833) ----------
+// A server that takes only its proxy's header sign-in (auth.headerOnly) sends the headless browser to the proxy's
+// sign-in page, where nobody can answer. `link --visible` (or the site's button) opens the same profile in a visible
+// Chrome window for a person to sign in: once its page has linked, the window is closed and the headless browser is
+// started again on that profile, which now holds the proxy's cookies.
+const VISIBLE_MS = 10 * 60_000
+/** How long the signed-in window stays after its page linked, for Chrome to write the sign-in's cookies to disk. */
+const VISIBLE_KEEP_MS = 40_000
+/** Whether this machine can show a window: macOS, or a Linux desktop. */
+const canShowWindow = () => IS_MAC || !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
+async function startVisibleLogin() {
+  if (!CHROME_BIN) return { ok: false, error: IS_MAC ? 'Chrome 이 없습니다. https://www.google.com/chrome 에서 설치해 주세요' : `Chrome 이나 Chromium 이 없습니다. ${CHROME_FIX}` }
+  if (!canShowWindow()) return { ok: false, error: '이 기기에는 창을 띄울 화면이 없어요. 화면 없는 기기는 보이는 창으로 로그인할 수 없어요' }
+  if (bg.visible) return { ok: true, note: '보이는 Chrome 창이 이미 열려 있어요. 그 창에서 로그인을 마쳐 주세요' }
+  // Signing in through a window means the site is behind a sign-in proxy: a page that does not link later is most
+  // likely at its sign-in page again, and the agent says so (backgroundState).
+  if (!config.background || !config.backgroundProxy) {
+    config.background = true
+    config.backgroundProxy = true
+    writeJson(configPath, config)
+  }
+  bg.restarts = 0
+  // The profile is one Chrome's at a time: the headless one goes first, and its cookies are written as it quits.
+  await stopBackground()
+  const prev = profileChrome()
+  if (prev) {
+    try {
+      process.kill(prev, 'SIGTERM')
+    } catch {}
+    await new Promise((r) => setTimeout(r, 3000))
+  }
+  fs.mkdirSync(BG_PROFILE, { recursive: true, mode: 0o700 })
+  const child = spawn(CHROME_BIN, [...chromeArgs(BG_PROFILE, { mac: IS_MAC, headless: false, flags: config.chromeFlags }), bgFirstAddress()], { stdio: 'ignore', detached: true })
+  child.on('error', (e) => (bg.error = `Chrome 을 띄우지 못했습니다: ${e.message}`))
+  bg.visible = child
+  bg.visibleAt = Date.now()
+  log('info', 'background', `프록시 로그인용 보이는 Chrome 창을 띄움 (pid ${child.pid})`)
+  child.on('exit', () => {
+    if (bg.visible !== child) return
+    // Closed by the person before it linked, or by endVisibleLogin: the headless browser comes back either way.
+    bg.visible = null
+    clearTimeout(bg.visibleTimer)
+    log('info', 'background', '보이는 Chrome 창이 닫혀 헤드리스 브라우저를 다시 띄움')
+    setTimeout(startBackground, 1000)
+  })
+  clearTimeout(bg.visibleTimer)
+  bg.visibleTimer = setTimeout(() => bg.visible === child && endVisibleLogin('10분 안에 연동되지 않아 보이는 창을 닫음'), VISIBLE_MS)
+  bg.visibleTimer.unref?.()
+  health().catch(() => {})
+  return { ok: true, note: '이 기기에 Chrome 창을 띄웠어요. 그 창에서 프록시 로그인을 마치면 연동이 붙고, 40초쯤 뒤 창이 저절로 닫힌 뒤 헤드리스로 다시 이어져요(10분 안에 로그인해 주세요)' }
+}
+/** The visible window's job is done (its page linked) or given up: it closes, and its exit starts the headless one. */
+function endVisibleLogin(why) {
+  const child = bg.visible
+  if (!child) return
+  log('info', 'background', why)
+  clearTimeout(bg.visibleTimer)
+  quitChrome(child)
+}
+/** The headless page said the proxy turned it away (web/relay.js, REQ-F-833): kept until a page links again. */
+function noteLoginNeed(why) {
+  if (bg.loginNeed) return
+  bg.loginNeed = { since: Date.now(), why: String(why || '').slice(0, 200) }
+  log('warn', 'background', `헤드리스 브라우저가 프록시 로그인을 지나지 못함 (${bg.loginNeed.why}). 이 기기에서: node ${SELF} link --visible`)
+  health().catch(() => {})
 }
 /** Linked through the background page, or still waiting for it (a sign-in that ran out shows here). */
 function backgroundState() {
   const connected = !!client && clientBg
   const waiting = !!bg.child && !connected && bg.startedAt && Date.now() - bg.startedAt > 90_000
-  return { on: !!config.background, running: !!bg.child, connected, chrome: !!CHROME_BIN, since: bg.startedAt, restarts: bg.restarts, error: bg.error ?? (waiting ? '헤드리스 브라우저가 90초 넘게 붙지 않았습니다. 로그인이 끝났을 수 있으니 기기 화면에서 "헤드리스 연동 모드" 를 껐다가 다시 켜 주세요' : null) }
+  const login = bg.loginNeed ? { login: 'required', loginSince: bg.loginNeed.since, loginWhy: bg.loginNeed.why } : {}
+  const visible = bg.visible ? { visible: true, visibleSince: bg.visibleAt } : {}
+  const waitText = config.backgroundProxy
+    ? `헤드리스 브라우저가 90초 넘게 붙지 않았습니다. 프록시 로그인이 풀렸을 수 있으니 이 기기에서 node ${SELF} link --visible 로 다시 로그인해 주세요`
+    : '헤드리스 브라우저가 90초 넘게 붙지 않았습니다. 로그인이 끝났을 수 있으니 기기 화면에서 "헤드리스 연동 모드" 를 껐다가 다시 켜 주세요'
+  return { on: !!config.background, running: !!bg.child, connected, chrome: !!CHROME_BIN, since: bg.startedAt, restarts: bg.restarts, ...login, ...visible, error: bg.error ?? (waiting ? waitText : null) }
 }
 
 // ---------- diagnosis and self-repair ----------
@@ -4473,7 +4594,7 @@ async function heal() {
       repaired('lid', `덮개 잠자기 설정이 바뀌어 있어(SleepDisabled ${now ? 1 : 0}) 다시 적용함`, lidActive === !!config.keepLidAwake)
     }
   }
-  if (config.background && CHROME_BIN && !(client && clientBg)) {
+  if (config.background && CHROME_BIN && !bg.visible && !(client && clientBg)) {
     const since = bg.startedAt ?? 0
     if (!bg.child && Date.now() - since > 90_000) {
       startBackground()
@@ -4499,7 +4620,10 @@ async function features() {
   const add = (id, title, state, detail, extra = {}) => out.push({ id, title, state, detail, ...extra })
   add('link', '연동', client ? 'ok' : 'fail', client ? (clientBg ? '헤드리스 브라우저가 연동 중' : '브라우저 탭이 연동 중') : '연동 페이지가 붙어 있지 않음', client ? {} : { fix: '이 맥의 Chrome 에서 사이트를 열거나 헤드리스 연동 모드를 켜세요' })
   const b = backgroundState()
-  add('background', '헤드리스 연동 모드', !b.on ? 'off' : !b.chrome ? 'fail' : b.connected ? 'ok' : b.error ? 'fail' : 'warn', !b.on ? '꺼짐' : !b.chrome ? 'Chrome 이 없음' : b.connected ? `연동 중 · 다시 띄운 횟수 ${b.restarts}` : (b.error ?? '띄우는 중이거나 연결을 기다리는 중'), { ...(b.on ? { action: 'background-restart' } : {}), ...(!b.chrome ? { fix: CHROME_FIX } : b.on && !b.connected ? { fix: '기기 화면에서 헤드리스 연동 모드를 껐다가 다시 켜세요(다시 로그인)' } : {}) })
+  const visibleFix = `node ${SELF} link --visible`
+  if (b.on && b.chrome && b.visible) add('background', '헤드리스 연동 모드', 'warn', '보이는 Chrome 창에서 프록시 로그인을 기다리는 중', { action: 'visible-login' })
+  else if (b.on && b.chrome && b.login === 'required') add('background', '헤드리스 연동 모드', 'fail', `로그인 필요 · 헤드리스 브라우저가 프록시 로그인을 지나지 못함 (${b.loginWhy})`, { action: 'visible-login', fix: visibleFix })
+  else add('background', '헤드리스 연동 모드', !b.on ? 'off' : !b.chrome ? 'fail' : b.connected ? 'ok' : b.error ? 'fail' : 'warn', !b.on ? '꺼짐' : !b.chrome ? 'Chrome 이 없음' : b.connected ? `연동 중 · 다시 띄운 횟수 ${b.restarts}` : (b.error ?? '띄우는 중이거나 연결을 기다리는 중'), { ...(b.on ? { action: config.backgroundProxy && !b.connected && canShowWindow() ? 'visible-login' : 'background-restart' } : {}), ...(!b.chrome ? { fix: CHROME_FIX } : b.on && !b.connected ? { fix: config.backgroundProxy ? visibleFix : '기기 화면에서 헤드리스 연동 모드를 껐다가 다시 켜세요(다시 로그인)' } : {}) })
   if (process.platform === 'darwin') {
     add('awake', '잠자기 막기', !config.keepAwake ? 'off' : keepAwake ? 'ok' : 'fail', !config.keepAwake ? '꺼짐 (쓰지 않으면 잠들 수 있음)' : keepAwake ? `caffeinate 실행 중 (pid ${keepAwake.pid})` : 'caffeinate 가 떠 있지 않음', config.keepAwake ? { action: 'awake-apply' } : {})
     const ready = await lidReady()
@@ -5041,6 +5165,23 @@ const server = http.createServer(async (req, res) => {
     } catch {}
     return res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }).end(line)
   }
+  // `link --visible` on this machine (REQ-F-833): the same as the site's "보이는 창으로 로그인".
+  if (req.method === 'POST' && url.pathname === '/visible-login') {
+    const r = await startVisibleLogin()
+    if (r.ok) repaired('background', `이 기기 터미널에서 요청: ${r.note}`)
+    return res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify(r))
+  }
+  // The headless page says the proxy turned its requests away (web/relay.js): only a background page is listened to.
+  if (req.method === 'POST' && url.pathname === '/login-state') {
+    let b = {}
+    try {
+      const chunks = []
+      for await (const c of req) if (chunks.push(c) > 16) break
+      b = JSON.parse(Buffer.concat(chunks).toString('utf8').slice(0, 4096))
+    } catch {}
+    if (b?.required === true && clientBg && (url.searchParams.get('tab') || '') === clientTab) noteLoginNeed(b.why)
+    return res.writeHead(204, cors).end()
+  }
   if (req.method === 'GET' && url.pathname === '/events') {
     res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
     // One tab at a time. A tab the agent just opened (takeover) wins; any other tab is turned away while the
@@ -5051,7 +5192,11 @@ const server = http.createServer(async (req, res) => {
     // While 헤드리스 연동 모드 is on, the headless browser's tab holds the link: a visible tab, even one the
     // agent opened, waits behind it (else the two would take the link from each other in turn).
     // `headless` tells the page the link is in good hands, so it says nothing instead of a warning.
-    if (alive && clientTab !== tab && clientBg && !isBg && config.background) return res.end('data: {"t":"busy","headless":true}\n\n')
+    // Not while the headless page is stuck at the proxy's sign-in (REQ-F-833): a visible tab of the site that still
+    // gets through takes the link, and with it the "로그인 필요" report reaches the server.
+    if (alive && clientTab !== tab && clientBg && !isBg && bg.loginNeed) log('info', 'link', '헤드리스 페이지가 로그인 필요라 보이는 탭이 연동을 넘겨받음')
+    else if (alive && clientTab !== tab && clientBg && !isBg && config.background) return res.end('data: {"t":"busy","headless":true}\n\n')
+    else
     if (alive && clientTab !== tab && !isBg && url.searchParams.get('takeover') !== '1') return res.end(`data: ${JSON.stringify({ t: 'busy', ...(clientBg ? { headless: true } : {}) })}\n\n`)
     client?.end('data: {"t":"replaced"}\n\n')
     client = res

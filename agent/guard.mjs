@@ -21,6 +21,26 @@ export function siteLogin(login, site) {
   }
 }
 
+/**
+ * The command line of the link's Chrome (헤드리스 연동 모드, REQ-F-798·REQ-F-833) before its first address. The
+ * headless one and the visible sign-in window share one profile, so both get the same cookie store flags: a cookie
+ * written under one key store cannot be read under the other. agent.json `chromeFlags` may leave out the two flags
+ * that turn a browser check off: `localNetwork: false` drops --disable-features=LocalNetworkAccessChecks (the page
+ * then needs Chrome's local network permission to reach 127.0.0.1), `mockKeychain: false` drops --use-mock-keychain
+ * on macOS (cookies are then kept under the login keychain's key, which a headless Chrome cannot be asked for).
+ */
+export function chromeArgs(profile, { mac, headless, flags } = {}) {
+  const f = flags && typeof flags === 'object' ? flags : {}
+  const out = []
+  if (headless) out.push('--headless=new')
+  out.push(`--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check')
+  if (f.localNetwork !== false) out.push('--disable-features=LocalNetworkAccessChecks')
+  if (!mac) out.push('--password-store=basic')
+  else if (f.mockKeychain !== false) out.push('--use-mock-keychain')
+  if (headless) out.push('--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--mute-audio')
+  return out
+}
+
 /** A folder name inside a session's folder that a move may create (R1-L7): one plain name, never `.` or `..`. */
 export const safeDirName = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(s) && s !== '.' && s !== '..'
 

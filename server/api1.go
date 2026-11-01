@@ -698,7 +698,7 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 			repo := jsTrim(rs)
 			gh := githubLoginOf(uid)
 			if gh == nil && providerOf(uid) == "trusted-header" {
-				refuse(400, "GitHub 계정을 연결해야 해요. 사내 로그인(프록시)으로 들어온 계정은 스킬 저장소를 정할 수 없어요")
+				refuse(400, "GitHub 계정을 연결해야 해요. 프록시 로그인으로 들어온 계정은 스킬 저장소를 정할 수 없어요")
 			}
 			if gh == nil {
 				refuse(400, "GitHub 로 로그인한 계정만 스킬 저장소를 정할 수 있어요")

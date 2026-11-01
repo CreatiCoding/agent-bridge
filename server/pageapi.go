@@ -452,6 +452,29 @@ func keepBackground(h M, health M, now int64) {
 	touchGlobals()
 }
 
+// noteLoginRequired: the host's headless browser could not pass the proxy's sign-in (health.background.login
+// "required", REQ-F-833). Raised once for each time it began (loginSince), kept on the host record so a restart of
+// the server does not raise it again; cleared when the host says it no longer is.
+func noteLoginRequired(uid, hostID string, h M, health M) {
+	b, _ := health["background"].(M)
+	if b == nil || b["login"] != "required" {
+		if _, was := h["loginRequired"]; was && b != nil {
+			delete(h, "loginRequired")
+			touchGlobals()
+		}
+		return
+	}
+	since := numOr0(b["loginSince"])
+	if numOr0(h["loginRequired"]) == since {
+		return
+	}
+	h["loginRequired"] = since
+	touchGlobals()
+	why := jsSliceTo(jsStringU(b["loginWhy"]), 200)
+	record(uid, hostID, M{"level": "warn", "area": "background", "text": "헤드리스 브라우저가 프록시 로그인을 지나지 못함(" + why + "). 그 맥에서 " + VISIBLE_LOGIN + " 로 다시 로그인하세요"})
+	emitEvent("host.login_required", uid, orderedObj{{"host", orderedObj{{"id", hostID}, {"name", mstr(h, "name")}}}, {"since", since}, {"reason", why}, {"fix", VISIBLE_LOGIN}})
+}
+
 // batteryStates are the words an agent may use for a battery (REQ-F-806).
 var batteryStates = map[string]bool{"charging": true, "discharging": true, "full": true, "idle": true}
 

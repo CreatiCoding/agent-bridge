@@ -342,7 +342,8 @@ export interface Me {
   recipients?: { origin: string; events: string[] }[]
 }
 
-/** The server's feature flags (REQ-F-812). background is read-only (headless link and screenless hosts). */
+/** The server's feature flags (REQ-F-812). background is read-only (headless link and screenless hosts), always on
+ * from 1.382. proxyLogin (1.382): the server takes only its proxy's header sign-in (auth.headerOnly, REQ-F-816). */
 export interface Features {
   sessionMove: boolean
   webpush: boolean
@@ -353,6 +354,7 @@ export interface Features {
   remoteKeys: boolean
   permissionModes: string[]
   background: boolean
+  proxyLogin?: boolean
 }
 
 /** 음성 입력 (REQ-F-754), kept with the account. terms: one word per line (or comma), the spelling to keep. */

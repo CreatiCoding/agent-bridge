@@ -18,13 +18,25 @@ export function saveAgentInfo(port, key) {
 }
 
 /**
+ * Whether an answer to one of the relay's own requests (redirect: 'manual') came from a sign-in gate instead of this
+ * server (REQ-F-833): sent on to another address (the proxy's sign-in page), 401, or a page where JSON was asked.
+ * The reason in a few words, or null.
+ */
+export function turnedAway(r) {
+  if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) return '요청이 다른 주소로 넘어감(프록시 로그인 페이지)'
+  if (r.status === 401) return 'HTTP 401'
+  if (r.ok && /^text\/html/i.test(r.headers.get('content-type') || '')) return 'JSON 대신 HTML 응답'
+  return null
+}
+
+/**
  * @param {object} ui what the page wants to hear about; every callback is optional.
  *   link(which: 'agent'|'server', state: 'on'|'wait'|'off', text)   the state of one side
  *   log(text)                                                         a line for the page's own log
  *   hello(msg)                                                        the agent introduced itself
  *   agentOpen() / agentError({ perm, safari })                        the connection to 127.0.0.1
  *   stood(text, offerTakeover)                                        this tab stopped relaying
- *   login()                                                           the sign-in has expired
+ *   login(why)                                                        the sign-in has expired
  * @param {{ takeover?: boolean, persistent?: boolean, confirmLeave?: boolean, background?: boolean }} opts
  *   takeover: go ahead of a tab that is already relaying (a tab the agent itself just opened).
  *   persistent: after standing down, wait in line again instead of staying stopped (the control page).
@@ -63,6 +75,20 @@ export function startRelay(ui = {}, opts = {}) {
   const diag = { fromServer: 0, toAgentOk: 0, toAgentFail: 0, fromAgent: 0, upOk: 0, upFail: 0, agentReconnects: 0, lastError: null }
   const fail = (text) => (diag.lastError = { ts: Date.now(), text: String(text).slice(0, 200) })
   const agentUrl = (p) => `http://127.0.0.1:${agent.port}${p}${p.includes('?') ? '&' : '?'}key=${encodeURIComponent(agent.key)}`
+
+  /**
+   * The sign-in is gone (turnedAway). The headless browser's page also tells the agent, once: the server cannot be
+   * told through this tab any more, the agent shows it and lets a visible tab of the site carry it (REQ-F-833).
+   */
+  let loginSaid = false
+  function loginLost(why) {
+    if (opts.background && !loginSaid) {
+      loginSaid = true
+      log(`로그인이 필요함: ${why}`)
+      fetch(agentUrl(`/login-state?tab=${TAB}`), { method: 'POST', body: JSON.stringify({ required: true, why }) }).catch(() => {})
+    }
+    return ui.login?.(why)
+  }
 
   /** A failure in the relay itself goes to the server's log for this host, next to the agent's own lines. */
   function report(level, area, text) {
@@ -156,8 +182,9 @@ export function startRelay(ui = {}, opts = {}) {
           batch.push(queue.shift())
         }
         try {
-          const r = await fetch('/api/bridge/up', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, conn, msgs: batch }), signal: AbortSignal.timeout(30_000) })
-          if (r.status === 401) return ui.login?.()
+          const r = await fetch('/api/bridge/up', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, conn, msgs: batch }), signal: AbortSignal.timeout(30_000), redirect: 'manual' })
+          const away = turnedAway(r)
+          if (away) return loginLost(away)
           if (r.status === 409) return standDown('다른 탭이나 브라우저가 연동을 넘겨받음')
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           diag.upOk++
@@ -211,7 +238,15 @@ export function startRelay(ui = {}, opts = {}) {
     es.onerror = () => {
       if (es !== serverStream) return
       // 409: the server no longer takes this tab as the host's bridge. EventSource does not retry that.
-      if (es.readyState === EventSource.CLOSED) return standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요')
+      if (es.readyState === EventSource.CLOSED) {
+        // A stream the proxy sent to its sign-in page ends the same way: asked once more to tell the two apart.
+        if (opts.background)
+          return void fetch('/api/me', { cache: 'no-store', redirect: 'manual' }).then(
+            (r) => (turnedAway(r) ? loginLost(turnedAway(r)) : standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요')),
+            () => standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요'),
+          )
+        return standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요')
+      }
       serverReady = null
       link('server', 'wait', '다시 연결하는 중')
     }
@@ -316,9 +351,10 @@ export function startRelay(ui = {}, opts = {}) {
         queue.length = 0
         if (hostId !== msg.hostId || !conn) {
           hostId = msg.hostId
-          const r = await fetch('/api/bridge/hello', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, name: msg.name }) })
+          const r = await fetch('/api/bridge/hello', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, name: msg.name }), redirect: 'manual' })
+          const away = turnedAway(r)
+          if (away) return loginLost(away)
           const j = await r.json().catch(() => ({}))
-          if (r.status === 401) return ui.login?.()
           if (!r.ok) return link('server', 'off', j.error || '등록 실패')
           conn = j.conn
           connectServer()

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const PROXY = "auth:\n  providers:\n    - type: trusted-header\n      userHeader: X-Auth-Request-Email\n      secretHeader: X-Bridge-Proxy-Secret\n      secret: proxy-secret-0123456789\n      trustFrom: [10.0.0.0/8, 192.0.2.7]\n"
@@ -149,7 +150,7 @@ func TestHeaderSignIn(t *testing.T) {
 	ok(t, code == 401 && len(h.Values("Set-Cookie")) == 0, "허용 안 된 사람은 쿠키 없음")
 	// Opening the site asks the operator for access, as a GitHub sign-in does.
 	code, _, body = routeAt(t, "GET", "/", "10.1.2.3:1", map[string]string{"X-Bridge-Proxy-Secret": "proxy-secret-0123456789", "X-Auth-Request-Email": "stranger@example.com"})
-	ok(t, code == 403 && strings.Contains(body, "사내 로그인") && !strings.Contains(body, "/api/auth/github"), body)
+	ok(t, code == 403 && strings.Contains(body, "프록시 로그인") && !strings.Contains(body, "/api/auth/github"), body)
 	eq(t, mstr(access.Val("stranger@example.com"), "status"), "pending")
 }
 
@@ -234,8 +235,8 @@ func TestHeaderLoginElsewhere(t *testing.T) {
 	ok(t, isAllowed("me@example.com"))
 }
 
-// AC-1482: header-only closes every other way in; a cookie alone is not taken; the headless link and QR sign-in
-// are off (turning the headless link off stays open); the check lists the hosts to turn off first.
+// AC-1482: header-only closes every other way in; a cookie alone is not taken; the QR sign-in is off; the headless
+// link is not refused for it (AC-1506); the check lists the hosts to look at first.
 func TestHeaderOnly(t *testing.T) {
 	_, err := parseBridgeConfig("/x/bridge.yaml", []byte("auth:\n  headerOnly: true\n"), envMap(nil))
 	ok(t, err != nil && strings.Contains(err.Error(), "trusted-header 가 있어야"), "제공자 없이 headerOnly")
@@ -245,7 +246,7 @@ func TestHeaderOnly(t *testing.T) {
 	good := map[string]string{"X-Bridge-Proxy-Secret": "proxy-secret-0123456789", "X-Auth-Request-Email": "me@example.com"}
 	code, h, body := routeAt(t, "GET", "/api/me", "10.0.0.1:1", good)
 	eq(t, code, 200, body)
-	ok(t, strings.Contains(body, `"background":false`), body)
+	ok(t, strings.Contains(body, `"background":true`) && strings.Contains(body, `"proxyLogin":true`), body)
 	tok := strings.TrimPrefix(strings.Split(h.Values("Set-Cookie")[0], ";")[0], "cb=")
 
 	code, _, body = routeAt(t, "GET", "/api/me", "203.0.113.1:1", map[string]string{"Cookie": "cb=" + tok})
@@ -257,19 +258,62 @@ func TestHeaderOnly(t *testing.T) {
 	code, _, _ = routeAt(t, "POST", "/api/auth/logout", "10.0.0.1:1", good)
 	ok(t, code != 404, "로그아웃은 열림")
 	code, _, body = routeAt(t, "GET", "/", "203.0.113.1:1", nil)
-	ok(t, code == 401 && strings.Contains(body, "프록시를 거쳐") && !strings.Contains(body, "/api/auth/github"), body)
+	ok(t, code == 401 && strings.Contains(body, "앞단 프록시 로그인으로만") && !strings.Contains(body, "/api/auth/github"), body)
 	code, _, body = routeAt(t, "GET", "/settings", "203.0.113.1:1", nil)
 	ok(t, code == 401 && strings.Contains(body, "프록시를 거쳐"), "로그인 리다이렉트 대신 안내")
 
 	hosts.Set("h1", M{"uid": "gh1", "name": "mac"})
 	code, body = callAPI(t, "POST", "/api/qr", `{"headless":true}`)
 	eq(t, code, 403, body)
-	code, _ = callAPI(t, "POST", "/api/hosts/h1/background", `{"on":true}`)
-	eq(t, code, 409)
-	code, _ = callAPI(t, "POST", "/api/hosts/h1/heal", `{"action":"background-restart"}`)
-	eq(t, code, 409)
+	// Turning the headless link on is no longer refused for header-only (REQ-F-833): h1 is not connected, and the
+	// answer says how to sign in again on the Mac.
+	code, body = callAPI(t, "POST", "/api/hosts/h1/background", `{"on":true}`)
+	ok(t, code == 409 && strings.Contains(body, "link --visible") && !strings.Contains(body, "쓸 수 없어요"), body)
+	for _, a := range []string{"background-restart", "visible-login"} {
+		code, body = callAPI(t, "POST", "/api/hosts/h1/heal", `{"action":"`+a+`"}`)
+		ok(t, code == 409 && strings.Contains(body, NOT_CONNECTED), a+": "+body)
+	}
 	code, _ = callAPI(t, "POST", "/api/hosts/h1/background", `{"on":false}`)
-	eq(t, code, 409, "끄기는 막지 않음(연결이 없어 409, 문구는 끄라는 안내)")
+	eq(t, code, 409, "끄기도 연결이 없어 409")
+}
+
+// AC-1506: a host whose headless browser could not pass the proxy (health.background.login "required") raises
+// host.login_required once for each time it began, with the host and how to sign in again; the mark goes when the
+// host no longer says so.
+func TestLoginRequired(t *testing.T) {
+	hs := newHookServer(t)
+	withSlotServer(t, "origins:\n  primary: https://b.example\nnotify:\n  - type: webhook\n    url: "+hs.srv.URL+"/in\n    secret: "+HOOK_SECRET+"\n    events: [host.login_required]\n")
+	users.Set("u1", M{"login": "me"})
+	h := M{"uid": "u1", "name": "내 맥"}
+	hosts.Set("h1", h)
+	need := M{"background": M{"on": true, "login": "required", "loginSince": 1000.0, "loginWhy": "HTTP 401"}}
+	withLock(func() {
+		noteLoginRequired("u1", "h1", h, need)
+		noteLoginRequired("u1", "h1", h, need) // said again: no second event
+	})
+	hits := hs.wait(t, 1)
+	time.Sleep(50 * time.Millisecond)
+	hs.mu.Lock()
+	n := len(hs.got)
+	hs.mu.Unlock()
+	eq(t, n, 1)
+	verify(t, HOOK_SECRET, hits[0])
+	v, _ := parseJSON([]byte(hits[0].body))
+	eq(t, mstr(v.(M), "name"), "host.login_required")
+	jeq(t, mget(v, "host"), `{"id":"h1","name":"내 맥"}`, hits[0].body)
+	eq(t, mstr(v.(M), "reason"), "HTTP 401")
+	eq(t, mstr(v.(M), "fix"), VISIBLE_LOGIN)
+	eq(t, mstr(v.(M), "url"), "https://b.example/hosts/h1")
+	eq(t, numOr0(h["loginRequired"]), 1000.0)
+	withLock(func() { noteLoginRequired("u1", "h1", h, M{"background": M{"on": true, "connected": true}}) })
+	_, still := h["loginRequired"]
+	ok(t, !still, "다시 붙으면 표시를 지움")
+	withLock(func() {
+		noteLoginRequired("u1", "h1", h, M{"background": M{"on": true, "login": "required", "loginSince": 2000.0, "loginWhy": "x"}})
+	})
+	hs.wait(t, 2)
+	// The name is one notify and hooks take.
+	ok(t, contains(NOTIFY_EVENTS, "host.login_required") && contains(hookKeys(), "host.login_required.after"), "이벤트 이름")
 }
 
 func TestHeaderOnlyHosts(t *testing.T) {

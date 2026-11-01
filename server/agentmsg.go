@@ -261,6 +261,7 @@ func init() {
 			if h, ok := hosts.Get(hostID); ok {
 				keepBattery(h, health, nowMs())
 				keepBackground(h, health, nowMs())
+				noteLoginRequired(uid, hostID, h, health)
 			}
 			st["stale"] = false
 			broadcastState(uid)

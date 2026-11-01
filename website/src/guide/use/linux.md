@@ -60,7 +60,7 @@ node ~/.claude-bridge/agent.mjs headless 'LOGIN_URL'
 
 ::: details 이 로그인 주소가 지키는 것
 - 이 주소는 헤드리스 브라우저(User-Agent 에 `HeadlessChrome/` 이 있는 브라우저)에서만 로그인돼요. 다른 브라우저로 열면 "서버에 붙여 넣는 주소예요" 안내만 보여요.
-- 서버 설정 `auth.headerOnly` 가 켜진 서버에서는 헤드리스 연동 모드와 이 로그인 주소를 쓸 수 없어요("헤더 로그인만 쓰는 서버에서는 백그라운드 연동을 쓸 수 없어요"). [서버 설정 파일 bridge.yaml](/guide/operate/config)을 보세요.
+- 서버 설정 `auth.headerOnly` 가 켜진 서버에서는 이 로그인 주소를 만들 수 없어요("헤더 로그인만 쓰는 서버에서는 QR 로그인을 쓸 수 없어요"). 그런 서버의 헤드리스 연동은 보이는 Chrome 창에서 프록시 로그인을 해야 해서, 화면이 없는 기기는 쓸 수 없어요. [서버 설정 파일 bridge.yaml](/guide/operate/config)을 보세요.
 - Linux 에서는 잠자기·덮개 감시를 하지 않아요. 브라우저는 `/usr/bin/google-chrome`, `/usr/bin/chromium`, `/snap/bin/chromium` 같은 경로에서 찾아요.
 - 헤드리스 브라우저와 연동 키가 어떻게 지켜지는지는 [맥을 늘 연결해 두기](/guide/use/always-on#3-헤드리스-연동-모드-켜기)를 보세요.
 :::

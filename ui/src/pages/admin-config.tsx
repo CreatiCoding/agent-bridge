@@ -19,7 +19,7 @@ interface Status {
   saveable: boolean
   masked?: string
 }
-/** A host to turn the headless link off on before a file turns auth.headerOnly on (REQ-F-816). */
+/** A host to look at before a file turns auth.headerOnly on (REQ-F-816): sign in again, or turn the link off. */
 interface HeaderOnlyHost { name: string; lastSeen?: number; state: 'on' | 'unknown' | 'server'; at?: number; note: string }
 interface Check { ok: boolean; state?: string; errors: string[]; diff: Diff[]; unsubstituted?: string[]; headerOnlyHosts?: HeaderOnlyHost[] }
 
@@ -50,7 +50,7 @@ function CheckView({ c }: { c: Check }) {
       ))}
       {c.headerOnlyHosts?.length ? (
         <div style={{ fontSize: 'var(--fs-small)', color: 'var(--amber)' }}>
-          <b>헤더 로그인만 받기 전에 이 기기들의 헤드리스 연동을 끄세요</b>
+          <b>헤더 로그인만 받기 전에 이 기기들을 확인하세요</b>
           {c.headerOnlyHosts.map((h, i) => (
             <div key={i}>
               {h.name} · {h.note}
