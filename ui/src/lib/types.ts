@@ -187,9 +187,10 @@ export interface TidyBrief {
   why?: 'observe' | 'owner' | null
   observeUntil?: number | null
   at: number | null
-  sessions: number
-  folders: number
-  transcripts: number
+  /** 내릴 세션, 휴면·끝내기 제안, 폴더·기록 제안: counted as the open box's lists are (REQ-F-839 rule 1). */
+  stop: number
+  rest: number
+  files: number
 }
 
 export interface Host {

@@ -7,12 +7,13 @@ import { errorText, get, post } from '../lib/api'
 import { ago, bytes, clock, type SysUse } from '../lib/format'
 import { back } from '../lib/router'
 import { useStore } from '../lib/store'
-import type { DiskHelp, Me } from '../lib/types'
+import type { DiskHelp, Me, TidyBrief } from '../lib/types'
 import { Button, Empty, Icon, IconButton, Row, useWide } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { DiskBox } from './host-disk'
 import { TidyBox } from './host-tidy'
+import { tidyBriefText } from '../lib/tidy-groups'
 
 // A grant names the operator it is for (the one shown), so another operator's request in between is not granted.
 const helpCall = (hostId: string, op: 'ask' | 'grant' | 'end', login?: string) => post(`/api/hosts/${hostId}/disk-help`, { op, ...(login ? { login } : {}) })
@@ -86,6 +87,7 @@ interface OtherHost {
   online: boolean
   sys?: SysUse | null
   diskHelp?: DiskHelp | null
+  tidy?: TidyBrief | null
   login: string
 }
 
@@ -133,6 +135,7 @@ function OthersSection({ me }: { me: Me }) {
                 <span className="stack" style={{ gap: 4 }}>
                   <DiskLine sys={h.sys} online={h.online} />
                   <span>{can ? `정리 권한 ${clock(h.diskHelp!.until)} 까지` : mine ? '요청함 · 주인의 허용을 기다리는 중' : h.diskHelp ? `운영자 ${h.diskHelp.login} 이 요청함` : ''}</span>
+                  {can && h.tidy?.at ? <span>{tidyBriefText(h.tidy)}</span> : null}
                 </span>
               }
               right={
@@ -150,7 +153,7 @@ function OthersSection({ me }: { me: Me }) {
               }
               onClick={can ? () => setOpen(shown ? null : h.id) : undefined}
             />
-            {shown ? <TidyBox key={`tidy-${h.id}`} hostId={h.id} online={h.online} /> : null}
+            {shown ? <TidyBox key={`tidy-${h.id}`} hostId={h.id} online={h.online} onChange={() => void load()} /> : null}
             {shown ? <DiskBox key={h.id} hostId={h.id} online={h.online} sys={h.sys} title={`${h.login} · ${h.name} 디스크`} /> : null}
           </div>
         )
@@ -188,7 +191,7 @@ export function DiskPage({ me }: { me: Me | null }) {
                   sub={
                     <span className="stack" style={{ gap: 4 }}>
                       <DiskLine sys={h.sys} online={h.online} />
-                      {h.tidy?.at ? <span>오래 쉰 세션 {h.tidy.sessions} · 정리 제안 {h.tidy.folders + h.tidy.transcripts}</span> : null}
+                      {h.tidy?.at ? <span>{tidyBriefText(h.tidy)}</span> : null}
                     </span>
                   }
                   right={<Icon name={shown ? 'up' : 'down'} />}

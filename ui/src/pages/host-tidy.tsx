@@ -7,6 +7,7 @@ import { ago, bytes, clock } from '../lib/format'
 import { Button, CardHead, Row, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { createRecalc, type Recalc } from '../lib/recalc'
+import { tidyGroups } from '../lib/tidy-groups'
 
 type Mode = 'auto' | 'suggest' | 'off'
 interface Policy {
@@ -75,7 +76,7 @@ function Pick<T extends string | number>({ label, value, options, text, onPick, 
   )
 }
 
-export function TidyBox({ hostId, online }: { hostId: string; online: boolean }) {
+export function TidyBox({ hostId, online, onChange }: { hostId: string; online: boolean; onChange?: () => void }) {
   const [report, setReport] = useState<Report | null>(null)
   const [policy, setPolicy] = useState<Policy | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -86,6 +87,9 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
   const recalc = useRef<Recalc | null>(null)
   const onlineRef = useRef(online)
   onlineRef.current = online
+  // Someone else's host (REQ-F-804): its line comes from the operator's overview, read again after each recalculation.
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   const run = async (key: string, body: Record<string, unknown>, done?: string) => {
     setBusy(key)
@@ -113,6 +117,7 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
         const got = await call<{ report?: Report | null; policy?: Policy }>(hostId, { op: onlineRef.current ? 'run' : 'report' })
         if (got.report !== undefined) setReport(got.report ?? null)
         if (got.policy) setPolicy(got.policy)
+        onChangeRef.current?.()
       } catch (e) {
         toast(errorText(e), { tone: 'bad' })
       } finally {
@@ -170,8 +175,7 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
   const dim = (key: string) => (pending.has(key) ? { opacity: 0.45, pointerEvents: 'none' as const } : undefined)
 
   const sessions = report?.sessions ?? []
-  const idle = sessions.filter((s) => s.alive && (s.act === 'suggest' || s.act === 'notice' || s.act === 'wait' || s.act === 'stop'))
-  const others = sessions.filter((s) => !idle.includes(s) && (s.rest || s.close))
+  const { stop: idle, rest: others } = tidyGroups(sessions)
   const folders = report?.folders ?? []
   const transcripts = report?.transcripts ?? []
   const p = policy
@@ -264,7 +268,7 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
       {report ? (
         <>
           <div className="hstack" style={{ justifyContent: 'space-between' }}>
-            <b>오래 쉰 세션 · {idle.length}</b>
+            <b>내릴 세션 · {idle.length}</b>
             {idle.length ? (
               <Button size="sm" disabled={off} onClick={() => stop(idle.map((s) => s.sid), true)}>
                 모두 종료

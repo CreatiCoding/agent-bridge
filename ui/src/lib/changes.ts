@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.388',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server', 'ui'],
+        text: '디스크 관리 기기 줄의 세션 정리 숫자를 펼친 목록과 같은 기준으로: "내릴 세션 · 휴면·끝내기 제안 · 폴더·기록 제안". 끝낸 세션은 바로 빠지고, 다시 계산 뒤 줄도 바로 바뀐다',
+        refs: ['REQ-F-839'],
+      },
+    ],
+  },
+  {
     version: '1.387',
     date: '2026-11-02',
+    commit: 'b6e5dbf',
     changes: [
       {
         kind: 'changed',

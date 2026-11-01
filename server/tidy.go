@@ -271,18 +271,37 @@ func applyTidyReport(uid, hostID string, report M) {
 	broadcastState(uid)
 }
 
-// tidyBrief: the host summary's line about it (REQ-F-839 rule 1).
+// tidyGroups (REQ-F-839 rule 3): which list of the page a session row is in. 내릴 세션: its claude runs and the batch
+// counts it (suggest), told it (notice), waits on it or stops it. 휴면·끝내기 제안: any other row offered a rest or an
+// end. Rows in neither (a running session held back, with only its reason) are not counted. The page groups the
+// same way (ui/src/lib/tidy-groups.ts); test/fixtures/tidy-groups.json holds both to it.
+func tidyGroups(rows []any) (stop, rest []string) {
+	for _, row := range rows {
+		r := asM(row)
+		act := jsString(r["act"])
+		if truthy(r["alive"]) && (act == "suggest" || act == "notice" || act == "wait" || act == "stop") {
+			stop = append(stop, jsString(r["sid"]))
+		} else if truthy(r["rest"]) || truthy(r["close"]) {
+			rest = append(rest, jsString(r["sid"]))
+		}
+	}
+	return stop, rest
+}
+
+// tidyBrief: the host summary's line about it (REQ-F-839 rule 1), counted from the lists the page shows (tidyView:
+// sessions ended or moved since the report are not in them).
 func tidyBrief(hostID string) any {
-	r := tidyReportOf(hostID)
 	p := tidyPolicyFor(hostID)
-	out := M{"mode": p["mode"], "why": p["why"], "observeUntil": p["observeUntil"], "at": nil, "sessions": 0.0, "folders": 0.0, "transcripts": 0.0}
-	if r == nil {
+	out := M{"mode": p["mode"], "why": p["why"], "observeUntil": p["observeUntil"], "at": nil, "stop": 0.0, "rest": 0.0, "files": 0.0}
+	v := asM(tidyView(hostID))
+	if v == nil {
 		return out
 	}
-	out["at"] = r["at"]
-	out["sessions"] = float64(len(asArr(r["sessions"])))
-	out["folders"] = float64(len(asArr(r["folders"])))
-	out["transcripts"] = float64(len(asArr(r["transcripts"])))
+	stop, rest := tidyGroups(asArr(v["sessions"]))
+	out["at"] = v["at"]
+	out["stop"] = float64(len(stop))
+	out["rest"] = float64(len(rest))
+	out["files"] = float64(len(asArr(v["folders"])) + len(asArr(v["transcripts"])))
 	return out
 }
 

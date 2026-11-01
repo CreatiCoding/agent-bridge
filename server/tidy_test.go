@@ -2,6 +2,8 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -160,4 +162,57 @@ func TestApplyTidyReport(t *testing.T) {
 	}
 	ok(t, found, "내림이 기기 기록에 area tidy 로")
 	ok(t, tidyView(hostID) != nil)
+}
+
+// AC-1524: the host line counts by the same rule as the page's lists (test/fixtures/tidy-groups.json, also read by
+// test/unit/tidy-groups.test.mjs), and an ended session leaves it at once.
+func TestTidyGroups(t *testing.T) {
+	raw, err := os.ReadFile("../test/fixtures/tidy-groups.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		Rows []any    `json:"rows"`
+		Stop []string `json:"stop"`
+		Rest []string `json:"rest"`
+	}
+	if err := json.Unmarshal(raw, &fx); err != nil {
+		t.Fatal(err)
+	}
+	rows := []any{}
+	for _, r := range fx.Rows {
+		rows = append(rows, M(r.(map[string]any)))
+	}
+	stop, rest := tidyGroups(rows)
+	want, _ := json.Marshal(fx.Stop)
+	jeq(t, stop, string(want))
+	want, _ = json.Marshal(fx.Rest)
+	jeq(t, rest, string(want))
+}
+
+func TestTidyBriefDropsEnded(t *testing.T) {
+	uid, hostID := "tidy-brief-user", "tidy-brief-host"
+	wasHosts := hosts
+	hosts = newOMap[M]()
+	defer func() { hosts = wasHosts }()
+	defer delete(tidyReports, hostID)
+	hosts.Set(hostID, M{"uid": uid, "name": "맥"})
+	now := float64(nowMs())
+	for _, id := range []string{"tidy-b1", "tidy-b2", "tidy-b3"} {
+		id := id
+		t.Cleanup(func() { sessions.Delete(id) })
+		newMeta(uid, id, hostID, M{"title": id, "lastAt": now})
+	}
+	tidyReports[hostID] = M{"at": now, "sessions": []any{
+		M{"sid": "tidy-b1", "alive": true, "act": "suggest"},
+		M{"sid": "tidy-b2", "alive": false, "rest": true, "close": true},
+		M{"sid": "tidy-b3", "alive": false, "close": true},
+	}, "folders": []any{M{"path": "~/a"}}, "transcripts": []any{M{"path": "~/b"}}}
+	b := asM(tidyBrief(hostID))
+	eq(t, b["stop"].(float64), 1.0)
+	eq(t, b["rest"].(float64), 2.0)
+	eq(t, b["files"].(float64), 2.0)
+	s3, _ := sessions.Get("tidy-b3")
+	s3.set("closed", true)
+	eq(t, asM(tidyBrief(hostID))["rest"].(float64), 1.0, "끝낸 세션은 다음 보고를 기다리지 않고 빠진다")
 }

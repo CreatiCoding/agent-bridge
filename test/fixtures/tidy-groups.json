@@ -1,0 +1,16 @@
+{
+  "rows": [
+    { "sid": "s1", "alive": true, "act": "suggest" },
+    { "sid": "s2", "alive": true, "act": "notice", "rest": true },
+    { "sid": "s3", "alive": true, "act": "wait" },
+    { "sid": "s4", "alive": true, "act": "stop" },
+    { "sid": "s5", "alive": true, "act": null, "why": "작업 중" },
+    { "sid": "s6", "alive": false, "act": null, "rest": true },
+    { "sid": "s7", "alive": false, "act": null, "rest": true, "close": true },
+    { "sid": "s8", "alive": false, "act": "suggest", "close": true },
+    { "sid": "s9", "alive": true, "act": null, "close": true },
+    { "sid": "s10", "act": "notice" }
+  ],
+  "stop": ["s1", "s2", "s3", "s4"],
+  "rest": ["s6", "s7", "s8", "s9"]
+}
