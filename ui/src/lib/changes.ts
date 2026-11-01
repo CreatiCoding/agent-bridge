@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.387',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '세션 정리에서 끝내기·휴지통·유지 같은 동작을 누르면 그 줄이 바로 "처리 중"으로 흐려지고, 잠시 뒤 목록을 자동으로 다시 계산한다(연달아 누르면 한 번만). 꺼진 세션 줄에 "휴면" 단추',
+        refs: ['REQ-F-839'],
+      },
+    ],
+  },
+  {
     version: '1.386',
     date: '2026-11-02',
+    commit: 'a63f4fc',
     changes: [
       {
         kind: 'fixed',

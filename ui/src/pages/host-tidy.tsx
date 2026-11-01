@@ -1,11 +1,12 @@
 // 세션 정리 (REQ-F-839): what the hourly tidy on a host would do or did, in three lists (sessions resting long,
 // folders, big transcripts), with its mode and days, and the same steps by hand. Taking claude down leaves the
 // conversation; folders and transcripts go to the Trash only, never deleted. The agent judges each again before acting.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorText, post } from '../lib/api'
 import { ago, bytes, clock } from '../lib/format'
 import { Button, CardHead, Row, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
+import { createRecalc, type Recalc } from '../lib/recalc'
 
 type Mode = 'auto' | 'suggest' | 'off'
 interface Policy {
@@ -79,6 +80,12 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
   const [policy, setPolicy] = useState<Policy | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
+  // Rows acted on, by sid or path: dimmed as "처리 중" at once, gone when the recalculation comes back.
+  const [pending, setPending] = useState<Set<string>>(new Set())
+  const [calculating, setCalculating] = useState(false)
+  const recalc = useRef<Recalc | null>(null)
+  const onlineRef = useRef(online)
+  onlineRef.current = online
 
   const run = async (key: string, body: Record<string, unknown>, done?: string) => {
     setBusy(key)
@@ -98,41 +105,69 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
   const reload = () => run('report', { op: 'report' }).then(() => setLoaded(true))
   useEffect(() => {
     void reload()
+    // 자동 다시 계산 (REQ-F-839 rule 9): the host works its tidy out again (IF-264 run) once a burst of actions is
+    // over; offline, only the last report is read again.
+    const r = createRecalc(async () => {
+      setCalculating(true)
+      try {
+        const got = await call<{ report?: Report | null; policy?: Policy }>(hostId, { op: onlineRef.current ? 'run' : 'report' })
+        if (got.report !== undefined) setReport(got.report ?? null)
+        if (got.policy) setPolicy(got.policy)
+      } catch (e) {
+        toast(errorText(e), { tone: 'bad' })
+      } finally {
+        setPending(new Set())
+        setCalculating(false)
+      }
+    }, 1500)
+    recalc.current = r
+    return () => r.stop()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId])
+  const mark = (keys: string[]) => setPending((was) => new Set([...was, ...keys]))
+  const unmark = (keys: string[]) =>
+    setPending((was) => {
+      const next = new Set(was)
+      for (const k of keys) next.delete(k)
+      return next
+    })
+  /** An action on rows: dims them now, and whether it worked or not, works the list out again after. */
+  const act = async (keys: string[], doIt: () => Promise<boolean>) => {
+    mark(keys)
+    const ok = await doIt()
+    if (!ok) unmark(keys)
+    recalc.current?.kick()
+  }
+  const sessionSet = (row: SessionRow, body: Record<string, unknown>, done: string) =>
+    act([row.sid], async () => {
+      try {
+        await post(`/api/sessions/${row.sid}/settings`, body)
+        toast(done)
+        return true
+      } catch (e) {
+        toast(errorText(e), { tone: 'bad' })
+        return false
+      }
+    })
 
-  const settings = (body: Record<string, unknown>) => run('settings', { op: 'settings', scope: 'host', ...body }, '이 기기의 세션 정리 설정을 바꿨어요')
+  const settings = (body: Record<string, unknown>) => act([], () => run('settings', { op: 'settings', scope: 'host', ...body }, '이 기기의 세션 정리 설정을 바꿨어요'))
   const stop = async (sids: string[], all: boolean) => {
     if (all && !(await confirmDialog(`세션 ${sids.length}개의 claude 를 내릴까요?`, { text: SESSION_UNDO, ok: '모두 종료' }))) return
-    if (await run('stop', { op: 'stop', sids }, all ? `${sids.length}개를 내렸어요` : '내렸어요 · 글을 보내면 이어서 열려요')) await reload()
+    await act(sids, () => run('stop', { op: 'stop', sids }, all ? `${sids.length}개를 내렸어요` : '내렸어요 · 글을 보내면 이어서 열려요'))
   }
   const close = async (row: SessionRow) => {
     if (!(await confirmDialog(`"${row.title ?? row.sid}" 세션을 끝낼까요?`, { text: '대화는 남아요. 나중에 이어서 열 수 있어요.', ok: '끝내기', danger: true }))) return
-    if (await run('close', { op: 'close', sids: [row.sid] }, '끝냈어요')) await reload()
+    await act([row.sid], () => run('close', { op: 'close', sids: [row.sid] }, '끝냈어요'))
   }
-  const keep = async (row: SessionRow) => {
-    try {
-      await post(`/api/sessions/${row.sid}/settings`, { keepAlive: true })
-      toast('이 세션은 자동으로 내리지 않아요')
-      await reload()
-    } catch (e) {
-      toast(errorText(e), { tone: 'bad' })
-    }
-  }
-  const hold = async (row: SessionRow) => {
-    try {
-      await post(`/api/sessions/${row.sid}/settings`, { tidyKeep: true })
-      toast('이번엔 유지해요')
-      await reload()
-    } catch (e) {
-      toast(errorText(e), { tone: 'bad' })
-    }
-  }
+  const keep = (row: SessionRow) => sessionSet(row, { keepAlive: true }, '이 세션은 자동으로 내리지 않아요')
+  const hold = (row: SessionRow) => sessionSet(row, { tidyKeep: true }, '이번엔 유지해요')
+  const rest = (row: SessionRow) => sessionSet(row, { resting: true }, '휴면으로 뒀어요')
   const trash = async (kind: 'folder' | 'transcript', rows: FileRow[], all: boolean) => {
     const total = rows.reduce((a, r) => a + (r.size ?? 0), 0)
     if (!(await confirmDialog(all ? `${rows.length}개(${bytes(total)})를 휴지통으로 옮길까요?` : `${rows[0].path} 를 휴지통으로 옮길까요?`, { text: TRASH_UNDO, ok: all ? '모두 휴지통' : '휴지통' }))) return
-    if (await run('trash', { op: 'trash', items: rows.map((r) => ({ kind, path: r.path })) }, '휴지통으로 옮겼어요')) await reload()
+    await act(rows.map((r) => r.path), () => run('trash', { op: 'trash', items: rows.map((r) => ({ kind, path: r.path })) }, '휴지통으로 옮겼어요'))
   }
+  const dim = (key: string) => (pending.has(key) ? { opacity: 0.45, pointerEvents: 'none' as const } : undefined)
 
   const sessions = report?.sessions ?? []
   const idle = sessions.filter((s) => s.alive && (s.act === 'suggest' || s.act === 'notice' || s.act === 'wait' || s.act === 'stop'))
@@ -143,12 +178,12 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
   const off = !online || !!busy
 
   const sessionRow = (s: SessionRow, stoppable: boolean) => (
+    <div key={s.sid} style={dim(s.sid)} aria-busy={pending.has(s.sid) || undefined}>
     <Row
-      key={s.sid}
       title={s.title ?? s.sid}
       sub={
         <span>
-          사람 입력 {Math.floor(s.idleDays)}일 전{s.from === 'launch' ? ' · 사람 메시지 기록 없음, 시작 시각 기준' : ''}
+          {pending.has(s.sid) ? '처리 중 · ' : ''}사람 입력 {Math.floor(s.idleDays)}일 전{s.from === 'launch' ? ' · 사람 메시지 기록 없음, 시작 시각 기준' : ''}
           {s.stopAt && s.act === 'notice' ? ` · ${clock(s.stopAt)}에 내림` : ''}
           {s.why ? ` · ${s.why}` : ''}
         </span>
@@ -170,6 +205,11 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
               자동 종료 안 함
             </Button>
           ) : null}
+          {s.rest && !s.alive ? (
+            <Button size="sm" disabled={!!busy} onClick={() => rest(s)}>
+              휴면
+            </Button>
+          ) : null}
           {s.close ? (
             <Button size="sm" tone="danger" disabled={!!busy} onClick={() => close(s)}>
               끝내기
@@ -178,13 +218,15 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
         </span>
       }
     />
+    </div>
   )
   const fileRow = (kind: 'folder' | 'transcript', f: FileRow) => (
+    <div key={f.path} style={dim(f.path)} aria-busy={pending.has(f.path) || undefined}>
     <Row
-      key={f.path}
       title={f.path}
       sub={
         <span>
+          {pending.has(f.path) ? '처리 중 · ' : ''}
           {bytes(f.size ?? 0)}
           {f.lastAt ? ` · ${ago(f.lastAt)} 씀` : ''}
           {f.auto ? ' · 자동 대상' : ''}
@@ -197,6 +239,7 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
         </Button>
       }
     />
+    </div>
   )
 
   return (
@@ -205,13 +248,14 @@ export function TidyBox({ hostId, online }: { hostId: string; online: boolean })
       <div style={{ fontSize: 'var(--fs-small)', color: 'var(--muted)' }}>
         {modeLine(p)}
         {report ? ` · 마지막 계산 ${ago(report.at)}` : ''}
+        {calculating || pending.size ? ' · 다시 계산하는 중…' : ''}
       </div>
       {p ? (
         <div className="hstack" style={{ gap: 12, flexWrap: 'wrap' }}>
           <Pick<Mode> label="방식" value={p.mode} options={['', 'auto', 'suggest', 'off']} text={(v) => (v === '' ? '기본값 따름' : v === 'auto' ? '자동' : v === 'suggest' ? '제안만' : '끔')} onPick={(v) => settings({ mode: v === '' ? null : v })} disabled={!!busy} />
           <Pick<number> label="세션 내림" value={p.idleStopDays} options={STOP_DAYS} text={(v) => (v === 0 ? '끔' : `${v}일`)} onPick={(v) => settings({ idleStopDays: v === '' ? null : v })} disabled={!!busy} />
           <Pick<number> label="폴더 휴지통" value={p.folderTrashDays} options={TRASH_DAYS} text={(v) => (v === 0 ? '끔' : `${v}일`)} onPick={(v) => settings({ folderTrashDays: v === '' ? null : v })} disabled={!!busy} />
-          <Button size="sm" disabled={off} onClick={() => run('run', { op: 'run' }, '다시 계산했어요')}>
+          <Button size="sm" disabled={off || calculating} onClick={() => run('run', { op: 'run' }, '다시 계산했어요')}>
             {busy === 'run' ? <Spinner size={14} /> : null} 다시 계산
           </Button>
         </div>
