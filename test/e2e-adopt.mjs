@@ -62,9 +62,12 @@ await app.screenshot({ path: `${shots}/adopt-1-session.png` })
 step('맥이 다시 켜진 뒤 되살리기')
 const tmuxName = `cb-${cfg.hostId.slice(0, 4)}-${sid.slice(0, 8)}`
 // The program the session's terminal is in (REQ-F-794): zeropty when the agent recorded it, else tmux.
-if (JSON.parse(fs.readFileSync(path.join(home, 'sessions.json'), 'utf8'))[sid]?.mux === 'zeropty') {
+const rec = JSON.parse(fs.readFileSync(path.join(home, 'sessions.json'), 'utf8'))[sid]
+if (rec?.mux === 'zeropty') {
   const v = fs.readdirSync(path.join(home, 'zeropty')).find((d) => /^\d/.test(d))
   MUX = path.join(home, 'zeropty', v, 'zeropty')
+  // On the socket the agent wrote down for it (REQ-F-841), not whatever this shell has.
+  if (rec.zsock) process.env.ZEROPTY_SOCK = rec.zsock
 }
 console.log(`terminal: ${MUX}`)
 const pid = Number(fs.readFileSync(path.join(home, 'agent.pid'), 'utf8'))

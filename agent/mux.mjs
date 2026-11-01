@@ -121,11 +121,11 @@ export function needsZeropty({ force, sessions }) {
 /**
  * The environment zeropty is run with. Its server keeps the environment of the command that started it (as tmux
  * does), so whatever ran the agent must not leak into every session it will hold: tmux's own variables, and those
- * a running Claude Code hands its children.
+ * a running Claude Code hands its children. ZEROPTY_SOCK too: each command names its socket (REQ-F-841).
  */
 export function muxEnv(env) {
   const out = {}
-  for (const [k, v] of Object.entries(env)) if (!/^(TMUX|TMUX_PANE|CLAUDECODE|CLAUDE_CODE_.*)$/.test(k)) out[k] = v
+  for (const [k, v] of Object.entries(env)) if (!/^(TMUX|TMUX_PANE|CLAUDECODE|CLAUDE_CODE_.*|ZEROPTY_SOCK)$/.test(k)) out[k] = v
   return out
 }
 
@@ -134,3 +134,30 @@ export function targetName(argv) {
   for (let i = 0; i < argv.length - 1; i++) if (argv[i] === '-t' || (argv[i] === '-s' && argv[0] === 'new-session')) return String(argv[i + 1]).replace(/^=/, '').replace(/:.*$/, '')
   return ''
 }
+
+// ---------- the bridge's own zeropty socket (REQ-F-841) ----------
+// zeropty picks its server by $ZEROPTY_SOCK, else ~/.zeropty/mux.sock. Up to 1.385 the agent used that default, so
+// a `zeropty kill-server` typed anywhere without a socket (on 2026-11-01, by a session developing zeropty) ended every
+// bridge session. Terminals started from now on live on a socket of the bridge's own; older ones stay where they are.
+
+/** The longest socket path each system takes, without the closing NUL (sockaddr_un.sun_path is 104 and 108). */
+export const SOCK_MAX = Object.freeze({ darwin: 103, linux: 107 })
+
+/**
+ * The bridge's socket: `<state>/zeropty/bridge.sock`, or under /tmp in a folder of this user's when that path is too
+ * long for a socket on this system.
+ */
+export function zeroptySock(stateDir, { platform = process.platform, uid = process.getuid?.() ?? 0, tmp = '/tmp' } = {}) {
+  const p = path.join(stateDir, 'zeropty', 'bridge.sock')
+  if (Buffer.byteLength(p) <= (SOCK_MAX[platform] ?? SOCK_MAX.darwin)) return p
+  return path.join(tmp, `cb-zeropty-${uid}`, 'bridge.sock')
+}
+
+/** Where agents up to 1.385 started zeropty: the agent's own ZEROPTY_SOCK when it had one (tests), else the default. */
+export const legacyZeroptySock = (env, home) => env.ZEROPTY_SOCK || path.join(home, '.zeropty', 'mux.sock')
+
+/** The socket of a session's terminal: the one written down when it started, else the old default (started before). */
+export const sockOf = (s, legacy) => (typeof s?.zsock === 'string' && s.zsock ? s.zsock : legacy)
+
+/** The environment a zeropty command runs with: always naming its socket. */
+export const zeroptyEnv = (base, sock) => ({ ...base, ZEROPTY_SOCK: sock })

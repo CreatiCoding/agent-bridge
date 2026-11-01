@@ -24,7 +24,7 @@ import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
-import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName } from './mux.mjs'
+import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -446,7 +446,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -489,16 +489,35 @@ function run(cmd, argv, opts = {}) {
 const ZP = zeroptyPaths(STATE_DIR)
 /** Whether this agent's zeropty is unpacked: new sessions start in it from then on. */
 let zeroptyReady = zeroptyInstalled(ZP)
-/** The terminal names that live in zeropty. Every other name (an older session, one kept to tmux) is tmux's. */
-const zeroptyNames = new Set()
-for (const s of sessions.values()) if (muxOf(s) === 'zeropty' && s.tmux) zeroptyNames.add(s.tmux)
+/**
+ * The bridge's own zeropty socket (REQ-F-841), and the default one agents up to 1.385 used. A terminal started from
+ * now on lives on ZP_SOCK; one already running on the old socket is found and driven there until it ends or the
+ * session is opened again. The old socket's server is never ended by the bridge: other zeropty sessions may be on it.
+ */
+const ZP_SOCK = zeroptySock(STATE_DIR)
+const ZP_LEGACY = legacyZeroptySock(process.env, HOME)
+/** The terminal names that live in zeropty, each with its socket. Every other name (an older session, one kept to tmux) is tmux's. */
+const zeroptyNames = new Map()
+for (const s of sessions.values()) if (muxOf(s) === 'zeropty' && s.tmux) zeroptyNames.set(s.tmux, sockOf(s, ZP_LEGACY))
+/** Said once at start: how many sessions are still on the old socket. */
+function logOldSocket() {
+  const old = [...zeroptyNames.values()].filter((x) => x === ZP_LEGACY).length
+  if (old && ZP_LEGACY !== ZP_SOCK) log('info', 'zeropty', `옛 소켓(${ZP_LEGACY})의 세션 ${old}개는 끝나거나 다시 열 때까지 거기서 다룹니다. 새 세션은 ${ZP_SOCK}`)
+}
 /** Run with zeropty's own environment (mux.mjs muxEnv): its server keeps what the command that started it had. */
 const ZP_ENV = muxEnv({ ...process.env, GIT_TERMINAL_PROMPT: '0' })
-const muxProgram = (name) => (zeroptyNames.has(name) ? { bin: ZP.bin, env: ZP_ENV } : { bin: 'tmux', env: process.env })
-/** Where a terminal name goes from now on. */
+const muxProgram = (name) => (zeroptyNames.has(name) ? { bin: ZP.bin, env: zeroptyEnv(ZP_ENV, zeroptyNames.get(name)) } : { bin: 'tmux', env: process.env })
+/** Where a terminal name goes from now on: a zeropty one always on the bridge's own socket. */
 function placeTerminal(name, mux) {
-  if (mux === 'zeropty') zeroptyNames.add(name)
-  else zeroptyNames.delete(name)
+  if (mux === 'zeropty') {
+    try {
+      fs.mkdirSync(path.dirname(ZP_SOCK), { recursive: true, mode: 0o700 })
+      fs.chmodSync(path.dirname(ZP_SOCK), 0o700)
+    } catch (e) {
+      log('warn', 'zeropty', `소켓 폴더를 만들지 못함: ${e.message}`)
+    }
+    zeroptyNames.set(name, ZP_SOCK)
+  } else zeroptyNames.delete(name)
 }
 /** The backend a terminal that starts now gets. */
 const newMux = () => pickMux({ force: config.mux, ready: zeroptyReady })
@@ -854,6 +873,8 @@ async function launchNow(sid, s, claudeArgs) {
   await tmux('kill-session', '-t', `=${s.tmux}`)
   s.mux = newMux()
   placeTerminal(s.tmux, s.mux)
+  if (s.mux === 'zeropty') s.zsock = ZP_SOCK
+  else delete s.zsock
   await tmux('kill-session', '-t', `=${s.tmux}`)
   await stillOpen(false)
   resetRuntime(s)
@@ -866,7 +887,7 @@ async function launchNow(sid, s, claudeArgs) {
   // What a running Claude Code hands its children is dropped first: with its parent's CLAUDE_PID or CLAUDE_EFFORT
   // the new session behaves as a child of whatever session started tmux. Only those: a person's own CLAUDE_*
   // settings (a config dir, a cloud provider) must reach claude as they set them.
-  const clean = 'unset CLAUDECODE CLAUDE_PID CLAUDE_EFFORT CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXECPATH CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_SESSION_ATTENDED CLAUDE_CODE_SESSION_ID CLAUDE_CODE_SSE_PORT'
+  const clean = 'unset ZEROPTY_SOCK CLAUDECODE CLAUDE_PID CLAUDE_EFFORT CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXECPATH CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_SESSION_ATTENDED CLAUDE_CODE_SESSION_ID CLAUDE_CODE_SSE_PORT'
   // The trailer keeps the pane for a few seconds after claude exits, so a failed start can be read off the screen.
   // Pictures sent from the page are saved outside the working folder. Without this, reading each one would ask.
   const imagesDir = path.join(STATE_DIR, 'images')
@@ -4493,7 +4514,7 @@ async function startLogin(id) {
   placeTerminal(name, mux)
   const env = Object.entries({ ...accountEnvOf(id), BROWSER: '/usr/bin/true' }).flatMap(([k, v]) => ['-e', `${k}=${v}`])
   // Waits 15 minutes for the code, then the terminal goes away by itself.
-  const r = await tmux('new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...env, `unset CLAUDECODE; ${ttyPrefix(mux)}${shq(CLAUDE_BIN)} auth login; echo "[login exited $?]"; sleep 900`)
+  const r = await tmux('new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...env, `unset CLAUDECODE ZEROPTY_SOCK; ${ttyPrefix(mux)}${shq(CLAUDE_BIN)} auth login; echo "[login exited $?]"; sleep 900`)
   if (!r.ok) throw new Error(`${mux}: ${r.err}`)
   let screen = ''
   for (let i = 0; i < 40; i++) {
@@ -5884,6 +5905,7 @@ server.on('listening', async () => {
   // A new version may hook more events (PermissionRequest for 전부 허용): sessions already running read the file too.
   writeHookSettings()
   // In the background: the agent works without it, and new sessions start in tmux until it is there.
+  logOldSocket()
   ensureZeropty().catch((e) => log('warn', 'zeropty', e.message))
   await runChecks()
   printChecks()

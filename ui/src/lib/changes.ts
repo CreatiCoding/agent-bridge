@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.386',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '새로 여는 zeropty 세션은 bridge 전용 소켓에서 돈다. 소켓을 지정하지 않은 `zeropty kill-server` 가 bridge 세션을 모두 끄던 일을 막는다. 이미 돌던 세션은 끝나거나 다시 열 때까지 옛 소켓에서 그대로',
+        refs: ['REQ-F-841', 'REQ-F-794'],
+      },
+    ],
+  },
+  {
     version: '1.385',
     date: '2026-11-02',
+    commit: 'd3aacc5',
     changes: [
       {
         kind: 'added',

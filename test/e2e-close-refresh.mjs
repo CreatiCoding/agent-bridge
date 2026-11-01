@@ -2,7 +2,7 @@
 // closed: the reopening stops, and no terminal (zeropty or tmux) is left on the Mac for a session the server no
 // longer has. Tried at a few moments of the reopening: before its new terminal exists, while claude is starting in
 // it, and just after. Needs a server (SITE, default :4699) and an agent; its home folder as the first argument.
-// The terminal programs are the agent's own: `tmux` on PATH and the agent's zeropty (ZEROPTY_SOCK as the agent has it).
+// The terminal programs are the agent's own: `tmux` on PATH and the agent's zeropty on its own socket (REQ-F-841).
 //   PLAYWRIGHT=… node test/e2e-close-refresh.mjs <agent home>
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -15,7 +15,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const zpDir = fs.existsSync(`${T}/agent/zeropty`) ? fs.readdirSync(`${T}/agent/zeropty`).map((v) => `${T}/agent/zeropty/${v}/zeropty`).find((f) => fs.existsSync(f)) : null
 const has = (bin, name) => {
   try {
-    execFileSync(bin, ['has-session', '-t', `=${name}`], { stdio: 'ignore' })
+    execFileSync(bin, ['has-session', '-t', `=${name}`], { stdio: 'ignore', env: bin === 'tmux' ? process.env : { ...process.env, ZEROPTY_SOCK: `${T}/agent/zeropty/bridge.sock` } })
     return true
   } catch {
     return false

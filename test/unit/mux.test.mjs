@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { ZEROPTY, ZEROPTY_RELEASES, zeroptyFor, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName } from '../../agent/mux.mjs'
+import { ZEROPTY, ZEROPTY_RELEASES, zeroptyFor, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, SOCK_MAX } from '../../agent/mux.mjs'
 
 /** A release-shaped archive: <top>/zeropty, zeropty-tty, shim.dylib. */
 function fakeRelease(top = 'zp-test-darwin-universal') {
@@ -105,7 +105,8 @@ test('needsZeropty: tmux 로 고정한 기기는 zeropty 세션이 남아 있을
 
 test('muxEnv: tmux·Claude Code 가 물려주는 변수는 zeropty 서버에 넘기지 않는다', () => {
   const env = muxEnv({ PATH: '/bin', HOME: '/h', TMUX: '/tmp/x,1,0', TMUX_PANE: '%1', CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_CONFIG_DIR: '/c', ZEROPTY_SOCK: '/s' })
-  assert.deepEqual(env, { PATH: '/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/c', ZEROPTY_SOCK: '/s' })
+  // ZEROPTY_SOCK too (REQ-F-841): each command names its own socket with zeroptyEnv.
+  assert.deepEqual(env, { PATH: '/bin', HOME: '/h', CLAUDE_CONFIG_DIR: '/c' })
 })
 
 test('targetName: -t 대상과 new-session -s 이름', () => {
@@ -114,4 +115,87 @@ test('targetName: -t 대상과 new-session -s 이름', () => {
   assert.equal(targetName(['new-session', '-d', '-s', 'cb-1-abc', '-x', '220']), 'cb-1-abc')
   assert.equal(targetName(['display-message', '-p', '-t', '=cb-1-abc:', '#{pane_pid}']), 'cb-1-abc')
   assert.equal(targetName(['load-buffer', '-b', 'cb-x', '/f']), '')
+})
+
+// ---------- the bridge's own socket (REQ-F-841) ----------
+
+test('zeroptySock (AC-1520): <state>/zeropty/bridge.sock, under /tmp when too long for a socket', () => {
+  assert.equal(zeroptySock('/Users/a/.claude-bridge', { platform: 'darwin', uid: 501 }), '/Users/a/.claude-bridge/zeropty/bridge.sock')
+  const tail = '/zeropty/bridge.sock'
+  for (const [platform, max] of [['darwin', 103], ['linux', 107]]) {
+    assert.equal(SOCK_MAX[platform], max)
+    const at = '/' + 'x'.repeat(max - tail.length - 1)
+    assert.equal(Buffer.byteLength(at + tail), max)
+    assert.equal(zeroptySock(at, { platform, uid: 501 }), at + tail, `${platform}: 정확히 ${max} 바이트`)
+    assert.equal(zeroptySock(at + 'y', { platform, uid: 501 }), '/tmp/cb-zeropty-501/bridge.sock', `${platform}: ${max + 1} 바이트`)
+  }
+  // Korean folder names count in bytes, not characters.
+  const ko = '/Users/a/' + '가'.repeat(30)
+  assert.ok(Buffer.byteLength(ko + tail) > 103)
+  assert.equal(zeroptySock(ko, { platform: 'darwin', uid: 7 }), '/tmp/cb-zeropty-7/bridge.sock')
+})
+
+test('legacyZeroptySock·sockOf·zeroptyEnv (AC-1520): old sessions stay on the old socket, every command names one', () => {
+  assert.equal(legacyZeroptySock({}, '/Users/a'), '/Users/a/.zeropty/mux.sock')
+  assert.equal(legacyZeroptySock({ ZEROPTY_SOCK: '/t/s.sock' }, '/Users/a'), '/t/s.sock')
+  assert.equal(sockOf({ mux: 'zeropty' }, '/old.sock'), '/old.sock', 'zsock 없는 세션은 옛 소켓')
+  assert.equal(sockOf({ mux: 'zeropty', zsock: '/new.sock' }, '/old.sock'), '/new.sock')
+  assert.equal(sockOf({ mux: 'zeropty', zsock: '' }, '/old.sock'), '/old.sock')
+  assert.deepEqual(zeroptyEnv({ A: '1', ZEROPTY_SOCK: '/x' }, '/new.sock'), { A: '1', ZEROPTY_SOCK: '/new.sock' })
+  assert.equal(muxEnv({ ZEROPTY_SOCK: '/x', PATH: '/bin' }).ZEROPTY_SOCK, undefined)
+})
+
+test('agent (AC-1521): zeropty only through muxProgram with its socket; sessions never get ZEROPTY_SOCK', () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  // Every place the zeropty binary is run: muxProgram (muxAt, tmux, tmuxRaw go through it) and its version.
+  const uses = src.split('\n').filter((l) => /ZP\.bin/.test(l))
+  assert.equal(uses.length, 2, uses.join('\n'))
+  assert.match(uses[0], /muxProgram = .*zeroptyEnv\(ZP_ENV, zeroptyNames\.get\(name\)\)/)
+  assert.match(uses[1], /run\(ZP\.bin, \['-V'\]\)/)
+  assert.equal((src.match(/execFile\(m\.bin/g) ?? []).length, 2, 'muxAt 과 tmuxRaw 만')
+  assert.match(src, /const clean = 'unset ZEROPTY_SOCK /)
+  assert.match(src, /`unset CLAUDECODE ZEROPTY_SOCK; \$\{ttyPrefix\(mux\)\}\$\{shq\(CLAUDE_BIN\)\} auth login/)
+  assert.match(src, /s\.mux === 'zeropty' && s\.zsock \? \{ zsock: s\.zsock \}/)
+  assert.match(src, /zeroptyNames\.set\(s\.tmux, sockOf\(s, ZP_LEGACY\)\)/)
+  assert.match(src, /if \(s\.mux === 'zeropty'\) s\.zsock = ZP_SOCK/)
+  assert.doesNotMatch(src, /kill-server/, '에이전트는 어떤 zeropty 서버도 끄지 않는다')
+})
+
+// A real zeropty, in an empty HOME: nothing of the person's is touched.
+const realZp = (() => {
+  if (!ZEROPTY) return null
+  const bin = path.join(os.homedir(), '.claude-bridge', 'zeropty', ZEROPTY.version, 'zeropty')
+  try {
+    fs.accessSync(bin, fs.constants.X_OK)
+    return bin
+  } catch {
+    return null
+  }
+})()
+
+test('kill-server without a socket (AC-1522): does not reach the bridge socket, did reach the default one', { skip: realZp ? false : 'zeropty 가 받아져 있지 않음' }, () => {
+  const home = fs.mkdtempSync(path.join('/tmp', 'zpk-'))
+  const own = path.join(home, 'b', 'bridge.sock')
+  fs.mkdirSync(path.dirname(own), { mode: 0o700 })
+  const base = { PATH: process.env.PATH, HOME: home, TMPDIR: home }
+  const zp = (env, ...argv) => {
+    try {
+      execFileSync(realZp, argv, { env, stdio: 'ignore', timeout: 20_000 })
+      return true
+    } catch {
+      return false
+    }
+  }
+  const ownEnv = { ...base, ZEROPTY_SOCK: own }
+  try {
+    assert.ok(zp(ownEnv, 'new-session', '-d', '-s', 'bridge', 'sleep 120'))
+    assert.ok(zp(base, 'new-session', '-d', '-s', 'other', 'sleep 120'), '기본 소켓에도 세션')
+    zp(base, 'kill-server')
+    assert.ok(zp(ownEnv, 'has-session', '-t', '=bridge'), '전용 소켓의 세션은 살아 있다')
+    assert.ok(!zp(base, 'has-session', '-t', '=other'), '기본 소켓의 세션은 끝났다')
+  } finally {
+    zp(ownEnv, 'kill-server')
+    zp(base, 'kill-server')
+    fs.rmSync(home, { recursive: true, force: true })
+  }
 })
