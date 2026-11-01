@@ -175,6 +175,8 @@ func route(req *Req, res *Res) {
 		if isDemoUid(uid) {
 			demoGate(req, p, uid)
 		}
+		// A paired device's signatures for the commands this request causes (REQ-S-091): carried, never relied on.
+		queueTrustAuth(uid, req.H("x-bridge-auth"))
 		withBy("page", func() { api(req, res, u, uid) })
 		return
 	}

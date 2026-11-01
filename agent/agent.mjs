@@ -24,12 +24,13 @@ import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
+import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION } from './trust.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -108,7 +109,9 @@ const serviceCmd = words[0] === 'service' ? words[1] || 'status' : null
 const awakeCmd = words[0] === 'awake' ? words[1] || 'status' : null
 /** `start`: start the agent in the background unless one already runs; exit 0 (REQ-F-813). */
 const startCmd = words[0] === 'start'
-if (words[0] && !doctorOnly && !linkOnly && !startCmd && headlessLogin === null && !['install', 'uninstall', 'status'].includes(serviceCmd) && !['setup', 'remove', 'status'].includes(awakeCmd)) {
+/** `trust …`: pairing, devices and the mode, at this Mac's terminal only (REQ-S-090). */
+const trustCmd = words[0] === 'trust'
+if (words[0] && !trustCmd && !doctorOnly && !linkOnly && !startCmd && headlessLogin === null && !['install', 'uninstall', 'status'].includes(serviceCmd) && !['setup', 'remove', 'status'].includes(awakeCmd)) {
   console.error(`모르는 명령입니다: ${words.join(' ')}`)
   process.exit(1)
 }
@@ -172,6 +175,12 @@ const readJson = (p, fallback) => {
 }
 const writeJson = (p, v) => {
   if (doctorOnly) return // `doctor` only looks: it leaves no config behind
+  // agent.json's `trust` is changed only at this Mac's terminal (REQ-S-090): what is on disk wins over memory.
+  if (p === path.join(STATE_DIR, 'agent.json') && v && typeof v === 'object') {
+    const disk = readJson(p, {})
+    if (disk.trust === undefined) delete v.trust
+    else v.trust = disk.trust
+  }
   fs.writeFileSync(`${p}.tmp`, JSON.stringify(v, null, 2), { mode: 0o600 })
   fs.renameSync(`${p}.tmp`, p)
 }
@@ -198,6 +207,13 @@ const ownKeys = () => [config.key, config.oldKey?.key, config.hookKey]
 if (config.oldKey?.key && !(config.retiredKeys ?? []).includes(keyPrint(config.oldKey.key))) config.retiredKeys = retireKey(config.retiredKeys, config.oldKey.key)
 config.site = (siteArg || config.site || '').replace(/\/+$/, '')
 config.port = Number(portArg || config.port || 4317)
+if (trustCmd) {
+  // Never through the running agent's HTTP: the confirmation is a file in trust/ that only this user can write.
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+  const code = await trustCli(words.slice(1), { stateDir: STATE_DIR, configPath, hostId: config.hostId, ask: (q) => rl.question(q) })
+  rl.close()
+  process.exit(code)
+}
 if (!/^https?:\/\//.test(config.site) && !doctorOnly && !['status', 'uninstall'].includes(serviceCmd)) {
   console.error(`사용법:
   node agent.mjs <사이트 주소> service install   백그라운드 서비스로 설치 (로그인하면 자동으로 켜짐, 터미널 불필요)
@@ -270,7 +286,7 @@ if (serviceCmd === 'uninstall') {
 }
 if (linkOnly && visibleArg) {
   // The running agent owns the headless browser and its profile, so it is the one that opens the visible window.
-  const r = await fetch(`http://127.0.0.1:${config.port}/visible-login`, { method: 'POST', headers: { 'X-Bridge-Key': config.key ?? '' }, signal: AbortSignal.timeout(20_000) })
+  const r = await fetch(`http://127.0.0.1:${config.port}/visible-login`, { method: 'POST', headers: { 'X-Bridge-Key': config.hookKey ?? '' }, signal: AbortSignal.timeout(20_000) })
     .then((x) => x.json())
     .catch(() => null)
   if (!r) {
@@ -446,7 +462,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -692,6 +708,152 @@ let clientOldKey = false
 let clientSeen = 0
 let welcomed = false
 
+
+// ---------- a Mac that does not trust the server (REQ-S-090~, docs/TRUST-DESIGN.md) ----------
+
+const trust = new Trust({ stateDir: STATE_DIR, hostId: config.hostId })
+let trustSeen = { at: 0, mode: 'off' }
+/** agent.json's `trust`, read again every 2 s: it is changed at the terminal (`trust mode`), never by the server. */
+function trustMode() {
+  const t = Date.now()
+  if (t - trustSeen.at < 2000) return trustSeen.mode
+  const mode = modeOf(readJson(configPath, {}), trust.devices().length)
+  if (trustSeen.at && mode !== trustSeen.mode) log('info', 'trust', `모드 ${trustSeen.mode} → ${mode}`)
+  trustSeen = { at: t, mode }
+  trustSettle(mode)
+  return mode
+}
+// What the page shows of this Mac's trust (mode, the pairing window, its devices) follows the terminal's changes.
+let trustShown = ''
+setInterval(() => {
+  const i = trust.info(trustMode())
+  const now = `${i.mode}|${i.window}|${i.devices.map((d) => d.id).join(',')}`
+  if (trustShown && now !== trustShown) hello().catch(() => {})
+  trustShown = now
+}, 2000).unref()
+const trustOn = () => trustMode() !== 'off'
+const enforcing = () => trustMode() === 'enforce'
+/**
+ * Once, when the mode really becomes enforce: what came in unsigned before is not carried into it (§2.4). Held
+ * messages without the Mac's own `signed` mark go, and 전부 허용 that no signature turned on goes off.
+ */
+function trustSettle(mode) {
+  const file = path.join(trust.p.dir, 'state.json')
+  const st = readJson(file, {})
+  if (st.mode === mode) return
+  try {
+    trust.ensure()
+    if (mode === 'enforce') {
+      let dropped = 0
+      let offs = 0
+      for (const [sid, s] of sessions) {
+        const keep = (s.held ?? []).filter((h) => h.signed)
+        dropped += (s.held?.length ?? 0) - keep.length
+        s.held = keep
+        if (s.autoAllow && !s.autoAllowSigned) ((s.autoAllow = false), (s.allowAll = false), offs++, note(sid, '🔐 이 맥이 서명된 명령만 받게 되어 *전부 허용* 을 껐어요.'))
+      }
+      if (dropped || offs) saveSessions()
+      sudoForget()
+      trust.audit(`enforce: 서명 없던 붙잡은 글 ${dropped}개 버림, 전부 허용 ${offs}개 끔`)
+    }
+    fs.writeFileSync(file, JSON.stringify({ mode, at: Date.now() }), { mode: 0o600 })
+  } catch (e) {
+    log('error', 'trust', `모드를 바꾸며 정리하지 못함: ${e.message}`)
+  }
+}
+/** The prompt a session starts with while trust is on: this Mac's own, never the server's. */
+function trustPrompt() {
+  try {
+    return fs.readFileSync(trust.p.prompt, 'utf8').slice(0, 8000)
+  } catch {
+    return TRUST_DEFAULT_PROMPT
+  }
+}
+/** The same words as the server's BUILTIN_DEFAULT_PROMPT (server/store.go). */
+const TRUST_DEFAULT_PROMPT = '나는 한국어를 읽어. 페이지에 보이는 글은 모두 한국어로 써 줘: 최종 답, 도구를 쓰는 사이사이 쓰는 짧은 설명까지. 코드·명령·파일 경로·식별자·인용한 출력은 원래 그대로 둬.'
+function trustRefuse(cmd, why) {
+  log('warn', 'trust', `거부: ${cmd.t}${cmd.op ? `/${cmd.op}` : ''} (${why})`, cmd.sid)
+  trust.audit(`refused ${cmd.t}${cmd.op ? `/${cmd.op}` : ''}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}: ${why}`)
+  const message = `🔒 이 맥은 짝지은 기기가 서명한 명령만 받아요: ${cmd.t} 거부 (${why})`
+  emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message: trustSealText(message, cmd.sid) })
+  if (cmd.sid && sessions.has(cmd.sid) && !cmd.reqId) toast(cmd.sid, message)
+  return null
+}
+function trustWarn(cmd, why) {
+  log('warn', 'trust', `서명 없이 실행(warn): ${cmd.t}${cmd.op ? `/${cmd.op}` : ''} (${why})`, cmd.sid)
+  trust.audit(`warn ${cmd.t}${cmd.op ? `/${cmd.op}` : ''}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}: ${why}`)
+  if (cmd.sid && sessions.has(cmd.sid)) toast(cmd.sid, `⚠️ 서명 없는 명령을 실행했어요(warn): ${cmd.t} · ${why}`)
+}
+/**
+ * Every command from the bridge tab passes here first (§5.2). Returns the command to run (rebuilt from what the
+ * device signed) or null. `signed` is the Mac's own mark: whatever the server put there is dropped.
+ */
+function trustGate(cmd) {
+  delete cmd.signed
+  const mode = trustMode()
+  if (mode === 'off') return cmd
+  const rule = classOf(cmd)
+  if (rule === 'free') return cmd
+  if (rule === 'off') {
+    if (mode === 'enforce') return trustRefuse(cmd, '이 모드에서 쓸 수 없는 동작')
+    trustWarn(cmd, '이 모드에서 끈 동작')
+    return cmd
+  }
+  let v = trust.verify(cmd)
+  if (v.ok && !hashesHold(cmd, v.i)) v = { ok: false, why: '서명한 글·그림과 다름' }
+  if (!v.ok) {
+    if (mode === 'enforce' || rule.always) return trustRefuse(cmd, v.why)
+    trustWarn(cmd, v.why)
+    return cmd
+  }
+  const out = rebuild(cmd, rule, v.i)
+  out.signed = v.dev.id
+  trust.audit(`ok ${v.dev.id} ${cmd.t}${cmd.op ? `/${cmd.op}` : ''}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}`)
+  return out
+}
+/** A text from the page, its device-sealed pieces opened (§6.3). A piece that does not open fails the command. */
+function trustText(text, sid) {
+  if (!hasSeal(text)) return text
+  const t = trust.openText(String(text), sid)
+  if (t === null) throw new Error('봉인된 글을 열지 못했어요(다른 맥·다른 세션의 글이거나 키가 바뀜). 페이지를 새로 고쳐 주세요')
+  return t
+}
+/** A text that leaves this Mac, sealed while sealing is on (§6). */
+// Sealing what leaves the Mac is the second step (§9): until the page can open it, text goes out as it is.
+const TRUST_SEALING = false
+function trustSealText(text, sid) {
+  return TRUST_SEALING && trust.sealing(trustMode()) ? trust.seal(String(text ?? ''), 'm', sid) : text
+}
+/** Sessions closed here, so that `open` (이어가기) rebuilds one from this Mac's own record, not the server's (§5.3). */
+const closedPath = path.join(STATE_DIR, 'trust', 'closed.json')
+function trustRememberClosed(sid, s) {
+  if (!trustOn()) return
+  try {
+    trust.ensure()
+    const list = readJson(closedPath, {})
+    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
+    const keep = Object.entries(list).sort((a, b) => b[1].at - a[1].at).slice(0, 200)
+    writeJson(closedPath, Object.fromEntries(keep))
+  } catch (e) {
+    log('warn', 'trust', `닫은 세션을 기억하지 못함: ${e.message}`, sid)
+  }
+}
+/** What `open` may use while trust is on: this Mac's record of the session, or null. */
+function trustOpenRecord(sid) {
+  const s = sessions.get(sid)
+  const r = s ? { cwd: s.cwd, conv: s.conv || sid, account: s.account, chrome: s.chrome, mdFile: s.mdFile, autoPush: s.autoPush !== false, model: s.model, effort: s.effort, mode: s.mode } : readJson(closedPath, {})[sid]
+  return r && typeof r.cwd === 'string' ? r : null
+}
+// The terminal's confirmation of a pairing is a file (`trust pair`): looked at while one waits.
+setInterval(() => {
+  if (![...trust.pairs.values()].some((x) => x.sas && !x.done)) return
+  const before = trust.devices().length
+  trust.checkConfirm()
+  if (trust.devices().length !== before) (log('info', 'trust', '기기를 짝지음'), (trustSeen.at = 0), hello().catch(() => {}))
+}, 500).unref()
+/** The background work this Mac counted for a session (BgTracker, §5.3 refresh). */
+const ownBg = (s) => (s.bgTrack ? s.bgTrack.running() : [])
+
 function emit(msg) {
   if (!client) return
   stats.sent++
@@ -704,7 +866,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()] })
+  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trust.info(trustMode()) })
 }
 
 // ---------- tmux sessions ----------
@@ -914,7 +1076,8 @@ async function launchNow(sid, s, claudeArgs) {
   // A worktree removed from the disk page (REQ-F-805): tmux cannot start in a folder that is gone, and the
   // conversation is kept under its folder, so an empty one is made again in its place.
   if (s.worktreeGone && s.cwd && !fs.existsSync(s.cwd)) fs.mkdirSync(s.cwd, { recursive: true })
-  fs.writeFileSync(promptFile, sessionPrompt(BRIDGE_PROMPT, s), { mode: 0o600 })
+  // While trust is on, this Mac's own prompt: never the one the server sent or one saved from before (REQ-S-092).
+  fs.writeFileSync(promptFile, sessionPrompt(BRIDGE_PROMPT, trustOn() ? { ...s, sysPrompt: trustPrompt() } : s), { mode: 0o600 })
   // The bridge MCP server (agent/mcp.mjs): its tools hand work to a session on another Mac (REQ-F-760). Its address
   // names this session, so each session gets its own file.
   const mcpFile = path.join(promptsDir, `${sid}.mcp.json`)
@@ -1287,7 +1450,7 @@ function endTurn(sid, s, why) {
 function maybeRefresh(sid, s) {
   if (!s.refreshAfter || s.refreshing) return
   if (s.turn || s.starting || (s.card?.open && s.card.kind !== 'stuck')) return
-  if ((s.bgCount ?? 0) > 0) {
+  if ((trustOn() ? ownBg(s).length : (s.bgCount ?? 0)) > 0) {
     if (!s.bgSaid) note(sid, '🔄 작업과 백그라운드 작업이 끝나면 새로고침할게요. 그사이 보낸 메시지는 새로고침한 세션에 전달해요')
     s.bgSaid = true
     return
@@ -1305,22 +1468,23 @@ const isSlash = (text) => /^\/[\w:-]+(\s|$)/.test(text) && !text.includes('\n')
  * A message for the session. While a turn runs it is held and handed over when the running tool finishes, so it
  * neither interrupts the work nor gets typed into a confirmation that happens to be on screen. A question or plan that is waiting is closed first: the message is the answer.
  */
-async function inject(sid, s, text, id) {
+async function inject(sid, s, text, id, signed = false) {
   // Being reopened: there is no terminal for a moment, and what is said now is for the session that comes back.
-  if (s.refreshing) return hold(sid, s, text, id)
+  if (s.refreshing) return hold(sid, s, text, id, signed)
   // Still starting: a start-up dialog may be on screen, and what is typed now would go into it.
-  if (s.starting) return (toast(sid, '세션이 뜨면 바로 전달할게요'), hold(sid, s, text, id))
+  if (s.starting) return (toast(sid, '세션이 뜨면 바로 전달할게요'), hold(sid, s, text, id, signed))
   if (!(await alive(s))) return toast(sid, '세션이 이 맥에서 돌고 있지 않아 전달하지 못했습니다.')
   tail(sid, s)
   const card = s.card?.open ? s.card : null
-  if (card && (card.kind === 'permission' || card.kind === 'keyed')) return hold(sid, s, text, id)
+  if (card && (card.kind === 'permission' || card.kind === 'keyed')) return hold(sid, s, text, id, signed)
   if (card && card.kind !== 'stuck') {
     await closeOpenDialog(s)
     foldCard(sid, s, '메시지로 답함')
-    return delivered(sid, [id], deliver(sid, s, text))
+    return (trustDelivered(s, [id]), delivered(sid, [id], deliver(sid, s, text)))
   }
-  if (s.refreshAfter || s.refreshing) return hold(sid, s, text, id)
-  if (s.turn && !s.wait) return hold(sid, s, text, id)
+  if (s.refreshAfter || s.refreshing) return hold(sid, s, text, id, signed)
+  if (s.turn && !s.wait) return hold(sid, s, text, id, signed)
+  trustDelivered(s, [id])
   return delivered(sid, [id], deliver(sid, s, text))
 }
 /** Say which messages have been handed to the session, once they have: the page marks them as delivered. */
@@ -1330,8 +1494,15 @@ async function delivered(sid, ids, done) {
   if (known.length) emit({ t: 'delivered', sid, ids: known })
 }
 
-function hold(sid, s, text, id) {
-  s.held.push({ id: id || crypto.randomUUID(), text, at: Date.now() })
+/** The signed texts in what was just handed to Claude (one delivery, held ones included): what a correction may name. */
+function trustDelivered(s, ids) {
+  const said = s.signedSaid ?? {}
+  s.lastSigned = ids.map((id) => said[id || '']).filter((t) => typeof t === 'string')
+  for (const id of ids) delete said[id || '']
+}
+
+function hold(sid, s, text, id, signed = false) {
+  s.held.push({ id: id || crypto.randomUUID(), text, at: Date.now(), ...(signed ? { signed: true } : {}) })
   saveSessions()
   log('info', 'send', s.running.size ? 'held while a tool runs' : 'held while the turn runs', sid)
   publish(sid, s)
@@ -1386,6 +1557,7 @@ function releaseHeld(sid, s, reason) {
   const held = s.held.splice(0)
   saveSessions()
   const texts = held.map((h) => h.text)
+  trustDelivered(s, held.map((h) => h.id))
   log('info', 'send', `releasing held messages (${reason})`, sid)
   delivered(sid, held.map((h) => h.id), deliver(sid, s, texts.join('\n\n'))).catch((e) => log('error', 'send', `붙잡은 메시지를 전달하지 못함: ${e.message}`, sid))
 }
@@ -2013,6 +2185,7 @@ function tail(sid, s) {
     for (const line of lines) {
       // Every line, the ones the server already has too: the counts cover the whole conversation.
       countLine(s.cache, line)
+      ;(s.bgTrack ??= new BgTracker()).line(line)
       if (s.lineNo < s.skip) {
         s.lineNo++
         from = s.lineNo
@@ -2123,8 +2296,8 @@ async function prOf(dir, branch, s) {
   return pr
 }
 
-async function snapshotFolder(s) {
-  const allowPush = s.autoPush !== false
+async function snapshotFolder(s, { noPush = false } = {}) {
+  const allowPush = s.autoPush !== false && !noPush
   const folder = { git: false, files: {}, repos: [], at: Date.now() }
   if (!fs.existsSync(s.cwd)) return folder
   folder.git = (await git(s.cwd, 'rev-parse', '--is-inside-work-tree')).out === 'true'
@@ -2152,13 +2325,13 @@ async function snapshotFolder(s) {
   return folder
 }
 
-async function syncFolder(sid, s) {
+async function syncFolder(sid, s, opts) {
   s.folderAt = Date.now()
   try {
     // A conversation this large is slow to resume and to move: the page warns at 50 MB and stops taking text at 100.
     s.size = fs.statSync(transcriptPath(s, sid)).size
   } catch {}
-  const folder = await snapshotFolder(s)
+  const folder = await snapshotFolder(s, opts)
   emit({ t: 'folder', sid, folder })
   return folder
 }
@@ -2208,6 +2381,7 @@ function backup(file, sid) {
  */
 const delegating = new Map()
 function delegate(sid, op, args) {
+  if (enforcing()) return Promise.resolve({ ok: false, error: '이 맥은 서버를 믿지 않는 모드라 다른 맥에 일을 맡길 수 없어요' })
   const areq = crypto.randomUUID()
   return new Promise((resolve) => {
     const timer = setTimeout(() => delegating.delete(areq) && resolve({ ok: false, error: '브릿지 서버가 답하지 않았어요' }), 1_920_000)
@@ -2325,7 +2499,10 @@ const commands = {
   /** A picture the server had from before (the move of its copies to this Mac). */
   putimg({ lid, id, data }) {
     try {
-      if (imageIdOk(id) && typeof data === 'string') saveImage(IMAGES_DIR, id, Buffer.from(data, 'base64'))
+      const bytes = typeof data === 'string' ? Buffer.from(data, 'base64') : null
+      // In enforce the server writes only a picture whose name is its own SHA-1 (REQ-S-092).
+      const ok = bytes && (!enforcing() || id.startsWith(`${crypto.createHash('sha1').update(bytes).digest('hex')}.`))
+      if (imageIdOk(id) && ok) saveImage(IMAGES_DIR, id, bytes)
       if (typeof lid === 'string') keptLids.push(lid)
     } catch (e) {
       log('error', 'store', `그림을 저장하지 못함: ${e.message}`)
@@ -2382,7 +2559,8 @@ const commands = {
   welcome({ sessions: known }) {
     for (const [sid, s] of sessions) {
       const k = known[sid]
-      if (k && !k.mine) commands.release({ sid })
+      // While this Mac does not trust the server, the server cannot end a session here by saying it is not mine.
+      if (k && !k.mine && !enforcing()) commands.release({ sid })
       else rewind(s, k?.lines ?? 0)
       s.statusKey = null
     }
@@ -2424,6 +2602,9 @@ const commands = {
   rehello: hello,
   async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing, base }) {
     try {
+      // The server names the session: a name that is a path, or one already here, is not taken (REQ-S-092).
+      if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
+      if (prompt) prompt = trustText(prompt, sid)
       if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
       const want = expandHome(cwd || '~')
       if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
@@ -2474,6 +2655,19 @@ const commands = {
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
   async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing }) {
     try {
+      // Only a session this Mac has a record of, from that record: nothing the server sends with it (REQ-S-092).
+      if (trustOn()) {
+        const r = safeConvId(sid) ? trustOpenRecord(sid) : null
+        if (!r) throw new Error('이 맥은 서버를 믿지 않는 모드라, 이 맥에 기록이 있는 세션만 다시 열 수 있어요')
+        if (!fs.existsSync(r.cwd)) throw new Error(`이 맥에 그 폴더가 없어요: ${r.cwd}`)
+        ;({ conv, cwd, account, chrome, mdFile, autoPush, model, effort, mode } = r)
+        home = undefined
+        folder = undefined
+        transcript = undefined
+        local = true
+        autoAllow = false
+        allowAll = false
+      }
       // Ids go into file names (the transcript): no path in them (R1-L7).
       if (!safeConvId(sid) || (conv && !safeConvId(conv))) throw new Error('세션 id 가 올바르지 않아요')
       const warnings = []
@@ -2547,9 +2741,11 @@ const commands = {
       emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
     }
   },
-  async send({ sid, text, id, files, videos }) {
+  async send({ sid, text, id, files, videos, signed }) {
     const s = sessions.get(sid)
     if (!s) return
+    text = trustText(text, sid)
+    if (enforcing()) videos = []
     // Pictures become files on this Mac, and the message says where they are: Claude reads them from there.
     // The name is the picture's id on the server, which is how its copy there is found again (REQ-F-014).
     const lines = []
@@ -2568,7 +2764,10 @@ const commands = {
       lines.push(`[Image attached: ${path.join(dir, f.id)}]`)
     }
     const body = [String(text ?? '').trim(), ...lines].filter(Boolean).join('\n')
-    await inject(sid, s, body, id)
+    // What a device signed is marked by this Mac: a held one survives the switch to enforce, and a correction may
+    // name it (REQ-S-093). Never taken from the command.
+    if (signed) s.signedSaid = { ...(s.signedSaid ?? {}), [id || '']: String(text ?? '').trim() }
+    await inject(sid, s, body, id, !!signed)
   },
   /** Stop what is running and hand the held messages over now. */
   async sendnow({ sid }) {
@@ -2596,9 +2795,15 @@ const commands = {
     publish(sid, s)
   },
   /** The last message was sent by mistake: stop what it started, and tell the session not to follow it. */
-  async retract({ sid, quoted }) {
+  async retract({ sid, quoted, quotedM, kid, signed }) {
     const s = sessions.get(sid)
     if (!s) return
+    // While trust is on, what is corrected is a signed text this Mac itself handed over last (REQ-S-093).
+    if (trustOn()) {
+      const key = signed ? trust.keyOf(String(kid ?? '')) : null
+      quoted = key ? (s.lastSigned ?? []).find((t) => textMac(key, t) === quotedM) : undefined
+      if (quoted === undefined) return toast(sid, '🔒 정정할 글이 이 맥이 마지막으로 넘긴 글과 달라 하지 않았어요')
+    }
     await interrupt(sid, s)
     note(sid, `↩️ 웹: '${quoted}' 를 잘못 보냈다고 알렸습니다.`)
     await deliver(sid, s, `[정정] 방금 보낸 "${quoted}" 는 잘못 보낸 메시지예요. 그 지시는 따르지 마세요. 이미 파일을 바꾸거나 명령을 실행했다면 무엇을 했는지만 짧게 알려 주세요.`)
@@ -2614,9 +2819,11 @@ const commands = {
     if (s) await answerCard(sid, s, card, n)
     if (s) publish(sid, s)
   },
-  async key({ sid, keys }) {
+  async key({ sid, keys, card, signed }) {
     const s = sessions.get(sid)
     if (!s) return
+    // A signed key press is for the screen the device saw: not for a dialog that came up later (REQ-S-093).
+    if (signed && (card ?? null) !== (s.card?.open ? s.card.id : null)) return toast(sid, '🔒 화면이 바뀌어 키를 보내지 않았어요. 다시 보세요')
     for (const k of keys.filter((k) => KEYS.has(k)).slice(0, 20)) await tmux('send-keys', '-t', `=${s.tmux}:`, k)
   },
   /** The terminal as it looks: with its colours (SGR codes), for the page to draw. */
@@ -2633,12 +2840,15 @@ const commands = {
       tail(sid, s)
     }
     // The notes (SESSION/AGENTS/CLAUDE.md) are not kept on the server: a move takes them from this answer.
-    const folder = s ? await syncFolder(sid, s) : null
+    // A flush the server asks for does not push while this Mac does not trust it (REQ-S-092): its own sync still does.
+    const folder = s ? await syncFolder(sid, s, { noPush: enforcing() }) : null
     emit({ t: 'flushed', reqId, sid, ok: !!s, ...(folder ? { folder } : {}) })
   },
-  async set({ sid, autoPush, autoAllow, allowAll }) {
+  async set({ sid, autoPush, autoAllow, allowAll, signed }) {
     const s = sessions.get(sid)
     if (!s) return
+    // Only this Mac marks 전부 허용 as turned on by a signature; any other change takes the mark away (§2.4).
+    if (typeof autoAllow === 'boolean' || typeof allowAll === 'boolean') s.autoAllowSigned = !!signed && autoAllow === true
     if (typeof autoPush === 'boolean') Object.assign(s, { autoPush, folderAt: 0 })
     if (autoAllow === true && (await alive(s))) {
       // Allowing everything here only means something while the terminal itself asks: in another mode Claude
@@ -2670,6 +2880,7 @@ const commands = {
     }
     // First: a reopening (refresh, revive) in flight sees it and does not leave a terminal behind (launchNow).
     s.closed = true
+    trustRememberClosed(sid, s)
     await tmux('kill-session', '-t', `=${s.tmux}`)
     // A delegated session's folder that this agent made for it (1.390): checked here again, then deleted.
     if (dropDir) dropMadeDir(sid, s.cwd, dropDir)
@@ -2707,12 +2918,14 @@ const commands = {
     const s = sessions.get(sid)
     if (!s) return
     s.bgCount = Number(n) || 0
-    maybeRefresh(sid, s)
+    if (!trustOn()) maybeRefresh(sid, s)
   },
   async refresh({ sid, when, sysPrompt, interrupted, bg, routing }) {
     const s = sessions.get(sid)
     if (!s) return
     // What runs in the background is cut off by reopening: the session that comes back is told what it lost.
+    // While trust is on, what was cut off is what this Mac counted, and the server's count is not taken (§5.3).
+    if (trustOn()) ((interrupted = ownBg(s).map((t) => t.label)), (bg = undefined))
     if (when !== 'cancel' && Array.isArray(interrupted) && interrupted.length) s.interrupted = interrupted.slice(0, 20).map((x) => String(x).slice(0, 200))
     // A reopened session takes the default prompt as it is now, and the model routing (a server before it sent none).
     if (typeof sysPrompt === 'string') s.sysPrompt = sysPrompt.slice(0, 8000)
@@ -2736,6 +2949,10 @@ const commands = {
   async fork({ reqId, sid, newSid, sysPrompt, launch: defaults, copyLog, routing }) {
     const from = sessions.get(sid)
     try {
+      if (trustOn()) {
+        if (!safeConvId(newSid) || sessions.has(newSid)) throw new Error('새 세션 id 가 올바르지 않아요')
+        defaults = undefined
+      }
       if (!from) throw new Error('이 맥에 그 세션이 없습니다')
       // A session that is being reopened is copied once it is back: its transcript is in use until then.
       for (let i = 0; i < 60 && from.refreshing; i++) await sleep(500)
@@ -2772,6 +2989,11 @@ const commands = {
    * instead of from the whole conversation. The original goes on in its terminal.
    */
   async lightfork({ reqId, sid, newSid, sysPrompt, mode, launch: defaults, routing }) {
+    if (trustOn()) {
+      if (!safeConvId(newSid) || sessions.has(newSid)) return emit({ t: 'opened', reqId, sid: newSid, ok: false, error: '새 세션 id 가 올바르지 않아요' })
+      defaults = undefined
+      routing = undefined
+    }
     const from = sessions.get(sid)
     const fail = (error, more = {}) => emit({ t: 'opened', reqId, sid: newSid, ok: false, error, ...more })
     if (!from) return fail('이 맥에 그 세션이 없습니다')
@@ -2943,6 +3165,8 @@ const commands = {
    * else it is the hourly one this agent asked for, and the report is sent on its own.
    */
   async tidyRun(run) {
+    // The server's policy may stop sessions by itself: while trust is on it only suggests (REQ-S-093).
+    if (trustOn() && run && tidyPolicyOf(run.policy).mode === 'auto') run = { ...run, policy: { ...(run.policy ?? {}), mode: 'suggest' } }
     await tidyOnce(run, (report, error) => {
       if (run.reqId) emit({ t: 'tidyRun', reqId: run.reqId, ok: !!report, ...(report ? { report } : { error }) })
       else if (report) emit({ t: 'tidyReport', report })
@@ -3194,7 +3418,7 @@ const commands = {
   async btw({ reqId, sid, text }) {
     const s = sessions.get(sid)
     if (!s) return emit({ t: 'btw', reqId, ok: false, error: '이 맥에 그 세션이 없습니다' })
-    const q = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000)
+    const q = String(trustText(text, sid) ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000)
     await tmux('send-keys', '-t', pane(s), '-l', `/btw ${q}`)
     await sleep(200)
     await term.sendKeys(pane(s), ['Enter'])
@@ -3530,6 +3754,9 @@ const commands = {
     // Also against an update already taken and waiting to be put in place (R8-I1).
     const floor = Math.max(config.updateSeq ?? 0, pendingUpdate?.seq ?? 0)
     if (seq < floor) return refuse(`새 버전(${got})이 지금 것보다 먼저 서명된 것(${seq} < ${floor})이라 버림`)
+    // While trust is on, never back to an agent without it or with an older one (REQ-S-095).
+    const keeps = trustOn() ? updateKeepsTrust(files, seq, config.updateSeq) : null
+    if (keeps) return refuse(`새 버전(${got})을 버림: 서버를 믿지 않는 모드에서 ${keeps}`)
     // The same one offered again on a reconnect while it waits for the night: kept as it is (when it came, 지금 업데이트).
     if (pendingUpdate?.build === build) return
     // The number is kept only once the update is in place (applyUpdate): a failed install leaves it, so the version
@@ -3556,6 +3783,27 @@ const commands = {
     pendingUpdate.now = true
     log('info', 'update', `사이트의 요청으로 새 버전 ${pendingUpdate.build} 을 지금 바꿉니다`)
     emit({ t: 'updateNow', reqId, ok: true, build: pendingUpdate.build })
+  },
+  /** Pairing and the device list (REQ-S-090). Nothing here can pair a device: only the Mac's terminal confirms. */
+  trust({ reqId, op, id, c, pid, spub, dpub, nb, name, d }) {
+    const reply = (x) => emit({ t: 'trust', reqId, ok: true, ...x })
+    try {
+      const mode = trustMode()
+      if (op === 'info') return reply({ info: trust.info(mode) })
+      if (op === 'pair1') return reply(trust.pair1({ c }, mode))
+      if (op === 'pair3') return reply(trust.pair3({ pid, spub, dpub, nb, name }))
+      if (op === 'pair4') return reply(trust.pair4({ pid }))
+      if (op === 'keys') return reply(trust.wrapFor(String(d ?? '')))
+      if (op === 'remove') {
+        if (!trust.remove(String(id ?? ''))) throw new Error('그런 기기가 없어요')
+        log('info', 'trust', `기기 해제: ${id}`)
+        hello().catch(() => {})
+        return reply({ info: trust.info(trustMode()) })
+      }
+      throw new Error('모르는 요청이에요')
+    } catch (e) {
+      emit({ t: 'trust', reqId, ok: false, error: e.message })
+    }
   },
   resync({ sid, lines }) {
     const s = sessions.get(sid)
@@ -5284,6 +5532,9 @@ if (vm.SourceTextModule) {
 async function applyUpdate() {
   const { build, files, seq } = pendingUpdate
   pendingUpdate = null
+  // Taken while trust was off, put in place after it was turned on: checked again (REQ-S-095).
+  const keeps = trustOn() ? updateKeepsTrust(files, seq, config.updateSeq) : null
+  if (keeps) return log('error', 'update', `받아 둔 새 버전(${build})을 깔지 않음: 서버를 믿지 않는 모드에서 ${keeps}`)
   config.updateTried = { build, at: Date.now() }
   writeJson(configPath, config)
   const tmp = fs.mkdtempSync(path.join(STATE_DIR, '.update-'))
@@ -5604,8 +5855,11 @@ const server = http.createServer(async (req, res) => {
     return given.length === mine.length && crypto.timingSafeEqual(given, mine)
   }
   // A hook may also come with the agent's key: a session started before the hook key keeps sending that until it ends.
-  const hookPath = req.method === 'POST' && (url.pathname === '/hook' || url.pathname === '/statusline' || url.pathname === '/delegate' || url.pathname === '/askpass')
-  const keyOk = same(config.key) || (config.oldKey && Date.now() < config.oldKey.until && same(config.oldKey.key)) || (hookPath && same(config.hookKey))
+  const hookPath = req.method === 'POST' && (url.pathname === '/hook' || url.pathname === '/statusline' || url.pathname === '/delegate' || url.pathname === '/askpass' || url.pathname === '/visible-login')
+  // While this Mac does not trust the server, the bridge tab's key (which the server's page holds) opens no hook
+  // entrance: a forged hook could switch a session's conversation or release held messages (REQ-S-094).
+  const relayKey = same(config.key) || (config.oldKey && Date.now() < config.oldKey.until && same(config.oldKey.key))
+  const keyOk = (relayKey && !(hookPath && trustOn())) || (hookPath && same(config.hookKey))
   // The headless browser's first address (startBackground): no key with it, its one-time token is the proof.
   if (req.method === 'GET' && url.pathname === '/bg-open') {
     const to = takeBgOpen(url.searchParams.get('t'))
@@ -5623,7 +5877,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (!keyOk) {
-    if (key && (config.retiredKeys ?? []).includes(keyPrint(key))) {
+    if (key && !trustOn() && (config.retiredKeys ?? []).includes(keyPrint(key))) {
       if (url.searchParams.get('bg') === '1' && config.background) restartBgForKey()
       else reopenLink(req.headers['user-agent'], key)
     }
@@ -5660,6 +5914,10 @@ const server = http.createServer(async (req, res) => {
   }
   // A video or other file for a message, from the bridge tab (REQ-F-761, REQ-F-830): saved with the pictures, where a session may read.
   if (req.method === 'POST' && url.pathname === '/file') {
+    if (trustOn() && trustMode() === 'enforce') {
+      trust.audit('refused /file')
+      return void res.writeHead(403, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: '이 맥은 서버를 믿지 않는 모드라 영상·파일을 받지 않아요' }))
+    }
     const id = url.searchParams.get('id') || ''
     if (!/^[0-9a-f]{40}\.(mp4|mov|webm|m4v|bin)$/.test(id)) return void res.writeHead(400, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: '영상·파일 id 가 올바르지 않아요' }))
     const name = String(url.searchParams.get('name') || 'file').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'file'
@@ -5693,6 +5951,7 @@ const server = http.createServer(async (req, res) => {
     const sid = url.searchParams.get('sid') || ''
     const s = sessions.get(sid)
     if (!s) return void res.writeHead(403).end()
+    if (enforcing()) return (note(sid, '🔐 이 맥은 서버를 믿지 않는 모드라 sudo 에 비밀번호를 넘기지 않아요.', 'warn'), void res.writeHead(403).end())
     const what = s.lastTool?.name === 'Bash' ? String(s.lastTool.input?.command ?? '') : ''
     const a = await sudoAsk(sid, what || 'sudo')
     if (!a.ok || !sudoPass) {
@@ -5821,8 +6080,12 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":true}')
     if ((url.searchParams.get('tab') || clientTab) === clientTab) clientSeen = Date.now()
+    if (!cmd || typeof cmd !== 'object') return
     const fn = commands[cmd.t]
     if (!fn) return
+    // Signed by a paired device, or not run at all, while this Mac does not trust the server (REQ-S-091).
+    cmd = trustGate(cmd)
+    if (!cmd) return
     const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export'].includes(cmd.t)
     if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
     if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)

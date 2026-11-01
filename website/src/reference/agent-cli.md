@@ -35,10 +35,10 @@ curl -fsSL SITE/install.sh | bash -s -- --foreground --name "작업용 맥북"
 | 6 | `claude` 를 확인해요. 자동으로 깔지는 않아요. | 계속(없는 도구로 표시) |
 | 7 | node 가 18 이상인지 확인해요. | 종료 코드 1 |
 | 8 | `~/.claude-bridge` 를 만들고 권한을 0700 으로 맞춰요. | — |
-| 9 | 에이전트 파일 17개를 임시 폴더에 받아 `node --check` 로 검사한 뒤 한꺼번에 옮겨요. | 하나라도 실패하면 아무것도 바꾸지 않고 끝나요 |
+| 9 | 에이전트 파일 18개를 임시 폴더에 받아 `node --check` 로 검사한 뒤 한꺼번에 옮겨요. | 하나라도 실패하면 아무것도 바꾸지 않고 끝나요 |
 | 10 | `CLAUDE_BRIDGE_SKIP_TOOL_PROMPT=1` 을 두고 에이전트를 실행해요. | — |
 
-에이전트 파일 17개는 `agent.mjs`, `dialog.mjs`, `preview.mjs`, `screen.mjs`, `plugins.mjs`, `skills.mjs`, `split.mjs`, `guard.mjs`, `accounts.mjs`, `voice.mjs`, `mcp.mjs`, `cache.mjs`, `scrub.mjs`, `store.mjs`, `stats.mjs`, `mux.mjs`, `keys.mjs` 예요.
+에이전트 파일 18개는 `agent.mjs`, `dialog.mjs`, `preview.mjs`, `screen.mjs`, `plugins.mjs`, `skills.mjs`, `split.mjs`, `guard.mjs`, `accounts.mjs`, `voice.mjs`, `mcp.mjs`, `cache.mjs`, `scrub.mjs`, `store.mjs`, `stats.mjs`, `mux.mjs`, `keys.mjs`, `trust.mjs` 예요.
 
 ::: tip 없는 도구가 있을 때
 `git`·`claude` 가 없어도 에이전트는 켜져요. 그 도구를 깔기 전까지 세션을 시작할 수 없고, 깐 뒤에는 에이전트를 다시 켜지 않아도 돼요. 어떤 점검이 세션 시작을 막는지는 [점검 항목](/reference/checks)을 보세요.

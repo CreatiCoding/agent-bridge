@@ -43,6 +43,9 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	p := u.Path
 	get := req.Method == "GET"
 	post := req.Method == "POST"
+	if hostTrustAPI(req, res, p, uid) {
+		return true
+	}
 	if apiTidy(req, res, u, uid, p) {
 		return true
 	}

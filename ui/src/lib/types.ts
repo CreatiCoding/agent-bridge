@@ -195,6 +195,8 @@ export interface TidyBrief {
 
 export interface Host {
   id: string
+  /** Whether this Mac trusts the server (REQ-S-090): its mode and paired devices, as the Mac says. Absent: off. */
+  trust?: { mode: 'off' | 'warn' | 'enforce'; version: number; fp: string; devices: { id: string; name: string; at: number; used: number }[]; window: boolean } | null
   /** CPU, memory and disk in use (REQ-F-800); absent from older agents. */
   sys?: import('./format').SysUse | null
   /** The last battery the host reported and when, kept after it goes away (REQ-F-807). */

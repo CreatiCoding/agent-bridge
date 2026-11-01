@@ -126,7 +126,7 @@ function cacheOf(c) {
   out.events = (Array.isArray(c.events) ? c.events : []).slice(-5).filter((e) => CACHE_KINDS.includes(e?.kind)).map((e) => ({ at: n(e.at), kind: e.kind, tokens: n(e.tokens), gap: n(e.gap) }))
   return out
 }
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs']
 
 fs.mkdirSync(DATA, { recursive: true })
 const log = (...a) => console.log(new Date().toISOString(), ...a)

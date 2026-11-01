@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.392',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui', 'server', 'agent'],
+        text: '서버를 믿지 않는 맥(선택, 기본 꺼짐): 맥 터미널에서 `trust mode enforce` 로 켜고 `trust pair` 로 이 기기와 짝지으면, 그 맥은 짝지은 기기가 서명한 명령만 실행한다. 서버가 털려도 그 맥에 글을 보내거나 세션을 열고 닫거나 권한에 답할 수 없다. 짝짓기는 기기 화면의 6자리 숫자를 맥 터미널에 입력해 확인한다',
+        refs: ['REQ-S-089', 'REQ-S-090', 'REQ-S-091', 'REQ-S-092', 'REQ-S-093'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '설정 → 이 기기에 "맥 짝짓기" 카드: 맥마다 모드·지문·짝지은 기기 목록을 보고, 짝짓고, 해제한다. 짝지은 기기에서는 받아쓰기의 "전송" 자동 보내기와 확장을 끈다',
+        refs: ['REQ-S-090', 'REQ-S-091'],
+      },
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '서명 필수인 맥에서는 sudo 비밀번호 넘기기, 다른 맥에 맡기기, 영상·파일 올리기, 서버 미리보기, 세션 가져오기·옮기기, 세션 정리의 자동 내리기가 꺼지고, trust 를 낮추는 업데이트는 받지 않는다',
+        refs: ['REQ-S-093', 'REQ-S-094'],
+      },
+    ],
+  },
+  {
     version: '1.391',
     date: '2026-11-02',
+    commit: '9c107d1',
     changes: [
       {
         kind: 'fixed',

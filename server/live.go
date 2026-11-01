@@ -210,6 +210,7 @@ func toHost(hostID string, cmd M) bool {
 	if !ok {
 		return false
 	}
+	attachTrustAuth(hostID, cmd)
 	flushed := sse(res, cmd)
 	if TRACE {
 		req := ""

@@ -346,6 +346,12 @@ func helloFromAgent(uid, hostID string, msg M) {
 	}
 	preview.hostGone(hostID, ws)
 	h := hosts.Val(hostID)
+	// The Mac's trust mode and paired devices (REQ-S-090): shown on the page, believed by nobody.
+	if t := cleanTrust(msg["trust"]); t != nil {
+		h["trust"] = t
+	} else {
+		delete(h, "trust")
+	}
 	name := ""
 	if truthy(msg["name"]) {
 		name = jsSliceTo(jsString(msg["name"]), 60)

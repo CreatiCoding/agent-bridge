@@ -178,7 +178,8 @@ test('호출 지점: 세션으로 가는 이동은 모두 session.open 을 지�
 
 test('호출 지점: 보내기·카드 답·세션 만들기·닫기는 기본 구현 한 곳에서만 서버를 부른다', () => {
   for (const s of ["'say'", '/say`', "'answer'", '/answer`', "post<{ ok: true; id: string }>('/api/sessions'", "'close')", 'del(`/api/sessions/${s.id}`)', "sessionPost(s, 'trash')"]) {
-    const where = files(grepF(s)).filter((f) => f !== 'ui/src/lib/builtin-actions.tsx')
+    // lib/trust.ts reads the same paths to sign them (REQ-S-091); it never calls the server itself.
+    const where = files(grepF(s)).filter((f) => f !== 'ui/src/lib/builtin-actions.tsx' && f !== 'ui/src/lib/trust.ts')
     assert.deepEqual(where, [], s)
   }
   const composer = readFileSync(new URL('../../ui/src/components/composer.tsx', import.meta.url), 'utf8')

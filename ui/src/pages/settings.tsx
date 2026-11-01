@@ -12,6 +12,7 @@ import { inHomeApp, safariHref } from '../lib/safari'
 import { appVersion } from '../lib/app-version'
 import { kbDebugOn, setKbDebug } from '../lib/kbdebug'
 import { PushToggle } from '../components/push'
+import { TrustPanel } from '../components/trust-panel'
 import { SlackPlaces } from '../components/slack-places'
 import { AccountsPanel } from './accounts'
 import { VoiceSettings } from './voice-settings'
@@ -824,6 +825,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             </div>
           </section>
           ) : null}
+          {tab === 'device' ? <TrustPanel /> : null}
           {tab === 'device' ? <Versions /> : null}
           {tab === 'device' ? (
           <section className="card-box">

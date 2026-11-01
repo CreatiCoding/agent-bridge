@@ -15,6 +15,7 @@ import { Markdown } from './markdown'
 import type { Me } from './types'
 import * as kitAll from '../kit'
 import { chooseDialog, confirmDialog, openMenu, promptDialog, Sheet, toast, type MenuEntry } from '../kit/overlay'
+import { loadTrust, pairedHosts } from './trust'
 
 export interface ExtInfo {
   id: string
@@ -296,6 +297,9 @@ async function localeOf(x: ExtInfo) {
 const loaded = new Set<string>()
 async function loadOne(x: ExtInfo, me: Me) {
   if (loaded.has(x.id) || x.loadError || !x.consented) return
+  // A device paired with a Mac runs no extension: its code would act with this device's keys (REQ-S-091).
+  await loadTrust()
+  if (pairedHosts().length) return report(x.id, 'load', new Error('맥과 짝지은 기기에서는 확장을 띄우지 않아요'))
   if (x.extensionApi > EXT_API) return report(x.id, 'load', new Error(`extensionApi ${x.extensionApi} 를 이 화면이 몰라요`))
   loaded.add(x.id)
   try {

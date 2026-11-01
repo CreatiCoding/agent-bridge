@@ -11,6 +11,7 @@ import { inHomeApp, safariHref } from '../lib/safari'
 import { Button, IconButton } from '../kit'
 import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
+import { pairedHosts } from '../lib/trust'
 
 interface Said {
   id: number
@@ -149,7 +150,8 @@ export function VoiceMode({
       setSaid((s) => s.filter((x) => x.id !== id))
       return now.onRoute(cmd.pane, text, cmd.end)
     }
-    if (cmd.end === 'send') sendNow.current()
+    // A paired device never sends words it has not shown first (REQ-S-091): what the Mac heard comes back through the server.
+    if (cmd.end === 'send') pairedHosts().length ? toast('짝지은 기기라 자동 전송을 껐어요 · 확인하고 보내기를 눌러 주세요') : sendNow.current()
     else if (cmd.end === 'reset') resetNow.current()
   }
 
@@ -290,7 +292,7 @@ export function VoiceMode({
       info.current.set(id, { from: lastMark.current, mark: lastMark.current, text: c.text })
       setSaid((s) => [...s, { id, state: 'done', text: c.text, mark: lastMark.current }])
     }
-    if (c.end === 'send') setTimeout(() => sendNow.current())
+    if (c.end === 'send' && !pairedHosts().length) setTimeout(() => sendNow.current())
   }, [])
   endRef.current = () => void close()
   if (takeRef) takeRef.current = () => takeAll().written
