@@ -2,6 +2,8 @@
 data
 docs
 test
+# server/tidy_test.go reads this fixture during the image's go test
+!test/fixtures/tidy-groups.json
 node_modules
 ui/node_modules
 ui/dist

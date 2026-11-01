@@ -25,6 +25,7 @@ COPY web ./web
 # The example extension: a test loads it as it is.
 COPY extensions ./extensions
 COPY package.json ./
+COPY test/fixtures/tidy-groups.json ./test/fixtures/tidy-groups.json
 WORKDIR /src/server
 RUN test -z "$(gofmt -l .)" || { echo "gofmt 가 고칠 파일:"; gofmt -l .; exit 1; }
 RUN go vet ./...
