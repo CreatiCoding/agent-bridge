@@ -1,0 +1,27 @@
+{
+  "pipelines": [
+    {
+      "id": "agent-bridge",
+      "branch": "main",
+      "on": [
+        "push",
+        "pr"
+      ],
+      "timeout": "40m",
+      "steps": [
+        "cd ui",
+        "corepack yarn install --immutable",
+        "corepack yarn build",
+        "cd ..",
+        "npm test"
+      ],
+      "deploy": [
+        "lG2IYJW9GYsNHjd4rUjbL",
+        "-OQwNfqBjg54RIWEEQmTq"
+      ],
+      "healthUrl": "https://bridge.creco.dev/api/health",
+      "notifyAutofix": true,
+      "note": "bridge 서버 + 문서 사이트(agent-bridge.pubdoc.dev)"
+    }
+  ]
+}
