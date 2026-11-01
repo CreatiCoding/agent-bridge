@@ -21,7 +21,7 @@ import (
 type cfgKey struct {
 	key  string // dotted, as in the file
 	env  string // "" when no environment variable means the same
-	kind string // origin | list | purge | bool | hours | path | modes | src | origins | providers | notify | hooks | extensions
+	kind string // origin | list | purge | bool | hours | days | mb | tidymode | path | modes | src | origins | providers | notify | hooks | extensions
 	def  any    // the value when neither the file nor an environment variable gives one (env keys: unused)
 }
 
@@ -50,6 +50,15 @@ var CFG_KEYS = []cfgKey{
 	{"hooks", "", "hooks", map[string][]hookTarget{}},
 	{"extensionConsent", "", "bool", true},
 	{"extensions", "", "extensions", []extEntry{}},
+	// 세션 정리 (REQ-F-840): the defaults every account and Mac start from.
+	{"tidy.mode", "", "tidymode", "auto"},
+	{"tidy.idleStopDays", "", "days", 3},
+	{"tidy.restDays", "", "days", 7},
+	{"tidy.closeSuggestDays", "", "days", 30},
+	{"tidy.folderTrashDays", "", "days", 14},
+	{"tidy.transcriptDays", "", "days", 30},
+	{"tidy.observeDays", "", "days", 7},
+	{"tidy.transcriptMB", "", "mb", 10},
 }
 
 // cfgKeyOf: the key by its dotted name (the rest of the server reads values through cfgGet).
@@ -391,7 +400,7 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 			return cfgVal{}, false, &yamlErr{s.line, k.key + " 는 true 나 false 여야 합니다"}
 		}
 		return cfgVal{v == "true", false}, true, nil
-	case "bool", "hours", "path":
+	case "bool", "hours", "days", "mb", "tidymode", "path":
 		sc, err := scalarOf(k, n)
 		if err != nil {
 			return cfgVal{}, false, err
@@ -412,6 +421,23 @@ func readCfgKey(k cfgKey, n *yNode, getenv func(string) string) (cfgVal, bool, e
 				return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 1 부터 8760 까지의 정수(시간)여야 합니다"}
 			}
 			return cfgVal{h, false}, true, nil
+		case "days":
+			d, e := strconv.Atoi(v)
+			if e != nil || d < 0 || d > 3650 {
+				return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 0 부터 3650 까지의 정수(일)여야 합니다(0 은 끔)"}
+			}
+			return cfgVal{d, false}, true, nil
+		case "mb":
+			d, e := strconv.Atoi(v)
+			if e != nil || d < 1 || d > 1_000_000 {
+				return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 1 부터 1000000 까지의 정수(MB)여야 합니다"}
+			}
+			return cfgVal{d, false}, true, nil
+		case "tidymode":
+			if !contains(TIDY_MODES, v) {
+				return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 auto·suggest·off 중 하나여야 합니다"}
+			}
+			return cfgVal{v, false}, true, nil
 		}
 		if strings.TrimSpace(v) == "" || strings.ContainsAny(v, "\x00\n") {
 			return cfgVal{}, false, &yamlErr{sc.line, k.key + " 는 파일 경로여야 합니다"}

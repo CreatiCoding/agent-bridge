@@ -758,3 +758,142 @@ export function routingShell(r, agentsFile) {
   if (!c) return { prefix: '', args: '' }
   return { prefix: `export CLAUDE_CODE_SUBAGENT_MODEL=${shq1(c.subagentModel)}; `, args: ` --agents "$(cat ${shq1(agentsFile)})"` }
 }
+
+// ---------- 세션 정리 (REQ-F-835~840) ----------
+// Whether an open session's claude goes down, a stopped one is put to rest, a folder goes to the Trash, a
+// transcript is offered: pure, so each boundary is tested (test/unit/tidy.test.mjs). The agent gathers the facts
+// and acts; the server only applies what the agent reports.
+
+export const DAY_MS = 86_400_000
+/** How long before a session's claude is stopped it is told, and the least time from that to the stop. */
+export const TIDY_NOTICE_MS = DAY_MS
+/** A turn that ended this recently means the session works by itself (/loop, a scheduled wake-up): left alone. */
+export const TIDY_LOOP_MS = DAY_MS
+export const TIDY_MS = 3_600_000
+export const TIDY_FIRST_MS = 600_000
+export const TIDY_MODES = ['auto', 'suggest', 'off']
+export const TIDY_DEFAULTS = Object.freeze({ mode: 'auto', idleStopDays: 3, restDays: 7, closeSuggestDays: 30, folderTrashDays: 14, transcriptDays: 30, transcriptMB: 10 })
+
+/** The policy the server sent, with the defaults filled in for anything missing or malformed. */
+export function tidyPolicyOf(p) {
+  const out = { ...TIDY_DEFAULTS, mode: TIDY_MODES.includes(p?.mode) ? p.mode : TIDY_DEFAULTS.mode }
+  for (const k of ['idleStopDays', 'restDays', 'closeSuggestDays', 'folderTrashDays', 'transcriptDays']) if (Number.isInteger(p?.[k]) && p[k] >= 0 && p[k] <= 3650) out[k] = p[k]
+  if (Number.isFinite(p?.transcriptMB) && p.transcriptMB >= 1) out.transcriptMB = p.transcriptMB
+  return out
+}
+
+const daysOf = (ms) => Math.floor(ms / DAY_MS)
+const when = (t) => {
+  const d = new Date(t)
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * One open session (REQ-F-835): `{act, why, stopAt}`. act: null (not a candidate, or held: then `why`), 'suggest'
+ * (suggest mode, past the days), 'notice' (tell it now), 'wait' (told, the stop is not due yet), 'stop'.
+ * s: {alive, lastHumanAt, lastTurnAt, noticeAt, keepAlive, turn, waiting, delegate, locked, reportAuto, changing}.
+ * `manual`: someone asked for it by hand: the days and the notice do not count, the holds that protect work do.
+ */
+export function idleStopWhy(s, now, policy, manual = false) {
+  const p = tidyPolicyOf(policy)
+  if (!manual && (p.mode === 'off' || !p.idleStopDays)) return { act: null, why: '자동 종료 꺼짐', stopAt: null }
+  if (s.alive === false) return { act: null, why: manual ? '이미 claude 가 내려가 있어요' : null, stopAt: null }
+  const due = s.lastHumanAt + p.idleStopDays * DAY_MS
+  if (!manual && now < due - TIDY_NOTICE_MS) return { act: null, why: null, stopAt: null }
+  const held = (why) => ({ act: null, why, stopAt: null })
+  if (s.keepAlive && !manual) return held('자동 종료 안 함으로 고정')
+  if (s.turn) return held('작업 중')
+  if (s.waiting) return held('확인을 기다리는 중')
+  if (s.delegate) return held('맡긴 일을 기다리는 중')
+  if (s.locked) return held('잠긴 세션')
+  if (s.reportAuto) return held('자동 대응 중')
+  if (s.changing) return held('바뀌는 중')
+  if (manual) return { act: 'stop', why: null, stopAt: now }
+  if (s.lastTurnAt && now - s.lastTurnAt < TIDY_LOOP_MS) return held('스스로 일하는 중(마지막 턴이 24시간 안)')
+  if (p.mode === 'suggest') return now >= due ? { act: 'suggest', why: `사람 입력 ${daysOf(now - s.lastHumanAt)}일 없음 · 제안만`, stopAt: null } : { act: null, why: null, stopAt: null }
+  // A notice from before the last input says nothing any more: told again, a full day ahead.
+  if (!s.noticeAt || s.noticeAt < s.lastHumanAt) return { act: 'notice', why: null, stopAt: Math.max(due, now + TIDY_NOTICE_MS) }
+  const stopAt = Math.max(due, s.noticeAt + TIDY_NOTICE_MS)
+  return now >= stopAt ? { act: 'stop', why: null, stopAt } : { act: 'wait', why: `예고함 · ${when(stopAt)}에 내림`, stopAt }
+}
+
+/** What the session is told when its stop is announced, and when it is stopped (REQ-F-835 rules 4, 5). */
+export const tidyNoticeText = (days, stopAt) => `💤 사람 입력이 ${days}일 없어 ${when(stopAt)}에 claude 를 내려요. 대화는 그대로 남고, 글을 보내면 이어서 열어요. 그 전에 아무 글이나 보내거나 "유지"를 누르면 취소돼요.`
+export const tidyStoppedText = (days) => `💤 사람 입력이 ${days}일 없어 claude 를 내렸어요. 대화는 그대로 있고, 글을 보내면 이어서 열어요.`
+
+/** A stopped session put to rest, and one offered to be closed (REQ-F-836). s: {alive, resting, keepAlive, lastHumanAt}. */
+export function restAct(s, now, policy) {
+  const p = tidyPolicyOf(policy)
+  if (s.keepAlive || p.mode === 'off') return { rest: false, close: false }
+  const idle = now - s.lastHumanAt
+  return { rest: s.alive === false && !s.resting && !!p.restDays && idle >= p.restDays * DAY_MS, close: !!p.closeSuggestDays && idle >= p.closeSuggestDays * DAY_MS }
+}
+
+/**
+ * A folder no open session works in (REQ-F-837): `{auto, why}`. auto: it may go to the Trash by itself.
+ * f: {kind: 'works'|'ended', trashWhy, repos: [{dirty, unpushed, stash, worktree}], lastAt, endedAt}.
+ */
+export function folderTidyWhy(f, now, policy) {
+  const p = tidyPolicyOf(policy)
+  const no = (why) => ({ auto: false, why })
+  if (f.trashWhy) return no(f.trashWhy)
+  if (f.kind !== 'works') return no('사용자 폴더라 자동으로 옮기지 않음')
+  const repos = f.repos ?? []
+  if (repos.some((r) => r.worktree)) return no('git worktree 가 들어 있음(머지된 worktree 정리를 쓰세요)')
+  if (repos.some((r) => r.dirty)) return no('고친 것·새 파일이 남아 있음')
+  const unpushed = repos.reduce((a, r) => a + (r.unpushed ?? 0), 0)
+  if (unpushed) return no(`안 올린 커밋 ${unpushed}개`)
+  const stash = repos.reduce((a, r) => a + (r.stash ?? 0), 0)
+  if (stash) return no(`stash ${stash}개`)
+  if (p.mode === 'off' || !p.folderTrashDays) return no('폴더 자동 정리 꺼짐')
+  const keep = p.folderTrashDays * DAY_MS
+  if (now - f.lastAt < keep) return no(`최근 ${daysOf(now - f.lastAt)}일 안에 씀`)
+  if (f.endedAt && now - f.endedAt < keep) return no(`끝난 지 ${daysOf(now - f.endedAt)}일`)
+  return { auto: true, why: `${p.folderTrashDays}일 넘게 안 씀 · 자동 정리 대상` }
+}
+
+/** A transcript no open session uses, offered once old and big enough (REQ-F-837 rule 5); null when not. */
+export function transcriptTidyWhy(t, now, policy) {
+  const p = tidyPolicyOf(policy)
+  if (t.open || p.mode === 'off' || !p.transcriptDays) return null
+  if (t.size < p.transcriptMB * 1024 * 1024 || now - t.lastAt < p.transcriptDays * DAY_MS) return null
+  return `${daysOf(now - t.lastAt)}일 안 씀 · ${Math.round(t.size / 1024 / 1024)} MB`
+}
+
+const userText = (o) => {
+  const c = o?.message?.content
+  if (typeof c === 'string') return c
+  if (!Array.isArray(c) || c.some((x) => x?.type === 'tool_result')) return ''
+  return c.filter((x) => x?.type === 'text').map((x) => x.text ?? '').join('')
+}
+/** Whether a transcript line is something a person typed: not a tool result, a meta line or a command's echo. */
+export function humanLine(o) {
+  if (o?.type !== 'user' || o.isMeta || o.isSidechain || o.toolUseResult) return false
+  const t = userText(o)
+  return !!t.trim() && !/^\s*<(command-|local-command|task-notification|system-reminder)/.test(t) && !t.startsWith('Caveat:')
+}
+
+/**
+ * The time of the last line in a transcript's text that `pick` accepts, reading from the end; null when none.
+ * `text` is whole lines (a cut first line is skipped as unreadable). Used on chunks read backwards.
+ */
+export function lastLineAt(text, pick) {
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i]
+    if (!l.includes('"timestamp"')) continue
+    let o
+    try {
+      o = JSON.parse(l)
+    } catch {
+      continue
+    }
+    if (!pick(o)) continue
+    const at = Date.parse(o.timestamp)
+    if (Number.isFinite(at)) return at
+  }
+  return null
+}
+export const lastHumanLine = (text) => lastLineAt(text, humanLine)
+export const lastTurnLine = (text) => lastLineAt(text, (o) => o?.type === 'assistant')
+export const lastAnyLine = (text) => lastLineAt(text, () => true)

@@ -12,6 +12,7 @@ import { Button, Empty, Icon, IconButton, Row, useWide } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { DiskBox } from './host-disk'
+import { TidyBox } from './host-tidy'
 
 // A grant names the operator it is for (the one shown), so another operator's request in between is not granted.
 const helpCall = (hostId: string, op: 'ask' | 'grant' | 'end', login?: string) => post(`/api/hosts/${hostId}/disk-help`, { op, ...(login ? { login } : {}) })
@@ -149,6 +150,7 @@ function OthersSection({ me }: { me: Me }) {
               }
               onClick={can ? () => setOpen(shown ? null : h.id) : undefined}
             />
+            {shown ? <TidyBox key={`tidy-${h.id}`} hostId={h.id} online={h.online} /> : null}
             {shown ? <DiskBox key={h.id} hostId={h.id} online={h.online} sys={h.sys} title={`${h.login} · ${h.name} 디스크`} /> : null}
           </div>
         )
@@ -183,11 +185,17 @@ export function DiskPage({ me }: { me: Me | null }) {
                 <Row
                   left={<span className={`dot dot-${h.online ? 'green' : 'grey'}`} />}
                   title={h.name}
-                  sub={<DiskLine sys={h.sys} online={h.online} />}
+                  sub={
+                    <span className="stack" style={{ gap: 4 }}>
+                      <DiskLine sys={h.sys} online={h.online} />
+                      {h.tidy?.at ? <span>오래 쉰 세션 {h.tidy.sessions} · 정리 제안 {h.tidy.folders + h.tidy.transcripts}</span> : null}
+                    </span>
+                  }
                   right={<Icon name={shown ? 'up' : 'down'} />}
                   onClick={() => setOpen(shown ? null : h.id)}
                 />
                 {h.diskHelp ? <HelpBanner hostId={h.id} help={h.diskHelp} /> : null}
+                {shown ? <TidyBox key={`tidy-${h.id}`} hostId={h.id} online={h.online} /> : null}
                 {shown ? <DiskBox key={h.id} hostId={h.id} online={h.online} sys={h.sys} title={`${h.name} 디스크`} /> : null}
               </div>
             )

@@ -124,6 +124,12 @@ export interface Session {
   resting?: boolean
   /** 즐겨찾기: first in the newest-first list (REQ-F-782). */
   favorite?: boolean
+  /** 자동 종료 안 함 (REQ-F-835): the hourly tidy never takes its claude down. */
+  keepAlive?: boolean
+  /** When the hourly tidy means to take its claude down (REQ-F-835), set by a notice. */
+  tidyStopAt?: number
+  /** The last time a person did something in it from the pages or Slack. */
+  humanAt?: number
   /** To-dos taken off the panel, by their words (`todoKey`, REQ-F-784). */
   todoHidden?: string[]
   moves: { at: number; from: string; to: string; lines: number; sourceOnline: boolean; warnings: string[] }[]
@@ -176,6 +182,16 @@ export interface DiskHelp {
   until: number
 }
 
+export interface TidyBrief {
+  mode: 'auto' | 'suggest' | 'off'
+  why?: 'observe' | 'owner' | null
+  observeUntil?: number | null
+  at: number | null
+  sessions: number
+  folders: number
+  transcripts: number
+}
+
 export interface Host {
   id: string
   /** CPU, memory and disk in use (REQ-F-800); absent from older agents. */
@@ -184,6 +200,8 @@ export interface Host {
   battery?: (import('./format').Battery & { at: number }) | null
   /** 디스크 정리 도움 (REQ-F-804): the operator who asked, and until when it was granted (0: not yet). */
   diskHelp?: DiskHelp | null
+  /** 세션 정리 (REQ-F-839): the mode it runs in and how many it last suggested. */
+  tidy?: TidyBrief | null
   name: string
   kind: string
   info: { version: string; build: string; node: string; os: string; hostname: string } | null

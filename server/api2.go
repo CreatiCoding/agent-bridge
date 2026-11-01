@@ -43,6 +43,9 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	p := u.Path
 	get := req.Method == "GET"
 	post := req.Method == "POST"
+	if apiTidy(req, res, u, uid, p) {
+		return true
+	}
 	if m := hostDirsRe.FindStringSubmatch(p); get && m != nil {
 		ownHost(uid, m[1])
 		if !online(m[1]) {

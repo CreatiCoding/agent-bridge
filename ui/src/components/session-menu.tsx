@@ -395,6 +395,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
         }
       : { id: 'lock', label: '잠그기', icon: 'key' as const, hint: '비밀번호로 가리기', onSelect: () => lockSession(s) },
     { id: 'favorite', label: s.favorite ? '즐겨찾기 빼기' : '즐겨찾기', icon: 'star', hint: s.favorite ? undefined : '최신순 맨 위에', onSelect: () => toggleFavorite(s) },
+    { id: 'keepAlive', label: s.keepAlive ? '자동 종료 다시 허용' : '자동 종료 안 함', icon: 'shield', hint: s.keepAlive ? undefined : '오래 쉬어도 claude 를 내리지 않음', onSelect: () => void act(() => sessionPost(s, 'settings', { keepAlive: !s.keepAlive }), s.keepAlive ? '오래 쉬면 다시 자동으로 내려요' : '이 세션은 자동으로 내리지 않아요') },
     { id: 'rest', label: s.resting ? '휴면 풀기' : '휴면', icon: s.resting ? 'pop' : 'push', hint: s.resting ? undefined : '그룹 목록에서 숨김', onSelect: () => toggleRest(s) },
     { id: 'log', label: '이 세션의 로그', icon: 'list', onSelect: () => go({ name: 'host', id: s.hostId, sid: s.id }) },
     'sep',

@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.385',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '세션 정리: 에이전트가 1시간마다 사람 입력이 오래 없는 세션의 claude 를 하루 전 예고 뒤 내리고(기본 3일, 대화는 남음), 오래 안 쓴 깨끗한 작업 폴더만 휴지통으로 옮기며(기본 14일), 나머지는 제안으로 보여 준다. 처음 7일과 다른 사용자 기기는 제안만',
+        refs: ['REQ-F-835', 'REQ-F-836', 'REQ-F-837', 'REQ-F-838'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '디스크 관리의 기기마다 "세션 정리" 칸(오래 쉰 세션·정리 제안 폴더·큰 대화 기록, 방식과 일수 설정), 세션 화면의 내림 예고 띠와 메뉴의 "자동 종료 안 함"',
+        refs: ['REQ-F-839'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: 'bridge.yaml 의 tidy.* 기본값과 계정·기기별 설정, 정리 기록(area tidy)과 하루 요약 알림',
+        refs: ['REQ-F-840', 'REQ-F-812'],
+      },
+    ],
+  },
+  {
     version: '1.384',
     date: '2026-11-01',
+    commit: '2e42d24',
     changes: [
       {
         kind: 'added',

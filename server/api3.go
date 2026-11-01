@@ -588,6 +588,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if otherCardOpen(meta, b["card"].(string)) {
 			refuse(409, OTHER_CARD)
 		}
+		if !req.internal {
+			markHuman(meta)
+		}
 		if len(hooksOf("permission.answer.before")) > 0 {
 			cid := b["card"].(string)
 			actionBefore("permission.answer", uid, meta.id()+"|"+cid, orderedObj{{"session", sessionOfEvent(meta)}, {"card", card}, {"option", option}, {"by", curBy()}}, func() bool {
@@ -782,6 +785,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		}
 		sessBefore("session.key", meta, kv{"keys", keys})
 		toHost(liveHost(meta), M{"t": "key", "sid": meta.id(), "keys": keys})
+		if !req.internal {
+			markHuman(meta)
+		}
 		sessAfter("session.key", meta, kv{"keys", keys})
 	case "screen":
 		toHost(liveHost(meta), M{"t": "screen", "sid": meta.id()})
@@ -859,6 +865,18 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		}
 		if v, ok := b["resting"].(bool); ok {
 			meta.set("resting", v)
+		}
+		// 세션 정리 (REQ-F-839 rule 6): pinned against the automatic stop, or kept for now ("유지").
+		if v, ok := b["keepAlive"].(bool); ok {
+			if v {
+				meta.set("keepAlive", true)
+				meta.del("tidyStopAt")
+			} else {
+				meta.del("keepAlive")
+			}
+		}
+		if v, _ := b["tidyKeep"].(bool); v {
+			markHuman(meta)
 		}
 		if v, ok := b["favorite"].(bool); ok {
 			if v {
@@ -1038,6 +1056,10 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 	// A question or plan card answered in words (REQ-F-817 decision.answered via message).
 	if c, ok := meta.get("card").(M); ok && (c["kind"] == "question" || c["kind"] == "plan") && safeId(c["id"]) {
 		noteAnswer(c["id"].(string), M{"n": nil, "via": "message", "by": curBy()})
+	}
+	// 세션 정리 (REQ-F-835 rule 1): a person wrote; a session that hands work over is not one.
+	if via == "web" || via == "slack" {
+		markHuman(meta)
 	}
 	logSaid(meta, id, strings.Join(parts, "\n"), via, imgs)
 	if len(videos) > 0 {

@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell } from './guard.mjs'
+import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -446,7 +446,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -1224,6 +1224,8 @@ function endTurn(sid, s, why) {
   if (!s.turn) return
   agentHook('session.done', sid, s.cwd)
   s.turn = null
+  // When it last worked (REQ-F-835): a session that turns by itself (a loop) is not stopped for want of a person.
+  s.turnEndAt = Date.now()
   s.running = new Map()
   s.asking = null
   setPreview(sid, s, '')
@@ -2619,6 +2621,8 @@ const commands = {
     // First: a reopening (refresh, revive) in flight sees it and does not leave a terminal behind (launchNow).
     s.closed = true
     await tmux('kill-session', '-t', `=${s.tmux}`)
+    // Its folder may be offered for the Trash later (REQ-F-837), after the server has forgotten the session.
+    rememberEnded(s.cwd)
     trashMdFile(sid, s)
     resetRuntime(s)
     sessions.delete(sid)
@@ -2880,6 +2884,68 @@ const commands = {
       log('warn', 'disk', e.message)
       emit({ t: 'disk', reqId, ok: false, error: e.message })
     }
+  },
+  /**
+   * 세션 정리 (IF-263): the policy and holds for one batch. Asked by the page (reqId): the report goes back to it;
+   * else it is the hourly one this agent asked for, and the report is sent on its own.
+   */
+  async tidyRun(run) {
+    await tidyOnce(run, (report, error) => {
+      if (run.reqId) emit({ t: 'tidyRun', reqId: run.reqId, ok: !!report, ...(report ? { report } : { error }) })
+      else if (report) emit({ t: 'tidyReport', report })
+    })
+  },
+  /** Stops the claude of the sessions named, by hand (REQ-F-839): the days do not count, the work in them does. */
+  async tidyStop({ reqId, sids, holds }) {
+    const results = []
+    for (const sid of (Array.isArray(sids) ? sids : []).slice(0, 200)) {
+      const s = sessions.get(sid)
+      if (!s) {
+        results.push({ sid, ok: false, error: '이 맥에 그 세션이 없어요' })
+        continue
+      }
+      const f = idleFacts(sid, s, holds?.[sid])
+      const v = idleStopWhy(f, Date.now(), { mode: 'auto' }, true)
+      if (v.act !== 'stop') {
+        results.push({ sid, ok: false, error: v.why })
+        continue
+      }
+      try {
+        await sleepSession(sid, s, Math.floor((Date.now() - f.lastHumanAt) / DAY_MS))
+        results.push({ sid, ok: true })
+      } catch (e) {
+        results.push({ sid, ok: false, error: String(e.message).slice(0, 200) })
+      }
+    }
+    emit({ t: 'tidyStop', reqId, ok: true, results })
+  },
+  /** Moves the folders and transcripts named to the Trash, each judged again here (REQ-F-839, IF-263). */
+  async tidyTrash({ reqId, items }) {
+    const results = []
+    const home = fs.realpathSync(HOME)
+    for (const it of (Array.isArray(items) ? items : []).slice(0, 200)) {
+      const where = typeof it?.path === 'string' ? it.path : ''
+      try {
+        const real = diskPath(where)
+        if (!fs.existsSync(real)) throw new Error('그 항목이 없어요')
+        let why
+        if (it.kind === 'transcript') why = transcriptTrashWhy(real)
+        else {
+          const used = sessionPlaces().flatMap((x) => x.dirs)
+          why = used.some((u) => insideOf(u, real) || insideOf(real, u)) ? '열린 세션이 쓰는 중' : diskTrashable(real, { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
+        }
+        if (why) throw new Error(why)
+        const r = await moveToTrash(real)
+        // A conversation keeps its tool results and sub-agents in a folder of the same name: it goes with it.
+        const side = real.slice(0, -6)
+        if (it.kind === 'transcript' && fs.existsSync(side) && fs.statSync(side).isDirectory()) await moveToTrash(side)
+        log('info', 'tidy', `휴지통으로 옮김(${it.kind === 'transcript' ? '대화 기록' : '폴더'}, ${((r.size ?? 0) / 1e6).toFixed(1)}MB)`)
+        results.push({ path: where, ok: true, size: r.size ?? 0, to: r.to })
+      } catch (e) {
+        results.push({ path: where, ok: false, error: String(e.message).slice(0, 200) })
+      }
+    }
+    emit({ t: 'tidyTrash', reqId, ok: true, results })
   },
   /** AGENTS.md (or CLAUDE.md) of the working folder: what the session was told to follow. */
   /** The person's own pull requests (created, and merged), for the usage statistics. Read only; 100 at a time, ten pages at most. */
@@ -3786,23 +3852,407 @@ async function diskOp(op, id, where, paths) {
     }
     const why = diskTrashable(real, { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
     if (why) throw new Error(why)
-    const st = fs.lstatSync(real)
-    const size = st.isDirectory() && !st.isSymbolicLink() ? await diskSize(real) : st.blocks * 512
-    const bin = trashDir(home, process.platform)
-    fs.mkdirSync(bin, { recursive: true })
-    let to = path.join(bin, path.basename(real))
-    if (fs.existsSync(to)) to = `${to} ${new Date().toISOString().replace(/[:.]/g, '-')}`
-    fs.renameSync(real, to)
-    // The freedesktop Trash wants a note of where each item came from, so a file manager can put it back.
-    if (process.platform !== 'darwin') {
-      const info = path.join(path.dirname(bin), 'info')
-      fs.mkdirSync(info, { recursive: true })
-      fs.writeFileSync(path.join(info, `${path.basename(to)}.trashinfo`), `[Trash Info]\nPath=${encodeURI(real)}\nDeletionDate=${new Date().toISOString().slice(0, 19)}\n`)
-    }
-    log('info', 'disk', `휴지통으로 옮김(${real.length}자, ${((size ?? 0) / 1e9).toFixed(2)}GB)`)
-    return { to: tilde(to), size }
+    const r = await moveToTrash(real)
+    log('info', 'disk', `휴지통으로 옮김(${real.length}자, ${((r.size ?? 0) / 1e9).toFixed(2)}GB)`)
+    return r
   }
   throw new Error('모르는 동작이에요')
+}
+
+/** Moves a file or folder to this Mac's Trash (never deletes): `~/.Trash`, or the freedesktop Trash with its note. */
+async function moveToTrash(real) {
+  const home = fs.realpathSync(HOME)
+  const st = fs.lstatSync(real)
+  const size = st.isDirectory() && !st.isSymbolicLink() ? await diskSize(real) : st.blocks * 512
+  const bin = trashDir(home, process.platform)
+  fs.mkdirSync(bin, { recursive: true })
+  let to = path.join(bin, path.basename(real))
+  if (fs.existsSync(to)) to = `${to} ${new Date().toISOString().replace(/[:.]/g, '-')}`
+  fs.renameSync(real, to)
+  // The freedesktop Trash wants a note of where each item came from, so a file manager can put it back.
+  if (process.platform !== 'darwin') {
+    const info = path.join(path.dirname(bin), 'info')
+    fs.mkdirSync(info, { recursive: true })
+    fs.writeFileSync(path.join(info, `${path.basename(to)}.trashinfo`), `[Trash Info]\nPath=${encodeURI(real)}\nDeletionDate=${new Date().toISOString().slice(0, 19)}\n`)
+  }
+  return { to: tilde(to), size }
+}
+
+// ---------- 세션 정리 (REQ-F-835~838) ----------
+// Every hour the agent asks the server for the policy and what only the server knows (locks, auto-response, who
+// waits on whom, the last input it took), works out which sessions sat idle, which folders and transcripts nobody
+// uses, does only the automatic steps (stop a claude after a notice, move a clean old folder to the Trash) and
+// reports the rest for the disk page. The judgements are guard.mjs's (idleStopWhy, restAct, folderTidyWhy, …).
+
+const endedPath = path.join(STATE_DIR, 'tidy-ended.json')
+/** Folders of sessions this agent closed, newest first: after the server forgets a session its folder is still known. */
+function rememberEnded(cwd) {
+  if (!cwd) return
+  const list = readJson(endedPath, []).filter((x) => x?.cwd && x.cwd !== cwd)
+  writeJson(endedPath, [{ cwd, at: Date.now() }, ...list].slice(0, 500))
+}
+
+/** Reads a file backwards in 4 MiB pieces until `find` answers for the text read so far (whole lines only). */
+function scanBack(file, finds) {
+  const fd = fs.openSync(file, 'r')
+  const out = finds.map(() => null)
+  try {
+    let pos = fs.fstatSync(fd).size
+    let rest = ''
+    let read = 0
+    while (pos > 0 && out.some((x) => x == null) && read < 64 * 1024 * 1024) {
+      const n = Math.min(4 * 1024 * 1024, pos)
+      pos -= n
+      read += n
+      const buf = Buffer.alloc(n)
+      fs.readSync(fd, buf, 0, n, pos)
+      const text = buf.toString('utf8') + rest
+      const cut = pos > 0 ? text.indexOf('\n') : -1
+      rest = cut >= 0 ? text.slice(0, cut) : ''
+      const whole = cut >= 0 ? text.slice(cut + 1) : text
+      finds.forEach((f, i) => {
+        if (out[i] == null) out[i] = f(whole)
+      })
+    }
+  } finally {
+    fs.closeSync(fd)
+  }
+  return out
+}
+/** A transcript's last human line and last assistant line, kept while the file has the same size and time. */
+const lineCache = new Map()
+function transcriptTimes(file) {
+  let st
+  try {
+    st = fs.statSync(file)
+  } catch {
+    return { human: null, turn: null }
+  }
+  const key = `${st.size}:${st.mtimeMs}`
+  const hit = lineCache.get(file)
+  if (hit?.key === key) return hit
+  let human = null
+  let turn = null
+  try {
+    ;[human, turn] = scanBack(file, [lastHumanLine, lastTurnLine])
+  } catch {}
+  const v = { key, human, turn }
+  lineCache.set(file, v)
+  return v
+}
+
+/** What idleStopWhy needs about one session, from this agent, the server's holds and its transcript. */
+function idleFacts(sid, s, hold = {}) {
+  const t = transcriptTimes(transcriptPath(s, sid))
+  const launched = Number(s.launchedAt) || null
+  const humanAt = Math.max(Number(hold.humanAt) || 0, t.human ?? 0)
+  return {
+    alive: s.alive !== false,
+    lastHumanAt: humanAt || launched || Date.now(),
+    from: humanAt ? (t.human && t.human >= (Number(hold.humanAt) || 0) ? 'transcript' : 'server') : 'launch',
+    lastTurnAt: s.turnEndAt ?? t.turn ?? null,
+    noticeAt: s.tidyNoticeAt ?? null,
+    keepAlive: !!hold.keepAlive,
+    locked: !!hold.locked,
+    reportAuto: !!hold.reportAuto,
+    delegate: !!hold.delegate,
+    resting: !!hold.resting,
+    turn: !!s.turn,
+    waiting: !!(s.wait || s.card?.open),
+    changing: !!(s.starting || s.launching || s.reviving || s.refreshing || s.lightforking),
+  }
+}
+
+/** Stops a session's claude and leaves the session (REQ-F-835 rule 5): a message to it opens it again where it was. */
+async function sleepSession(sid, s, days) {
+  s.alive = false
+  s.tidyStoppedAt = Date.now()
+  delete s.tidyNoticeAt
+  await tmux('kill-session', '-t', `=${s.tmux}`)
+  if (s.card?.open) foldCard(sid, s, '세션이 끝남')
+  s.turn = null
+  s.running = new Map()
+  s.wait = null
+  setPreview(sid, s, '')
+  saveSessions()
+  note(sid, tidyStoppedText(days))
+  log('info', 'tidy', `사람 입력이 ${days}일 없어 claude 를 내림`, sid)
+  publish(sid, s)
+}
+
+const realOr = (p) => {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return p
+  }
+}
+const insideOf = (p, dir) => p === dir || p.startsWith(`${dir}/`)
+const expandTilde = (p) => (p === '~' ? HOME : String(p).startsWith('~/') ? path.join(HOME, String(p).slice(2)) : String(p))
+
+/** A folder's newest change and the git repositories (and worktrees) in it, walking at most 20,000 entries. */
+async function folderFacts(dir) {
+  let lastAt = 0
+  let seen = 0
+  const gits = []
+  const walk = (d, depth) => {
+    if (seen > 20_000 || depth > 12) return
+    let ents
+    try {
+      ents = fs.readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of ents) {
+      if (++seen > 20_000) return
+      const p = path.join(d, e.name)
+      if (e.name === '.git') {
+        gits.push({ dir: d, worktree: !e.isDirectory() })
+        continue
+      }
+      try {
+        lastAt = Math.max(lastAt, fs.lstatSync(p).mtimeMs)
+      } catch {}
+      if (e.isDirectory() && !e.isSymbolicLink()) walk(p, depth + 1)
+    }
+  }
+  try {
+    lastAt = fs.statSync(dir).mtimeMs
+  } catch {}
+  walk(dir, 0)
+  // Not walked to the end: nothing says it is old.
+  if (seen > 20_000) lastAt = Date.now()
+  const repos = await inTurns(gits, 3, async (g) => {
+    if (g.worktree) return { worktree: true }
+    const st = await run('git', [...GIT_SAFE, '--no-optional-locks', '-C', g.dir, 'status', '--porcelain'])
+    const un = await git(g.dir, 'log', '--branches', '--not', '--remotes', '--oneline')
+    const stash = await git(g.dir, 'stash', 'list')
+    const lines = (r) => (r.ok && r.out ? r.out.split('\n').length : 0)
+    // A repository git cannot read is kept, as if it had changes.
+    return { dirty: !st.ok || !!st.out, unpushed: lines(un), stash: lines(stash) }
+  })
+  return { lastAt, repos }
+}
+
+/** The folders no open session uses, each judged (REQ-F-837 rules 1~4). */
+async function tidyFolders(policy, roots, ended, now) {
+  const home = fs.realpathSync(HOME)
+  const used = sessionPlaces().flatMap((x) => x.dirs)
+  const inUse = (p) => used.some((u) => insideOf(u, p) || insideOf(p, u))
+  const rootList = (Array.isArray(roots) && roots.length ? roots : ['~/bridge/works']).map((r) => realOr(expandTilde(r)))
+  const endedAt = new Map()
+  for (const e of [...(Array.isArray(ended) ? ended : []), ...readJson(endedPath, [])]) {
+    const c = realOr(expandTilde(e?.cwd ?? ''))
+    const at = Number(e?.closedAt ?? e?.at) || 0
+    if (c && at > (endedAt.get(c) ?? 0)) endedAt.set(c, at)
+  }
+  const cands = new Map()
+  for (const root of rootList) {
+    let groups = []
+    try {
+      groups = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory())
+    } catch {
+      continue
+    }
+    for (const g of groups) {
+      let names = []
+      try {
+        names = fs.readdirSync(path.join(root, g.name), { withFileTypes: true }).filter((e) => e.isDirectory() && !e.isSymbolicLink())
+      } catch {
+        continue
+      }
+      for (const n of names) cands.set(path.join(root, g.name, n.name), 'works')
+    }
+  }
+  for (const c of endedAt.keys()) if (!cands.has(c) && fs.existsSync(c) && !rootList.some((r) => insideOf(c, r))) cands.set(c, 'ended')
+  const opts = () => ({ home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
+  const list = []
+  for (const [dir, kind] of cands) {
+    if (inUse(dir)) continue
+    const trashWhy = diskTrashable(dir, opts())
+    // What could never go (the home folder's own children, secrets…) is not offered either.
+    if (trashWhy && kind === 'ended') continue
+    list.push({ dir, kind, trashWhy })
+  }
+  const judged = await inTurns(list, 3, async (x) => {
+    const facts = await folderFacts(x.dir)
+    const v = folderTidyWhy({ kind: x.kind, trashWhy: x.trashWhy, repos: facts.repos, lastAt: facts.lastAt, endedAt: endedAt.get(x.dir) ?? null }, now, policy)
+    return { dir: x.dir, path: tilde(x.dir), kind: x.kind, size: await diskSize(x.dir), lastAt: facts.lastAt, auto: v.auto, why: v.why, trashable: !x.trashWhy }
+  })
+  return judged.sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
+}
+
+/** Every transcript folder: the main Claude account's and each other account's. */
+const transcriptRoots = () => [...new Set([projectsOf(''), ...accounts.map((a) => projectsOf(a.id))])].filter((d) => fs.existsSync(d))
+
+/** Big old transcripts no open session uses (REQ-F-837 rule 5), biggest first, 50 at most. */
+function tidyTranscripts(policy, now) {
+  const p = tidyPolicyOf(policy)
+  const open = new Set([...sessions].flatMap(([sid, s]) => [s.conv, sid]).filter(Boolean))
+  const out = []
+  for (const root of transcriptRoots()) {
+    let dirs = []
+    try {
+      dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory())
+    } catch {
+      continue
+    }
+    for (const d of dirs) {
+      let files = []
+      try {
+        files = fs.readdirSync(path.join(root, d.name)).filter((f) => f.endsWith('.jsonl'))
+      } catch {
+        continue
+      }
+      for (const f of files) {
+        const file = path.join(root, d.name, f)
+        let st
+        try {
+          st = fs.statSync(file)
+        } catch {
+          continue
+        }
+        if (st.size < p.transcriptMB * 1024 * 1024) continue
+        const conv = f.slice(0, -6)
+        let lastAt = null
+        try {
+          ;[lastAt] = scanBack(file, [lastAnyLine])
+        } catch {}
+        const t = { size: st.size, lastAt: lastAt ?? st.mtimeMs, open: open.has(conv) }
+        const why = transcriptTidyWhy(t, now, policy)
+        if (why) out.push({ path: tilde(file), conv, size: st.size, lastAt: t.lastAt, why })
+      }
+    }
+  }
+  return out.sort((a, b) => b.size - a.size).slice(0, 50)
+}
+
+/** Which transcript a page may move: `<projects>/<folder>/<uuid>.jsonl` of a conversation no open session has. */
+function transcriptTrashWhy(file) {
+  const real = realOr(file)
+  const root = transcriptRoots().map(realOr).find((r) => path.dirname(path.dirname(real)) === r)
+  if (!root || !/^[0-9a-f-]{36}\.jsonl$/.test(path.basename(real))) return '대화 기록 파일이 아니에요'
+  const conv = path.basename(real).slice(0, -6)
+  if ([...sessions].some(([sid, s]) => s.conv === conv || sid === conv)) return '열린 세션의 대화예요'
+  return null
+}
+
+let tidyBusy = false
+let tidyLastAt = 0
+/**
+ * One run (REQ-F-838): judge, act on what is automatic, report. `run` is what the server sent (IF-263 tidyRun).
+ * In the suggest mode nothing is touched; the report says what would have been done.
+ */
+async function tidyBatch(run) {
+  const policy = tidyPolicyOf(run?.policy)
+  const holds = run?.holds && typeof run.holds === 'object' ? run.holds : {}
+  const now = Date.now()
+  const auto = policy.mode === 'auto'
+  const done = { noticed: [], stopped: [], trashed: [], failed: [] }
+  const would = { stop: 0, trash: 0, bytes: 0 }
+  const rows = []
+  if (policy.mode !== 'off') {
+    for (const [sid, s] of sessions) {
+      if (s.closed) continue
+      const f = idleFacts(sid, s, holds[sid])
+      const idleDays = Math.floor((now - f.lastHumanAt) / DAY_MS)
+      const v = idleStopWhy(f, now, policy)
+      const r = restAct(f, now, policy)
+      let act = v.act
+      if (act === 'notice') {
+        s.tidyNoticeAt = now
+        saveSessions()
+        note(sid, tidyNoticeText(idleDays, v.stopAt), 'warn')
+        done.noticed.push(sid)
+      } else if (act === 'stop') {
+        // Judged again on what is true this moment: a turn may have started or a message come in since.
+        const again = idleStopWhy(idleFacts(sid, s, holds[sid]), Date.now(), policy)
+        if (again.act === 'stop') {
+          try {
+            await sleepSession(sid, s, idleDays)
+            done.stopped.push({ sid, idleDays })
+          } catch (e) {
+            done.failed.push({ what: sid, error: String(e.message).slice(0, 200) })
+          }
+        } else act = again.act
+      } else if (act === 'suggest') would.stop++
+      // A session is listed once it is near its stop, or held there, or due a rest or a close.
+      if (act || v.why || r.rest || r.close) {
+        rows.push({ sid, alive: f.alive, lastHumanAt: f.lastHumanAt, from: f.from, idleDays, act, why: v.why, stopAt: v.stopAt, rest: r.rest, close: r.close })
+      } else if (s.tidyNoticeAt && s.tidyNoticeAt < f.lastHumanAt) {
+        // Input came after the notice: it is over.
+        delete s.tidyNoticeAt
+        saveSessions()
+      }
+    }
+  }
+  let folders = []
+  let transcripts = []
+  if (policy.mode !== 'off') {
+    try {
+      folders = await tidyFolders(policy, run?.roots, run?.ended, now)
+    } catch (e) {
+      done.failed.push({ what: 'folders', error: String(e.message).slice(0, 200) })
+    }
+    for (const f of folders.filter((x) => x.auto)) {
+      if (!auto) {
+        would.trash++
+        would.bytes += f.size ?? 0
+        continue
+      }
+      if (done.trashed.length >= 50) break
+      // Looked at again just before: a session may have opened in it since the walk.
+      const used = sessionPlaces().flatMap((x) => x.dirs)
+      const why = used.some((u) => insideOf(u, f.dir) || insideOf(f.dir, u)) ? '열린 세션이 쓰는 중' : diskTrashable(f.dir, { home: fs.realpathSync(HOME), keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
+      if (why) {
+        f.auto = false
+        f.why = why
+        continue
+      }
+      try {
+        const r = await moveToTrash(f.dir)
+        done.trashed.push({ path: f.path, size: r.size ?? f.size ?? 0 })
+        f.gone = true
+      } catch (e) {
+        done.failed.push({ what: f.path, error: String(e.message).slice(0, 200) })
+      }
+    }
+    try {
+      transcripts = tidyTranscripts(policy, now)
+    } catch (e) {
+      done.failed.push({ what: 'transcripts', error: String(e.message).slice(0, 200) })
+    }
+  }
+  const d = new Date(now)
+  const local = { date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, hour: d.getHours() }
+  const report = {
+    at: now,
+    local,
+    mode: policy.mode,
+    platform: process.platform,
+    sessions: rows,
+    folders: folders.filter((f) => !f.gone).slice(0, 200).map(({ dir, ...f }) => f),
+    transcripts,
+    done,
+    would,
+  }
+  log('info', 'tidy', `정리(${policy.mode}): 세션 후보 ${rows.length} · 예고 ${done.noticed.length} · 내림 ${done.stopped.length} · 폴더 제안 ${report.folders.length} · 휴지통 ${done.trashed.length} · 대화 기록 제안 ${transcripts.length}${auto ? '' : ` · 자동이었다면 세션 ${would.stop}·폴더 ${would.trash}`}`)
+  return report
+}
+
+/** Runs one batch unless one is running; the report goes back as `reply` says. */
+async function tidyOnce(run, reply) {
+  if (tidyBusy) return reply(null, '정리를 계산하는 중이에요. 잠시 뒤에 다시 해 주세요')
+  tidyBusy = true
+  tidyLastAt = Date.now()
+  try {
+    reply(await tidyBatch(run))
+  } catch (e) {
+    log('error', 'tidy', `정리 실패: ${e.message}`)
+    reply(null, String(e.message).slice(0, 300))
+  } finally {
+    tidyBusy = false
+  }
 }
 
 /** Folders that are never thrown away: the home folder, anything above it, and where Claude and this agent keep their own files. */
@@ -3873,6 +4323,15 @@ async function health() {
   })
 }
 setInterval(() => client && welcomed && health().catch((e) => log('error', 'health', e.message)), HEALTH_MS)
+// 세션 정리 (REQ-F-838): ten minutes after the agent starts, then every hour, it asks the server for a batch (tidyAsk →
+// tidyRun). A server that does not know it just never answers.
+const tidyStartAt = Date.now()
+setInterval(() => {
+  if (!client || !welcomed || tidyBusy) return
+  if (tidyLastAt ? Date.now() - tidyLastAt < TIDY_MS : Date.now() - tidyStartAt < TIDY_FIRST_MS) return
+  tidyLastAt = Date.now()
+  emit({ t: 'tidyAsk' })
+}, 60_000).unref()
 
 /** The last `os.cpus()` reading, so each health report says how busy the CPU was since the one before. */
 let cpuPrev = os.cpus()

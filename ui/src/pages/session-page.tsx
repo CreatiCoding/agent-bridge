@@ -27,6 +27,7 @@ import { useEdgeSwipeBack } from '../kit/swipe'
 import { inPane } from '../lib/split'
 import { copyText, onSending, openLink, openSession, sendMessage } from '../lib/builtin-actions'
 import { isCancel } from '../lib/actions'
+import { TidyBand } from '../components/tidy-band'
 
 interface Pending {
   key: string
@@ -805,6 +806,7 @@ export function SessionPage({ id }: { id: string }) {
               <SeatBanner s={s} />
               <DelegateAsks s={s} />
               <StateBanner s={s} />
+              <TidyBand s={s} />
               <BigLogNudge s={s} />
               <LightNudge s={s} />
               <OfflineBanner s={s} />
