@@ -681,14 +681,15 @@ func statusFromAgent(uid, hostID string, msg M) {
 			if v := mget(t, "timeout"); v != nil {
 				timeout = jsNumber(v)
 			}
-			if mget(t, "kind") != "monitor" || now < numOr0(mget(t, "at"))+timeout {
+			if !bgExpires(t) || now < numOr0(mget(t, "at"))+timeout {
 				kept = append(kept, t)
 			}
 		}
 		bg = kept
+		// Only commands are shells: agents, MCP calls and wakeups live inside Claude itself.
 		sh := []any{}
 		for _, t := range bg {
-			if mget(t, "kind") != "agent" {
+			if k := mget(t, "kind"); k == "bash" || k == "monitor" {
 				sh = append(sh, t)
 			}
 		}

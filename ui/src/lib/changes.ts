@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.391',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '맡긴 세션이 "CI 기다리는 중"처럼 중간 보고를 하고 백그라운드 작업을 기다리면 자동으로 닫히던 것. 백그라운드 작업이 남아 있으면 닫지 않고 "백그라운드 작업이 남아 아직 닫지 않았어요"라고 알리며, 작업이 끝나 다시 답하면 그때 닫는다',
+        refs: ['REQ-F-760'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '백그라운드 작업 목록에 백그라운드로 넘어간 MCP 도구 호출과 예약된 깨우기(ScheduleWakeup)도 들어간다',
+        refs: ['REQ-F-760', 'REQ-F-519'],
+      },
+    ],
+  },
+  {
     version: '1.390',
     date: '2026-11-02',
+    commit: '6022566',
     changes: [
       {
         kind: 'changed',

@@ -214,7 +214,7 @@ func pageApi(req *Req, res *Res, u *url.URL, uid string) bool {
 	return false
 }
 
-var bgKindNames = map[string]string{"agent": "에이전트", "monitor": "Monitor", "bash": "백그라운드 명령"}
+var bgKindNames = map[string]string{"agent": "에이전트", "monitor": "Monitor", "bash": "백그라운드 명령", "mcp": "백그라운드 MCP 호출", "wakeup": "예약된 깨우기"}
 
 // refreshSession: reopen a session in place (the conversation goes on) with the default prompt as it is now.
 func refreshSession(uid string, meta *Sess, hostID string, when string) {

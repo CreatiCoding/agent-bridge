@@ -510,9 +510,31 @@ var BG_START = []struct {
 	{re(`^Command [^\n]{0,120}?moved to the background \(ID: ([^)]+)\)`), "bash"},
 	{re(`^Monitor started \(task (\S+?),`), "monitor"},
 	{re(`^Async agent launched`), "agent"},
+	// An MCP tool call that ran past its limit keeps running in the background and is announced with a task notification.
+	{re(`^MCP tool [^\n]{0,200}? moved to the background as task (\S+?)\.?(?:\s|$)`), "mcp"},
+	// A wakeup the session scheduled (/loop): no notification comes, it simply fires after the delay (group 1: seconds).
+	{re(`^Next wakeup scheduled for [^\n]{0,60}?\(in (\d+)s\)`), "wakeup"},
 }
 
 var bgLabels = newOMap[M]()
+
+// bgExpires: a background entry that ends on its own after its timeout, with nothing in the transcript saying so
+// (a monitor after its timeout, a scheduled wakeup once it fires).
+func bgExpires(t any) bool {
+	k := mstr(t, "kind")
+	return k == "monitor" || k == "wakeup"
+}
+
+// withoutKind: the background list without entries of one kind.
+func withoutKind(list []any, kind string) []any {
+	out := []any{}
+	for _, t := range list {
+		if mget(t, "kind") != kind {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 func trackBackground(meta *Sess, line string) {
 	trackTodosTool(meta, line)
@@ -526,7 +548,7 @@ func trackBackground(meta *Sess, line string) {
 		if v := mget(t, "timeout"); v != nil {
 			timeout = jsNumber(v)
 		}
-		if mstr(t, "kind") != "monitor" || now < numOr0(mget(t, "at"))+timeout {
+		if !bgExpires(t) || now < numOr0(mget(t, "at"))+timeout {
 			bg = append(bg, t)
 		}
 	}
@@ -700,10 +722,16 @@ func trackBackgroundLine(meta *Sess, line string) {
 			if lab == nil {
 				lab = i["prompt"]
 			}
+			if c["name"] == "ScheduleWakeup" && i["reason"] != nil {
+				lab = i["reason"]
+			}
 			if lab == nil {
 				lab = c["name"]
 			}
 			tag := M{"name": c["name"], "label": jsSliceTo(collapse(jsString(lab)), 120)}
+			if c["name"] == "ScheduleWakeup" && i["stop"] == true {
+				tag["stop"] = true
+			}
 			if t := jsNumber(i["timeout_ms"]); t > 0 {
 				tag["timeout"] = t
 			}
@@ -750,6 +778,13 @@ func trackBackgroundLine(meta *Sess, line string) {
 				}
 				continue
 			}
+			// A loop that was stopped: the wakeup it had scheduled will not come.
+			if tag["name"] == "ScheduleWakeup" && truthy(tag["stop"]) {
+				if !truthy(c["is_error"]) {
+					meta.set("bg", withoutKind(asArr(meta.get("bg")), "wakeup"))
+				}
+				continue
+			}
 			// A background agent that had finished, woken again with a message: it runs again.
 			if tag["name"] == "SendMessage" {
 				r, _ := parseJSON([]byte(body))
@@ -789,6 +824,10 @@ func trackBackgroundLine(meta *Sess, line string) {
 					if a := agentIDRe.FindStringSubmatch(body); a != nil {
 						id = a[1]
 					}
+				} else if bs.kind == "wakeup" {
+					// One wakeup at a time: a new one replaces the one scheduled before. It ends when it fires.
+					meta.set("bg", withoutKind(asArr(meta.get("bg")), "wakeup"))
+					tag = M{"label": tagLabel(tag, "wakeup"), "timeout": jsNumber(m[1]) * 1000}
 				} else {
 					id = m[1]
 				}
@@ -836,6 +875,13 @@ func trackBackgroundLine(meta *Sess, line string) {
 }
 
 // sameObj is JavaScript's === for objects.
+func tagLabel(tag M, def string) any {
+	if tag != nil && tag["label"] != nil {
+		return tag["label"]
+	}
+	return def
+}
+
 func sameObj(a, b any) bool {
 	ma, ok1 := a.(M)
 	mb, ok2 := b.(M)

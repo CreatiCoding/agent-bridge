@@ -21,7 +21,13 @@ const (
 	DELEGATE_KEEP       = 6
 	DELEGATE_FORGET_MS  = 1000
 	DELEGATE_DROP_WAIT  = 30_000
+	// 1.391: a delegated session that ended a turn with background work still running (a background command, an MCP
+	// call moved to the background, a background agent, a monitor, a scheduled wakeup) is woken again by it: not closed.
+	DELEGATE_BG_HELD = "백그라운드 작업이 남아 아직 닫지 않았어요"
 )
+
+// bgPending: background work of a session that has not ended (meta.bg).
+func bgPending(c *Sess) int { return len(asArr(c.get("bg"))) }
 
 // closeAnswered: the answer of a delegated session was just handed to the session that asked; it closes now.
 // Only a turn that ended well (idle with an answer): waiting, working and a claude that stopped (ended) stay open.
@@ -30,6 +36,14 @@ func closeAnswered(c *Sess, st M) {
 		return
 	}
 	if cur, ok := sessions.Get(c.id()); !ok || cur != c {
+		return
+	}
+	if n := bgPending(c); n > 0 {
+		// Said once per turn; it closes after the turn the background work wakes it for.
+		if numOr0(c.get("bgHeldSeq")) != numOr0(c.get("seq")) {
+			logEvents(c, []any{M{"k": "notice", "tone": "info", "text": "↪ " + DELEGATE_BG_HELD + " (" + itoa(n) + "개)"}})
+			c.set("bgHeldSeq", numOr0(c.get("seq")))
+		}
 		return
 	}
 	withBy("system", func() { closeSession(c, DELEGATE_AUTO_CLOSE) })
@@ -213,6 +227,10 @@ func delegateState(meta *Sess, since float64) M {
 		answer = jsSliceTo(answer, 20_000) + "\n…(잘림)"
 	}
 	out["answer"] = answer
+	if n := bgPending(meta); n > 0 && state == "done" {
+		out["bg"] = n
+		out["note"] = DELEGATE_BG_HELD
+	}
 	return out
 }
 
@@ -286,6 +304,9 @@ func followDelegate(c *Sess) {
 			title = ""
 		}
 		text := "↪ " + host + " 에 맡긴 세션의 턴이 끝났어요 (id " + c.id() + ", \"" + title + "\")\n\n" + answer
+		if bgPending(c) > 0 {
+			text += "\n\n(" + DELEGATE_BG_HELD + ")"
+		}
 		if !truthy(parent.state()["alive"]) || !online(parent.host()) {
 			logEvents(parent, []any{M{"k": "notice", "tone": "info", "text": "↪ " + host + " 에 맡긴 세션이 끝났어요. 이 세션이 멈춰 있어 전하지 못했어요"}})
 			return
