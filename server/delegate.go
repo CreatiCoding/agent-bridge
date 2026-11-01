@@ -155,6 +155,42 @@ func followDelegate(c *Sess) {
 	})
 }
 
+// delegateLaunch: the model and effort a delegate call asks for (REQ-F-760, 1.383). Only what is given goes in, so a
+// field left out still takes the person's default (launch) in startSession. A bad value is refused, not dropped.
+func delegateLaunch(a M) M {
+	out := M{}
+	if model := jsTrim(strOr(a["model"], "")); model != "" {
+		if !launchModelRe.MatchString(model) {
+			throw("model 이 올바르지 않아요: " + jsSliceTo(model, 60) + ". opus·sonnet·haiku·fable 같은 별칭이나 전체 모델 ID 를 쓰세요")
+		}
+		out["model"] = model
+	}
+	if effort := jsTrim(strOr(a["effort"], "")); effort != "" {
+		if !contains(LAUNCH_EFFORTS, effort) {
+			throw("effort 가 올바르지 않아요: " + jsSliceTo(effort, 20) + ". " + strings.Join(LAUNCH_EFFORTS, "·") + " 중 하나를 쓰세요")
+		}
+		out["effort"] = effort
+	}
+	return out
+}
+
+// launchLabel: what a delegated session was started with, as the answer and the notices show it ("기본" when left out).
+func launchLabel(lm M) M {
+	out := M{"model": "기본", "effort": "기본"}
+	for _, k := range []string{"model", "effort"} {
+		if v, ok := lm[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func withUsed(out M, used M) M {
+	out["model"] = used["model"]
+	out["effort"] = used["effort"]
+	return out
+}
+
 // runDelegate: one request of a session's bridge MCP server, through its Mac's agent (agent/mcp.mjs).
 func runDelegate(uid, hostID string, msg M) any {
 	if !cfgOn("features.sessionMove") {
@@ -232,6 +268,9 @@ func runDelegate(uid, hostID string, msg M) any {
 		if task == "" {
 			throw("task 가 비어 있어요")
 		}
+		lm := delegateLaunch(a)
+		used := launchLabel(lm)
+		usedText := "모델 " + jsString(used["model"]) + " · effort " + jsString(used["effort"])
 		if len(delegatesOf(parent)) >= DELEGATE_MAX {
 			throw("이미 " + itoa(DELEGATE_MAX) + "개를 맡겨 두었어요. 끝난 것은 delegate_stop 으로 닫으세요")
 		}
@@ -253,7 +292,11 @@ func runDelegate(uid, hostID string, msg M) any {
 		if mode == "" {
 			mode = "default"
 		}
-		sid := startSession(uid, M{"hostId": target, "cwd": cwd, "create": given == "", "prompt": task, "title": "↪ " + jsSliceTo(collapse(task), 70), "mode": mode, "via": "delegate", "group": namedGroup(uid, DELEGATE_GROUP)}, &Req{internal: true, Header: map[string][]string{}})
+		sb := M{"hostId": target, "cwd": cwd, "create": given == "", "prompt": task, "title": "↪ " + jsSliceTo(collapse(task), 70), "mode": mode, "via": "delegate", "group": namedGroup(uid, DELEGATE_GROUP)}
+		for k, v := range lm {
+			sb[k] = v
+		}
+		sid := startSession(uid, sb, &Req{internal: true, Header: map[string][]string{}})
 		c, _ := sessions.Get(sid)
 		from := ""
 		if hh, ok := hosts.Get(hostID); ok && hh["name"] != nil {
@@ -271,16 +314,16 @@ func runDelegate(uid, hostID string, msg M) any {
 		if !truthy(parent.get("title")) {
 			pt = jsSliceTo(parent.id(), 8)
 		}
-		logEvents(c, []any{M{"k": "notice", "tone": "info", "text": "↪ " + from + " 의 세션 \"" + pt + "\" 이 맡긴 일이에요. 허용 정책은 그 세션을 따라가요."}})
-		logEvents(parent, []any{M{"k": "notice", "tone": "info", "text": "↪ " + hn + " 에 일을 맡겼어요: " + jsSliceTo(collapse(task), 120)}})
+		logEvents(c, []any{M{"k": "notice", "tone": "info", "text": "↪ " + from + " 의 세션 \"" + pt + "\" 이 맡긴 일이에요. 허용 정책은 그 세션을 따라가요. " + usedText}})
+		logEvents(parent, []any{M{"k": "notice", "tone": "info", "text": "↪ " + hn + " 에 일을 맡겼어요 (" + usedText + "): " + jsSliceTo(collapse(task), 120)}})
 		addNotice(uid, M{"sid": sid, "key": "delegate-" + sid, "title": "다른 맥에 일을 맡겼어요", "text": from + " → " + hn + ": " + jsSliceTo(collapse(task), 100), "tone": "info", "push": true})
 		record(uid, target, M{"level": "info", "area": "delegate", "sid": sid, "text": from + " 의 세션이 일을 맡김"})
 		touch(c)
 		touch(parent)
 		if a["wait"] == false {
-			return brief(c, delegateState(c, 0))
+			return withUsed(brief(c, delegateState(c, 0)), used)
 		}
-		return brief(c, waitTurn(c, 0, ms))
+		return withUsed(brief(c, waitTurn(c, 0, ms)), used)
 	case "delegate_status":
 		c := child()
 		if truthy(a["wait"]) {

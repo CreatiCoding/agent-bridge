@@ -25,6 +25,13 @@ test('MCP 서버: initialize·tools/list·tools/call, 알림에는 답하지 않
   assert.equal((await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })).result.protocolVersion, '2025-06-18')
   assert.deepEqual((await handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result.tools.map((t) => t.name), ['hosts', 'delegate', 'delegate_status', 'delegate_send', 'delegate_stop', 'todos'])
   assert.equal(TOOLS.length, 6)
+  // Model and effort for the session handed work (1.383): optional, effort one of the launch efforts.
+  const ds = TOOLS.find((t) => t.name === 'delegate').inputSchema
+  assert.deepEqual(Object.keys(ds.properties), ['host', 'task', 'cwd', 'wait', 'timeout_s', 'model', 'effort'])
+  assert.deepEqual(ds.required, ['host', 'task'])
+  assert.equal(ds.properties.model.type, 'string')
+  assert.deepEqual(ds.properties.effort.enum, ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.match(TOOLS.find((t) => t.name === 'delegate').description, /opus/)
   const ok = await handle({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'hosts', arguments: {} } }, async () => [{ name: 'b' }])
   assert.match(ok.result.content[0].text, /"name": "b"/)
   const bad = await handle({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'delegate', arguments: {} } }, async () => {
@@ -93,15 +100,33 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     assert.equal(done.result.answer, '빌드했어요')
     assert.equal(done.result.host, 'mac-b')
     assert.equal(done.result.id, child)
+    // No model or effort given: the person's default, shown as 기본 (1.383).
+    assert.equal(done.result.model, '기본')
+    assert.equal(done.result.effort, '기본')
     // Said by the session that handed it over: told apart from what the person types, even when a page claims it (1.207).
     assert.equal((await s.api('alice', `/api/sessions/${child}/send`, { method: 'POST', body: { text: '내가 직접', via: 'delegate' } })).status, 200)
     assert.equal((await ask('delegate_send', { id: child, text: '테스트도', wait: false })).ok, true)
     const said = (await s.api('alice', `/api/sessions/${child}/events`)).json.events.filter((e) => e.k === 'user')
     assert.deepEqual(said.map((e) => [e.text, e.via]), [['빌드해 줘', 'delegate'], ['내가 직접', 'web'], ['테스트도', 'delegate']])
     // Handed another: it joins the same group, no second one is made (1.252).
-    const second = ask('delegate', { host: 'mac-b', task: '둘째', wait: false })
-    const child2 = (await b.answerNew()).sid
-    assert.equal((await second).ok, true)
+    // With a model and effort: the new session starts with them, the answer says so (1.383).
+    const second = ask('delegate', { host: 'mac-b', task: '둘째', wait: false, model: 'sonnet', effort: 'low' })
+    const opened2 = await b.answerNew()
+    const child2 = opened2.sid
+    assert.equal(opened2.model, 'sonnet')
+    assert.equal(opened2.effort, 'low')
+    const r2 = await second
+    assert.equal(r2.ok, true)
+    assert.deepEqual([r2.result.model, r2.result.effort], ['sonnet', 'low'])
+    const pnote = (await s.api('alice', `/api/sessions/${parent}/events`)).json.events.filter((e) => e.k === 'notice').map((e) => e.text)
+    assert.ok(pnote.some((t) => t.includes('모델 sonnet · effort low')), JSON.stringify(pnote))
+    // A bad model or effort is refused before anything starts.
+    const badM = await ask('delegate', { host: 'mac-b', task: 'z', model: 'a b' })
+    assert.equal(badM.ok, false)
+    assert.match(badM.error, /model 이 올바르지 않아요/)
+    const badE = await ask('delegate', { host: 'mac-b', task: 'z', effort: 'huge' })
+    assert.equal(badE.ok, false)
+    assert.match(badE.error, /effort 가 올바르지 않아요/)
     await waitFor(() => groupsOf(s.data).some((g) => g.items.includes(child2)))
     assert.deepEqual(groupsOf(s.data).filter((g) => g.name === 'Bridge 맡긴 세션').map((g) => g.items), [[child, child2]])
     // One level only.

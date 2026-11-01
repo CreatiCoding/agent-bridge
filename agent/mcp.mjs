@@ -18,7 +18,7 @@ export const TOOLS = [
   {
     name: 'delegate',
     description:
-      'Hand a task to a new Claude session on another of the person\'s Macs (like a sub-agent, on that machine with its own files, tools and logins). The new session follows this session\'s permission policy. With wait (default true) it returns that session\'s final answer once its turn ends, or its state after timeout_s; otherwise it returns at once with the id. When that session\'s turn ends and no call is waiting on it, its answer arrives in this conversation as a message starting with ↪, so do not poll it with a script; end your turn and pick the work up from that message.',
+      'Hand a task to a new Claude session on another of the person\'s Macs (like a sub-agent, on that machine with its own files, tools and logins). The new session follows this session\'s permission policy. With wait (default true) it returns that session\'s final answer once its turn ends, or its state after timeout_s; otherwise it returns at once with the id. When that session\'s turn ends and no call is waiting on it, its answer arrives in this conversation as a message starting with ↪, so do not poll it with a script; end your turn and pick the work up from that message. Pick model and effort for the job: light read-only checks and repetitive work take a light model (sonnet, haiku) and low effort; work where judgment matters (design, debugging with an unknown cause, code or security review, hard-to-undo operations) takes opus.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -27,6 +27,8 @@ export const TOOLS = [
         cwd: { type: 'string', description: "Folder on that Mac to work in (absolute or ~/…). Default: a new folder under the person's default folder (~/bridge/works/<this session's group>/<MMDD>-<id>)" },
         wait: { type: 'boolean', description: 'Wait for the answer (default true)' },
         timeout_s: { type: 'number', description: 'How long to wait, 10–1800 seconds (default 600)' },
+        model: { type: 'string', description: "Model for that session: an alias (opus, sonnet, haiku, fable) or a full model ID (e.g. claude-sonnet-5-5). Default: the person's default model" },
+        effort: { type: 'string', enum: ['low', 'medium', 'high', 'xhigh', 'max'], description: "Reasoning effort for that session. Default: the person's default" },
       },
       required: ['host', 'task'],
       additionalProperties: false,

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.383',
+    date: '2026-11-01',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: 'bridge MCP delegate 도구가 맡길 세션의 model(별칭·전체 모델 ID)과 effort(low~max)를 받음. 비우면 그 사람의 기본값, 틀리면 거절. 응답과 두 세션의 알림에 실제로 쓴 모델·effort 가 보임',
+        refs: ['REQ-F-760', 'IF-260', 'ERR-345', 'ERR-346'],
+      },
+    ],
+  },
+  {
     version: '1.382',
     date: '2026-11-01',
+    commit: 'fb4cebc',
     changes: [
       {
         kind: 'added',
