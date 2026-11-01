@@ -718,12 +718,25 @@ func closeSession(meta *Sess, text string) {
 	for _, c := range delegatesOf(meta) {
 		closeSession(c, "맡긴 세션이 닫혀 같이 닫음")
 	}
-	toHost(meta.host(), M{"t": "close", "sid": meta.id()})
+	// A delegated one also leaves the list, and its Mac deletes the folder bridge made for it (1.390).
+	delegated := truthy(meta.get("delegatedBy")) && !truthy(meta.get("closed"))
+	drop, keepWhy := "", ""
+	if delegated {
+		drop, keepWhy = delegateDirPlan(meta)
+	}
+	cmd := M{"t": "close", "sid": meta.id()}
+	if drop != "" {
+		cmd["dropDir"] = drop
+	}
+	toHost(meta.host(), cmd)
 	meta.set("closed", true)
 	meta.set("closedAt", float64(nowMs()))
 	resetVolatile(meta)
 	logEvents(meta, []any{M{"k": "end", "text": text}})
 	sessAfter("session.close", meta, kv{"kind", "end"})
+	if delegated {
+		delegateClosed(meta, text, drop, keepWhy)
+	}
 }
 
 // forgetSession — 제거: the server's copy of a session goes (its folder and conversation on the Mac stay).
@@ -764,7 +777,9 @@ func sweepEnded(now float64) int {
 		deployed := meta.get("reportAuto") != nil && truthy(meta.get("reportDeployed"))
 		// So does a session the service API opened (1.376): nobody keeps one to come back to.
 		service := truthy(meta.get("service"))
-		if !truthy(meta.get("closed")) || truthy(meta.get("moving")) || (!deployed && !service && now-endedAt(meta) < ENDED_KEEP_MS) {
+		// And a delegated one (1.390): the session that handed the work keeps its answer.
+		delegated := truthy(meta.get("delegatedBy"))
+		if !truthy(meta.get("closed")) || truthy(meta.get("moving")) || (!deployed && !service && !delegated && now-endedAt(meta) < ENDED_KEEP_MS) {
 			continue
 		}
 		forgetSession(meta)
@@ -777,6 +792,8 @@ func sweepEnded(now float64) int {
 			why = "자동 대응이 배포를 마쳐"
 		} else if service {
 			why = "서비스 API 세션이 끝나"
+		} else if delegated {
+			why = "맡긴 세션이 끝나"
 		}
 		logLine("session " + meta.id() + ": " + why + " 이어서 하기에서 지움")
 	}

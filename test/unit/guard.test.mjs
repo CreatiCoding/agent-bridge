@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain } from '../../agent/guard.mjs'
+import { siteLogin, safeDirName, safeConvId, insideAny, readPlain, writePlain, madeDirWhy } from '../../agent/guard.mjs'
 
 test('R1-M7: only the site itself, on its QR sign-in path, takes the agent key', () => {
   const site = 'https://bridge.example.dev'
@@ -99,4 +99,42 @@ test('작업 버리기 판별은 값을 띄어 쓴 git 전역 옵션(--git-dir �
     assert.equal(bash(c), '작업 버리기(git clean·checkout·restore)', c)
   for (const c of ['git --git-dir .git status', 'git --work-tree . clean -n', 'git --git-dir .git checkout main', 'git --work-tree . restore --staged a.ts'])
     assert.equal(bash(c), null, c)
+})
+
+test('맡긴 세션 폴더 삭제: 그 sid 가 만든, 기본 폴더 안의 진짜 폴더만 (1.390)', () => {
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-made-')))
+  const home = path.join(d, 'home')
+  const base = path.join(home, 'bridge', 'works')
+  const dir = path.join(base, '기타', '1102-abc')
+  fs.mkdirSync(dir, { recursive: true })
+  const rec = { dir, base }
+  assert.equal(madeDirWhy(rec, dir, home), '')
+  assert.equal(madeDirWhy(rec, undefined, home), '')
+  // No record for this sid, or a broken one
+  assert.match(madeDirWhy(undefined, dir, home), /기록돼 있지 않아요/)
+  assert.match(madeDirWhy({ dir }, dir, home), /기록돼 있지 않아요/)
+  // The session works somewhere else than the record says
+  assert.match(madeDirWhy(rec, path.join(base, '기타'), home), /기록과 달라요/)
+  // Outside the base
+  const out = path.join(d, 'elsewhere')
+  fs.mkdirSync(out)
+  assert.match(madeDirWhy({ dir: out, base }, out, home), /기본 폴더 밖/)
+  assert.match(madeDirWhy({ dir: path.join(base, '..', 'x'), base }, undefined, home), /폴더가 이미 없어요|기본 폴더 밖/)
+  // The base itself, the home folder, `/`
+  assert.match(madeDirWhy({ dir: base, base }, base, home), /지우지 않아요/)
+  assert.match(madeDirWhy({ dir: home, base: home }, home, home), /지우지 않아요/)
+  assert.match(madeDirWhy({ dir: '/', base: '/' }, '/', home), /지우지 않아요|기본 폴더 밖/)
+  // A symbolic link in its place, or on its path
+  const link = path.join(base, '기타', '1102-link')
+  fs.symlinkSync(out, link)
+  assert.match(madeDirWhy({ dir: link, base }, link, home), /심볼릭 링크/)
+  const viaLink = path.join(d, 'lnbase')
+  fs.symlinkSync(base, viaLink)
+  assert.match(madeDirWhy({ dir: path.join(viaLink, '기타', '1102-abc'), base }, undefined, home), /링크/)
+  // Gone already, or a file
+  assert.match(madeDirWhy({ dir: path.join(base, '기타', 'gone'), base }, undefined, home), /이미 없어요/)
+  const file = path.join(base, '기타', 'f.txt')
+  fs.writeFileSync(file, 'x')
+  assert.match(madeDirWhy({ dir: file, base }, undefined, home), /폴더가 아니에요/)
+  fs.rmSync(d, { recursive: true, force: true })
 })

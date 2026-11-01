@@ -67,6 +67,42 @@ export function insideAny(file, roots) {
 }
 
 /**
+ * Why the folder a delegated session worked in may not be deleted when it closes (REQ-F-760, 1.390), or '' when it
+ * may. rec is what `new` recorded for that sid when it made the folder: { dir, base } (both real paths then). The
+ * folder must still be that very one, a real folder (no link anywhere on its path), strictly inside the base and
+ * never the home folder, the base itself or `/`.
+ */
+export function madeDirWhy(rec, cwd, home) {
+  if (!rec || typeof rec.dir !== 'string' || typeof rec.base !== 'string' || !rec.dir || !rec.base) return '이 세션이 만든 폴더로 기록돼 있지 않아요'
+  if (!path.isAbsolute(rec.dir) || !path.isAbsolute(rec.base)) return '경로가 올바르지 않아요'
+  if (typeof cwd === 'string' && cwd && path.resolve(cwd) !== rec.dir) return '세션 폴더가 기록과 달라요'
+  let st
+  try {
+    st = fs.lstatSync(rec.dir)
+  } catch {
+    return '폴더가 이미 없어요'
+  }
+  if (st.isSymbolicLink()) return '심볼릭 링크예요'
+  if (!st.isDirectory()) return '폴더가 아니에요'
+  let real, base, h
+  try {
+    real = fs.realpathSync(rec.dir)
+    base = fs.realpathSync(rec.base)
+  } catch {
+    return '경로를 확인하지 못했어요'
+  }
+  try {
+    h = fs.realpathSync(home)
+  } catch {
+    h = path.resolve(home)
+  }
+  if (real !== rec.dir) return '경로에 링크가 있어요'
+  if (real === '/' || real === h || real === base) return '홈이나 기본 폴더 자체는 지우지 않아요'
+  if (base === '/' || !real.startsWith(`${base}/`)) return '기본 폴더 밖이에요'
+  return ''
+}
+
+/**
  * A plain file's text, up to max bytes (R1-L9). A symlink counts only when root is given and the link ends inside
  * it (CLAUDE.md pointing at the folder's own AGENTS.md); one that leads out of the folder, anything not a file, or
  * one too big is null.

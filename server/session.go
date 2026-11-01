@@ -164,6 +164,10 @@ func startSession(uid string, b M, req *Req) string {
 	if account != "" {
 		cmd["account"] = account
 	}
+	// A folder made here for a hand-over (REQ-F-760): the Mac records it, with the base it must be under, so it can go.
+	if base, ok := b["dirBase"].(string); ok && base != "" && internal && cmd["create"] == true {
+		cmd["base"] = jsSliceTo(base, 200)
+	}
 	r := ask(hostID, cmd, 60_000)
 	if !truthy(r["ok"]) {
 		sessions.Delete(sid)

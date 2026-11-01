@@ -15,7 +15,152 @@ const (
 	DELEGATE_WAIT_MAX   = 1_800_000
 	DELEGATE_SETTLE_MS  = 5000
 	DELEGATE_REPORT_MAX = 6000
+	// 1.390: a delegated session whose answer was handed over closes itself, leaves the list at once, and the
+	// folder bridge made for it goes too. The session that handed the work keeps the last answers for delegate_status.
+	DELEGATE_AUTO_CLOSE = "답을 전해 자동으로 닫음"
+	DELEGATE_KEEP       = 6
+	DELEGATE_FORGET_MS  = 1000
+	DELEGATE_DROP_WAIT  = 30_000
 )
+
+// closeAnswered: the answer of a delegated session was just handed to the session that asked; it closes now.
+// Only a turn that ended well (idle with an answer): waiting, working and a claude that stopped (ended) stay open.
+func closeAnswered(c *Sess, st M) {
+	if st["state"] != "done" || st["phase"] != "idle" || c.state()["phase"] != "idle" || truthy(c.get("closed")) || !truthy(c.get("delegatedBy")) {
+		return
+	}
+	if cur, ok := sessions.Get(c.id()); !ok || cur != c {
+		return
+	}
+	withBy("system", func() { closeSession(c, DELEGATE_AUTO_CLOSE) })
+	broadcastState(c.uid())
+}
+
+// delegateDirPlan: the folder the Mac of a closing delegated session should delete, or why it is kept.
+// Only one bridge made for this hand-over (no cwd given), still on the Mac that made it, used by no other session.
+func delegateDirPlan(meta *Sess) (string, string) {
+	cwd := strings.TrimSuffix(meta.str("cwd"), "/")
+	switch {
+	case !truthy(meta.get("madeDir")):
+		return "", "폴더를 정해 맡긴 일"
+	case cwd == "" || !strings.HasPrefix(cwd, "/"):
+		return "", "폴더 경로를 몰라요"
+	case meta.str("madeHost") != meta.host():
+		return "", "다른 맥으로 옮겨진 세션"
+	}
+	for _, o := range sessions.Values() {
+		if o == meta || o.host() != meta.host() {
+			continue
+		}
+		oc := strings.TrimSuffix(o.str("cwd"), "/")
+		if oc == cwd || strings.HasPrefix(oc, cwd+"/") {
+			return "", "다른 세션도 이 폴더를 써요"
+		}
+	}
+	if !online(meta.host()) {
+		return "", "맥이 연결돼 있지 않아요"
+	}
+	return cwd, ""
+}
+
+// keptDelegate: what a session that handed work keeps of one that closed (its last answer), or nil.
+func keptDelegate(parent *Sess, id string) M {
+	for _, x := range asArr(parent.get("delegateDone")) {
+		if m := asM(x); m != nil && m["id"] == id {
+			return shallow(m)
+		}
+	}
+	return nil
+}
+
+// delegateClosed: a delegated session was just closed (answered, by the person, by delegate_stop or with the session
+// that handed it): its last answer is kept with that session, it leaves the list, and its folder may go.
+func delegateClosed(meta *Sess, why, drop, keepWhy string) {
+	parent, hasParent := sessions.Get(strOr(meta.get("delegatedBy"), ""))
+	host := "다른 맥"
+	if h, ok := hosts.Get(meta.host()); ok && h["name"] != nil {
+		host = jsString(h["name"])
+	}
+	if hasParent && parent.uid() == meta.uid() {
+		st := delegateState(meta, 0)
+		kept := M{"id": meta.id(), "host": host, "state": "closed", "phase": "ended", "answer": st["answer"], "closedWhy": why}
+		list := []any{}
+		for _, x := range asArr(parent.get("delegateDone")) {
+			if m := asM(x); m != nil && m["id"] != meta.id() {
+				list = append(list, x)
+			}
+		}
+		list = append(list, kept)
+		if len(list) > DELEGATE_KEEP {
+			list = list[len(list)-DELEGATE_KEEP:]
+		}
+		parent.set("delegateDone", list)
+		touch(parent)
+	}
+	head := "↪ " + host + " 에 맡긴 세션을 닫았어요(" + why + ")"
+	if why == DELEGATE_AUTO_CLOSE {
+		head = "↪ " + host + " 에 맡긴 세션의 답을 전해 자동으로 닫았어요"
+	}
+	if drop != "" {
+		logEvents(meta, []any{M{"k": "notice", "tone": "info", "text": head + ". 폴더를 지워요: " + drop}})
+		pid := ""
+		if hasParent {
+			pid = parent.id()
+		}
+		d := &delegateDrop{parent: pid, host: meta.host(), head: head, dir: drop}
+		delegateDrops[meta.id()] = d
+		sid := meta.id()
+		d.timer = setTimeout(DELEGATE_DROP_WAIT*time.Millisecond, func() { finishDrop(sid, false, "맥의 답이 없어 지웠는지 몰라요") })
+	} else {
+		line := head + ". 폴더는 남겼어요(" + keepWhy + ")"
+		logEvents(meta, []any{M{"k": "notice", "tone": "info", "text": line}})
+		if hasParent {
+			logEvents(parent, []any{M{"k": "notice", "tone": "info", "text": line}})
+		}
+	}
+	sid := meta.id()
+	setTimeout(DELEGATE_FORGET_MS*time.Millisecond, func() { forgetClosedDelegate(sid, meta) })
+}
+
+// forgetClosedDelegate: a closed delegated session leaves the list at once, as a service API one does (1.390).
+func forgetClosedDelegate(sid string, meta *Sess) {
+	cur, ok := sessions.Get(sid)
+	if !ok || cur != meta || !truthy(meta.get("closed")) || truthy(meta.get("moving")) {
+		return
+	}
+	forgetSession(meta)
+	savePrefs(meta.uid())
+	broadcastState(meta.uid())
+	logLine("session " + sid + ": 맡긴 세션이 닫혀 목록에서 지움")
+}
+
+type delegateDrop struct {
+	parent, host, head, dir string
+	timer                   *Timer
+}
+
+// delegateDrops: sid → a folder delete the Mac was asked for, until it answers (dirdrop).
+var delegateDrops = map[string]*delegateDrop{}
+
+// finishDrop: the one line the session that handed the work gets about the folder.
+func finishDrop(sid string, ok bool, why string) {
+	d, has := delegateDrops[sid]
+	if !has {
+		return
+	}
+	delete(delegateDrops, sid)
+	clearTimeout(d.timer)
+	line := d.head + ". 폴더를 지웠어요: " + d.dir
+	tone := "info"
+	if !ok {
+		line = d.head + ". 폴더는 남겼어요(" + jsSliceTo(why, 200) + ")"
+		tone = "warn"
+	}
+	if p, has := sessions.Get(d.parent); has {
+		logEvents(p, []any{M{"k": "notice", "tone": tone, "text": line}})
+		record(p.uid(), d.host, M{"level": map[bool]string{true: "info", false: "warn"}[ok], "area": "delegate", "sid": sid, "text": jsSliceTo(line, 300)})
+	}
+}
 
 // delegateOff: Macs the person turned off for work from other Macs (설정 → 맥).
 func delegateOff(uid string) map[string]bool {
@@ -151,6 +296,7 @@ func followDelegate(c *Sess) {
 				return
 			}
 			record(parent.uid(), parent.host(), M{"level": "info", "area": "delegate", "sid": parent.id(), "text": "맡긴 세션 " + jsSliceTo(c.id(), 8) + " 의 답을 전함"})
+			closeAnswered(c, st)
 		})
 	})
 }
@@ -219,12 +365,24 @@ func runDelegate(uid, hostID string, msg M) any {
 		}
 		return out
 	}
-	child := func() *Sess {
-		c, ok := sessions.Get(strOr(a["id"], ""))
+	// A closed one may be gone from the list already: what this session kept of it answers (1.390).
+	child := func() (*Sess, M) {
+		id := strOr(a["id"], "")
+		c, ok := sessions.Get(id)
+		kept := keptDelegate(parent, id)
+		if (!ok || truthy(c.get("closed"))) && kept != nil {
+			return nil, kept
+		}
 		if !ok || c.uid() != uid || c.get("delegatedBy") != parent.id() {
 			throw("이 세션이 맡긴 세션이 아니에요")
 		}
-		return c
+		return c, nil
+	}
+	// The answer is handed over by this call: the session closes (1.390).
+	answered := func(c *Sess, st M) M {
+		out := brief(c, st)
+		closeAnswered(c, st)
+		return out
 	}
 	own := []string{}
 	for _, id := range hosts.Keys() {
@@ -272,7 +430,7 @@ func runDelegate(uid, hostID string, msg M) any {
 		used := launchLabel(lm)
 		usedText := "모델 " + jsString(used["model"]) + " · effort " + jsString(used["effort"])
 		if len(delegatesOf(parent)) >= DELEGATE_MAX {
-			throw("이미 " + itoa(DELEGATE_MAX) + "개를 맡겨 두었어요. 끝난 것은 delegate_stop 으로 닫으세요")
+			throw("이미 " + itoa(DELEGATE_MAX) + "개를 맡겨 두었어요. 답을 받으면 자동으로 닫혀요. 더 기다리지 않을 것은 delegate_stop 으로 닫으세요")
 		}
 		// It follows this session's permission policy; no folder named: a new one under the person's default folder.
 		L := launchOf(uid)
@@ -296,8 +454,20 @@ func runDelegate(uid, hostID string, msg M) any {
 		for k, v := range lm {
 			sb[k] = v
 		}
+		// A folder made for this hand-over may be deleted when it closes; the Mac records it with the base it is under.
+		if given == "" {
+			base := cleanFolderBase(L["folderBase"])
+			if base == "" {
+				base = FOLDER_BASE
+			}
+			sb["dirBase"] = base
+		}
 		sid := startSession(uid, sb, &Req{internal: true, Header: map[string][]string{}})
 		c, _ := sessions.Get(sid)
+		if given == "" {
+			c.set("madeDir", true)
+			c.set("madeHost", target)
+		}
 		from := ""
 		if hh, ok := hosts.Get(hostID); ok && hh["name"] != nil {
 			from = jsString(hh["name"])
@@ -323,17 +493,20 @@ func runDelegate(uid, hostID string, msg M) any {
 		if a["wait"] == false {
 			return withUsed(brief(c, delegateState(c, 0)), used)
 		}
-		return withUsed(brief(c, waitTurn(c, 0, ms)), used)
+		return withUsed(answered(c, waitTurn(c, 0, ms)), used)
 	case "delegate_status":
-		c := child()
+		c, kept := child()
+		if kept != nil {
+			return kept
+		}
 		if truthy(a["wait"]) {
-			return brief(c, waitTurn(c, 0, ms))
+			return answered(c, waitTurn(c, 0, ms))
 		}
 		return brief(c, delegateState(c, 0))
 	case "delegate_send":
-		c := child()
-		if truthy(c.get("closed")) {
-			throw("닫힌 세션이에요")
+		c, kept := child()
+		if kept != nil || truthy(c.get("closed")) {
+			throw("닫힌 세션이에요. 답을 받으면 자동으로 닫혀요. 이어서 시킬 일은 새로 delegate 하세요")
 		}
 		text := jsTrim(strOr(a["text"], ""))
 		if text == "" {
@@ -344,9 +517,12 @@ func runDelegate(uid, hostID string, msg M) any {
 		if a["wait"] == false {
 			return brief(c, delegateState(c, since))
 		}
-		return brief(c, waitTurn(c, since, ms))
+		return answered(c, waitTurn(c, since, ms))
 	case "delegate_stop":
-		c := child()
+		c, kept := child()
+		if kept != nil {
+			return kept
+		}
 		if !truthy(c.get("closed")) {
 			withBy("system", func() { closeSession(c, "맡긴 세션이 닫음") }) // cleaning up after itself (SPEC: after only)
 		}
@@ -413,6 +589,14 @@ func sudoAnswer(hostID, areq string, ok bool, e string) {
 }
 
 func init() {
+	// The Mac deleted (or kept) the folder of a delegated session that closed (1.390).
+	fromAgent["dirdrop"] = func(uid, hostID string, msg M) {
+		sid := jsStringU(msg["sid"])
+		if d, ok := delegateDrops[sid]; !ok || d.host != hostID {
+			return
+		}
+		finishDrop(sid, msg["ok"] == true, jsStringU(msg["why"]))
+	}
 	// A session wants root: refused when it is worked on in Slack; let through, or asked of the person.
 	fromAgent["sudoask"] = func(uid, hostID string, msg M) {
 		areq, ok := msg["areq"].(string)

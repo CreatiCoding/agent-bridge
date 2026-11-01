@@ -18,7 +18,7 @@ export const TOOLS = [
   {
     name: 'delegate',
     description:
-      'Hand a task to a new Claude session on another of the person\'s Macs (like a sub-agent, on that machine with its own files, tools and logins). The new session follows this session\'s permission policy. With wait (default true) it returns that session\'s final answer once its turn ends, or its state after timeout_s; otherwise it returns at once with the id. When that session\'s turn ends and no call is waiting on it, its answer arrives in this conversation as a message starting with ↪, so do not poll it with a script; end your turn and pick the work up from that message. Pick model and effort for the job: light read-only checks and repetitive work take a light model (sonnet, haiku) and low effort; work where judgment matters (design, debugging with an unknown cause, code or security review, hard-to-undo operations) takes opus.',
+      'Hand a task to a new Claude session on another of the person\'s Macs (like a sub-agent, on that machine with its own files, tools and logins). The new session follows this session\'s permission policy. With wait (default true) it returns that session\'s final answer once its turn ends, or its state after timeout_s; otherwise it returns at once with the id. When that session\'s turn ends and no call is waiting on it, its answer arrives in this conversation as a message starting with ↪, so do not poll it with a script; end your turn and pick the work up from that message. Once its answer is handed to you (the call returns state done, or the ↪ message arrives), that session closes by itself and leaves the list; a folder bridge made for it (no cwd given) is deleted when no other session uses it. To have more done there, delegate again. Pick model and effort for the job: light read-only checks and repetitive work take a light model (sonnet, haiku) and low effort; work where judgment matters (design, debugging with an unknown cause, code or security review, hard-to-undo operations) takes opus.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -36,7 +36,7 @@ export const TOOLS = [
   },
   {
     name: 'delegate_status',
-    description: 'State of a session this one handed work to: working, waiting (on a permission or a question for the person), done or closed, and its last answer. With wait, waits up to timeout_s for it to finish first.',
+    description: 'State of a session this one handed work to: working, waiting (on a permission or a question for the person), done or closed, and its last answer. A closed one (it closes by itself once its answer is handed over) still gives its last answer. With wait, waits up to timeout_s for it to finish first.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string' }, wait: { type: 'boolean' }, timeout_s: { type: 'number' } },
@@ -46,7 +46,7 @@ export const TOOLS = [
   },
   {
     name: 'delegate_send',
-    description: 'Send a follow-up message to a session this one handed work to (same as the person typing it). Waits for the answer like delegate.',
+    description: 'Send a follow-up message to a session this one handed work to (same as the person typing it) while it is still open: working, or waiting on a permission or a question. Waits for the answer like delegate. A session whose answer was handed over is closed already; delegate a new task instead.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string' }, text: { type: 'string' }, wait: { type: 'boolean' }, timeout_s: { type: 'number' } },
@@ -56,7 +56,7 @@ export const TOOLS = [
   },
   {
     name: 'delegate_stop',
-    description: 'Stop and close a session this one handed work to.',
+    description: 'Stop and close a session this one handed work to before it answers (one that answered closed by itself). A folder bridge made for it is deleted when no other session uses it.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false },
   },
   {

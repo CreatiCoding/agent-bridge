@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText } from './guard.mjs'
+import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -2422,12 +2422,16 @@ const commands = {
     emit({ t: 'pong', ts })
   },
   rehello: hello,
-  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing }) {
+  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing, base }) {
     try {
       if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
       const want = expandHome(cwd || '~')
       if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
-      if (!fs.existsSync(want) && create === true) fs.mkdirSync(want, { recursive: true })
+      if (!fs.existsSync(want) && create === true) {
+        fs.mkdirSync(want, { recursive: true })
+        // Made for a hand-over (REQ-F-760): recorded with its base, so it can be deleted when that session closes.
+        if (typeof base === 'string' && base) rememberMadeDir(sid, want, expandHome(base))
+      }
       if (!fs.existsSync(want)) throw Object.assign(new Error(`이 맥에 그 폴더가 없습니다: ${want}`), { missing: true })
       if (!fs.statSync(want).isDirectory()) throw new Error(`폴더가 아닙니다: ${want}`)
       try {
@@ -2658,12 +2662,18 @@ const commands = {
     saveSessions()
     publish(sid, s)
   },
-  async close({ sid }) {
+  async close({ sid, dropDir }) {
     const s = sessions.get(sid)
-    if (!s) return
+    if (!s) {
+      if (dropDir) emit({ t: 'dirdrop', sid, ok: false, why: '이 맥이 그 세션을 몰라요' })
+      return
+    }
     // First: a reopening (refresh, revive) in flight sees it and does not leave a terminal behind (launchNow).
     s.closed = true
     await tmux('kill-session', '-t', `=${s.tmux}`)
+    // A delegated session's folder that this agent made for it (1.390): checked here again, then deleted.
+    if (dropDir) dropMadeDir(sid, s.cwd, dropDir)
+    else forgetMadeDir(sid)
     // Its folder may be offered for the Trash later (REQ-F-837), after the server has forgotten the session.
     rememberEnded(s.cwd)
     trashMdFile(sid, s)
@@ -3926,6 +3936,45 @@ async function moveToTrash(real) {
 // waits on whom, the last input it took), works out which sessions sat idle, which folders and transcripts nobody
 // uses, does only the automatic steps (stop a claude after a notice, move a clean old folder to the Trash) and
 // reports the rest for the disk page. The judgements are guard.mjs's (idleStopWhy, restAct, folderTidyWhy, …).
+
+const madeDirsPath = path.join(STATE_DIR, 'made-dirs.json')
+/** sid → the folder `new` made for a delegated session and the base it is under (real paths), until it closes. */
+function rememberMadeDir(sid, dir, base) {
+  try {
+    const rec = { dir: fs.realpathSync(dir), base: fs.realpathSync(base), at: Date.now() }
+    const all = readJson(madeDirsPath, {})
+    all[sid] = rec
+    // Kept small: the oldest go first.
+    const keys = Object.keys(all).sort((a, b) => (all[a]?.at ?? 0) - (all[b]?.at ?? 0))
+    for (const k of keys.slice(0, Math.max(0, keys.length - 200))) delete all[k]
+    writeJson(madeDirsPath, all)
+  } catch (e) {
+    log('warn', 'new', `만든 폴더를 기록하지 못함: ${e.message}`, sid)
+  }
+}
+function forgetMadeDir(sid) {
+  const all = readJson(madeDirsPath, {})
+  if (!all || !(sid in all)) return
+  delete all[sid]
+  writeJson(madeDirsPath, all)
+}
+/** Deletes the folder recorded for sid when every check passes; the server hears either way. Never the transcript. */
+function dropMadeDir(sid, cwd, asked) {
+  const rec = readJson(madeDirsPath, {})?.[sid]
+  let why = madeDirWhy(rec, cwd, HOME)
+  if (!why && path.resolve(String(asked)) !== rec.dir) why = '서버가 말한 폴더가 기록과 달라요'
+  if (!why) {
+    try {
+      fs.rmSync(rec.dir, { recursive: true, force: true })
+    } catch (e) {
+      why = `지우지 못했어요: ${e.code || e.message}`
+    }
+  }
+  forgetMadeDir(sid)
+  if (why) log('warn', 'close', `맡긴 세션 폴더를 남김: ${why}`, sid)
+  else log('info', 'close', `맡긴 세션 폴더를 지움: ${rec.dir}`, sid)
+  emit({ t: 'dirdrop', sid, ok: !why, why, dir: rec?.dir ?? '' })
+}
 
 const endedPath = path.join(STATE_DIR, 'tidy-ended.json')
 /** Folders of sessions this agent closed, newest first: after the server forgets a session its folder is still known. */

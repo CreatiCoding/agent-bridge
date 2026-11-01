@@ -81,6 +81,8 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     // No cwd: a new folder under the default folder, made when it starts (1.206).
     assert.match(opened.cwd, /^~\/bridge\/works\/기타\/\d{4}-[0-9a-f]{6}$/)
     assert.equal(opened.create, true)
+    // The Mac records that folder with the base it is under, so it can go when the session closes (1.390).
+    assert.equal(opened.base, '~/bridge/works')
     const child = opened.sid
     // It goes in the group "Bridge 맡긴 세션", made at the top since there was none (1.252).
     const grouped = await waitFor(() => groupsOf(s.data).find((g) => g.name === 'Bridge 맡긴 세션' && g.items.includes(child)))
@@ -103,11 +105,24 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     // No model or effort given: the person's default, shown as 기본 (1.383).
     assert.equal(done.result.model, '기본')
     assert.equal(done.result.effort, '기본')
-    // Said by the session that handed it over: told apart from what the person types, even when a page claims it (1.207).
-    assert.equal((await s.api('alice', `/api/sessions/${child}/send`, { method: 'POST', body: { text: '내가 직접', via: 'delegate' } })).status, 200)
-    assert.equal((await ask('delegate_send', { id: child, text: '테스트도', wait: false })).ok, true)
-    const said = (await s.api('alice', `/api/sessions/${child}/events`)).json.events.filter((e) => e.k === 'user')
-    assert.deepEqual(said.map((e) => [e.text, e.via]), [['빌드해 줘', 'delegate'], ['내가 직접', 'web'], ['테스트도', 'delegate']])
+    // The answer was handed over: it closes by itself, leaves the list, and B is asked to delete the folder made for
+    // it (no other session on B uses it; the one on A does not count) (1.390).
+    const closed = await b.next((m) => m.t === 'close' && m.sid === child)
+    assert.equal(closed.dropDir, '/Users/x')
+    await b.up({ t: 'dirdrop', sid: child, ok: true, dir: '/Users/x' })
+    let dropNote
+    for (const end = Date.now() + 5000; !dropNote && Date.now() < end; await new Promise((r) => setTimeout(r, 100))) {
+      const ev = (await s.api('alice', `/api/sessions/${parent}/events`)).json.events
+      dropNote = ev.find((e) => e.k === 'notice' && /자동으로 닫았어요\. 폴더를 지웠어요: \/Users\/x/.test(e.text))
+    }
+    assert.ok(dropNote, '맡긴 쪽에 폴더를 지웠다는 한 줄')
+    // Its answer stays with the session that handed it; a follow-up is refused.
+    const st = await ask('delegate_status', { id: child })
+    assert.equal(st.ok, true, st.error)
+    assert.deepEqual([st.result.state, st.result.answer], ['closed', '빌드했어요'])
+    const late = await ask('delegate_send', { id: child, text: '더', wait: false })
+    assert.equal(late.ok, false)
+    assert.match(late.error, /닫힌 세션이에요/)
     // Handed another: it joins the same group, no second one is made (1.252).
     // With a model and effort: the new session starts with them, the answer says so (1.383).
     const second = ask('delegate', { host: 'mac-b', task: '둘째', wait: false, model: 'sonnet', effort: 'low' })
@@ -118,6 +133,11 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     const r2 = await second
     assert.equal(r2.ok, true)
     assert.deepEqual([r2.result.model, r2.result.effort], ['sonnet', 'low'])
+    // Said by the session that handed it over: told apart from what the person types, even when a page claims it (1.207).
+    assert.equal((await s.api('alice', `/api/sessions/${child2}/send`, { method: 'POST', body: { text: '내가 직접', via: 'delegate' } })).status, 200)
+    assert.equal((await ask('delegate_send', { id: child2, text: '테스트도', wait: false })).ok, true)
+    const said = (await s.api('alice', `/api/sessions/${child2}/events`)).json.events.filter((e) => e.k === 'user')
+    assert.deepEqual(said.map((e) => [e.text, e.via]), [['둘째', 'delegate'], ['내가 직접', 'web'], ['테스트도', 'delegate']])
     const pnote = (await s.api('alice', `/api/sessions/${parent}/events`)).json.events.filter((e) => e.k === 'notice').map((e) => e.text)
     assert.ok(pnote.some((t) => t.includes('모델 sonnet · effort low')), JSON.stringify(pnote))
     // A bad model or effort is refused before anything starts.
@@ -128,10 +148,12 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     assert.equal(badE.ok, false)
     assert.match(badE.error, /effort 가 올바르지 않아요/)
     await waitFor(() => groupsOf(s.data).some((g) => g.items.includes(child2)))
-    assert.deepEqual(groupsOf(s.data).filter((g) => g.name === 'Bridge 맡긴 세션').map((g) => g.items), [[child, child2]])
+    // The first one left the list when it closed.
+    await waitFor(() => groupsOf(s.data).some((g) => g.name === 'Bridge 맡긴 세션' && !g.items.includes(child)))
+    assert.deepEqual(groupsOf(s.data).filter((g) => g.name === 'Bridge 맡긴 세션').map((g) => g.items), [[child2]])
     // One level only.
     const areq2 = 'r-again'
-    await b.up({ t: 'delegate', areq: areq2, sid: child, op: 'delegate', args: { host: 'mac-a', task: 'x' } })
+    await b.up({ t: 'delegate', areq: areq2, sid: child2, op: 'delegate', args: { host: 'mac-a', task: 'x' } })
     const again = await b.next((m) => m.t === 'delegated' && m.areq === areq2)
     assert.equal(again.ok, false)
     assert.match(again.error, /다시 맡길 수 없어요/)
@@ -141,7 +163,7 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     assert.equal((await b.next((m) => m.t === 'delegated' && m.areq === areq3)).ok, false)
     // 전부 허용 on the session that handed it over reaches the one it handed to.
     assert.equal((await s.api('alice', `/api/sessions/${parent}/settings`, { method: 'POST', body: { autoAllow: true } })).status, 200)
-    const set = await b.next((m) => m.t === 'set' && m.sid === child && 'autoAllow' in m)
+    const set = await b.next((m) => m.t === 'set' && m.sid === child2 && 'autoAllow' in m)
     assert.equal(set.autoAllow, true)
     // Turned off on B: refused.
     assert.equal((await s.api('alice', `/api/hosts/${B}/delegate`, { method: 'POST', body: { on: false } })).status, 200)
@@ -151,7 +173,7 @@ test('다른 맥에 맡기기: 답을 기다려 받고, 한 단계만, 허용 �
     assert.equal((await ask('hosts', {})).result.find((h) => h.name === 'mac-b').takesWork, false)
     // Closing the session that handed it over closes the one it handed to.
     assert.equal((await s.api('alice', `/api/sessions/${parent}/close`, { method: 'POST', body: {} })).status, 200)
-    await b.next((m) => m.t === 'close' && m.sid === child)
+    await b.next((m) => m.t === 'close' && m.sid === child2)
   } finally {
     a?.close()
     b?.close()
@@ -195,15 +217,27 @@ test('맡긴 세션의 턴이 끝나면 맡긴 세션에 답이 글로 간다, �
     // A page cannot pass itself off as that answer.
     assert.equal((await s.api('alice', `/api/sessions/${parent}/send`, { method: 'POST', body: { text: '나', via: 'delegated' } })).status, 200)
     assert.equal((await s.api('alice', `/api/sessions/${parent}/events`)).json.events.filter((e) => e.k === 'user').at(-1).via, 'web')
-    // Waited on: the call gets the answer, and no message follows.
+    // That message handed the answer over: the session closes by itself (1.390).
+    await b.next((m) => m.t === 'close' && m.sid === child)
+    // Waited on: the call gets the answer, no message follows, and it closes too.
+    const pending2 = ask('delegate', { host: 'mac-b', task: '고쳐 줘', wait: false })
+    const child2 = (await b.answerNew()).sid
+    await pending2
     const areq = 'r-wait'
-    await a.up({ t: 'delegate', areq, sid: parent, op: 'delegate_status', args: { id: child, wait: true, timeout_s: 20 } })
-    await b.up({ t: 'status', sid: child, alive: true, phase: 'busy' })
-    await b.up({ t: 'lines', sid: child, from: 1, lines: [JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '고쳤어요' }] } })] })
-    await b.up({ t: 'status', sid: child, alive: true, phase: 'idle' })
+    await a.up({ t: 'delegate', areq, sid: parent, op: 'delegate_status', args: { id: child2, wait: true, timeout_s: 20 } })
+    await b.up({ t: 'status', sid: child2, alive: true, phase: 'busy' })
+    await b.up({ t: 'lines', sid: child2, from: 0, lines: [JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '고쳤어요' }] } })] })
+    await b.up({ t: 'status', sid: child2, alive: true, phase: 'idle' })
     const waited = await a.next((m) => m.t === 'delegated' && m.areq === areq, 15000)
     assert.equal(waited.result.answer, '고쳤어요')
+    await b.next((m) => m.t === 'close' && m.sid === child2)
     await assert.rejects(a.next((m) => m.t === 'send' && m.sid === parent && /고쳤어요/.test(m.text), 7000))
+    // A session waiting on the person is not closed: nothing was handed over.
+    const pending3 = ask('delegate', { host: 'mac-b', task: '물어봐', wait: false })
+    const child3 = (await b.answerNew()).sid
+    await pending3
+    await b.up({ t: 'status', sid: child3, alive: true, phase: 'waiting' })
+    await assert.rejects(b.next((m) => m.t === 'close' && m.sid === child3, 7000))
   } finally {
     a?.close()
     b?.close()

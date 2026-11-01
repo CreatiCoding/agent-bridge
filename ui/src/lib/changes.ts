@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.390',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server', 'agent'],
+        text: '다른 맥에 맡긴 세션은 답을 전하면 저절로 닫히고 목록에서도 바로 빠진다. 닫힌 뒤에도 delegate_status 로 마지막 답을 볼 수 있고, 3개 한도도 바로 풀린다',
+        refs: ['REQ-F-760', 'REQ-F-742'],
+      },
+      {
+        kind: 'added',
+        scope: ['server', 'agent'],
+        text: '맡긴 세션이 닫히면 bridge 가 그 일 때문에 새로 만든 폴더를 그 맥이 지운다. 폴더를 정해 맡겼거나 같은 폴더를 쓰는 다른 세션이 있으면 남기고, 맡긴 쪽에 그 결과 한 줄을 남긴다',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
     version: '1.389',
     date: '2026-11-02',
+    commit: '8fb1cae',
     changes: [
       {
         kind: 'changed',
