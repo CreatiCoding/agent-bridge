@@ -9,6 +9,7 @@
       ],
       "timeout": "40m",
       "steps": [
+        "unslop-check",
         "cd ui",
         "corepack yarn install --immutable",
         "corepack yarn build",
