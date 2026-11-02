@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // 휴면 (REQ-F-501, 1.396): putting a session to rest also stops its claude, the way the automatic tidy does
 // (REQ-F-835 rule 5): the folder, the transcript and the session's record stay, and the session is not closed, so
@@ -82,7 +85,15 @@ func wakeSession(meta *Sess) {
 	if !was || truthy(meta.get("closed")) || truthy(meta.get("moving")) || truthy(meta.state()["alive"]) || !online(meta.host()) {
 		return
 	}
+	done := make(chan struct{})
+	waking[meta.id()] = done
 	goLocked("wake", func() {
+		defer func() {
+			if waking[meta.id()] == done {
+				delete(waking, meta.id())
+			}
+			close(done)
+		}()
 		if truthy(meta.get("closed")) || truthy(meta.get("moving")) || truthy(meta.state()["alive"]) || truthy(meta.get("resting")) || !online(meta.host()) {
 			return
 		}
@@ -93,3 +104,24 @@ func wakeSession(meta *Sess) {
 		}
 	})
 }
+
+// waking: sid -> closed once the background wake of that session is over. Memory only.
+var waking = map[string]chan struct{}{}
+
+// waitWake: a message or command that comes while its session is being woken waits for claude to be up (at most
+// WAKE_WAIT_MS) instead of being refused as "옮기는 중": opening a rested session wakes it, and the person may type
+// at once.
+func waitWake(meta *Sess) {
+	ch := waking[meta.id()]
+	if ch == nil {
+		return
+	}
+	await(func() {
+		select {
+		case <-ch:
+		case <-time.After(WAKE_WAIT_MS * time.Millisecond):
+		}
+	})
+}
+
+const WAKE_WAIT_MS = 90_000

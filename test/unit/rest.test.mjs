@@ -76,8 +76,13 @@ test('휴면 (AC-1545~AC-1547, AC-1549): claude 를 내리고, 일하는 중이�
     assert.equal(open.sid, sid)
     assert.equal(open.conv, sid, '같은 대화로 resume')
     assert.equal(open.local, true)
+    // A message typed while it wakes waits for claude instead of "옮기는 중" (opening a rested session wakes it).
+    const early = s.api('alice', `/api/sessions/${sid}/send`, { method: 'POST', body: { text: '깨는 중에 보낸 글' } })
+    await new Promise((r) => setTimeout(r, 300))
     await m.up({ t: 'opened', reqId: open.reqId, sid, ok: true, cwd: '/Users/x' })
     await m.up({ t: 'status', sid, alive: true, phase: 'idle' })
+    assert.equal((await early).status, 200, '깨는 중 보낸 글이 거절되지 않음')
+    assert.equal((await m.next((x) => x.t === 'send')).text, '깨는 중에 보낸 글')
     row = await meta()
     assert.equal(row.resting ?? false, false)
 

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.397',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '휴면 세션을 열자마자 보낸 글이 "세션을 옮기는 중입니다" 로 거절되던 것: claude 를 다시 띄우는 동안 온 글·명령은 다 뜰 때까지(최대 90초) 기다렸다 보낸다',
+        refs: ['REQ-F-501'],
+      },
+    ],
+  },
+  {
     version: '1.396',
     date: '2026-11-02',
+    commit: '3f3bc43',
     changes: [
       {
         kind: 'changed',

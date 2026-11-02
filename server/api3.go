@@ -1012,6 +1012,7 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 			refuse(400, "보낼 내용이 없어요")
 		}
 	}
+	waitWake(meta) // being woken from rest (REQ-F-501 rule 2): sent once claude is up
 	st := meta.state()
 	if to, ok := st["handedOffTo"].(string); ok && to != "" {
 		if s, has := sessions.Get(to); has && !truthy(s.get("closed")) && !slashColonRe.MatchString(jsTrim(text)) {

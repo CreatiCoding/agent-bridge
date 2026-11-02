@@ -274,6 +274,7 @@ func byOperator(uid string, h M) string {
 }
 
 func liveHost(meta *Sess) string {
+	waitWake(meta)
 	if truthy(meta.get("closed")) {
 		refuse(409, "끝난 세션입니다")
 	}
