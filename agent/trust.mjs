@@ -108,6 +108,8 @@ export const TRUST_CLASS = {
   localui: 'free',
   // reads: what comes back is sealed
   events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free',
+  // the bridge MCP's attach (by the id the session made) and another Mac's read_session (refused while sealing)
+  attachment: 'free', convread: 'free',
   // actions
   new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush'], keep: ['sid', 'prompt'] },
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
@@ -593,6 +595,20 @@ export function sealOut(msg, seal) {
       m.content = S(m.content)
       m.name = S(m.name)
       m.path = S(m.path)
+      break
+    case 'attachment':
+      // One piece holding the id, the session and the type with the bytes: the page checks the id it asked for.
+      if (typeof m.data === 'string') {
+        m.sealed = S(JSON.stringify({ kind: 'attach', id: m.id, sid, name: m.name, type: m.type, size: m.size, data: m.data }))
+        delete m.name
+        delete m.type
+        delete m.data
+      }
+      if (m.error !== undefined) m.error = S(m.error)
+      break
+    case 'convread':
+      if (m.text !== undefined) m.text = S(m.text)
+      if (m.error !== undefined) m.error = S(m.error)
       break
     case 'voice':
       m.text = S(m.text)

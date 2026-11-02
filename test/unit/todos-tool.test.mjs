@@ -7,7 +7,7 @@ import fs from 'node:fs'
 
 test('the agent remembers the bridge tools a session started with and reports them (AC-1354)', () => {
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
-  assert.match(src, /import \{ TOOLS as BRIDGE_TOOLS \} from '\.\/mcp\.mjs'/)
+  assert.match(src, /import \{ TOOLS as BRIDGE_TOOLS[,\w\s]* \} from '\.\/mcp\.mjs'/)
   assert.match(src, /s\.bridgeTools = BRIDGE_TOOLS\.map\(\(t\) => t\.name\)/)
   assert.match(src, /bridgeTools: s\.bridgeTools \?\? null,/)
   assert.match(src, /\.\.\.\(s\.bridgeTools \? \{ bridgeTools: s\.bridgeTools \} : \{\}\)/)

@@ -13,6 +13,7 @@ import { HtmlPreview, isHtmlDocument } from './html-preview'
 import { act, command, sessionPost } from './session-menu'
 import { TodoAskCard, todoAskOf } from './session-extras'
 import { copyText } from '../lib/builtin-actions'
+import { errorText, get } from '../lib/api'
 
 export function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
   const [zoom, setZoom] = useState(1)
@@ -228,7 +229,99 @@ type Allow = Extract<Item, { t: 'card' }>
  * subagent's or a background call: the main conversation never shows the call) that follow each other are one
  * line too.
  */
-type Block = { t: 'tools'; key: string; items: Tool[] } | { t: 'allows'; key: string; items: Allow[] } | Item
+type Block = { t: 'tools'; key: string; items: Tool[] } | { t: 'allows'; key: string; items: Allow[] } | { t: 'attach'; key: string; file: Attached } | Item
+
+/** A file the session attached with the bridge MCP's attach (REQ-F-846), named on the first line of the tool's answer. */
+export type Attached = { id: string; name: string; type: string; size: number }
+const ATTACH_HEAD = '[bridge-attach] '
+export function attachedOf(it: { name: string; done: boolean; error?: boolean; output?: string }): Attached | null {
+  if (it.name !== 'bridge__attach' || !it.done || it.error || !it.output?.startsWith(ATTACH_HEAD)) return null
+  try {
+    const a = JSON.parse(it.output.slice(ATTACH_HEAD.length).split('\n')[0])
+    if (!/^[0-9a-f]{40}$/.test(a?.id) || typeof a.name !== 'string' || typeof a.type !== 'string' || !Number.isFinite(a.size)) return null
+    return { id: a.id, name: a.name.slice(0, 120), type: a.type, size: a.size }
+  } catch {
+    return null
+  }
+}
+const PICTURE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+const AUTO_PICTURE_MAX = 1024 * 1024
+const sizeText = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
+
+/**
+ * The attached file, fetched from its Mac only when it is wanted (a small picture at once). The bytes become a Blob
+ * here: a picture is shown, anything else is only saved, never opened as a page.
+ */
+function AttachCard({ session, file, onImage }: { session: Session; file: Attached; onImage: (s: string) => void }) {
+  const picture = PICTURE_TYPES.includes(file.type)
+  const [url, setUrl] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const loading = useRef<Promise<string | null> | null>(null)
+  const load = () =>
+    (loading.current ??= (async () => {
+      setBusy(true)
+      try {
+        const r = await get<{ id?: string; data?: string; sealed?: string }>(`/api/sessions/${session.id}/attachment?id=${file.id}`)
+        let data = r.id === file.id ? r.data : undefined
+        // A sealing Mac's answer is one piece (opened by api.ts): it must be this attachment of this session.
+        if (r.sealed !== undefined) {
+          let o: { kind?: string; id?: string; sid?: string; data?: unknown } | null = null
+          try {
+            o = JSON.parse(r.sealed)
+          } catch {}
+          data = o?.kind === 'attach' && o.id === file.id && o.sid === session.id && typeof o.data === 'string' ? o.data : undefined
+        }
+        if (!data || !/^[A-Za-z0-9+/]+=*$/.test(data)) throw new Error('이 기기에서는 풀 수 없는 첨부예요')
+        const bin = atob(data)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        const u = URL.createObjectURL(new Blob([bytes], { type: picture ? file.type : 'application/octet-stream' }))
+        setUrl(u)
+        return u
+      } catch (e) {
+        setErr(errorText(e))
+        loading.current = null
+        return null
+      } finally {
+        setBusy(false)
+      }
+    })())
+  useEffect(() => {
+    if (picture && file.size <= AUTO_PICTURE_MAX) void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url])
+  const save = async () => {
+    const u = url ?? (await load())
+    if (!u) return
+    const a = document.createElement('a')
+    a.href = u
+    a.download = file.name
+    a.click()
+  }
+  return (
+    <div className="att-file">
+      {picture && url ? <img className="thumb att-file-pic" src={url} alt={file.name} onClick={() => onImage(url)} /> : null}
+      <div className="att-file-row">
+        <Icon name={picture ? 'image' : 'doc'} />
+        <span className="att-file-name" title={file.name}>
+          {file.name}
+        </span>
+        <span className="att-file-size">{sizeText(file.size)}</span>
+        {picture && !url ? (
+          <Button size="sm" tone="ghost" icon="eye" disabled={busy} onClick={() => void load()}>
+            보기
+          </Button>
+        ) : null}
+        <Button size="sm" tone="ghost" icon="arrowDown" disabled={busy} onClick={() => void save()}>
+          받기
+        </Button>
+      </div>
+      {err ? <span className="att-file-err">{err}</span> : null}
+    </div>
+  )
+}
 
 /**
  * A tool's one-line label, short (REQ-F-703 규칙 3). The server cuts a long label (110 characters) before the page
@@ -342,6 +435,9 @@ function blocks(items: Item[]): Block[] {
       const t: Tool = auto.has(i) ? { ...it, auto: auto.get(i) } : it
       if (prev?.t === 'tools') prev.items.push(t)
       else out.push({ t: 'tools', key: `g${it.key}`, items: [t] })
+      // An attached file is shown where it was attached, outside the tools (which fold away).
+      const file = attachedOf(it)
+      if (file) out.push({ t: 'attach', key: `f${it.key}`, file })
     } else if (it.t === 'card' && it.card.auto) {
       if (prev?.t === 'allows') prev.items.push(it)
       else out.push({ t: 'allows', key: `a${it.key}`, items: [it] })
@@ -474,6 +570,8 @@ export const TimelineView = memo(function TimelineView({ items, session, onSend:
             return <ToolsBlock key={b.key} items={b.items} live={working && i === list.length - 1} onImage={setViewer} />
           case 'allows':
             return <Allows key={b.key} items={b.items} />
+          case 'attach':
+            return <AttachCard key={b.key} session={session} file={b.file} onImage={setViewer} />
           case 'user':
             return <UserMsg key={b.key} it={b} session={session} onImage={setViewer} onEdit={onEdit} />
           case 'text':

@@ -20,7 +20,7 @@ import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { bridgeSelfCall, siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
-import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
+import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
@@ -2564,6 +2564,168 @@ function delegate(sid, op, args) {
   })
 }
 
+// ---------- attach and read_session, the bridge MCP's own tools (REQ-F-846, REQ-F-847) ----------
+
+/**
+ * Attached files: copies under random ids in a folder of their own, not the pictures folder (a session's --add-dir,
+ * and where readimage reads by path), and the index of what each id is. Only what the index names is handed out.
+ */
+const ATTACH_DIR = path.join(STATE_DIR, 'attach')
+const ATTACH_INDEX = path.join(ATTACH_DIR, 'index.json')
+/** sid -> when it attached lately (ATTACH_RATE an hour). */
+const attachTimes = new Map()
+const nativeReal = (p) => {
+  try {
+    return fs.realpathSync.native(p)
+  } catch {
+    return p
+  }
+}
+const attachIndex = () => readJson(ATTACH_INDEX, {})
+
+/**
+ * A file the session hands to the person: checked (attachWhy), copied under a random id, and named in the tool's
+ * answer, which the page reads to draw it. The server can ask for it by that id only (the `attachment` command).
+ */
+function attachFile(sid, args) {
+  const s = sessions.get(sid)
+  const want = String(args?.path ?? '').trim()
+  if (!want) return { ok: false, error: 'path 가 비었어요' }
+  const abs = path.resolve(s.cwd || HOME, want.replace(/^~(?=\/|$)/, HOME))
+  let fd
+  try {
+    // The native realpath also gives the names' real case (a case-folded path cannot slip past a rule).
+    const real = fs.realpathSync.native(abs)
+    const why = attachWhy(real, { home: nativeReal(HOME), roots: attachRoots([os.tmpdir(), '/tmp'].map(nativeReal), s.cwd && nativeReal(s.cwd)), state: nativeReal(STATE_DIR) })
+    if (why) return { ok: false, error: `${why}: ${want}` }
+    // Opened once, not following a link swapped in since realpath, and checked on what was opened.
+    fd = fs.openSync(real, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+    const st = fs.fstatSync(fd)
+    const now = fs.statSync(real)
+    if (now.ino !== st.ino || now.dev !== st.dev) return { ok: false, error: `파일이 바뀌어 첨부하지 않았어요: ${want}` }
+    if (!st.isFile()) return { ok: false, error: `파일이 아니에요: ${want}` }
+    // A second name for a file elsewhere (a hard link) could be a key under another name.
+    if (st.nlink > 1) return { ok: false, error: `하드 링크된 파일은 첨부하지 않아요. 복사본을 만들어 첨부하세요: ${want}` }
+    if (!st.size) return { ok: false, error: `빈 파일이에요: ${want}` }
+    if (st.size > ATTACH_MAX) return { ok: false, error: `파일이 너무 커요 (${(st.size / 1024 / 1024).toFixed(1)} MB, 최대 ${ATTACH_MAX / 1024 / 1024} MB): ${want}` }
+    const at = Date.now()
+    const times = (attachTimes.get(sid) ?? []).filter((t) => at - t < 3_600_000)
+    if (times.length >= ATTACH_RATE) return { ok: false, error: `한 시간에 ${ATTACH_RATE}개까지 첨부해요. 잠시 뒤에 다시 해 주세요` }
+    const buf = Buffer.alloc(st.size)
+    let got = 0
+    while (got < buf.length) {
+      const n = fs.readSync(fd, buf, got, buf.length - got, got)
+      if (!n) break
+      got += n
+    }
+    const bytes = buf.subarray(0, got)
+    const name = attachName(args?.name || path.basename(real))
+    const id = crypto.randomBytes(20).toString('hex')
+    const type = attachType(name, bytes)
+    fs.mkdirSync(ATTACH_DIR, { recursive: true, mode: 0o700 })
+    fs.writeFileSync(path.join(ATTACH_DIR, id), bytes, { mode: 0o600, flag: 'wx' })
+    writeJson(ATTACH_INDEX, { ...attachIndex(), [id]: { sid, name, type, size: bytes.length, sha: crypto.createHash('sha256').update(bytes).digest('hex'), at } })
+    fs.chmodSync(ATTACH_INDEX, 0o600)
+    attachTimes.set(sid, [...times, at])
+    log('info', 'attach', `파일을 대화에 첨부함 (${Math.round(bytes.length / 1024)} KB)`, sid)
+    const shown = bytes.length < 1024 * 1024 ? `${Math.max(1, Math.round(bytes.length / 1024))} KB` : `${(bytes.length / 1024 / 1024).toFixed(1)} MB`
+    return { ok: true, result: `[bridge-attach] ${JSON.stringify({ id, name, type, size: bytes.length })}\n${name} (${shown}) 를 이 대화에 첨부했어요. 사람이 조작 화면에서 보고 받을 수 있어요.` }
+  } catch (e) {
+    return { ok: false, error: e.code === 'ENOENT' ? `그 파일이 없어요: ${want}` : e.code === 'ELOOP' ? `링크가 바뀌어 첨부하지 않았어요: ${want}` : e.code === 'EACCES' || e.code === 'EPERM' ? `읽을 권한이 없어요: ${want}` : '첨부하지 못했어요' }
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+}
+
+/** An attachment by id, only as the index has it: a plain file, one name, the same size and hash. */
+function attachRead(id) {
+  const e = attachIndex()[id]
+  if (!e) return null
+  const file = path.join(ATTACH_DIR, id)
+  const st = fs.lstatSync(file)
+  if (!st.isFile() || st.nlink !== 1 || st.size !== e.size) return null
+  const bytes = fs.readFileSync(file)
+  return crypto.createHash('sha256').update(bytes).digest('hex') === e.sha ? { ...e, bytes } : null
+}
+
+/** Attachments older than ATTACH_KEEP_MS go, and files the index does not name. */
+function pruneAttachments() {
+  try {
+    const idx = attachIndex()
+    const keep = Object.fromEntries(Object.entries(idx).filter(([, e]) => Date.now() - Number(e?.at) < ATTACH_KEEP_MS))
+    if (Object.keys(keep).length !== Object.keys(idx).length) writeJson(ATTACH_INDEX, keep)
+    for (const f of fs.readdirSync(ATTACH_DIR)) if (f !== 'index.json' && !keep[f]) fs.rmSync(path.join(ATTACH_DIR, f), { force: true })
+  } catch {}
+}
+setTimeout(pruneAttachments, 60_000).unref()
+setInterval(pruneAttachments, 6 * 3600_000).unref()
+
+/** A session of this agent by its id, or a unique start of it (8 characters or more). */
+function localSid(want) {
+  if (sessions.has(want)) return want
+  if (want.length < 8) return null
+  const hits = [...sessions.keys()].filter((k) => k.startsWith(want))
+  return hits.length === 1 ? hits[0] : null
+}
+
+/**
+ * The newest messages of a session here, read from its transcript on this Mac: nothing goes by the server. Only a
+ * transcript under a Claude projects folder (the path a hook reported is not taken on its word).
+ */
+function convHere(sid, a) {
+  const s = sessions.get(sid)
+  if (!s) return { ok: false, error: '이 맥에 그 세션이 없어요' }
+  const file = transcriptPath(s, sid)
+  let text = ''
+  let partial = false
+  if (fs.existsSync(file)) {
+    if (!insideAny(file, allProjects().map((p) => p.dir))) return { ok: false, error: '그 세션의 대화 기록을 읽을 수 없어요' }
+    try {
+      const st = fs.statSync(file)
+      const from = Math.max(0, st.size - READ_TAIL)
+      partial = from > 0
+      const fd = fs.openSync(file, 'r')
+      try {
+        const buf = Buffer.alloc(st.size - from)
+        fs.readSync(fd, buf, 0, buf.length, from)
+        text = buf.toString('utf8')
+      } finally {
+        fs.closeSync(fd)
+      }
+    } catch {
+      return { ok: false, error: '그 세션의 대화 기록을 읽지 못했어요' }
+    }
+  }
+  const r = readConv(text, { limit: a?.limit, skip: a?.skip, tools: a?.tools === true, partial })
+  return { ok: true, result: convText(r, `${sid.slice(0, 8)} (${path.basename(s.cwd || '') || '~'})`) }
+}
+
+/** This Mac's sessions, for when the server is not asked: id and folder (the names are the server's). */
+const hereList = () => [...sessions].filter(([, s]) => s.alive !== false).map(([id, s]) => ({ id, folder: s.cwd, thisMac: true }))
+
+/**
+ * read_session: a session here by its id is read here; a name, another Mac's session or the list is asked of the
+ * server (only the person's own sessions), and one the server finds on this Mac is read here all the same. A Mac
+ * that does not trust the server, or seals what it sends, asks it nothing: what it would send (a name) and what
+ * would come back (which session, whose words) are both the server's to fake or read.
+ */
+async function readSession(sid, args) {
+  const a = args && typeof args === 'object' ? args : {}
+  const want = String(a.session ?? '').trim().slice(0, 200)
+  const local = want ? localSid(want) : null
+  if (local) return convHere(local, a)
+  if (enforcing() || trustSealing()) {
+    const why = enforcing() ? '서버를 믿지 않는 모드' : '대화를 봉인하는 맥'
+    return want ? { ok: false, error: `이 맥은 ${why}라 이 맥의 세션만 id 로 읽을 수 있어요. 이 맥의 세션: ${JSON.stringify(hereList())}` } : { ok: true, result: hereList() }
+  }
+  const r = await delegate(sid, 'read_session', { ...(want ? { session: want } : {}), limit: a.limit, skip: a.skip, tools: a.tools === true })
+  if (!r.ok) return r
+  const o = r.result && typeof r.result === 'object' && !Array.isArray(r.result) ? r.result : null
+  if (typeof o?.here === 'string') return sessions.has(o.here) ? convHere(o.here, a) : { ok: false, error: '이 맥에 그 세션이 없어요' }
+  if (typeof o?.text === 'string') return { ok: true, result: fromElsewhere(o.host, o.text) }
+  return r
+}
+
 /**
  * 관리자 권한 (REQ-F-764): the admin password the person typed on the web, in memory for SUDO_WINDOW_MS from when it
  * was typed. Never written to disk or a log, and not handed to the next agent (handoff): a restart closes it.
@@ -2686,6 +2848,29 @@ const commands = {
   forget({ sid }) {
     store.remove(sid)
     statsSent.delete(sid)
+  },
+  /**
+   * A file a session attached (REQ-F-846), by its id only: the server cannot name any other file. While sealing,
+   * sealOut makes it one piece holding its id and session, so it cannot be passed off as another (REQ-S-095).
+   */
+  attachment({ reqId, id }) {
+    const no = (error) => emit({ t: 'attachment', reqId, ok: false, error })
+    if (typeof id !== 'string' || !/^[0-9a-f]{40}$/.test(id)) return no('첨부 id 가 올바르지 않아요')
+    let a = null
+    try {
+      a = attachRead(id)
+    } catch {}
+    if (!a) return no('이 맥에 그 첨부가 없어요(30일이 지나 지웠을 수 있어요)')
+    emit({ t: 'attachment', reqId, ok: true, sid: a.sid, id, name: a.name, type: a.type, size: a.size, data: a.bytes.toString('base64') })
+  },
+  /**
+   * Another Mac's session asked for this one's newest messages (REQ-F-847), through the server, which checked they
+   * are the same person's. Never while sealing: plain words would undo the seal, sealed ones the other Mac cannot open.
+   */
+  convread({ reqId, sid, limit, skip, tools }) {
+    if (trustSealing()) return emit({ t: 'convread', reqId, ok: false, error: '대화를 봉인하는 맥이라 다른 맥으로 대화를 보내지 않아요' })
+    const r = convHere(String(sid ?? ''), { limit, skip, tools })
+    emit({ t: 'convread', reqId, ok: r.ok, ...(r.ok ? { text: r.result } : { error: r.error }) })
   },
   /** A page of a session's log, for a page that asked the server. */
   events({ reqId, sid, after, before, limit, kinds }) {
@@ -6196,7 +6381,7 @@ const server = http.createServer(async (req, res) => {
     try {
       b = JSON.parse(Buffer.concat(chunks).toString('utf8'))
     } catch {}
-    const answer = !sessions.has(sid) ? { ok: false, error: '이 세션을 에이전트가 모릅니다' } : !b || typeof b.op !== 'string' ? { ok: false, error: '요청이 올바르지 않아요' } : await delegate(sid, b.op, b.args)
+    const answer = !sessions.has(sid) ? { ok: false, error: '이 세션을 에이전트가 모릅니다' } : !b || typeof b.op !== 'string' ? { ok: false, error: '요청이 올바르지 않아요' } : b.op === 'attach' ? attachFile(sid, b.args) : b.op === 'read_session' ? await readSession(sid, b.args) : await delegate(sid, b.op, b.args)
     res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(answer))
     return
   }

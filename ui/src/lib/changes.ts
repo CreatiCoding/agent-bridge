@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.401',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '세션이 맥의 파일을 대화에 첨부한다(bridge MCP `attach`): 최대 4 MB, 홈·임시 폴더·세션 폴더 안만, 키·비밀 파일은 거절. 대화에 첨부 카드가 생겨 그림은 미리 보고 그 밖은 받는다. 맥에는 복사본이 30일 남는다',
+        refs: ['REQ-F-846', 'IF-269', 'IF-270'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '세션이 같은 사람의 다른 세션 최근 대화를 읽는다(bridge MCP `read_session`): id·이름으로 지정, 최대 100개. 같은 맥 세션은 맥이 직접 읽어 서버를 거치지 않고, 다른 맥은 서버를 거친다',
+        refs: ['REQ-F-847', 'IF-270'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '서버를 믿지 않는 맥: 첨부는 봉인할 때 한 조각으로 봉인하고, 봉인·enforce 맥은 다른 세션 읽기를 서버에 묻지 않으며, 봉인 맥은 다른 맥에 대화를 보내지 않는다',
+        refs: ['REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.400',
     date: '2026-11-02',
+    commit: '70e4f90',
     changes: [
       {
         kind: 'fixed',

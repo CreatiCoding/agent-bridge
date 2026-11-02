@@ -182,7 +182,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 - **자유**(서명 없이): 
   - 상태: `ping`, `rehello`, `check`, `report`, `resync`, `welcome`(kill 없이), `models`, `sudooff`(비밀번호를 잊기만), `bg`(`enforce` 에서는 세는 수만 기록하고 새로고침을 일으키지 않음).
   - 맥 사본: `log`(이벤트 사본, `enforce` 에서 통계·PR 링크에 쓰지 않음), `putimg`(`enforce` 에서는 id 가 `<sha1>.(png|jpg|gif|webp)` 이고 데이터의 SHA-1 이 같고 그림 머리 바이트가 맞을 때만).
-  - 읽기(결과·오류 모두 봉인): `events`, `export`, `img`, `screen`, `flush`(push 없이), `readfile`, `readimage`, `trashinfo`, `disk`(info·scan·worktrees), `prsearch`, `prstates`, `skills`, `dirs`, `recent`, `account`(list), `voice`.
+  - 읽기(결과·오류 모두 봉인): `events`, `export`, `img`, `screen`, `flush`(push 없이), `readfile`, `readimage`, `trashinfo`, `disk`(info·scan·worktrees), `prsearch`, `prstates`, `skills`, `dirs`, `recent`, `account`(list), `voice`, `attachment`(1.401, 세션이 첨부한 id 로만), `convread`(1.401, 봉인 중이면 거절).
   - `update`: 관리자 서명 + §5.7.
   - `trust`(info·pair1·pair3·pair4·keys): 짝짓기 자체. `pair1` 은 맥 창이 있을 때만.
   - `tidyRun`(세션 정리의 정해진 계산): trust 가 켜져 있으면 서버가 보낸 정책이 `auto` 여도 `suggest` 로 낮춰, 맥이 스스로 세션을 내리지 않고 보고만 한다.
@@ -230,6 +230,8 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | note, toast, error | text, message | level |
 | folder, flushed | files 내용, repos 의 PR 제목 | 가지·sha |
 | file | content, name, path | |
+| attachment(1.401) | id·세션·이름·종류·크기·바이트를 한 조각 `sealed` 로(화면이 안의 id·sid 확인), 오류 | id, size |
+| convread(1.401) | text, error(단, 봉인 중에는 아예 거절해 글을 보내지 않음) | |
 | image, img, export | data | |
 | btw | answer | |
 | voice | text 와 그 녹음의 SHA-256 을 한 조각에(`{"text","audioH"}` 를 JSON 으로) | |
@@ -260,6 +262,8 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | Slack 연동 | slack.go, cs.go, cscmd.go | 내용을 보내지 않고 안내 한 번. Slack 의 명령은 거부 |
 | notify 웹훅·훅·확장 훅 | outbound.go, hooks.go, ext_data.go | 봉인 조각은 `🔒`. `.before` 훅이 글을 고치면 해시가 달라 거부 |
 | 위임(맥→맥) | delegate.go, agent mcp | 끔 |
+| 파일 첨부(bridge MCP `attach`, 1.401) | agent attachFile, api3.go attachment | 됨. 맥 안에서 복사하고, 화면이 받을 때 봉인된 한 조각으로 |
+| 다른 세션 읽기(bridge MCP `read_session`, 1.401) | agent readSession, delegate.go readSession | `enforce`·봉인 맥은 서버에 묻지 않고 이 맥 세션만 id 로. 봉인 맥은 다른 맥의 `convread` 를 거절 |
 | 서비스 API·제보 자동 수정 | service.go, reports.go | 거부 |
 | PR 링크 모으기·리뷰 루프·배포 표시·통계의 PR | cscmd.go 501, eventlog.go 964-976 | 동작 안 함 |
 | 답 끝의 선택지 버튼, ```todos 블록, 출처 접기 | events.go 136-203·333·SOURCES_HEAD_RE | 안 보임(서버가 글 구조를 못 봄). 글은 그대로 보임 |

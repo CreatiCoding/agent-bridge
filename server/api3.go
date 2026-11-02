@@ -15,6 +15,7 @@ var (
 	b64Re          = regexp.MustCompile(`^[A-Za-z0-9+/]+=*$`)
 	sessionMdRe    = regexp.MustCompile(`^SESSION(-[0-9a-f]{8})?\.md$`)
 	localImgRe     = regexp.MustCompile(`(?i)^(~|/)[^\x00\n]{1,1000}\.(png|jpe?g|gif|webp)$`)
+	attachIdRe     = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	cmdWordRe      = regexp.MustCompile(`^[a-z]{2,20}$`)
 	slashColonRe   = regexp.MustCompile(`^[/:]`)
 	correctionRe   = regexp.MustCompile(`^\[정정\]`)
@@ -205,6 +206,30 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 			refuse(404, "그림을 읽지 못했습니다")
 		}
 		res.WriteHead(200, M{"Content-Type": typ, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"}).End(bytes)
+		return true
+	}
+	if get && op == "attachment" {
+		// A file the session attached (REQ-F-846), by the id its tool answer named. The Mac answers with the bytes
+		// (sealed while it seals) and the page unpacks them: passed on as JSON, never kept here (REQ-S-069).
+		id := qstr(u, "id")
+		if !attachIdRe.MatchString(id) {
+			refuse(400, "첨부 id 가 올바르지 않아요")
+		}
+		if !online(meta.host()) {
+			refuse(409, "세션의 호스트가 연결돼 있지 않습니다")
+		}
+		r := ask(meta.host(), M{"t": "attachment", "sid": meta.id(), "id": id}, 90_000)
+		if !truthy(r["ok"]) {
+			refuse(404, orStr(r["error"], "첨부를 읽지 못했습니다"))
+		}
+		// A sealing Mac sends one sealed piece (`sealed`) in place of name, type and data.
+		out := M{"ok": true, "id": id, "size": r["size"]}
+		for _, k := range []string{"name", "type", "data", "sealed"} {
+			if v, ok := r[k].(string); ok {
+				out[k] = v
+			}
+		}
+		jsonRes(res, 200, out)
 		return true
 	}
 	if get && op == "skills" {

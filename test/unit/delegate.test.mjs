@@ -23,8 +23,8 @@ async function waitFor(fn, ms = 5000) {
 
 test('MCP 서버: initialize·tools/list·tools/call, 알림에는 답하지 않는다 (1.196)', async () => {
   assert.equal((await handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } })).result.protocolVersion, '2025-06-18')
-  assert.deepEqual((await handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result.tools.map((t) => t.name), ['hosts', 'delegate', 'delegate_status', 'delegate_send', 'delegate_stop', 'todos'])
-  assert.equal(TOOLS.length, 6)
+  assert.deepEqual((await handle({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).result.tools.map((t) => t.name), ['hosts', 'delegate', 'delegate_status', 'delegate_send', 'delegate_stop', 'todos', 'attach', 'read_session'])
+  assert.equal(TOOLS.length, 8)
   // Model and effort for the session handed work (1.383): optional, effort one of the launch efforts.
   const ds = TOOLS.find((t) => t.name === 'delegate').inputSchema
   assert.deepEqual(Object.keys(ds.properties), ['host', 'task', 'cwd', 'wait', 'timeout_s', 'model', 'effort'])

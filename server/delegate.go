@@ -359,7 +359,108 @@ func withUsed(out M, used M) M {
 }
 
 // runDelegate: one request of a session's bridge MCP server, through its Mac's agent (agent/mcp.mjs).
+// READ_LIST_MAX: how many sessions read_session lists at most.
+const READ_LIST_MAX = 50
+
+// readSession (REQ-F-847): the bridge MCP's read_session, for what the asking Mac could not answer itself. Only
+// the person's own sessions. One on the asking Mac is named back by id and read there, so its words never pass
+// through here; another Mac's is asked of that Mac, which refuses while it seals its conversations.
+func readSession(uid, hostID string, msg M) any {
+	parent, ok := sessions.Get(strOr(msg["sid"], ""))
+	if !ok || parent.uid() != uid || parent.host() != hostID {
+		throw("이 세션을 서버가 모릅니다")
+	}
+	a, _ := msg["args"].(M)
+	if a == nil {
+		a = M{}
+	}
+	hostName := func(id string) any {
+		if h, ok := hosts.Get(id); ok {
+			return h["name"]
+		}
+		return nil
+	}
+	nameOf := func(c *Sess) string {
+		t := jsStringU(c.get("title"))
+		if hasSeal(t) {
+			return "🔒"
+		}
+		return t
+	}
+	own := []*Sess{}
+	keys := sessions.Keys()
+	for i := len(keys) - 1; i >= 0; i-- {
+		c, ok := sessions.Get(keys[i])
+		if ok && c.uid() == uid && !truthy(c.get("closed")) {
+			own = append(own, c)
+		}
+	}
+	want := jsTrim(strOr(a["session"], ""))
+	if want == "" {
+		out := []any{}
+		for i, c := range own {
+			if i >= READ_LIST_MAX {
+				break
+			}
+			phase := c.state()["phase"]
+			if phase == nil {
+				phase = "ended"
+			}
+			out = append(out, M{"id": c.id(), "name": nameOf(c), "host": hostName(c.host()), "thisMac": c.host() == hostID, "phase": phase, "resting": truthy(c.get("resting"))})
+		}
+		return out
+	}
+	var hits []*Sess
+	pick := func(f func(c *Sess) bool) bool {
+		hits = nil
+		for _, c := range own {
+			if f(c) {
+				hits = append(hits, c)
+			}
+		}
+		return len(hits) > 0
+	}
+	low := strings.ToLower(want)
+	_ = pick(func(c *Sess) bool { return c.id() == want }) ||
+		(jsLen(want) >= 8 && pick(func(c *Sess) bool { return strings.HasPrefix(c.id(), want) })) ||
+		pick(func(c *Sess) bool { n := nameOf(c); return n != "🔒" && strings.ToLower(n) == low }) ||
+		pick(func(c *Sess) bool {
+			n := nameOf(c)
+			return n != "🔒" && n != "" && strings.Contains(strings.ToLower(n), low)
+		})
+	if len(hits) == 0 {
+		throw("그런 세션이 없어요. session 없이 불러 목록을 보세요")
+	}
+	if len(hits) > 1 {
+		names := []string{}
+		for i, c := range hits {
+			if i >= 5 {
+				break
+			}
+			names = append(names, jsSliceTo(c.id(), 8)+" "+jsSliceTo(nameOf(c), 40))
+		}
+		throw("여러 세션이 맞아요. id 로 지정해 주세요: " + strings.Join(names, ", "))
+	}
+	c := hits[0]
+	if c.host() == hostID {
+		return M{"here": c.id()}
+	}
+	if !online(c.host()) {
+		throw("그 세션의 맥이 연결돼 있지 않아요")
+	}
+	r := ask(c.host(), M{"t": "convread", "sid": c.id(), "limit": a["limit"], "skip": a["skip"], "tools": a["tools"] == true}, 30_000)
+	if !truthy(r["ok"]) {
+		throw(orStr(r["error"], "그 세션의 대화를 읽지 못했어요"))
+	}
+	// The asking Mac frames it as data from elsewhere (agent/mcp.mjs fromElsewhere).
+	return M{"host": hostName(c.host()), "text": jsSliceTo(jsStringU(r["text"]), 60_000)}
+}
+
 func runDelegate(uid, hostID string, msg M) any {
+	// Reading is not handing work over: not behind the sessions-move switch, nor the one-level rule.
+	if msg["op"] == "read_session" {
+		return readSession(uid, hostID, msg)
+	}
 	if !cfgOn("features.sessionMove") {
 		throw(FEATURE_OFF)
 	}
