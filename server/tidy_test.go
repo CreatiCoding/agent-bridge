@@ -86,10 +86,7 @@ func TestApplyTidyReport(t *testing.T) {
 	uid, hostID := "tidy-test-user", "tidy-host"
 	wasData, wasHosts := DATA, hosts
 	DATA, hosts = t.TempDir(), newOMap[M]()
-	// Left in place afterwards: a state broadcast the report scheduled may still run and reads it.
-	if users == nil {
-		users = newOMap[M]()
-	}
+	needUsers()
 	defer func() { DATA, hosts = wasData, wasHosts }()
 	defer delete(prefsCache, uid)
 	defer delete(noticeCache, uid)
@@ -192,9 +189,11 @@ func TestTidyGroups(t *testing.T) {
 
 func TestTidyBriefDropsEnded(t *testing.T) {
 	uid, hostID := "tidy-brief-user", "tidy-brief-host"
-	wasHosts := hosts
-	hosts = newOMap[M]()
-	defer func() { hosts = wasHosts }()
+	wasData, wasHosts := DATA, hosts
+	DATA, hosts = t.TempDir(), newOMap[M]()
+	needUsers() // tidyBrief → tidyPolicyFor → isAdmin reads it
+	defer func() { DATA, hosts = wasData, wasHosts }()
+	defer delete(prefsCache, uid)
 	defer delete(tidyReports, hostID)
 	hosts.Set(hostID, M{"uid": uid, "name": "맥"})
 	now := float64(nowMs())

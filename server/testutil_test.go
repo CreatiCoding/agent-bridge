@@ -59,5 +59,13 @@ func withLock(f func()) {
 	f()
 }
 
+// needUsers: the users map the server loads at start (store.go), so a test that reaches isAdmin also runs alone.
+// Left in place afterwards: a state broadcast the test scheduled may still run and read it.
+func needUsers() {
+	if users == nil {
+		users = newOMap[M]()
+	}
+}
+
 // oget: a key of an orderedObj, M or JSON value.
 func oget(v any, k string) any { return mget(norm(v), k) }
