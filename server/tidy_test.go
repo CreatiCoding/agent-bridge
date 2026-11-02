@@ -215,3 +215,41 @@ func TestTidyBriefDropsEnded(t *testing.T) {
 	s3.set("closed", true)
 	eq(t, asM(tidyBrief(hostID))["rest"].(float64), 1.0, "끝낸 세션은 다음 보고를 기다리지 않고 빠진다")
 }
+
+// AC-1544: a favourite is out of every automatic step. Making one takes a coming stop off at once; the batch is told
+// (holds, ended); a report from before it does not put a stop or a rest on it; the page shows it held; letting go
+// keeps no mark, so the next batch judges it as before.
+func TestTidyFavorite(t *testing.T) {
+	meta := hookSession(t, "")
+	defer delete(tidyReports, "h1")
+	withLock(func() { meta.set("tidyStopAt", float64(nowMs())+tday) })
+	code, _ := pageCall(t, "POST", "/api/sessions/s1/settings", `{"favorite":true}`)
+	eq(t, code, 200)
+	withLock(func() {
+		ok(t, meta.get("tidyStopAt") == nil, "즐겨찾기하면 예고를 지움")
+		ok(t, meta.get("humanAt") == nil, "즐겨찾기는 사람 입력이 아님")
+		eq(t, mget(tidyHolds("h1")["s1"], "favorite"), any(true))
+		now := float64(nowMs())
+		applyTidyReport("gh1", "h1", M{"at": now, "mode": "auto", "local": M{"date": "2026-11-02", "hour": 8.0}, "sessions": []any{
+			M{"sid": "s1", "alive": true, "act": "wait", "stopAt": now + tday, "idleDays": 3.0, "rest": true, "close": true},
+		}, "folders": []any{}, "transcripts": []any{}, "done": M{}, "would": M{}})
+		ok(t, meta.get("tidyStopAt") == nil, "즐겨찾기 전 보고도 예고를 두지 않음")
+		ok(t, !truthy(meta.get("resting")), "즐겨찾기는 휴면으로 두지 않음")
+		row := asM(asArr(asM(tidyView("h1"))["sessions"])[0])
+		ok(t, row["act"] == nil && row["why"] == TIDY_FAVORITE_WHY && row["rest"] == false && row["close"] == false, "화면에는 즐겨찾기라 정리하지 않음")
+		stop, rest := tidyGroups([]any{row})
+		eq(t, len(stop)+len(rest), 0, "기기 줄 숫자에도 세지 않음")
+		meta.set("closed", true) // ended (closeSession also tells the pages, which this test has none of)
+		ended := asArr(tidyRunFor("h1")["ended"])
+		eq(t, len(ended), 1)
+		eq(t, mget(ended[0], "favorite"), any(true), "끝난 즐겨찾기 세션의 폴더를 에이전트에 알림")
+		meta.set("closed", false)
+	})
+	code, _ = pageCall(t, "POST", "/api/sessions/s1/settings", `{"favorite":false}`)
+	eq(t, code, 200)
+	withLock(func() {
+		ok(t, meta.get("favorite") == nil, "빼면 필드가 없음")
+		eq(t, mget(tidyHolds("h1")["s1"], "favorite"), any(false))
+		ok(t, meta.get("humanAt") == nil, "빼도 쉰 기간은 마지막 사람 입력부터")
+	})
+}

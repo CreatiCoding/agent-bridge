@@ -824,10 +824,19 @@ const when = (t) => {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+/** Why a favourite is left alone by every automatic step of the tidy (REQ-F-782 rule 6, REQ-F-835 rule 3.4). */
+export const TIDY_FAVORITE_WHY = '즐겨찾기라 정리하지 않음'
+
+/**
+ * Whether a folder is, or holds, or sits inside one of `dirs` (real paths): such a folder is no tidy candidate
+ * (REQ-F-837 rule 1). Used for the folders open sessions work in and those of ended favourites.
+ */
+export const folderHeld = (dir, dirs) => dirs.some((u) => u === dir || u.startsWith(`${dir}/`) || dir.startsWith(`${u}/`))
+
 /**
  * One open session (REQ-F-835): `{act, why, stopAt}`. act: null (not a candidate, or held: then `why`), 'suggest'
  * (suggest mode, past the days), 'notice' (tell it now), 'wait' (told, the stop is not due yet), 'stop'.
- * s: {alive, lastHumanAt, lastTurnAt, noticeAt, keepAlive, turn, waiting, delegate, locked, reportAuto, changing}.
+ * s: {alive, lastHumanAt, lastTurnAt, noticeAt, favorite, keepAlive, turn, waiting, delegate, locked, reportAuto, changing}.
  * `manual`: someone asked for it by hand: the days and the notice do not count, the holds that protect work do.
  */
 export function idleStopWhy(s, now, policy, manual = false) {
@@ -837,6 +846,7 @@ export function idleStopWhy(s, now, policy, manual = false) {
   const due = s.lastHumanAt + p.idleStopDays * DAY_MS
   if (!manual && now < due - TIDY_NOTICE_MS) return { act: null, why: null, stopAt: null }
   const held = (why) => ({ act: null, why, stopAt: null })
+  if (s.favorite && !manual) return held(TIDY_FAVORITE_WHY)
   if (s.keepAlive && !manual) return held('자동 종료 안 함으로 고정')
   if (s.turn) return held('작업 중')
   if (s.waiting) return held('확인을 기다리는 중')
@@ -857,10 +867,10 @@ export function idleStopWhy(s, now, policy, manual = false) {
 export const tidyNoticeText = (days, stopAt) => `💤 사람 입력이 ${days}일 없어 ${when(stopAt)}에 claude 를 내려요. 대화는 그대로 남고, 글을 보내면 이어서 열어요. 그 전에 아무 글이나 보내거나 "유지"를 누르면 취소돼요.`
 export const tidyStoppedText = (days) => `💤 사람 입력이 ${days}일 없어 claude 를 내렸어요. 대화는 그대로 있고, 글을 보내면 이어서 열어요.`
 
-/** A stopped session put to rest, and one offered to be closed (REQ-F-836). s: {alive, resting, keepAlive, lastHumanAt}. */
+/** A stopped session put to rest, and one offered to be closed (REQ-F-836). s: {alive, resting, favorite, keepAlive, lastHumanAt}. */
 export function restAct(s, now, policy) {
   const p = tidyPolicyOf(policy)
-  if (s.keepAlive || p.mode === 'off') return { rest: false, close: false }
+  if (s.favorite || s.keepAlive || p.mode === 'off') return { rest: false, close: false }
   const idle = now - s.lastHumanAt
   return { rest: s.alive === false && !s.resting && !!p.restDays && idle >= p.restDays * DAY_MS, close: !!p.closeSuggestDays && idle >= p.closeSuggestDays * DAY_MS }
 }

@@ -30,6 +30,7 @@ interface SessionRow {
   rest?: boolean
   close?: boolean
   keepAlive?: boolean
+  favorite?: boolean
 }
 interface FileRow {
   path: string
@@ -49,6 +50,7 @@ interface Report {
 const call = <T,>(hostId: string, body: Record<string, unknown>) => post<T>(`/api/hosts/${hostId}/tidy`, body)
 const SESSION_UNDO = '대화는 그대로 남아요. 세션을 열고 글을 보내면 이어서 열려요.'
 const TRASH_UNDO = '휴지통으로 옮겨요(영구 삭제 아님). macOS 는 Finder 의 휴지통, 우분투는 ~/.local/share/Trash 에서 되살릴 수 있어요. 공간은 휴지통을 비워야 늘어요.'
+const FAVORITE_WHY = '즐겨찾기라 정리하지 않음'
 const STOP_DAYS = [0, 1, 2, 3, 5, 7, 14]
 const TRASH_DAYS = [0, 7, 14, 30]
 
@@ -176,6 +178,8 @@ export function TidyBox({ hostId, online, onChange }: { hostId: string; online: 
 
   const sessions = report?.sessions ?? []
   const { stop: idle, rest: others } = tidyGroups(sessions)
+  // Favourites the batch would have stopped or rested, left alone (REQ-F-782 rule 6): counted, nothing to press.
+  const spared = sessions.filter((s) => s.favorite && s.why === FAVORITE_WHY).length
   const folders = report?.folders ?? []
   const transcripts = report?.transcripts ?? []
   const p = policy
@@ -276,6 +280,7 @@ export function TidyBox({ hostId, online, onChange }: { hostId: string; online: 
             ) : null}
           </div>
           {idle.map((s) => sessionRow(s, true))}
+          {spared ? <div style={{ fontSize: 'var(--fs-small)', color: 'var(--muted)' }}>즐겨찾기라 정리하지 않음 · 세션 {spared}개</div> : null}
           {others.length ? <b>휴면·끝내기 제안 · {others.length}</b> : null}
           {others.map((s) => sessionRow(s, false))}
           <div className="hstack" style={{ justifyContent: 'space-between' }}>

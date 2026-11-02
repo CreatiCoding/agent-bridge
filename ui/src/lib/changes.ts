@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.395',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent', 'server'],
+        text: '즐겨찾기한 세션은 세션 정리의 자동 단계에서 빠진다: 오래 쉬어도 claude 를 내리지 않고(예고도 없음), 휴면으로 두지 않으며, 휴면·끝내기 제안에도 오르지 않는다. 끝난 뒤에도 그 작업 폴더는 폴더 휴지통(자동·제안)에 오르지 않는다. 손으로 하는 종료·휴지통은 그대로',
+        refs: ['REQ-F-782', 'REQ-F-835', 'REQ-F-836', 'REQ-F-837', 'IF-263'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'agent'],
+        text: '예고가 걸린 세션을 즐겨찾기하면 예고가 바로 지워진다. 즐겨찾기를 풀면 원래 규칙으로 돌아가 다시 하루 앞서 예고하고, 쉰 기간은 마지막 사람 입력부터 센다',
+        refs: ['REQ-F-782', 'REQ-F-835', 'IF-067'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '세션 정리 화면의 내릴 세션 목록 아래에 "즐겨찾기라 정리하지 않음 · 세션 n개", 세션 메뉴의 즐겨찾기 힌트에 "자동 정리 안 함"',
+        refs: ['REQ-F-839', 'REQ-F-782'],
+      },
+    ],
+  },
+  {
     version: '1.394',
     date: '2026-11-02',
+    commit: '901d4f8',
     changes: [
       {
         kind: 'security',

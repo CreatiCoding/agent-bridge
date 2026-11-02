@@ -91,7 +91,7 @@ func tidyHolds(hostID string) M {
 				delegate = true
 			}
 		}
-		out[meta.id()] = M{"humanAt": numOrNull(meta.get("humanAt")), "keepAlive": truthy(meta.get("keepAlive")), "locked": truthy(meta.get("lock")),
+		out[meta.id()] = M{"humanAt": numOrNull(meta.get("humanAt")), "favorite": truthy(meta.get("favorite")), "keepAlive": truthy(meta.get("keepAlive")), "locked": truthy(meta.get("lock")),
 			"reportAuto": meta.get("reportAuto") != nil && !truthy(meta.get("reportDeployed")), "delegate": delegate, "resting": truthy(meta.get("resting"))}
 	}
 	return out
@@ -107,7 +107,8 @@ func tidyRunFor(hostID string) M {
 	ended := []any{}
 	for _, meta := range sessions.Values() {
 		if meta.host() == hostID && truthy(meta.get("closed")) && meta.str("cwd") != "" {
-			ended = append(ended, M{"cwd": meta.str("cwd"), "closedAt": endedAt(meta)})
+			// A favourite's folder is never offered, also after it ended (REQ-F-837 rule 1).
+			ended = append(ended, M{"cwd": meta.str("cwd"), "closedAt": endedAt(meta), "favorite": truthy(meta.get("favorite"))})
 		}
 	}
 	return M{"t": "tidyRun", "policy": tidyPolicyFor(hostID), "holds": tidyHolds(hostID), "roots": []any{root}, "ended": ended}
@@ -191,14 +192,18 @@ func applyTidyReport(uid, hostID string, report M) {
 			continue
 		}
 		listed[meta.id()] = true
-		switch r["act"] {
+		act := r["act"]
+		if truthy(meta.get("favorite")) {
+			act = nil // a report made before it became a favourite (REQ-F-782 rule 6): no stop is coming
+		}
+		switch act {
 		case "notice", "wait":
 			stopAt := numOr0(r["stopAt"])
 			if stopAt > 0 && numOr0(meta.get("tidyStopAt")) != stopAt {
 				meta.set("tidyStopAt", stopAt)
 				touch(meta)
 			}
-			if r["act"] == "notice" {
+			if act == "notice" {
 				hours := jsRound((stopAt - numOr0(report["at"])) / 3_600_000)
 				addNotice(uid, M{"sid": meta.id(), "key": "tidy|" + meta.id() + "|" + numStr(numOr0(report["at"])), "title": sessionTitle(meta), "text": "💤 사람 입력이 " + numStr(numOr0(r["idleDays"])) + "일 없어 약 " + numStr(hours) + "시간 뒤 claude 를 내려요. 유지하려면 세션을 열어 \"유지\"를 누르세요", "tone": "info", "push": true})
 			}
@@ -208,7 +213,7 @@ func applyTidyReport(uid, hostID string, report M) {
 				touch(meta)
 			}
 		}
-		if truthy(r["rest"]) && mode == "auto" && !truthy(meta.get("resting")) && !truthy(meta.get("keepAlive")) {
+		if truthy(r["rest"]) && mode == "auto" && !truthy(meta.get("resting")) && !truthy(meta.get("keepAlive")) && !truthy(meta.get("favorite")) {
 			meta.set("resting", true)
 			touch(meta)
 			record(uid, hostID, M{"area": "tidy", "sid": meta.id(), "text": "세션 정리: 휴면으로 둠 " + sessionTitle(meta) + " · " + numStr(numOr0(r["idleDays"])) + "일 입력 없음"})
@@ -318,6 +323,11 @@ func tidyView(hostID string) any {
 		if meta, ok := sessions.Get(jsString(x["sid"])); ok && meta.host() == hostID && !truthy(meta.get("closed")) {
 			x["title"] = sessionTitle(meta)
 			x["keepAlive"] = truthy(meta.get("keepAlive"))
+			x["favorite"] = truthy(meta.get("favorite"))
+			if truthy(x["favorite"]) {
+				// Made a favourite after the report: shown as the next batch will judge it (agent/guard.mjs idleStopWhy).
+				x["act"], x["why"], x["stopAt"], x["rest"], x["close"] = nil, TIDY_FAVORITE_WHY, nil, false, false
+			}
 			x["resting"] = truthy(meta.get("resting"))
 			rows = append(rows, x)
 		}
@@ -366,6 +376,9 @@ func tidySettings(cur M, b M) M {
 	}
 	return out
 }
+
+// TIDY_FAVORITE_WHY: agent/guard.mjs's word for a favourite left alone (REQ-F-835 rule 3.4).
+const TIDY_FAVORITE_WHY = "즐겨찾기라 정리하지 않음"
 
 const TIDY_BAD = "방식은 auto·suggest·off, 일수는 0~3650 의 정수예요"
 const TIDY_OLD_AGENT = "이 맥의 에이전트가 세션 정리를 모르는 버전이에요"

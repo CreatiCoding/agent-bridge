@@ -2,7 +2,7 @@
 // exactly N days, a working session, one waiting on a dialog, one pinned, unpushed commits, a loop within 24 hours.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { DAY_MS, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, tidyPolicyOf, humanLine, lastHumanLine, lastTurnLine, TIDY_DEFAULTS } from '../../agent/guard.mjs'
+import { DAY_MS, idleStopWhy, restAct, folderTidyWhy, folderHeld, TIDY_FAVORITE_WHY, transcriptTidyWhy, tidyPolicyOf, humanLine, lastHumanLine, lastTurnLine, TIDY_DEFAULTS } from '../../agent/guard.mjs'
 
 const NOW = Date.UTC(2026, 10, 1, 12)
 const auto = { mode: 'auto', idleStopDays: 3 }
@@ -160,4 +160,36 @@ test('IF-264 (AC-1518): the owner reads and sets it, others do not; tidyAsk gets
   } finally {
     await srv.stop()
   }
+})
+
+test('favourite (AC-1544): out of every automatic step, back to the usual rules once let go', () => {
+  // 3 days and more without input, told a day ago: a favourite is held, not stopped; by hand it still goes.
+  const told = s(3 * DAY_MS + H, { noticeAt: NOW - DAY_MS - H })
+  assert.equal(idleStopWhy(told, NOW, auto).act, 'stop', '즐겨찾기가 아니면 내림')
+  assert.deepEqual(idleStopWhy({ ...told, favorite: true }, NOW, auto), { act: null, why: '즐겨찾기라 정리하지 않음', stopAt: null })
+  assert.equal(TIDY_FAVORITE_WHY, '즐겨찾기라 정리하지 않음')
+  assert.equal(idleStopWhy(s(10 * DAY_MS, { favorite: true }), NOW, auto).act, null, '예고도 없음')
+  assert.equal(idleStopWhy(s(10 * DAY_MS, { favorite: true }), NOW, { mode: 'suggest', idleStopDays: 3 }).act, null, '제안 목록에도 없음')
+  assert.equal(idleStopWhy(s(2 * DAY_MS - 1, { favorite: true }), NOW, auto).why, null, '예고 시점 전이면 이유도 없음(목록에 없음)')
+  assert.equal(idleStopWhy(s(H, { favorite: true }), NOW, auto, true).act, 'stop', '손으로 내리면 즐겨찾기는 막지 않음')
+  // Let go: the batch dropped the old notice while it was a favourite, so it is told again a day ahead, counted from
+  // the last human input (10 days ago), not from when it was let go.
+  const free = s(10 * DAY_MS, { noticeAt: null })
+  assert.deepEqual(idleStopWhy(free, NOW, auto), { act: 'notice', why: null, stopAt: NOW + DAY_MS })
+  assert.equal(Math.floor((NOW - free.lastHumanAt) / DAY_MS), 10)
+  // Rest and close: neither for a favourite, both as before once let go.
+  const p = { mode: 'auto', restDays: 7, closeSuggestDays: 30 }
+  const st = { alive: false, resting: false, lastHumanAt: NOW - 40 * DAY_MS }
+  assert.deepEqual(restAct({ ...st, favorite: true }, NOW, p), { rest: false, close: false })
+  assert.deepEqual(restAct(st, NOW, p), { rest: true, close: true })
+})
+
+test('folderHeld (AC-1544): the folder of an open session or an ended favourite is no candidate', () => {
+  const fav = ['/u/bridge/works/a/fav']
+  assert.equal(folderHeld('/u/bridge/works/a/fav', fav), true, '그 폴더')
+  assert.equal(folderHeld('/u/bridge/works/a', fav), true, '그 폴더를 품은 폴더')
+  assert.equal(folderHeld('/u/bridge/works/a/fav/sub', fav), true, '그 안')
+  assert.equal(folderHeld('/u/bridge/works/a/favorite', fav), false, '이름만 같은 앞부분')
+  assert.equal(folderHeld('/u/bridge/works/b/x', fav), false)
+  assert.equal(folderHeld('/u/bridge/works/b/x', []), false)
 })

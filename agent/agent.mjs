@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy } from './guard.mjs'
+import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, folderHeld, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -4263,6 +4263,21 @@ function rememberEnded(cwd) {
   writeJson(endedPath, [{ cwd, at: Date.now() }, ...list].slice(0, 500))
 }
 
+/** Marks in tidy-ended.json the folders of the server's ended favourites; returns every folder so marked. */
+function keepEndedFavorites(ended) {
+  const list = readJson(endedPath, [])
+  if (!Array.isArray(list)) return []
+  let changed = false
+  for (const e of ended) {
+    if (!e?.favorite || typeof e.cwd !== 'string' || !e.cwd) continue
+    const x = list.find((y) => y?.cwd === e.cwd)
+    if (x && !x.favorite) x.favorite = changed = true
+    else if (!x) list.unshift({ cwd: e.cwd, at: Number(e.closedAt) || Date.now(), favorite: (changed = true) })
+  }
+  if (changed) writeJson(endedPath, list.slice(0, 500))
+  return list.filter((x) => x?.favorite && x.cwd).map((x) => x.cwd)
+}
+
 /** Reads a file backwards in 4 MiB pieces until `find` answers for the text read so far (whole lines only). */
 function scanBack(file, finds) {
   const fd = fs.openSync(file, 'r')
@@ -4323,6 +4338,7 @@ function idleFacts(sid, s, hold = {}) {
     from: humanAt ? (t.human && t.human >= (Number(hold.humanAt) || 0) ? 'transcript' : 'server') : 'launch',
     lastTurnAt: s.turnEndAt ?? t.turn ?? null,
     noticeAt: s.tidyNoticeAt ?? null,
+    favorite: !!hold.favorite,
     keepAlive: !!hold.keepAlive,
     locked: !!hold.locked,
     reportAuto: !!hold.reportAuto,
@@ -4409,7 +4425,10 @@ async function folderFacts(dir) {
 async function tidyFolders(policy, roots, ended, now) {
   const home = fs.realpathSync(HOME)
   const used = sessionPlaces().flatMap((x) => x.dirs)
-  const inUse = (p) => used.some((u) => insideOf(u, p) || insideOf(p, u))
+  // An ended favourite keeps its folder out of the tidy as an open session does (REQ-F-837 rule 1, REQ-F-782 rule 6),
+  // also after the server forgets it (7 days): its mark is kept in tidy-ended.json until another session ends there.
+  const favorites = keepEndedFavorites(Array.isArray(ended) ? ended : []).map((c) => realOr(expandTilde(c)))
+  const inUse = (p) => folderHeld(p, used) || folderHeld(p, favorites)
   const rootList = (Array.isArray(roots) && roots.length ? roots : ['~/bridge/works']).map((r) => realOr(expandTilde(r)))
   const endedAt = new Map()
   for (const e of [...(Array.isArray(ended) ? ended : []), ...readJson(endedPath, [])]) {
@@ -4530,6 +4549,12 @@ async function tidyBatch(run) {
       const v = idleStopWhy(f, now, policy)
       const r = restAct(f, now, policy)
       let act = v.act
+      // Held for good (a favourite, or pinned): a notice already given is void, so letting go later starts afresh
+      // with a new notice a day ahead instead of a stop due at once (REQ-F-835 rule 7).
+      if ((f.favorite || f.keepAlive) && s.tidyNoticeAt) {
+        delete s.tidyNoticeAt
+        saveSessions()
+      }
       if (act === 'notice') {
         s.tidyNoticeAt = now
         saveSessions()

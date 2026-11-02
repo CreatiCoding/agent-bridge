@@ -881,6 +881,8 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		if v, ok := b["favorite"].(bool); ok {
 			if v {
 				meta.set("favorite", true)
+				// A favourite is out of every automatic tidy step (REQ-F-782 rule 6): a coming stop is off now.
+				meta.del("tidyStopAt")
 			} else {
 				meta.del("favorite")
 			}

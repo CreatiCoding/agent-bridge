@@ -6,7 +6,7 @@ import { Button, Icon } from '../kit'
 import { act, sessionPost } from './session-menu'
 
 export function TidyBand({ s }: { s: Session }) {
-  if (!s.tidyStopAt || s.closed || s.keepAlive) return null
+  if (!s.tidyStopAt || s.closed || s.keepAlive || s.favorite) return null
   return (
     <div className="banner" role="status" style={{ background: 'var(--hover)' }}>
       <Icon name="info" />
