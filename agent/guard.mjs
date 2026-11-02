@@ -848,10 +848,12 @@ const when = (t) => {
 export const TIDY_FAVORITE_WHY = '즐겨찾기라 정리하지 않음'
 
 /**
- * Whether a folder is, or holds, or sits inside one of `dirs` (real paths): such a folder is no tidy candidate
+ * Whether one of `dirs` (real paths) is the folder or sits inside it: such a folder is no tidy candidate
  * (REQ-F-837 rule 1). Used for the folders open sessions work in and those of ended favourites.
+ * A session working in a parent (the home folder, ~/bridge/works…) does not hold the folders below it (1.399):
+ * one session opened at ~ used to hold every folder.
  */
-export const folderHeld = (dir, dirs) => dirs.some((u) => u === dir || u.startsWith(`${dir}/`) || dir.startsWith(`${u}/`))
+export const folderHeld = (dir, dirs) => dirs.some((u) => u === dir || u.startsWith(`${dir}/`))
 
 /**
  * One open session (REQ-F-835): `{act, why, stopAt}`. act: null (not a candidate, or held: then `why`), 'suggest'

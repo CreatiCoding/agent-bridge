@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.399',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '세션 정리: 홈(~) 같은 위쪽 폴더에서 연 세션이 하나 있으면 모든 작업 폴더를 "열린 세션이 쓰는 중"으로 봐 폴더 제안이 늘 0개였다. 이제 세션 폴더가 그 폴더이거나 그 안쪽일 때만 쓰는 중으로 본다(정리 실행·자동 정리 직전 재확인도 같게)',
+        refs: ['REQ-F-837'],
+      },
+    ],
+  },
+  {
     version: '1.398',
     date: '2026-11-02',
+    commit: '71a91b8',
     changes: [
       {
         kind: 'added',

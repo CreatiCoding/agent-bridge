@@ -3386,7 +3386,7 @@ const commands = {
         if (it.kind === 'transcript') why = transcriptTrashWhy(real)
         else {
           const used = sessionPlaces().flatMap((x) => x.dirs)
-          why = used.some((u) => insideOf(u, real) || insideOf(real, u)) ? '열린 세션이 쓰는 중' : diskTrashable(real, { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
+          why = folderHeld(real, used) ? '열린 세션이 쓰는 중' : diskTrashable(real, { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
         }
         if (why) throw new Error(why)
         const r = await moveToTrash(real)
@@ -4759,7 +4759,7 @@ async function tidyBatch(run) {
       if (done.trashed.length >= 50) break
       // Looked at again just before: a session may have opened in it since the walk.
       const used = sessionPlaces().flatMap((x) => x.dirs)
-      const why = used.some((u) => insideOf(u, f.dir) || insideOf(f.dir, u)) ? '열린 세션이 쓰는 중' : diskTrashable(f.dir, { home: fs.realpathSync(HOME), keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
+      const why = folderHeld(f.dir, used) ? '열린 세션이 쓰는 중' : diskTrashable(f.dir, { home: fs.realpathSync(HOME), keep: keptDirs(), sessions: sessionDirs(), platform: process.platform })
       if (why) {
         f.auto = false
         f.why = why

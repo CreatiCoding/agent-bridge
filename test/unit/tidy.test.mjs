@@ -188,8 +188,19 @@ test('folderHeld (AC-1544): the folder of an open session or an ended favourite 
   const fav = ['/u/bridge/works/a/fav']
   assert.equal(folderHeld('/u/bridge/works/a/fav', fav), true, '그 폴더')
   assert.equal(folderHeld('/u/bridge/works/a', fav), true, '그 폴더를 품은 폴더')
-  assert.equal(folderHeld('/u/bridge/works/a/fav/sub', fav), true, '그 안')
   assert.equal(folderHeld('/u/bridge/works/a/favorite', fav), false, '이름만 같은 앞부분')
   assert.equal(folderHeld('/u/bridge/works/b/x', fav), false)
   assert.equal(folderHeld('/u/bridge/works/b/x', []), false)
+})
+
+test('folderHeld (AC-1558): a session in a parent folder does not hold the folders below it', () => {
+  // The home folder, the root and the group: none of them holds ~/bridge/works/a/x.
+  for (const u of ['/u', '/u/bridge', '/u/bridge/works', '/u/bridge/works/a']) {
+    assert.equal(folderHeld('/u/bridge/works/a/x', [u]), false, u)
+    assert.equal(folderHeld('/u/bridge/works/a/fav/sub', [u, '/u/bridge/works/a/fav']), false, `${u} + 위쪽 즐겨찾기`)
+  }
+  // A home session next to one working inside the folder: still held.
+  assert.equal(folderHeld('/u/bridge/works/a/x', ['/u', '/u/bridge/works/a/x']), true, '그 폴더')
+  assert.equal(folderHeld('/u/bridge/works/a/x', ['/u', '/u/bridge/works/a/x/deep/er']), true, '그 안쪽')
+  assert.equal(folderHeld('/u/bridge/works/a/x', ['/u', '/u/bridge/works/a/xy']), false, '이름만 같은 앞부분')
 })
