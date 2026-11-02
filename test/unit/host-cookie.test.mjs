@@ -1,5 +1,5 @@
-// The sign-in cookie is __Host-cb (REQ-S-080): no other subdomain can plant it. Until 2026-11-02 a sign-in still in
-// the old `cb` is moved over; a `__Host-cb` always wins, and two `cb` (one planted for a parent domain) count as none.
+// The sign-in cookie is __Host-cb (REQ-S-080): no other subdomain can plant it. The move from the old `cb` ended at
+// LEGACY_CB_UNTIL (2026-11-02 00:00 UTC): since then an old `cb` is never a sign-in, only dropped.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { startServer } from './server-harness.mjs'
@@ -24,13 +24,12 @@ test('sign-in sets __Host-cb: Secure, Path=/, no Domain, and no bare cb', async 
   assert.ok(!set.some((c) => c.startsWith('cb=')))
 })
 
-test('a sign-in in the old cb is moved to __Host-cb and the old one dropped', async () => {
+test('after LEGACY_CB_UNTIL a sign-in in the old cb is not moved, only dropped', async () => {
   const t = token(await srv.login('alice'))
   const r = await me(`cb=${t}`)
-  assert.equal(r.status, 200)
-  assert.equal((await r.json()).user.login, 'alice')
+  assert.equal(r.status, 401)
   const set = r.headers.getSetCookie()
-  assert.ok(set.some((c) => c.startsWith(`__Host-cb=${t};`) && /; Secure/.test(c)))
+  assert.ok(!set.some((c) => c.startsWith('__Host-cb=')))
   assert.ok(set.some((c) => /^cb=; Path=\/; Max-Age=0/.test(c)))
   assert.equal((await me(`__Host-cb=${t}`)).status, 200)
 })
@@ -71,7 +70,7 @@ test('on a real domain the old cb is dropped for the host and every parent domai
   try {
     const t = token(await s.login('alice'))
     const r = await fetch(`${s.origin}/api/me`, { headers: { cookie: `cb=${t}` } })
-    assert.equal(r.status, 200)
+    assert.equal(r.status, 401)
     const clears = r.headers.getSetCookie().filter((c) => c.startsWith('cb='))
     assert.deepEqual(clears.map((c) => /Domain=([^;]+)/.exec(c)?.[1] ?? null), [null, 'bridge.example.com', 'example.com'])
   } finally {

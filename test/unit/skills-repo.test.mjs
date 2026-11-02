@@ -163,7 +163,7 @@ describe('an Apple account has no GitHub login', () => {
     const users = { [uid]: { login: 'apple_0123456789', name: 'A', avatar: '', apple: true } }
     const logins = { [crypto.createHash('sha256').update(token).digest('hex')]: { uid, exp: Date.now() + 86_400_000 } }
     srv = await startServer({ env: envOf(), seed: { 'users.json': users, 'logins.json': logins, 'access.json': { apple_0123456789: { login: 'apple_0123456789', status: 'allowed' } } } })
-    const call = (p, init = {}) => fetch(`${srv.origin}${p}`, { ...init, headers: { cookie: `cb=${token}`, 'content-type': 'application/json', origin: srv.origin } })
+    const call = (p, init = {}) => fetch(`${srv.origin}${p}`, { ...init, headers: { cookie: `__Host-cb=${token}`, 'content-type': 'application/json', origin: srv.origin } })
     assert.equal((await (await call('/api/prefs/skills')).json()).login, null)
     const r = await call('/api/prefs/skills', { method: 'POST', body: JSON.stringify({ repo: 'apple-0123456789/x' }) })
     assert.equal(r.status, 400)

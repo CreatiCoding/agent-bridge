@@ -349,7 +349,7 @@ describe('demo limits and lasting sign-ins', () => {
     const hash = crypto.createHash('sha256').update(token).digest('hex')
     const srv = await startServer({ env: DEMO, seed: { 'logins.json': { [hash]: { uid: 'demo-0123456789ab', exp: Date.now() + 86_400_000 } } } })
     try {
-      const jar = `cb=${token}`
+      const jar = `__Host-cb=${token}`
       const me = await as(srv, jar)('/api/me')
       assert.equal(me.status, 200)
       assert.equal(me.json.demo, true)
