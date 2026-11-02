@@ -116,7 +116,7 @@ bridge.actions.around('message.render', (a, next) => {
 - 이 처리기에는 Claude 의 답 글만 와요. 결정 카드, 경고·오류, 사람 말은 오지 않아요. 그래서 권한 요청과 경고는 늘 보여요.
 - 글을 바꾸면 답 아래에 "<이름> 이 바꿈 · 원문 보기" 가 붙어요. 누가 바꿨는지(`by`)는 페이지가 붙여요. 익스텐션이 정하지 못해요.
 - `messages.quiet` 규칙이 조용하게 만든 답은 처리기가 무엇을 돌려줘도 접힌 채예요. `quiet` 인자로 그 규칙을 알 수 있어요.
-- 이 훅으로만 접으면 화면에서만 접혀요. 알림과 "새 답" 점은 그대로 나가요. 막으려면 [`messages.quiet`](#조용한-답-messages-quiet)을 쓰세요.
+- 이 훅으로만 접으면 화면에서만 접혀요. 알림과 "새 답" 점은 그대로 나가요. 막으려면 [`messages.quiet`](#조용한-답-messagesquiet)을 쓰세요.
 - 맥과 짝지은 기기에서는 익스텐션이 뜨지 않아서 이 훅도 돌지 않아요.
 
 ::: details 액션별 자세한 규칙
@@ -285,7 +285,7 @@ bridge.actions.after('session.done', (ev) => {
 
 ::: details 이벤트의 자세한 규칙
 - 서버는 동의한 익스텐션이 하나라도 있는 사람의 열린 페이지에 `{t: "ext-event", event}` 를 보내요. 본문은 서버 이벤트와 같아요. [알림 웹훅과 훅](/guide/operate/hooks#서버가-내는-이벤트)의 "서버가 내는 이벤트" 를 보세요.
-- `session.done` 의 `quiet: true` 는 턴이 조용한 답으로 끝났다는 뜻이에요. 이때 알림 웹훅(`notify`)에는 보내지 않아요. [조용한 답](#조용한-답-messages-quiet)을 보세요.
+- `session.done` 의 `quiet: true` 는 턴이 조용한 답으로 끝났다는 뜻이에요. 이때 알림 웹훅(`notify`)에는 보내지 않아요. [조용한 답](#조용한-답-messagesquiet)을 보세요.
 - `POST /api/ext/<id>/events/<eventId>/claim`: 그 사람에게 보낸 이벤트가 아니면 404, (익스텐션, 이벤트)마다 처음만 200, 이후 409 예요. `events.claim` 은 200 이면 `true`, 그 밖에는 `false` 예요.
 - 서버는 보낸 이벤트와 claim 을 사람마다 10분·1000개 기억해요. 무중단 교체 때는 넘기지만, 서버를 완전히 다시 시작하면 잊어요.
 - 대표 페이지는 최상위 창이 Web Lock `bridge-ext-primary` 를 잡아 정해요. 분할 칸은 대표가 되지 않아요. 대표가 닫히면 기다리던 다음 창이 이어받아요.
@@ -329,7 +329,7 @@ messages:
 | `entry` | 예 | 폴더 안의 `.js`·`.mjs` 파일이에요 |
 | `uses.actions` | 아니오 | 쓰는 액션과 이벤트 이름이에요. [액션 목록](#액션-목록)의 열한 개(`message.render` 포함)와 이벤트 셋 `session.done`·`decision.waiting`·`decision.answered` 중에서 골라요 |
 | `uses.slots` | 아니오 | 쓰는 slot 이름이에요 |
-| `messages.quiet[]` | 아니오 | `{suffix, label?}`. 끝이 `suffix` 인 답을 조용한 답으로 봐요. `suffix` 는 1~40자, 한 줄, 앞뒤 공백·제어 문자·`⟦`·`⟧` 없이요. `label` 은 40자까지예요. 익스텐션마다 5개까지예요. [조용한 답](#조용한-답-messages-quiet)을 보세요 |
+| `messages.quiet[]` | 아니오 | `{suffix, label?}`. 끝이 `suffix` 인 답을 조용한 답으로 봐요. `suffix` 는 1~40자, 한 줄, 앞뒤 공백·제어 문자·`⟦`·`⟧` 없이요. `label` 은 40자까지예요. 익스텐션마다 5개까지예요. [조용한 답](#조용한-답-messagesquiet)을 보세요 |
 | `server.routes[]` | 아니오 | `{path, upstream, signingSecret, headers?}`. 서버가 중계하는 라우트예요 |
 | `server.hooks` | 아니오 | `<액션·이벤트>.after: [webhook…]`. 동의한 사람의 이벤트만 가요 |
 
