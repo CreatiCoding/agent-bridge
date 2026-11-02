@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, folderHeld, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy } from './guard.mjs'
+import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, folderHeld, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, restStoppedText, madeDirWhy } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -3077,7 +3077,7 @@ const commands = {
       from.handedOffTo = newSid
       delete from.mdFile
       saveSessions()
-      note(sid, '🧵 가벼운 새 세션으로 넘겼어요. 이 세션은 터미널에서 그대로 쓸 수 있어요.')
+      note(sid, '🧵 가벼운 새 세션으로 넘겼어요. 이 세션은 휴면으로 두고 claude 를 내려요. 열면 이어서 시작해요.')
       publish(sid, from)
       emit({ t: 'opened', reqId, sid: newSid, ok: true, cwd: s.cwd, warnings: [], account: s.account ?? '' })
       agentHook('session.create', newSid, s.cwd)
@@ -3204,7 +3204,7 @@ const commands = {
     })
   },
   /** Stops the claude of the sessions named, by hand (REQ-F-839): the days do not count, the work in them does. */
-  async tidyStop({ reqId, sids, holds }) {
+  async tidyStop({ reqId, sids, holds, rest }) {
     const results = []
     for (const sid of (Array.isArray(sids) ? sids : []).slice(0, 200)) {
       const s = sessions.get(sid)
@@ -3219,7 +3219,7 @@ const commands = {
         continue
       }
       try {
-        await sleepSession(sid, s, Math.floor((Date.now() - f.lastHumanAt) / DAY_MS))
+        await sleepSession(sid, s, Math.floor((Date.now() - f.lastHumanAt) / DAY_MS), rest === true)
         results.push({ sid, ok: true })
       } catch (e) {
         results.push({ sid, ok: false, error: String(e.message).slice(0, 200) })
@@ -4351,7 +4351,7 @@ function idleFacts(sid, s, hold = {}) {
 }
 
 /** Stops a session's claude and leaves the session (REQ-F-835 rule 5): a message to it opens it again where it was. */
-async function sleepSession(sid, s, days) {
+async function sleepSession(sid, s, days, rest = false) {
   s.alive = false
   s.tidyStoppedAt = Date.now()
   delete s.tidyNoticeAt
@@ -4362,8 +4362,9 @@ async function sleepSession(sid, s, days) {
   s.wait = null
   setPreview(sid, s, '')
   saveSessions()
-  note(sid, tidyStoppedText(days))
-  log('info', 'tidy', `사람 입력이 ${days}일 없어 claude 를 내림`, sid)
+  // Put to rest by hand (REQ-F-501, 1.396) says so; the tidy's own stop says the days.
+  note(sid, rest ? restStoppedText : tidyStoppedText(days))
+  log('info', 'tidy', rest ? '휴면으로 두어 claude 를 내림' : `사람 입력이 ${days}일 없어 claude 를 내림`, sid)
   publish(sid, s)
 }
 

@@ -121,8 +121,13 @@ func csCommand(uid string, value any, opts csOptsCmd) string {
 			if !truthy(r["ok"]) {
 				return
 			}
-			// The work goes on in the new session: the original is put to rest.
-			meta.set("resting", true)
+			// The work goes on in the new session: the original is put to rest, its claude stopped too (1.396). The new
+			// one was handed SESSION.md already read, not the original's transcript, so nothing reads from it any more.
+			// Held (a turn the person started meanwhile, …): it is only marked, as before, and the person's next turn wakes it.
+			if why := restSession(meta); why != "" {
+				meta.set("resting", true)
+				logEvents(meta, []any{M{"k": "line", "text": "💤 원본은 휴면으로만 뒀어요(claude 는 그대로). " + why}})
+			}
 			touch(meta)
 			broadcastState(uid)
 		})

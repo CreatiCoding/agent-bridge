@@ -59,3 +59,6 @@ export function groupTree(groups: Group[]) {
 export function groupHeight(groups: Group[], id: string): number {
   return 1 + Math.max(0, ...groups.filter((g) => g.parent === id).map((g) => groupHeight(groups, g.id)))
 }
+
+/** What putting a session to rest does, said where it is done (REQ-F-570, 1.396). */
+export const REST_TOAST = '휴면으로 뒀어요 · claude 를 내리고 숨겨요. 대화와 폴더는 남고, 열면 이어서 시작해요.'

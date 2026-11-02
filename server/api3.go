@@ -847,6 +847,12 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 				}
 			}
 		}
+		// 휴면 (REQ-F-501, 1.396) first: one that may not stop now changes nothing else either.
+		if v, ok := b["resting"].(bool); ok && v {
+			if why := restSession(meta); why != "" {
+				refuse(409, why)
+			}
+		}
 		if v, ok := b["autoPush"].(bool); ok {
 			meta.set("autoPush", v)
 			toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoPush": v})
@@ -863,8 +869,8 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 				}
 			}
 		}
-		if v, ok := b["resting"].(bool); ok {
-			meta.set("resting", v)
+		if v, ok := b["resting"].(bool); ok && !v {
+			wakeSession(meta)
 		}
 		// 세션 정리 (REQ-F-839 rule 6): pinned against the automatic stop, or kept for now ("유지").
 		if v, ok := b["keepAlive"].(bool); ok {

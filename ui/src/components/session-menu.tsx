@@ -2,7 +2,7 @@
 // on its row. Each item says plainly what it does; the ones that cannot be undone ask first.
 import { errorText, get, post } from '../lib/api'
 import { go, navigate } from '../lib/router'
-import { hostIcon, KINDS, look, titleOf } from '../lib/sessions'
+import { hostIcon, KINDS, look, REST_TOAST, titleOf } from '../lib/sessions'
 import { getStore } from '../lib/store'
 import { featureOn } from '../lib/features'
 import { bytes, folderPath, tokens } from '../lib/format'
@@ -41,7 +41,7 @@ export async function act<T = { ok: true; note?: string }>(run: () => Promise<T 
  */
 export async function toggleRest(s: Session) {
   const rest = !s.resting
-  const r = await act(() => sessionPost(s, 'settings', { resting: rest }), rest ? '휴면으로 뒀어요 · 그룹 메뉴에서 깨워요' : '휴면을 풀었어요')
+  const r = await act(() => sessionPost(s, 'settings', { resting: rest }), rest ? REST_TOAST : '휴면을 풀었어요')
   if (r != null && rest && location.pathname === `/s/${s.id}`) go({ name: 'home' })
 }
 
@@ -396,7 +396,7 @@ export function sessionMenu(s: Session, opts: { groups?: { id: string; name: str
       : { id: 'lock', label: '잠그기', icon: 'key' as const, hint: '비밀번호로 가리기', onSelect: () => lockSession(s) },
     { id: 'favorite', label: s.favorite ? '즐겨찾기 빼기' : '즐겨찾기', icon: 'star', hint: s.favorite ? '자동 정리가 다시 적용돼요' : '최신순 맨 위에 · 자동 정리 안 함', onSelect: () => toggleFavorite(s) },
     { id: 'keepAlive', label: s.keepAlive ? '자동 종료 다시 허용' : '자동 종료 안 함', icon: 'shield', hint: s.keepAlive ? undefined : '오래 쉬어도 claude 를 내리지 않음', onSelect: () => void act(() => sessionPost(s, 'settings', { keepAlive: !s.keepAlive }), s.keepAlive ? '오래 쉬면 다시 자동으로 내려요' : '이 세션은 자동으로 내리지 않아요') },
-    { id: 'rest', label: s.resting ? '휴면 풀기' : '휴면', icon: s.resting ? 'pop' : 'push', hint: s.resting ? undefined : '그룹 목록에서 숨김', onSelect: () => toggleRest(s) },
+    { id: 'rest', label: s.resting ? '휴면 풀기' : '휴면', icon: s.resting ? 'pop' : 'push', hint: s.resting ? '열면 이어서 시작' : 'claude 를 내리고 숨김', onSelect: () => toggleRest(s) },
     { id: 'log', label: '이 세션의 로그', icon: 'list', onSelect: () => go({ name: 'host', id: s.hostId, sid: s.id }) },
     'sep',
     {

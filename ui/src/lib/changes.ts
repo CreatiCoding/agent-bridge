@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.396',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server', 'agent', 'ui'],
+        text: '휴면은 claude 를 내린다: 세션 메뉴·밀기·목록·세션 정리의 "휴면"이 세션 정리의 손으로 내리기와 같은 길로 claude 를 끄고 숨긴다. 작업 폴더·대화 기록은 남고 끝난 세션이 아니라 7일 뒤에도 지워지지 않는다. 열거나 꺼내 쓰거나 글을 보내면 같은 대화로 다시 띄운다. 이미 내려간 세션은 표시만 바꾼다',
+        refs: ['REQ-F-501', 'REQ-F-562', 'REQ-F-570', 'IF-067', 'IF-263'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '작업 중·확인 창 대기·맡긴 일 대기·맡겨진 세션·자동 대응 중·바뀌는 중·옮기는 중이면 휴면을 거절하고 이유를 알린다(409, 예: "작업 중이라 지금은 휴면할 수 없어요")',
+        refs: ['REQ-F-501', 'REQ-F-570'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'agent'],
+        text: '가벼운 복제가 끝나면 원본도 claude 를 내려 휴면에 둔다. 막히면 예전처럼 표시만 둔다',
+        refs: ['REQ-F-496', 'REQ-F-501'],
+      },
+    ],
+  },
+  {
     version: '1.395',
     date: '2026-11-02',
+    commit: '06201e2',
     changes: [
       {
         kind: 'changed',

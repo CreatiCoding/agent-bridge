@@ -8,6 +8,7 @@ import { Button, CardHead, Row, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { createRecalc, type Recalc } from '../lib/recalc'
 import { tidyGroups } from '../lib/tidy-groups'
+import { REST_TOAST } from '../lib/sessions'
 
 type Mode = 'auto' | 'suggest' | 'off'
 interface Policy {
@@ -168,7 +169,7 @@ export function TidyBox({ hostId, online, onChange }: { hostId: string; online: 
   }
   const keep = (row: SessionRow) => sessionSet(row, { keepAlive: true }, '이 세션은 자동으로 내리지 않아요')
   const hold = (row: SessionRow) => sessionSet(row, { tidyKeep: true }, '이번엔 유지해요')
-  const rest = (row: SessionRow) => sessionSet(row, { resting: true }, '휴면으로 뒀어요')
+  const rest = (row: SessionRow) => sessionSet(row, { resting: true }, REST_TOAST)
   const trash = async (kind: 'folder' | 'transcript', rows: FileRow[], all: boolean) => {
     const total = rows.reduce((a, r) => a + (r.size ?? 0), 0)
     if (!(await confirmDialog(all ? `${rows.length}개(${bytes(total)})를 휴지통으로 옮길까요?` : `${rows[0].path} 를 휴지통으로 옮길까요?`, { text: TRASH_UNDO, ok: all ? '모두 휴지통' : '휴지통' }))) return

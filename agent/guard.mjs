@@ -866,6 +866,8 @@ export function idleStopWhy(s, now, policy, manual = false) {
 /** What the session is told when its stop is announced, and when it is stopped (REQ-F-835 rules 4, 5). */
 export const tidyNoticeText = (days, stopAt) => `💤 사람 입력이 ${days}일 없어 ${when(stopAt)}에 claude 를 내려요. 대화는 그대로 남고, 글을 보내면 이어서 열어요. 그 전에 아무 글이나 보내거나 "유지"를 누르면 취소돼요.`
 export const tidyStoppedText = (days) => `💤 사람 입력이 ${days}일 없어 claude 를 내렸어요. 대화는 그대로 있고, 글을 보내면 이어서 열어요.`
+/** What a session put to rest by hand is told when its claude is stopped (REQ-F-501, 1.396). */
+export const restStoppedText = '💤 휴면으로 두어 claude 를 내렸어요. 대화와 폴더는 남고, 열면 이어서 시작해요.'
 
 /** A stopped session put to rest, and one offered to be closed (REQ-F-836). s: {alive, resting, favorite, keepAlive, lastHumanAt}. */
 export function restAct(s, now, policy) {

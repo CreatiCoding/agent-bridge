@@ -372,6 +372,9 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     else if (op === 'settings') {
       if (typeof body.autoPush === 'boolean') xs.push({ t: 'set', i: { sid, autoPush: body.autoPush } })
       if (typeof body.autoAllow === 'boolean') xs.push(setAllow(sid, body.autoAllow, body.allowAll === true))
+      // 휴면 (REQ-F-501, 1.396): a rest stops claude, a wake starts it again on the same conversation.
+      if (body.resting === true && s.state?.alive && !s.resting && !s.closed) xs.push({ t: 'tidyStop', i: { sids: [sid] } })
+      if (body.resting === false && s.resting && !s.state?.alive && !s.closed) xs.push({ t: 'open', i: { sid } })
     }
     return xs.map((x) => ({ h, ...x }))
   }

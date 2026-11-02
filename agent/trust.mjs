@@ -135,7 +135,7 @@ export const TRUST_CLASS = {
   updateNow: { i: [] },
   // 세션 정리 (REQ-F-839): the timed batch only reports while trust is on (agent.mjs tidyRun); what a person picks is signed.
   tidyRun: 'free',
-  tidyStop: { i: ['sids'], keep: ['holds'] },
+  tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
   // by op
   disk: { ops: { info: 'free', scan: 'free', worktrees: 'free', prune: { i: ['op', 'id', 'path', 'paths'] }, clean: { i: ['op', 'id', 'path', 'paths'] }, trash: { i: ['op', 'id', 'path', 'paths'] } } },
