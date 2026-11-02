@@ -138,23 +138,36 @@ ok((await pc.getByRole('menuitem', { name: /터미널 화면/ }).count()) === 1 
 await pc.keyboard.press('Escape')
 
 step('휴면: 목록에서 숨김 · 깨워서 열기')
-await pc.request.post(`${SITE}/api/sessions/${sid}/settings`, { headers: { 'content-type': 'application/json', origin: SITE }, data: { resting: true } })
+// Only this run's session is looked at: a reused server keeps sessions from earlier runs (closed ones under
+// 이어서 하기, or one a crashed run left open), and those are not what REQ-F-562 hides.
+const row = `.side .srow[data-sid="${sid}"]`
+const noRow = (sel) => pc.waitForFunction((q) => !document.querySelector(q), sel, { timeout: 10000 })
+// Since 1.396 a rest stops claude and is refused (409 옮기는 중) while a wake is still bringing it back
+// (REQ-F-501): wait for the woken session's claude to be up and idle (row 대기, green) before resting it again.
+const awake = () => pc.waitForSelector(`${row}:not(.resting) .dot-green`, { timeout: 90000 })
+const rest = async () => {
+  const r = await pc.request.post(`${SITE}/api/sessions/${sid}/settings`, { headers: { 'content-type': 'application/json', origin: SITE }, data: { resting: true } })
+  if (r.status() !== 200) throw new Error(`휴면으로 두지 못함: ${r.status()} ${await r.text()}`)
+}
+await rest()
 await pc.goto(`${SITE}/stats`)
 await pc.waitForSelector('.side .list', { timeout: 15000 })
-await pc.waitForFunction(() => !document.querySelector('.side .srow'), null, { timeout: 10000 }).then(() => ok(true, '휴면 세션은 그룹 보기에서 숨음'), () => ok(false, '휴면 세션은 그룹 보기에서 숨음'))
+await noRow(row).then(() => ok(true, '휴면 세션은 그룹 보기에서 숨음'), () => ok(false, '휴면 세션은 그룹 보기에서 숨음'))
 await pc.getByRole('button', { name: /휴면 세션 하나 꺼내 쓰기 · 1개 남음/ }).first().click()
 await pc.waitForURL(new RegExp(`/s/${sid}$`), { timeout: 10000 })
-await pc.waitForSelector('.side .srow.active:not(.resting)', { timeout: 10000 }).then(() => ok(true, '꺼내 쓰기 버튼 한 번에 휴면이 풀리고 그 세션이 열림'), () => ok(false, '꺼내 쓰기 버튼 한 번에 휴면이 풀리고 그 세션이 열림'))
-await pc.request.post(`${SITE}/api/sessions/${sid}/settings`, { headers: { 'content-type': 'application/json', origin: SITE }, data: { resting: true } })
+await pc.waitForSelector(`${row}.active:not(.resting)`, { timeout: 10000 }).then(() => ok(true, '꺼내 쓰기 버튼 한 번에 휴면이 풀리고 그 세션이 열림'), () => ok(false, '꺼내 쓰기 버튼 한 번에 휴면이 풀리고 그 세션이 열림'))
+await awake()
+await rest()
 await pc.goto(`${SITE}/stats`)
-await pc.waitForFunction(() => !document.querySelector('.side .srow'), null, { timeout: 10000 })
+await noRow(row)
 await pc.goto(`${SITE}/s/${sid}`)
-await pc.waitForSelector('.side .srow.active:not(.resting)', { timeout: 10000 }).then(() => ok(true, '휴면 세션을 주소로 바로 열어도 휴면이 풀림'), () => ok(false, '휴면 세션을 주소로 바로 열어도 휴면이 풀림'))
+await pc.waitForSelector(`${row}.active:not(.resting)`, { timeout: 10000 }).then(() => ok(true, '휴면 세션을 주소로 바로 열어도 휴면이 풀림'), () => ok(false, '휴면 세션을 주소로 바로 열어도 휴면이 풀림'))
+await awake()
 await pc.getByRole('button', { name: '세션 메뉴' }).click()
 await pc.locator('.menu-label', { hasText: /^휴면$/ }).click()
 await pc.waitForURL((u) => u.pathname === '/', { timeout: 10000 }).then(() => ok(true, '세션 화면에서 휴면 → 목록 화면으로'), () => ok(false, '세션 화면에서 휴면 → 목록 화면으로'))
 await pc.waitForTimeout(1500)
-ok((await pc.locator('.list .srow').count()) === 0, '휴면으로 둔 세션은 숨고, 다시 깨지 않음')
+ok((await pc.locator(`.list .srow[data-sid="${sid}"]`).count()) === 0, '휴면으로 둔 세션은 숨고, 다시 깨지 않음')
 await pc.request.post(`${SITE}/api/sessions/${sid}/settings`, { headers: { 'content-type': 'application/json', origin: SITE }, data: { resting: false } })
 
 step('통계 · 기기')

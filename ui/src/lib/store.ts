@@ -17,10 +17,12 @@ interface Store {
   writing: Record<string, string>
   /** The last terminal screen a session sent, per session. */
   screens: Record<string, string>
+  /** state came from the server in this page load (not only the copy this browser kept, which can be old). */
+  served: boolean
 }
 
 // The list as this browser last saw it is drawn at once; the stream replaces it as soon as it is up.
-let store: Store = { state: loadList<State>(), link: 'connecting', downSince: null, writing: {}, screens: {} }
+let store: Store = { state: loadList<State>(), link: 'connecting', downSince: null, writing: {}, screens: {}, served: false }
 const subs = new Set<() => void>()
 const set = (patch: Partial<Store>) => {
   store = { ...store, ...patch }
@@ -120,7 +122,7 @@ let inLine: Promise<unknown> = Promise.resolve()
 function handle(msg: { t: string; [k: string]: unknown }) {
   if (msg.t === 'state') {
     const { t: _t, ...state } = msg
-    set({ state: state as unknown as State })
+    set({ state: state as unknown as State, served: true })
     saveList(state)
     sawBuild(state.ui)
   } else if (msg.t === 'state_delta' && store.state) {

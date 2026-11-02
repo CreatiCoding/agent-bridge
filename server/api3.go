@@ -260,6 +260,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if req.Method == "DELETE" && op == "" {
+		waitWake(meta) // being woken from rest: removed once claude is up, not refused as moving (REQ-F-501 rule 2)
 		if truthy(meta.get("moving")) {
 			refuse(409, "세션을 옮기는 중입니다")
 		}
@@ -929,6 +930,7 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		}
 		sessAfter("session.settings", meta, kv{"changed", changed})
 	case "close":
+		waitWake(meta) // being woken from rest: ended once claude is up, not refused as moving (REQ-F-501 rule 2)
 		if truthy(meta.get("moving")) {
 			refuse(409, "세션을 옮기는 중입니다")
 		}

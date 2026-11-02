@@ -433,12 +433,15 @@ export function SessionPage({ id }: { id: string }) {
 
   // Opening a session put to rest takes it back out (a pop): however it was reached (a tab, a search, a link), the
   // one on screen is in use. Judged once, when it is first seen after being opened (kept outside the component, so
-  // a redraw does not undo a rest the person just gave the session they are looking at).
+  // a redraw does not undo a rest the person just gave the session they are looking at). Judged on the server's
+  // state, not this browser's kept copy: that copy is written a second late and may predate a rest given elsewhere,
+  // and judging on it would mark the session as seen awake and never wake it (REQ-F-562 rule 8, 1.400).
+  const served = useStore((st) => st.served)
   useEffect(() => {
-    if (!s || openedFor === id) return
+    if (!s || !served || openedFor === id) return
     openedFor = id
     if (s.resting && !s.closed) void act(() => sessionPost(s, 'settings', { resting: false }))
-  }, [id, s])
+  }, [id, s, served])
   // Leaving its address forgets it, so coming back to it later is a new opening.
   useEffect(
     () => () => {

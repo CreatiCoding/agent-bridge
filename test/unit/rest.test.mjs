@@ -33,7 +33,7 @@ async function stateOf(s, who) {
   throw new Error('state 가 오지 않음')
 }
 
-test('휴면 (AC-1545~AC-1547, AC-1549): claude 를 내리고, 일하는 중이면 막고, 깨우면 같은 대화로 다시 띄운다', async () => {
+test('휴면 (AC-1545~AC-1547, AC-1549, AC-1560): claude 를 내리고, 일하는 중이면 막고, 깨우면 같은 대화로 다시 띄운다', async () => {
   const s = await startServer()
   const H = 'aaaaaaaa-0000-4000-8000-0000000000c1'
   let m
@@ -109,6 +109,17 @@ test('휴면 (AC-1545~AC-1547, AC-1549): claude 를 내리고, 일하는 중이�
       if (down) await m.up({ t: 'status', sid, alive: false, phase: 'ended' })
       assert.equal((await meta()).resting, true, down ? '내리고 휴면' : '막혀도 휴면 표시')
     }
+
+    // Ended while it wakes: 종료 waits for claude too instead of "옮기는 중" (1.400, AC-1560).
+    await m.up({ t: 'status', sid, alive: false, phase: 'ended' })
+    assert.equal((await set({ resting: false })).status, 200)
+    const wake = await m.next((x) => x.t === 'open')
+    const end = s.api('alice', `/api/sessions/${sid}/close`, { method: 'POST', body: {} })
+    await new Promise((r) => setTimeout(r, 300))
+    await m.up({ t: 'opened', reqId: wake.reqId, sid, ok: true, cwd: '/Users/x' })
+    await m.up({ t: 'status', sid, alive: true, phase: 'idle' })
+    assert.equal((await end).status, 200, '깨는 중 끝내기가 거절되지 않음')
+    await m.next((x) => x.t === 'close' && x.sid === sid)
   } finally {
     m?.close()
     await s.stop()

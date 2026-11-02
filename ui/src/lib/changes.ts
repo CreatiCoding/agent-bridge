@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.400',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '휴면 세션을 주소·링크로 열 때 이 브라우저에 남은 옛 목록(휴면 전 값)으로 판단해 깨우지 않던 것. 이제 서버 상태를 받은 뒤에 깨울지 정한다',
+        refs: ['REQ-F-562'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '휴면 세션을 깨우는 몇 초(claude 다시 띄우는 중) 사이 누른 종료·제거가 "세션을 옮기는 중입니다"로 거절되던 것. 이제 깨우기가 끝날 때까지 기다렸다 한다',
+        refs: ['REQ-F-501'],
+      },
+    ],
+  },
+  {
     version: '1.399',
     date: '2026-11-02',
+    commit: 'af48e7c',
     changes: [
       {
         kind: 'fixed',
