@@ -60,7 +60,7 @@ description: 에이전트가 기기(맥·Linux)에 쓰는 파일과 폴더(~/.cl
 | `headless-login` | `agent.mjs headless` | — | 화면 없는 기기 연결의 로그인 주소예요(0600). 에이전트가 받아 헤드리스 연동 모드를 켜면서 지워요. |
 | `node/` | 설치 스크립트(Linux) | Node.js 한 벌 | Linux 에 node 가 없을 때 nodejs.org 에서 받은 Node.js 22 예요. |
 | `whisper/` | 에이전트 | 모델마다 다름 | 음성 입력용 whisper.cpp 모델(`ggml-<이름>.bin`), 말소리 감지 모델 `ggml-silero-v5.1.2.bin`(885 KB), 잡음 줄이기 모델 `rnnoise.rnnn`, `whisper-server.pid` 를 둬요. |
-| `zeropty/<버전>/` | 에이전트 | — | 에이전트가 GitHub 릴리스에서 받아 SHA-256 을 확인한 [zeropty](https://github.com/CreatiCoding/zeropty)예요. macOS 는 0.1.3(`zeropty`, `zeropty-tty`, `shim.dylib`), Linux x86_64 는 0.1.6(`shim.so`)이에요. `--mux tmux` 로 고정한 기기에는 없을 수 있어요. |
+| `zeropty/<버전>/` | 에이전트 | — | 에이전트가 GitHub 릴리스에서 받아 SHA-256 을 확인한 [zeropty](https://github.com/CreatiCoding/zeropty)예요. macOS 는 0.1.3(`zeropty`, `zeropty-tty`, `shim.dylib`), Linux x86_64 는 0.1.6(`shim.so`)이에요. `--mux tmux` 로 고정한 기기에는 없을 수 있어요. 같은 `zeropty/` 폴더에 런타임 어댑터 `tty-adapter.cjs`(zeropty 세션의 claude 가 먼저 불러 소켓을 터미널로 보는 스크립트)와 bridge 전용 소켓 `bridge.sock` 을 둬요. 경로에 공백이 있거나 너무 길면 둘은 `/tmp/cb-zeropty-<uid>/` 에 있어요. |
 | `.update-XXXXXX/` | 자동 업데이트 | — | 업데이트 파일을 받는 임시 폴더예요. 끝나면 지워요. |
 | `.update.XXXXXX/` | 설치 스크립트 | — | 설치 파일을 받는 임시 폴더예요. 끝나면 지워요. |
 
@@ -72,8 +72,8 @@ description: 에이전트가 기기(맥·Linux)에 쓰는 파일과 폴더(~/.cl
 | `~/.config/systemd/user/dev.claude-bridge.agent.service` | `service install`(Linux) | — | — | systemd 사용자 서비스 유닛이에요. `XDG_CONFIG_HOME` 이 있으면 그 아래예요. `service uninstall` 이 지워요. |
 | `~/.Trash`(macOS), `~/.local/share/Trash/`(Linux) | 디스크 관리 | — | — | [디스크 관리](/guide/use/devices)에서 옮긴 항목이 가는 휴지통이에요. Linux 는 되살릴 수 있게 `info/<이름>.trashinfo` 도 써요. |
 | `/etc/sudoers.d/claude-bridge-pmset` | `awake setup` | 0440, root:wheel | — | 이 사용자가 비밀번호 없이 `pmset -a disablesleep 0`, `pmset -a disablesleep 1` 만 실행하게 하는 규칙이에요. `awake remove` 가 지워요. |
-| `~/.zeropty/tty/<해시>/bin/claude` | zeropty-tty | — | claude 한 벌 크기(약 260MB) | zeropty-tty 가 처음에 만드는 서명을 바꾼 `claude` 사본이에요. claude 가 바뀌면 다시 만들어요. |
-| `~/.zeropty/mux.sock` | zeropty | — | — | zeropty 서버의 소켓이에요(`ZEROPTY_SOCK` 으로 바꿀 수 있어요). 에이전트가 꺼져도 세션은 남아요. |
+| `~/.zeropty/tty/<해시>/bin/claude` | zeropty-tty(1.389 전) | — | claude 한 벌 크기(약 260MB) | 1.389 전 에이전트가 zeropty 세션을 띄울 때 만든, 서명을 바꾼 `claude` 사본이에요. 지금 에이전트는 만들지 않아요(런타임 어댑터를 써요). 그때 연 세션은 다시 열 때까지 이것으로 돌아요. |
+| `~/.zeropty/mux.sock` | zeropty(1.386 전) | — | — | 1.386 전 에이전트가 쓰던 zeropty 기본 소켓이에요. 지금 에이전트는 새 세션을 `~/.claude-bridge/zeropty/bridge.sock` 에서 열고, 이 소켓의 옛 세션은 끝나거나 다시 열 때까지 찾아서 다뤄요. |
 | `~/.claude/projects/<폴더>/<conv>.jsonl` | Claude Code | — | 대화가 길수록 커짐 | Claude Code 가 쓰는 **대화** 기록(트랜스크립트)이에요. `<폴더>` 는 작업 폴더 경로의 영문자·숫자가 아닌 글자를 `-` 로 바꾼 이름이에요. 에이전트는 이 파일을 읽어 서버로 보내요. |
 | `~/.claude-bridge/accounts/<id>/projects/<폴더>/<conv>.jsonl` | Claude Code | — | 같음 | 더한 Claude 계정으로 연 세션의 대화 기록이에요. |
 

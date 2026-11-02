@@ -50,7 +50,7 @@ curl -fsSL SITE/install.sh | bash
 
 `백그라운드 서비스로 설치했습니다. 이 터미널은 닫아도 됩니다.` 가 보이면 설치가 끝난 것이에요.
 
-`tmux` 는 없어도 돼요. 세션은 에이전트가 직접 받아 두는 [zeropty](https://github.com/CreatiCoding/zeropty) 에서 돌고, `tmux` 는 그게 안 될 때의 대비예요. 단 x86_64 가 아닌 Linux 에는 zeropty 가 없어 `tmux` 가 꼭 있어야 해요.
+세션 터미널은 [zeropty](https://github.com/CreatiCoding/zeropty)(기본)와 `tmux` 중에서 골라요. 기본은 에이전트가 직접 받아 두는 zeropty 라 `tmux` 는 없어도 돼요(그때 `tmux` 는 zeropty 가 안 될 때의 대비예요). `tmux` 를 쓰려면 설치 명령의 `| bash` 를 `| bash -s -- --mux tmux` 로 바꾸거나, 나중에 `node ~/.claude-bridge/agent.mjs service install --mux tmux` 를 해요. 그 기기는 zeropty 를 받지 않아요. x86_64 가 아닌 Linux 에는 zeropty 가 없어 `tmux` 가 꼭 있어야 해요.
 
 Linux 서버는 설치 뒤 화면 없이 연결하는 단계가 더 있어요. [Linux 서버 연결하기](/guide/use/linux)를 따라 하세요.
 

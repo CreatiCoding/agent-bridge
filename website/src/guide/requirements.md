@@ -17,7 +17,7 @@ description: 호스트(맥·Linux), 브라우저, 서버에 필요한 운영체�
 | Claude Code (`claude`) | `claude --help` 에 `--session-id`, `--resume` 이 있는 버전, 로그인됨 | 점검은 실행되는지, 두 옵션이 있는지, `claude auth status` 의 로그인 여부를 봐요 |
 | git | 설치됨(2.30 이상을 가정) | 없으면 세션은 열리지만 브랜치·커밋 싱크와 자동 push 가 빠져요. macOS 는 Xcode 명령줄 도구, Linux 는 `sudo apt install git` 으로 설치해요 |
 | 세션 터미널: [zeropty](https://github.com/CreatiCoding/zeropty) | macOS 0.1.3, Linux x86_64 0.1.6 (고정) | 에이전트가 직접 받아 SHA-256 을 확인한 뒤 `~/.claude-bridge/zeropty/<버전>/` 에 둬요. 따로 설치하지 않아요. Linux 판은 glibc 2.29·커널 5.3 이상이 필요해요. 그 밖의 Linux 아키텍처용 판은 없어요 |
-| 세션 터미널: [tmux](https://github.com/tmux/tmux) | 3.2 이상을 가정 · **선택** | zeropty 가 안 될 때의 대비예요. x86_64 가 아닌 Linux 에서는 꼭 있어야 해요. zeropty 도 tmux 도 없으면 세션을 시작할 수 없어요. `--mux tmux` 로 고정한 기기는 zeropty 를 받지 않아요 |
+| 세션 터미널: [tmux](https://github.com/tmux/tmux) | 3.2 이상을 가정 · **선택** | zeropty 와 함께 정식으로 지원하는 세션 터미널이에요. `--mux tmux` 로 고르면 새 세션이 tmux 에서 돌고, 그 기기는 zeropty 를 받지 않아요. zeropty 를 쓰는 기기에서는 zeropty 가 안 될 때의 대비예요. x86_64 가 아닌 Linux 에서는 꼭 있어야 해요. zeropty 도 tmux 도 없으면 세션을 시작할 수 없어요 |
 | GitHub CLI (`gh`) | **선택** | PR 링크와 상태를 보여 줄 때 써요 |
 | Homebrew | **선택** · macOS | 설치 스크립트가 없는 도구를 설치할지 물을 때만 써요 |
 | Google Chrome | 111 이상 | 연동 페이지와 [헤드리스 연동 모드](/guide/use/always-on)에 필요해요. 화면 없는 Linux 서버는 Chrome 이나 Chromium(apt·snap)을 헤드리스로 써요([Linux 서버 연결하기](/guide/use/linux)) |
