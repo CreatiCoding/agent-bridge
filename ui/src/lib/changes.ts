@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.405',
+    date: '2026-11-03',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '턴이 끝난 직후 서버가 다시 뜨면 맡긴 세션·서비스 세션이 답을 잃고 계속 working 으로 보였다(자동 수정 서버가 4시간 제한까지 멈춤). 이제 메모리에 답이 없고 세션이 쉬는 중이거나 닫혔으면 맥에 마지막 답을 물어 done 으로 본다. 세션마다 30초에 한 번만 묻는다',
+        refs: ['REQ-F-760', 'IF-250'],
+      },
+    ],
+  },
+  {
     version: '1.404',
     date: '2026-11-03',
+    commit: '9af2b79',
     changes: [
       {
         kind: 'added',
