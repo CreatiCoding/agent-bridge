@@ -28,7 +28,7 @@ var (
 	httpsRe        = regexp.MustCompile(`^https://`)
 )
 
-var ACCOUNT_OPS = []string{"list", "add", "rename", "login", "code", "cancel", "logout", "sync", "remove"}
+var ACCOUNT_OPS = []string{"list", "add", "link", "rename", "login", "code", "cancel", "logout", "sync", "remove"}
 
 const NOT_CONNECTED = "호스트가 연결돼 있지 않습니다"
 
@@ -156,7 +156,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			refuse(400, "모르는 계정 동작이에요")
 		}
 		op := b["op"].(string)
-		if op != "list" && op != "add" && !safeAccount(b["id"]) {
+		if op != "list" && op != "add" && op != "link" && !safeAccount(b["id"]) {
 			refuse(400, "계정 id 가 올바르지 않아요")
 		}
 		if !online(m[1]) {
@@ -171,6 +171,18 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			name = jsString(b["name"])
 		}
 		cmd := M{"t": "account", "op": op, "id": id, "name": jsSliceTo(name, 100)}
+		// 폴더 연결: another tool's Claude Code config folder, checked on the Mac (agent/accounts.mjs linkDirWhy).
+		if op == "link" {
+			dir, _ := b["dir"].(string)
+			if dir == "" {
+				refuse(400, "연결할 폴더 경로를 적어 주세요")
+			}
+			// Never cut: a cut path may name another folder.
+			if len([]rune(dir)) > 1024 {
+				refuse(400, "폴더 경로가 너무 길어요(1,024자까지)")
+			}
+			cmd["dir"] = dir
+		}
 		if op == "code" {
 			code := ""
 			if b["code"] != nil {

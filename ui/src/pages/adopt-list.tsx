@@ -8,6 +8,7 @@ import { go } from '../lib/router'
 import { Badge, Button, Empty, Icon, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { openSession } from '../lib/builtin-actions'
+import { NONE, useStore } from '../lib/store'
 
 interface Conversation {
   conv: string
@@ -19,6 +20,8 @@ interface Conversation {
   size: number
   active: boolean
   exists: boolean
+  /** The Claude account whose folder has it ('' the main one); a linked folder's are taken in that folder. */
+  account?: string
 }
 
 /** The ids the address asked for. */
@@ -32,6 +35,8 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(preset))
   const [run, setRun] = useState<{ done: number; failed: { title: string; error: string }[]; total: number; now: string } | null>(null)
   const [reads, setReads] = useState(0)
+  const accounts = useStore((s) => s.state?.hosts ?? NONE).find((h) => h.id === hostId)?.accounts ?? NONE
+  const accountOf = (c: Conversation) => (c.account ? (accounts.find((a) => a.id === c.account) ?? null) : null)
   useEffect(() => {
     setList(null)
     setError(null)
@@ -159,6 +164,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
                 </span>
                 {c.last && c.last !== c.first ? <span className="adopt-sub">마지막: {c.last}</span> : null}
               </button>
+              {accountOf(c) ? <Badge>{accountOf(c)?.name}</Badge> : null}
               {!c.exists ? <Badge tone="red">폴더 없음</Badge> : c.active ? <Badge tone="amber">쓰는 중</Badge> : null}
             </div>
           ))}

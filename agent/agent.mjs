@@ -18,7 +18,7 @@ import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { bridgeSelfCall, siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
-import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
+import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
@@ -622,7 +622,10 @@ let projectsDir = path.join(CLAUDE_DIR, 'projects')
 // ---------- Claude accounts (agent/accounts.mjs) ----------
 
 const accountsPath = path.join(STATE_DIR, 'accounts.json')
-/** The accounts added on this Mac: { id, name, dir }. The main one (id '') is CLAUDE_DIR and is not in the file. */
+/**
+ * The accounts added on this Mac: { id, name, dir, external? }. The main one (id '') is CLAUDE_DIR and is not in the
+ * file. `external`: a linked folder, another tool's config folder (폴더 연결): bridge never writes in it itself.
+ */
 let accounts = readJson(accountsPath, []).filter((a) => a && a.id && safeAccountId(a.id) && typeof a.dir === 'string')
 const saveAccounts = () => writeJson(accountsPath, accounts)
 /** What `claude auth status` last said for each account id ('' is the main one). */
@@ -637,6 +640,41 @@ const accountDir = (id) => (!id ? CLAUDE_DIR : (accounts.find((a) => a.id === id
 const projectsOf = (id) => (!id ? projectsDir : path.join(accountDir(id) ?? path.join(STATE_DIR, 'accounts', id), 'projects'))
 /** Every account's projects folder, the main one first. */
 const allProjects = () => [{ account: '', dir: projectsDir }, ...accounts.map((a) => ({ account: a.id, dir: path.join(a.dir, 'projects') }))]
+/** Whether an account id is a linked folder (폴더 연결), which bridge never changes. */
+const isLinked = (id) => !!id && accounts.some((a) => a.id === id && a.external)
+const LINKED_REFUSE = '연결한 폴더는 bridge 가 고치지 않아요. 로그인·로그아웃·설정은 그 폴더를 쓰는 도구에서 해 주세요'
+/**
+ * Why a session cannot start in a linked folder now, or null: checked again each time, since a link in its path may
+ * have been pointed elsewhere (the main folder, another account) since it was linked.
+ */
+function linkedLaunchWhy(id) {
+  const a = accounts.find((x) => x.id === id)
+  if (!a) return '이 맥에 그 Claude 계정이 없어요'
+  if (!fs.existsSync(a.dir)) return `연결한 설정 폴더가 없어요: ${tilde(a.dir)}`
+  const why = linkDirWhy(a.dir, { home: HOME, mainDir: CLAUDE_DIR, stateDir: STATE_DIR, accountDirs: accounts.filter((x) => x.id !== id).map((x) => x.dir) })
+  if (why) return `연결한 설정 폴더를 쓸 수 없어요: ${why}`
+  if (a.real && realNative(a.dir) !== a.real) return '연결한 설정 폴더의 경로가 연결할 때와 다른 폴더를 가리켜요. 연결을 해제하고 다시 연결해 주세요'
+  if (accountAuth.get(id)?.loggedIn === false) return '연결한 폴더가 로그인돼 있지 않아요. 그 폴더를 쓰는 도구에서 로그인하거나 맥 터미널에서 CLAUDE_CONFIG_DIR=<폴더> claude auth login 으로 로그인해 주세요'
+  return null
+}
+/** Whether a running claude (another tool's, or a terminal's) holds this conversation in a linked folder now. */
+function linkedConvLive(dir, conv) {
+  let names = []
+  try {
+    names = fs.readdirSync(path.join(dir, 'sessions')).filter((n) => /^\d+\.json$/.test(n))
+  } catch {
+    return false
+  }
+  for (const n of names) {
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(dir, 'sessions', n), 'utf8'))
+      if (j?.sessionId !== conv || !Number.isInteger(j.pid)) continue
+      process.kill(j.pid, 0)
+      return true
+    } catch {}
+  }
+  return false
+}
 
 // ---------- the session logs, kept here (REQ-S-069) ----------
 
@@ -1209,7 +1247,11 @@ async function launchNow(sid, s, claudeArgs) {
   if (s.account) {
     const dir = accountDir(s.account)
     if (!dir) throw new Error('이 세션의 Claude 계정이 이 맥에 없어요. 설정 → Claude 계정에서 확인하거나 세션을 다른 계정으로 옮겨 주세요')
-    prepareAccountDir(dir, { mainDir: CLAUDE_DIR, mainConfig: MAIN_CONFIG })
+    // A linked folder is used as it is: nothing is linked or written in it.
+    if (isLinked(s.account)) {
+      const why = linkedLaunchWhy(s.account)
+      if (why) throw new Error(why)
+    } else prepareAccountDir(dir, { mainDir: CLAUDE_DIR, mainConfig: MAIN_CONFIG })
     accountEnv.push('-e', `CLAUDE_CONFIG_DIR=${dir}`)
   }
   writeHookSettings()
@@ -2394,10 +2436,11 @@ function tail(sid, s) {
  * A conversation's file on this Mac, wherever an account keeps it: the place it had before, else any account's
  * project folder that has `<conv>.jsonl`. Null when this Mac does not have it.
  */
-function findTranscript(conv, before) {
+function findTranscript(conv, before, { own = false } = {}) {
   if (!safeConvId(conv)) return null
   if (before && fs.existsSync(before)) return before
-  for (const { dir } of allProjects()) {
+  for (const { dir, account } of allProjects()) {
+    if (own && isLinked(account)) continue
     let names = []
     try {
       names = fs.readdirSync(dir)
@@ -2891,7 +2934,8 @@ const commands = {
     if (trustSealing()) return emit({ t: 'export', reqId, ok: false, error: '이 맥은 내용을 봉인해 내보내고 있어서 대화 파일을 서버로 보내지 않아요' })
     try {
       // A session that ended was let go here: its conversation is found by its id, in any account's folder.
-      const file = s ? transcriptPath(s, sid) : findTranscript(conv, null)
+      // A linked folder's conversations go out only through a session opened on them (its own tool's otherwise).
+      const file = s ? transcriptPath(s, sid) : findTranscript(conv, null, { own: true })
       if (!file) throw new Error('이 맥에 그 대화 파일이 없어요')
       const fd = fs.openSync(file, 'r')
       try {
@@ -3054,11 +3098,20 @@ const commands = {
       // Checked before the running session is stopped: a refused account leaves it where it was.
       if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
       if (account && accountAuth.get(account)?.loggedIn === false) throw new Error('그 Claude 계정은 로그인돼 있지 않아요. 설정 → Claude 계정에서 먼저 로그인해 주세요')
+      if (isLinked(account)) {
+        const why = linkedLaunchWhy(account)
+        if (why) throw new Error(why)
+        // The conversation's file in a linked folder is the other tool's too: replaced only by one that just goes on
+        // from it (nothing the tool wrote there since is lost).
+        const there = path.join(projectDir(dir, account), `${conv || sid}.jsonl`)
+        if (typeof transcript === 'string' && !local && fs.existsSync(there) && !transcript.startsWith(fs.readFileSync(there, 'utf8')))
+          throw new Error('연결한 폴더에 이 대화의 기록이 따로 이어져 있어요(그 폴더를 쓰는 도구가 이어 썼을 수 있어요). 덮어쓰지 않으려고 옮기지 않았어요. 다른 계정으로 옮겨 주세요')
+      }
       if (old) await tmux('kill-session', '-t', `=${old.tmux}`)
       const s = { cwd: dir, autoPush: autoPush !== false, autoAllow: !!autoAllow, ...(autoAllow && allowAll === true ? { allowAll: true } : {}), conv: conv || sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(chrome === false ? { chrome: false } : {}), ...(isMdName(mdFile) ? { mdFile } : {}), ...(account ? { account } : {}), ...(cleanRouting(routing) ? { routing: cleanRouting(routing) } : {}) }
       // Moving to another account on this Mac: what Claude Code keeps beside the transcript goes along.
       if (old && (old.account ?? '') !== (account ?? '') && accountDir(old.account ?? '')) {
-        const copied = copySessionState(s.conv, accountDir(old.account ?? ''), accountDir(account ?? ''))
+        const copied = copySessionState(s.conv, accountDir(old.account ?? ''), accountDir(account ?? ''), { keep: isLinked(account) })
         // The folder's auto memory too, file by file: what the other account already has there is kept.
         const memory = path.join(projectDir(old.cwd, old.account ?? ''), 'memory')
         if (fs.existsSync(memory)) (fs.cpSync(memory, path.join(projectDir(dir, account ?? ''), 'memory'), { recursive: true, force: false }), copied.push('memory'))
@@ -3431,6 +3484,7 @@ const commands = {
     const mb = (n) => `${(n / 1048576).toFixed(1)}MB`
     try {
       if (!s) throw new Error('이 맥에 그 세션이 없습니다')
+      if (isLinked(s.account)) throw new Error('연결한 폴더의 대화 기록은 bridge 가 고치지 않아요(그 폴더를 쓰는 도구의 기록이에요)')
       if (s.turn || s.wait || s.refreshing || s.lightforking || s.launching || s.alive === false) throw new Error('쉬고 있는 세션만 기록을 정리할 수 있어요')
       const file = transcriptPath(s, sid)
       if (!trimTranscript(fs.readFileSync(file, 'utf8'))) throw new Error('압축한 적이 없어 덜어 낼 기록이 없어요. 먼저 "지금 압축" 을 하세요')
@@ -3880,6 +3934,12 @@ const commands = {
         }
       }
       if (!file) throw new Error('이 맥에서 그 대화의 기록을 찾지 못했습니다')
+      // Another tool may be writing it right now: two claude on one transcript split the conversation.
+      if (isLinked(account) && (linkedConvLive(accountDir(account), conv) || Date.now() - fs.statSync(file).mtimeMs < 60_000)) throw new Error('다른 도구가 이 대화를 지금 쓰는 중이에요. 그쪽에서 끝난 뒤(1분 뒤) 다시 가져와 주세요')
+      if (isLinked(account)) {
+        const why = linkedLaunchWhy(account)
+        if (why) throw new Error(why)
+      }
       const s = { cwd: fs.realpathSync(want), autoPush: autoPush !== false, conv, transcript: file, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(account ? { account } : {}) }
       setRouting(s, routing)
       // The whole conversation so far is read and synced from its first line: the server's copy is what a move
@@ -3903,7 +3963,7 @@ const commands = {
     }
   },
   /** Claude accounts on this Mac (설정 → Claude 계정): list, add, rename, sign in and out, sync, remove. */
-  async account({ reqId, op, id, name, code }) {
+  async account({ reqId, op, id, name, code, dir: typed }) {
     const done = (more = {}) => emit({ t: 'account', reqId, ok: true, accounts: accountList(), ...more })
     try {
       if (op === 'list') return (await refreshAccounts(), done())
@@ -3920,7 +3980,33 @@ const commands = {
         await refreshAccounts(nid)
         return done({ id: nid })
       }
+      if (op === 'link') {
+        // 폴더 연결: another tool's Claude Code config folder, used as it is. Nothing is linked, copied or written there.
+        const label = accountName(name)
+        if (!label) throw new Error('계정 이름을 적어 주세요')
+        if (accounts.length >= 10) throw new Error('계정은 10개까지 더할 수 있어요')
+        const p = linkPath(typed, HOME)
+        const why = linkDirWhy(p, { home: HOME, mainDir: CLAUDE_DIR, stateDir: STATE_DIR, accountDirs: accounts.map((a) => a.dir) })
+        if (why) throw new Error(why)
+        // The sign-in is named after the folder string itself (keychainService): of the ways to write this folder,
+        // the one the keychain has an item for is the one the other tool uses.
+        let chosen = p
+        for (const w of linkCandidates(p)) {
+          if (await hasKeychainItem(keychainService(w))) {
+            chosen = w
+            break
+          }
+        }
+        const nid = newAccountId()
+        // `real`: where it led when linked, with the disk's case; a launch refuses when the path leads elsewhere later.
+        accounts.push({ id: nid, name: label, dir: chosen, external: true, real: realNative(chosen) })
+        saveAccounts()
+        log('info', 'account', `설정 폴더를 계정으로 연결: ${label}`)
+        await refreshAccounts(nid)
+        return done({ id: nid, notes: linkedSettingsNotes(chosen) })
+      }
       if (!safeAccountId(id) || accountDir(id) === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
+      if (isLinked(id) && ['login', 'code', 'logout', 'sync'].includes(op)) throw new Error(LINKED_REFUSE)
       const busy = [...sessions.values()].filter((s) => (s.account ?? '') === id)
       if (op === 'rename') {
         const label = accountName(name)
@@ -3965,6 +4051,15 @@ const commands = {
       if (op === 'remove') {
         if (!id) throw new Error('기본 계정은 뺄 수 없어요')
         if (busy.length) throw new Error(`이 계정을 쓰는 세션이 ${busy.length}개 있어요. 다른 계정으로 옮기거나 끝낸 뒤 빼 주세요`)
+        if (isLinked(id)) {
+          // 연결 해제: only off the list. Not signed out, the folder not moved: it is the other tool's.
+          accounts = accounts.filter((a) => a.id !== id)
+          saveAccounts()
+          accountAuth.delete(id)
+          log('info', 'account', `연결한 설정 폴더를 목록에서 뺌: ${id} (폴더는 그대로)`)
+          emit({ t: 'accounts', accounts: accountList() })
+          return done()
+        }
         // Signed out first, so the keychain item goes too. The folder (its conversations) is kept aside, not deleted.
         await runClaude(['auth', 'logout'], accountEnvOf(id))
         const dir = accountDir(id)
@@ -4284,7 +4379,16 @@ function diskPath(where) {
   const home = fs.realpathSync(HOME)
   if (abs === HOME || abs === home) return home
   if (!fs.existsSync(path.dirname(abs))) throw new Error('그 폴더가 없어요')
-  const real = path.join(fs.realpathSync(path.dirname(abs)), path.basename(abs))
+  // The disk's own case, so `~/.CLAUDE` is the kept `~/.claude` and not another folder. The last name is not followed
+  // (a link is moved as the link), only spelled the way the folder lists it.
+  const parent = fs.realpathSync.native(path.dirname(abs))
+  const base = path.basename(abs)
+  let names = []
+  try {
+    names = fs.readdirSync(parent)
+  } catch {}
+  const spelled = names.includes(base) ? base : (names.filter((n) => n.toLowerCase() === base.toLowerCase()).length === 1 ? names.find((n) => n.toLowerCase() === base.toLowerCase()) : base)
+  const real = path.join(parent, spelled)
   if (real !== home && !real.startsWith(`${home}/`)) throw new Error('홈 폴더 안만 볼 수 있어요')
   return real
 }
@@ -4313,7 +4417,8 @@ async function emptyDir(dir, writable) {
   if (writable) await run('chmod', ['-R', 'u+w', dir], { timeout: DISK_DU_MS })
   for (const e of fs.readdirSync(dir)) fs.rmSync(path.join(dir, e), { recursive: true, force: true })
 }
-const keptDirs = () => [CLAUDE_DIR, STATE_DIR, AGENT_DIR].map((d) => (fs.existsSync(d) ? fs.realpathSync(d) : d))
+// A linked folder (폴더 연결) is kept like the main config folder: the disk tidy-up never offers it, nor anything in it.
+const keptDirs = () => [CLAUDE_DIR, STATE_DIR, AGENT_DIR, ...accounts.filter((a) => a.external).map((a) => a.dir)].map(realNative)
 const sessionDirs = () => [...sessions.values()].map((s) => (s.cwd && fs.existsSync(s.cwd) ? fs.realpathSync(s.cwd) : s.cwd)).filter(Boolean)
 /**
  * Every session with the folders it is in and whether its claude still runs (REQ-F-805): the one it started in and
@@ -4817,8 +4922,8 @@ async function tidyFolders(policy, roots, ended, now) {
   return judged.sort((a, b) => (b.size ?? 0) - (a.size ?? 0))
 }
 
-/** Every transcript folder: the main Claude account's and each other account's. */
-const transcriptRoots = () => [...new Set([projectsOf(''), ...accounts.map((a) => projectsOf(a.id))])].filter((d) => fs.existsSync(d))
+/** Every transcript folder bridge may tidy: the main Claude account's and each added one's, never a linked folder's. */
+const transcriptRoots = () => [...new Set([projectsOf(''), ...accounts.filter((a) => !a.external).map((a) => projectsOf(a.id))])].filter((d) => fs.existsSync(d))
 
 /** Big old transcripts no open session uses (REQ-F-837 rule 5), biggest first, 50 at most. */
 function tidyTranscripts(policy, now) {
@@ -5205,14 +5310,19 @@ const accountEnvOf = (id) => (id ? { CLAUDE_CONFIG_DIR: accountDir(id) } : proce
 /** Every account as the page shows it: its name, its sign-in, and how many of this Mac's sessions use it. */
 function accountList() {
   const used = (id) => [...sessions.values()].filter((s) => (s.account ?? '') === id).length
-  return [{ id: '', name: config.mainAccountName || '기본 계정', main: true }, ...accounts.map(({ id, name }) => ({ id, name, main: false }))].map((a) => ({ ...a, ...(accountAuth.get(a.id) ?? { loggedIn: null }), sessions: used(a.id), signingIn: logins.has(a.id) }))
+  // A linked folder says where it is, except while this Mac seals what it sends (REQ-S-095): no new plain field then.
+  const linked = (a) => (a.external ? { external: true, missing: !fs.existsSync(a.dir), ...(trustSealing() ? {} : { dir: tilde(a.dir) }) } : {})
+  return [{ id: '', name: config.mainAccountName || '기본 계정', main: true }, ...accounts.map((a) => ({ id: a.id, name: a.name, main: false, ...linked(a) }))].map((a) => ({ ...a, ...(accountAuth.get(a.id) ?? { loggedIn: null }), sessions: used(a.id), signingIn: logins.has(a.id) }))
 }
+/** Whether the login keychain has an item of that name. The secret itself is not read, so nothing is asked. */
+const hasKeychainItem = async (service) => process.platform === 'darwin' && (await run('security', ['find-generic-password', '-s', service], { timeout: 10_000 })).ok
 /** Asks each account (or one) who is signed in, then tells the server. */
 async function refreshAccounts(only) {
   for (const a of [{ id: '' }, ...accounts]) {
     if (only !== undefined && a.id !== only) continue
-    const r = await runClaude(['auth', 'status', '--json'], accountEnvOf(a.id))
-    accountAuth.set(a.id, authOf(r.out))
+    // A linked folder is only read: `claude auth status` writes migrations, a lock and backups into its folder.
+    if (a.external) accountAuth.set(a.id, await linkedAuth(a.dir, hasKeychainItem))
+    else accountAuth.set(a.id, authOf((await runClaude(['auth', 'status', '--json'], accountEnvOf(a.id))).out))
   }
   emit({ t: 'accounts', accounts: accountList() })
 }

@@ -174,6 +174,12 @@ export interface Account {
   method?: string | null
   sessions: number
   signingIn: boolean
+  /** A linked folder: another tool's Claude Code config folder, which bridge never changes (폴더 연결). */
+  external?: boolean
+  /** Where a linked folder is (`~/…`); only in the accounts tab's own list, not while the Mac seals. */
+  dir?: string | null
+  /** A linked folder that is no longer there. */
+  missing?: boolean
 }
 
 export interface DiskHelp {

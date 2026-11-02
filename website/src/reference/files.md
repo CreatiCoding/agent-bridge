@@ -23,7 +23,7 @@ description: 에이전트가 기기(맥·Linux)에 쓰는 파일과 폴더(~/.cl
 | `hook.header` | 에이전트 | 0600 | 훅이 `curl -H @파일` 로 붙이는 머리글(`x-bridge-key: <훅 키>`)이에요. 키를 명령줄에 싣지 않으려고 파일로 둬요. |
 | `askpass` | 에이전트 | 0700 | 세션 안의 `sudo` 가 관리자 비밀번호를 사이트에서 받도록 부르는 스크립트예요. |
 | `bin/sudo` | 에이전트 | 0700 | 세션의 `PATH` 앞에 두는 `sudo` 래퍼예요. `askpass` 를 써요. |
-| `accounts.json` | 에이전트 | 0600 | 더한 Claude 계정 목록 `[{id, name, dir}]` 이에요. 기본 계정은 넣지 않아요. |
+| `accounts.json` | 에이전트 | 0600 | 더한 Claude 계정 목록 `[{id, name, dir, external?}]` 이에요. 기본 계정은 넣지 않아요. `external: true` 는 연결한 다른 도구의 설정 폴더예요([다른 도구의 설정 폴더 연결하기](/guide/use/adopt#6-다른-도구의-설정-폴더-연결하기-선택)). |
 | `accounts/<id>/` | 에이전트, Claude Code | 0700 | 더한 Claude 계정의 설정 폴더(`CLAUDE_CONFIG_DIR`)예요. |
 | `accounts-removed/<id>-<ms>/` | 에이전트 | — | 뺀 계정의 폴더예요. 지우지 않고 옮겨 둬요. |
 | `skill-usage.json` | 에이전트 | — | 스킬을 얼마나 썼는지 세어 둔 것이에요. 스킬 메뉴의 순서에 써요. |

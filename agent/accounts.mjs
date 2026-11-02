@@ -78,6 +78,109 @@ export function syncAccountConfig(dir, mainConfig) {
   writeJsonFile(own, mergedConfig(readJson(own) ?? {}, readJson(mainConfig) ?? {}))
 }
 
+/**
+ * The keychain item Claude Code keeps a config folder's sign-in in. The folder is the CLAUDE_CONFIG_DIR string as it
+ * is (NFC, never resolved): a link to the same folder, or a trailing `/`, is another sign-in.
+ */
+export function keychainService(dir, env = process.env) {
+  // As claude does: CLAUDE_SECURESTORAGE_CONFIG_DIR, when set, names the item instead (empty: the main one's).
+  const over = env.CLAUDE_SECURESTORAGE_CONFIG_DIR
+  const key = over !== undefined ? over.normalize('NFC') : String(dir).normalize('NFC')
+  return over === '' ? 'Claude Code-credentials' : `Claude Code-credentials-${crypto.createHash('sha256').update(key).digest('hex').slice(0, 8)}`
+}
+
+/** A path a person typed for a folder to link: `~` expanded, NFC, no trailing `/`. Null when it cannot be one. */
+export function linkPath(typed, home) {
+  let p = String(typed ?? '').trim().normalize('NFC')
+  if (!p || p.length > 1024 || p.includes('\0')) return null
+  if (p === '~' || p.startsWith('~/')) p = path.join(home, p.slice(1))
+  if (!path.isAbsolute(p)) return null
+  p = p.replace(/\/+$/, '')
+  return p || null
+}
+
+const isIn = (p, root) => p === root || p.startsWith(`${root}${path.sep}`)
+/**
+ * The real path, with the case the disk has: APFS does not mind case, and fs.realpathSync keeps the case it was
+ * given (`~/.CLAUDE` would pass for another folder than `~/.claude`). The native one asks the disk.
+ */
+export const realNative = (p) => {
+  try {
+    return fs.realpathSync.native(p)
+  } catch {
+    return p
+  }
+}
+const realOrSelf = realNative
+
+/**
+ * Why a folder cannot be linked as an account (another tool's Claude Code config folder), or null. `p` is linkPath's.
+ * It must be a folder of this user's with a .claude.json (bridge never writes one there), and not the main folder,
+ * an account folder already, the agent's own folder, the home folder or a folder above any of those.
+ */
+export function linkDirWhy(p, { home, mainDir, stateDir, accountDirs = [], uid = process.getuid?.() }) {
+  if (!p) return '폴더 경로를 절대 경로나 ~ 로 시작하게 적어 주세요'
+  let st
+  try {
+    st = fs.statSync(p)
+  } catch {
+    return `그 폴더가 없어요: ${p}`
+  }
+  if (!st.isDirectory()) return '폴더가 아니에요'
+  if (uid !== undefined && st.uid !== uid) return '이 맥 사용자의 폴더가 아니에요'
+  const real = realOrSelf(p)
+  const guarded = [mainDir, stateDir, home].map(realOrSelf)
+  if (real === realOrSelf(mainDir)) return '기본 계정의 설정 폴더예요. 따로 연결하지 않아도 기본 계정으로 보여요'
+  if (isIn(real, realOrSelf(mainDir))) return '기본 계정의 설정 폴더 안이에요'
+  if (isIn(real, realOrSelf(stateDir))) return 'bridge 에이전트 폴더 안이에요. 새 계정은 "계정 추가" 로 만들어 주세요'
+  if (guarded.some((g) => isIn(g, real))) return '홈 폴더나 기본 설정 폴더를 품은 폴더는 연결하지 않아요'
+  for (const d of accountDirs.map(realOrSelf)) if (isIn(real, d) || isIn(d, real)) return '이미 이 맥의 다른 계정이 쓰는 폴더예요'
+  let cfg
+  try {
+    cfg = fs.lstatSync(path.join(p, '.claude.json'))
+  } catch {}
+  if (!cfg?.isFile()) return '그 폴더에 .claude.json 이 없어요. 그 폴더로 claude 를 한 번 띄워 처음 설정을 마친 뒤 연결해 주세요'
+  return null
+}
+
+/**
+ * The ways a person or a tool may have written a folder's path, each a different keychain item (keychainService):
+ * as typed, with a trailing `/`, and its real path. The one the keychain has an item for is the one in use.
+ */
+export const linkCandidates = (p) => [...new Set([p, `${p}/`, realNative(p), `${realNative(p)}/`])]
+
+/**
+ * A linked folder's sign-in, read without running claude (`claude auth status` writes migrations, a lock and
+ * backups into the folder): whether the keychain item (or the credentials file) is there, and the address the
+ * folder's .claude.json names. `hasItem(service)` asks the keychain.
+ */
+export async function linkedAuth(dir, hasItem) {
+  let email = null
+  try {
+    const a = JSON.parse(fs.readFileSync(path.join(dir, '.claude.json'), 'utf8'))?.oauthAccount
+    if (typeof a?.emailAddress === 'string') email = a.emailAddress.slice(0, 200)
+  } catch {}
+  const file = fs.existsSync(path.join(dir, '.credentials.json'))
+  const item = file || (await hasItem(keychainService(dir)))
+  return { loggedIn: !!item, method: file ? '로그인 파일' : item ? '키체인 로그인' : null, email: item ? email : null, plan: null, org: null }
+}
+
+/**
+ * What in a linked folder's settings changes a bridge session: said to the person when the folder is linked.
+ * bridge's hooks come in by --settings, so a folder that turns every hook off leaves the page without a session's state.
+ */
+export function linkedSettingsNotes(dir) {
+  let st = null
+  try {
+    st = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'))
+  } catch {}
+  const notes = []
+  if (st?.disableAllHooks === true) notes.push('그 폴더 설정이 훅을 모두 끄고 있어(disableAllHooks) 세션 상태가 화면에 늦게 보일 수 있어요')
+  if (st?.permissions?.defaultMode === 'bypassPermissions') notes.push('그 폴더 설정이 권한 확인을 건너뛰어요(bypassPermissions)')
+  if (st?.apiKeyHelper) notes.push('그 폴더 설정이 apiKeyHelper 로 로그인해요')
+  return notes
+}
+
 /** An id for a new account: short, safe in a path and in a tmux name. */
 export const newAccountId = () => `a${crypto.randomBytes(4).toString('hex')}`
 export const safeAccountId = (id) => id === '' || (typeof id === 'string' && /^a[0-9a-f]{8}$/.test(id))
@@ -105,13 +208,14 @@ export function authOf(out) {
  * of edited files a rewind restores (file-history/<conv>). Copied when the session moves to another account on
  * the same Mac; the transcript itself is written from the server's copy, as for any move.
  */
-export function copySessionState(conv, fromDir, toDir) {
+export function copySessionState(conv, fromDir, toDir, { keep = false } = {}) {
   const copied = []
   for (const sub of ['file-history']) {
     const from = path.join(fromDir, sub, conv)
     if (!fs.existsSync(from)) continue
     fs.mkdirSync(path.join(toDir, sub), { recursive: true })
-    fs.cpSync(from, path.join(toDir, sub, conv), { recursive: true, force: true })
+    // keep: into a linked folder, what is there already is the other tool's and is not replaced.
+    fs.cpSync(from, path.join(toDir, sub, conv), { recursive: true, force: !keep })
     copied.push(sub)
   }
   return copied

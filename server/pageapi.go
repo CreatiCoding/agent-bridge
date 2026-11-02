@@ -349,12 +349,19 @@ func cleanAccounts(list any) []any {
 		if n != n {
 			n = 0
 		}
-		out = append(out, M{"id": id, "name": name, "main": id == "", "loggedIn": li, "email": text(mget(a, "email"), 200), "plan": text(mget(a, "plan"), 40), "method": text(mget(a, "method"), 40), "sessions": n, "signingIn": mget(a, "signingIn") == true})
+		row := M{"id": id, "name": name, "main": id == "", "loggedIn": li, "email": text(mget(a, "email"), 200), "plan": text(mget(a, "plan"), 40), "method": text(mget(a, "method"), 40), "sessions": n, "signingIn": mget(a, "signingIn") == true}
+		// A linked folder (another tool's config folder): where it is, and whether it is still there.
+		if id != "" && mget(a, "external") == true {
+			row["external"] = true
+			row["dir"] = text(mget(a, "dir"), 300)
+			row["missing"] = mget(a, "missing") == true
+		}
+		out = append(out, row)
 	}
 	return out
 }
 
-var ACCOUNT_OP_NAMES = map[string]string{"list": "목록", "add": "추가", "rename": "이름 바꾸기", "login": "로그인 시작", "code": "로그인 코드 입력", "cancel": "로그인 취소", "logout": "로그아웃", "sync": "공유 설정 다시 맞추기", "remove": "빼기"}
+var ACCOUNT_OP_NAMES = map[string]string{"list": "목록", "add": "추가", "rename": "이름 바꾸기", "login": "로그인 시작", "code": "로그인 코드 입력", "cancel": "로그인 취소", "logout": "로그아웃", "sync": "공유 설정 다시 맞추기", "remove": "빼기", "link": "폴더 연결"}
 
 // accountsBrief: a host's accounts without the e-mail addresses.
 func accountsBrief(h M) []any {
@@ -362,6 +369,7 @@ func accountsBrief(h M) []any {
 	for _, a := range asArr(h["accounts"]) {
 		m := shallow(asM(a))
 		delete(m, "email")
+		delete(m, "dir")
 		out = append(out, m)
 	}
 	return out

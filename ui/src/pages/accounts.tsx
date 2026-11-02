@@ -12,7 +12,7 @@ import { Badge, Button, CardHead, Empty, Icon, NO_AUTOFILL, Spinner } from '../k
 import { confirmDialog, promptDialog, toast } from '../kit/overlay'
 import { copyText, linkClick } from '../lib/builtin-actions'
 
-type Reply = { ok: true; accounts: Account[]; url?: string; id?: string }
+type Reply = { ok: true; accounts: Account[]; url?: string; id?: string; notes?: string[] }
 const call = (hostId: string, body: Record<string, unknown>) => post<Reply>(`/api/hosts/${hostId}/accounts`, body)
 
 /** What a row says under the account's name. */
@@ -99,6 +99,22 @@ function HostAccounts({ host }: { host: Host }) {
     if (await confirmDialog(`${a.name} 계정을 뺄까요?`, { text: '로그아웃하고 이 맥의 계정 목록에서 빼요. 계정 폴더(대화 기록)는 지우지 않고 에이전트 폴더의 accounts-removed 에 옮겨 둬요.', ok: '빼기', danger: true }))
       await run('remove', a.id, {}, '계정을 뺐어요')
   }
+  // 폴더 연결: another tool's Claude Code config folder, used as it is. bridge never writes in it.
+  const link = async () => {
+    const dir = await promptDialog('설정 폴더 연결', {
+      placeholder: '폴더 경로 (예: ~/.other-tool/claude)',
+      ok: '다음',
+      text: '다른 도구가 쓰는 Claude Code 설정 폴더(CLAUDE_CONFIG_DIR)를 그대로 계정으로 써요. 그 폴더의 로그인·설정·훅·CLAUDE.md·스킬이 그대로 적용되고, bridge 는 그 폴더의 파일을 만들거나 고치거나 지우지 않아요. 연결 해제도 목록에서만 빼요.',
+    })
+    if (!dir?.trim()) return
+    const name = await promptDialog('연결한 폴더의 이름', { placeholder: '계정 이름 (예: 자동화 도구)', ok: '연결' })
+    if (!name?.trim()) return
+    const r = await run('link', '', { dir: dir.trim(), name: name.trim() }, '폴더를 계정으로 연결했어요. 그 폴더의 대화는 "이 맥의 대화 이어 가기" 에 보여요')
+    for (const n of r?.notes ?? []) toast(n, { tone: 'bad' })
+  }
+  const unlink = async (a: Account) => {
+    if (await confirmDialog(`${a.name} 연결을 해제할까요?`, { text: '이 맥의 계정 목록에서만 빼요. 그 폴더와 로그인, 대화 기록은 그대로 둬요.', ok: '연결 해제' })) await run('remove', a.id, {}, '연결을 해제했어요')
+  }
   const sync = (a: Account) => run('sync', a.id, {}, 'MCP 서버와 폴더 신뢰 설정을 기본 계정에서 다시 가져왔어요')
   const sendCode = async () => {
     if (!login) return
@@ -112,9 +128,14 @@ function HostAccounts({ host }: { host: Host }) {
         <Icon name={hostIcon(host.kind)} />
         <b className="grow">{host.name}</b>
         {host.online && supported ? (
-          <Button size="sm" icon="plus" busy={busy === 'add:'} onClick={add}>
-            계정 추가
-          </Button>
+          <>
+            <Button size="sm" icon="link" busy={busy === 'link:'} onClick={link} title="다른 도구가 쓰는 Claude Code 설정 폴더를 그대로 계정으로 써요">
+              폴더 연결
+            </Button>
+            <Button size="sm" icon="plus" busy={busy === 'add:'} onClick={add}>
+              계정 추가
+            </Button>
+          </>
         ) : null}
       </div>
       {!host.online ? (
@@ -133,35 +154,58 @@ function HostAccounts({ host }: { host: Host }) {
             <div key={a.id} className="account-row">
               <div className="hstack" style={{ flexWrap: 'wrap', rowGap: 6 }}>
                 <div className="grow" style={{ minWidth: 180 }}>
-                  <b>{a.name}</b> {a.main ? <Badge>기본</Badge> : null} {a.loggedIn === false ? <Badge tone="amber">로그인 필요</Badge> : a.loggedIn ? <Badge tone="green">로그인됨</Badge> : null}
+                  <b>{a.name}</b> {a.main ? <Badge>기본</Badge> : null} {a.external ? <Badge>연결한 폴더</Badge> : null} {a.missing ? <Badge tone="red">폴더 없음</Badge> : null} {a.loggedIn === false ? <Badge tone="amber">로그인 필요</Badge> : a.loggedIn ? <Badge tone="green">로그인됨</Badge> : null}
                   <div className="muted" style={{ fontSize: 'var(--fs-small)', overflowWrap: 'anywhere' }}>
                     {accountLine(a)}
                     {a.sessions ? ` · 세션 ${a.sessions}개` : ''}
                   </div>
+                  {a.external && a.dir ? (
+                    <div className="muted" style={{ fontSize: 'var(--fs-small)', overflowWrap: 'anywhere' }}>
+                      <code>{a.dir}</code>
+                    </div>
+                  ) : null}
+                  {a.external && a.loggedIn === false ? (
+                    <div className="muted" style={{ fontSize: 'var(--fs-small)', overflowWrap: 'anywhere' }}>
+                      그 폴더를 쓰는 도구에서 로그인하거나, 맥 터미널에서 <code>CLAUDE_CONFIG_DIR={a.dir ?? '<폴더>'} claude auth login</code> 으로 로그인해 주세요.
+                    </div>
+                  ) : null}
                 </div>
                 <div className="hstack" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  {a.loggedIn ? (
-                    <Button size="sm" busy={busy === `logout:${a.id}`} onClick={() => logout(a)}>
-                      로그아웃
-                    </Button>
-                  ) : (
-                    <Button size="sm" tone="primary" icon="key" busy={busy === `login:${a.id}`} onClick={() => startLogin(a.id)}>
-                      로그인
-                    </Button>
-                  )}
-                  <Button size="sm" icon="edit" onClick={() => rename(a)}>
-                    이름
-                  </Button>
-                  {!a.main ? (
+                  {a.external ? (
                     <>
-                      <Button size="sm" icon="refresh" busy={busy === `sync:${a.id}`} onClick={() => sync(a)} title="MCP 서버와 폴더 신뢰 설정을 기본 계정에서 다시 가져와요">
-                        공유 설정 맞추기
+                      <Button size="sm" icon="edit" onClick={() => rename(a)}>
+                        이름
                       </Button>
-                      <Button size="sm" icon="trash" busy={busy === `remove:${a.id}`} onClick={() => remove(a)}>
-                        빼기
+                      <Button size="sm" icon="close" busy={busy === `remove:${a.id}`} onClick={() => unlink(a)}>
+                        연결 해제
                       </Button>
                     </>
-                  ) : null}
+                  ) : (
+                    <>
+                      {a.loggedIn ? (
+                        <Button size="sm" busy={busy === `logout:${a.id}`} onClick={() => logout(a)}>
+                          로그아웃
+                        </Button>
+                      ) : (
+                        <Button size="sm" tone="primary" icon="key" busy={busy === `login:${a.id}`} onClick={() => startLogin(a.id)}>
+                          로그인
+                        </Button>
+                      )}
+                      <Button size="sm" icon="edit" onClick={() => rename(a)}>
+                        이름
+                      </Button>
+                      {!a.main ? (
+                        <>
+                          <Button size="sm" icon="refresh" busy={busy === `sync:${a.id}`} onClick={() => sync(a)} title="MCP 서버와 폴더 신뢰 설정을 기본 계정에서 다시 가져와요">
+                            공유 설정 맞추기
+                          </Button>
+                          <Button size="sm" icon="trash" busy={busy === `remove:${a.id}`} onClick={() => remove(a)}>
+                            빼기
+                          </Button>
+                        </>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
               {login?.id === a.id ? (

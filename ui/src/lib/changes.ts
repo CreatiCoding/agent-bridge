@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.402',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '설정 → Claude 계정의 "폴더 연결": 다른 도구가 쓰는 Claude Code 설정 폴더(CLAUDE_CONFIG_DIR)를 그대로 계정으로 연결한다. 그 폴더의 대화가 "이 맥의 대화 이어 가기" 에 계정 이름과 함께 보이고, 그 계정으로 새 세션을 시작하거나 가져와 이어 쓴다. 이 맥 사용자의 폴더이고 .claude.json 이 있어야 하며, 기본 설정 폴더(대소문자만 다른 경로 포함)·에이전트 폴더·홈은 거절',
+        refs: ['REQ-F-848', 'IF-211'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '연결한 폴더는 bridge 가 고치지 않는다: 링크·.claude.json 사본 없음, 로그인 상태는 claude 를 부르지 않고 키체인 항목·.claude.json 을 읽기만, 로그인·로그아웃·공유 설정 맞추기·대화 기록 정리는 거절, 연결 해제는 목록에서만 빼고, 세션·디스크 정리 후보에서 빠진다. 그 대화를 잡은 claude 가 살아 있거나 1분 안에 쓰였으면 가져오지 않고, 그 도구가 이어 쓴 대화 파일은 옮겨 오며 덮어쓰지 않는다',
+        refs: ['REQ-F-848', 'REQ-F-837'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '디스크 정리가 지키는 폴더(기본 설정 폴더·에이전트 폴더)를 대소문자만 바꾼 경로(~/.CLAUDE)로 고르면 지키지 못하던 것: 경로를 디스크의 대소문자로 비교한다',
+        refs: ['REQ-F-848'],
+      },
+    ],
+  },
+  {
     version: '1.401',
     date: '2026-11-02',
+    commit: '0d313d0',
     changes: [
       {
         kind: 'added',
