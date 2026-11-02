@@ -16,6 +16,7 @@ import type { Me } from './types'
 import * as kitAll from '../kit'
 import { chooseDialog, confirmDialog, openMenu, promptDialog, Sheet, toast, type MenuEntry } from '../kit/overlay'
 import { loadTrust, pairedHosts } from './trust'
+import { setQuietRules } from './quiet'
 
 export interface ExtInfo {
   id: string
@@ -27,6 +28,9 @@ export interface ExtInfo {
   uses: { actions: string[]; slots: string[] }
   routes: { path: string; upstream: string }[]
   hooks: { name: string; url: string }[]
+  /** messages.quiet (REQ-F-850): the ends that make an answer quiet, and whether this person agreed to them. */
+  quiet?: { suffix: string; label: string }[]
+  quietAgreed?: boolean
   storesData: boolean
   consented: boolean
   loadError?: string
@@ -149,6 +153,24 @@ setInterval(() => {
 
 // ---------- the bridge object ----------
 
+/**
+ * message.render (REQ-F-850): what a handler returned carries its extension's id in `by` when it folded the answer or
+ * changed its words (itself, or by what it passed on), so the page can say who did.
+ */
+function signed(owner: string, fn: actions.AroundFn<'message.render'>): actions.AroundFn<'message.render'> {
+  return (a, next, ctx) => {
+    let inner: actions.MessageView | undefined
+    let passed = a
+    const out = fn(a, (b) => ((passed = b), (inner = next(b) as actions.MessageView)), ctx) as actions.MessageView
+    if (!out || typeof out !== 'object') return out
+    const was = inner as (actions.MessageView & { hide?: boolean; text?: string }) | undefined
+    const now = out as actions.MessageView & { hide?: boolean; text?: string }
+    const touched = passed.text !== a.text || !was || !!now.hide !== !!was.hide || (typeof now.text === 'string' && now.text !== (was.text ?? a.text))
+    const by = [...(was?.by ?? []), ...(now.by ?? [])].filter((x, i, l) => l.indexOf(x) === i)
+    return touched ? { ...now, by: [...by.filter((x) => x !== owner), owner] } : { ...now, by }
+  }
+}
+
 function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
   const owner = x.id
   const usesAction = (n: string) => {
@@ -184,8 +206,8 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
     extensionApi: EXT_API,
     id: owner,
     actions: {
-      before: <N extends Exclude<actions.ActionName, 'renderer.block'>>(n: N, fn: actions.BeforeFn<N>, o: actions.HookOpts = {}) => (usesAction(n), actions.before(n, fn, { ...o, owner })),
-      around: <N extends actions.ActionName>(n: N, fn: actions.AroundFn<N>, o: actions.HookOpts = {}) => (usesAction(n), actions.around(n, fn, { ...o, owner })),
+      before: <N extends Exclude<actions.ActionName, 'renderer.block' | 'message.render'>>(n: N, fn: actions.BeforeFn<N>, o: actions.HookOpts = {}) => (usesAction(n), actions.before(n, fn, { ...o, owner })),
+      around: <N extends actions.ActionName>(n: N, fn: actions.AroundFn<N>, o: actions.HookOpts = {}) => (usesAction(n), actions.around(n, (n === 'message.render' ? signed(owner, fn as never) : fn) as actions.AroundFn<N>, { ...o, owner })),
       after: ((n: string, fn: (...a: never[]) => void, o: actions.HookOpts & { primaryOnly?: boolean } = {}) => {
         usesAction(n)
         if (EVENTS.includes(n)) {
@@ -319,6 +341,8 @@ let listNow: ExtInfo[] = []
 export async function startExtensions(me: Me | null): Promise<void> {
   const list = ((me as { extensions?: ExtInfo[] } | null)?.extensions ?? []).filter((x) => !x.loadError)
   listNow = list
+  // The quiet rules are the page's own (REQ-F-850): they hold with ?noext=1 and on a paired device too.
+  setQuietRules(list)
   if (!me || !list.length || noExt()) return
   // Their files changed (or another server took over with other files): load again.
   onExtMessage((m) => m.t === 'ext-reload' && location.reload())
@@ -358,6 +382,11 @@ export function ConsentText({ x }: { x: ExtInfo }) {
       </div>
       <div>이 익스텐션은 당신의 권한으로 맥에서 명령을 실행할 수 있고, 당신의 요청을 적힌 외부 주소로 보낼 수 있습니다. 이 서버에 데이터를 저장할 수 있습니다.</div>
       {x.uses.actions.length || x.uses.slots.length ? <div className="muted">쓰는 것: {[...x.uses.actions, ...x.uses.slots].join(', ')}</div> : null}
+      {x.quiet?.length ? (
+        <div>
+          답을 접어요: 끝이 {x.quiet.map((q) => `"${q.suffix}"`).join(', ')} 인 Claude 의 답은 한 줄로 접히고 새 답 표시·알림 웹훅·Slack 글을 내지 않아요. 접힌 답은 펼쳐 볼 수 있어요.
+        </div>
+      ) : null}
       {x.routes.length || x.hooks.length ? <div className="muted">보내는 곳: {[...new Set([...x.routes.map((r) => r.upstream), ...x.hooks.map((h) => h.url)])].join(', ')}</div> : null}
       <div className="muted">운영자가 이 서버에 설치했어요. 바뀌면 다시 물어요.</div>
     </div>
@@ -368,6 +397,7 @@ export async function askConsent(x: ExtInfo) {
   if (!(await confirmDialog('익스텐션을 켤까요?', { text: <ConsentText x={x} />, ok: '켜기', cancel: '켜지 않기' }))) return false
   try {
     await call('POST', `/api/ext/${x.id}/consent`, { hash: x.hash })
+    void listExtensions().then(setQuietRules, () => {})
     return true
   } catch (e) {
     toast(e instanceof Error ? e.message : String(e), { tone: 'bad' })
@@ -377,6 +407,7 @@ export async function askConsent(x: ExtInfo) {
 
 export async function revokeConsent(x: ExtInfo) {
   await call('DELETE', `/api/ext/${x.id}/consent`)
+  void listExtensions().then(setQuietRules, () => {})
 }
 
 export const listExtensions = () => call<{ extensions: ExtInfo[] }>('GET', '/api/ext').then((r) => r.extensions)

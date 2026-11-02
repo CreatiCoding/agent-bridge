@@ -205,9 +205,16 @@ func sessionOfEvent(meta *Sess) orderedObj {
 // emitEvent raises one event to notify and the after hooks. It is called under the lock; the sending happens in
 // goroutines with copies only.
 func emitEvent(name, uid string, more orderedObj) {
+	// A turn that ended on a quiet answer (REQ-F-850) is no news: the notify webhooks are for people.
+	quiet := false
+	for _, x := range more {
+		if x.K == "quiet" && x.V == true {
+			quiet = true
+		}
+	}
 	targets := []notifyTarget{}
 	for _, t := range notifyTargets() {
-		if contains(t.Events, name) {
+		if !quiet && contains(t.Events, name) {
 			targets = append(targets, t)
 		}
 	}

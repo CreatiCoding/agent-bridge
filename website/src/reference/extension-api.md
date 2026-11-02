@@ -6,7 +6,7 @@ description: 익스텐션이 받는 bridge 객체(액션, slot, 단축키, 시�
 
 이 페이지는 익스텐션이 기대어도 되는 공개 API(`extensionApi: 1`)를 정리해요. 익스텐션을 서버에 두고 켜는 방법은 [익스텐션 두기와 만들기](/guide/operate/extensions)를 보세요.
 
-이 페이지는 [1.371 판](/changelog) 기준이에요.
+이 페이지는 [1.404 판](/changelog) 기준이에요.
 
 타입의 원본은 [`extensions/agent-bridge-ext.d.ts`](https://github.com/CreatiCoding/agent-bridge/blob/main/extensions/agent-bridge-ext.d.ts) 예요. 조작 페이지는 자기 `bridge` 객체를 이 타입과 맞대 타입 검사해요. 이 페이지와 d.ts 가 다르면 d.ts 가 맞아요.
 
@@ -59,7 +59,7 @@ export default function setup(bridge: Bridge) {
 
 | 붙이는 법 | 모양 | 하는 일 |
 |---|---|---|
-| `before(name, fn, opts?)` | `(args, ctx) => 새 args \| {cancel: 이유} \| void` | 인자를 바꾸거나 멈춰요. `renderer.block` 에는 못 붙여요 |
+| `before(name, fn, opts?)` | `(args, ctx) => 새 args \| {cancel: 이유} \| void` | 인자를 바꾸거나 멈춰요. `renderer.block`·`message.render` 에는 못 붙여요 |
 | `around(name, fn, opts?)` | `(args, next, ctx) => 결과` | `next(args)` 를 불러 안쪽으로 넘기거나, 부르지 않고 대신해요 |
 | `after(name, fn, opts?)` | `(args, result, ctx) => void` | 성공했을 때만, 기본 구현이 실제로 받은 인자로 불려요 |
 | `dispatch(name, args)` | — | 액션을 내요. 동기 액션은 결과를 바로, 비동기 액션은 결과나 `{cancel}` 의 Promise 를 돌려줘요 |
@@ -74,7 +74,7 @@ export default function setup(bridge: Bridge) {
 - **비동기 액션**(`composer.submit`, `message.send`, `permission.answer`, `session.create`, `session.close`): `before`·`around` 는 `next` 를 부르기 전까지 시간을 재요. 기본 500ms, `timeoutMs` 로 10초까지 늘려요. `waitUser` 동안은 시계가 멈춰요.
 - 시간을 넘기거나 `next` 전에 던지면 액션 전체가 `{cancel: "시간 초과"}` 로 끝나요. `session.close` 만은 그 처리기를 건너뛰고 계속해요. `next` 를 부른 뒤 던지면 `next` 의 결과를 써요. 시간 초과 뒤 늦게 부른 `next` 는 기본 구현을 부르지 않아요.
 - 취소되면 이유를 토스트로 보여요. 완료 토스트("끝냈어요" 같은)는 내지 않고, 입력칸은 글을 그대로 둬요. 기본 구현의 오류는 그대로 reject 해요.
-- **동기 액션**(`session.open`, `link.open`, `clipboard.copy`, `renderer.block`, `notify.show`): 누르는 동안 끝나야 해요(iOS 는 누른 동안에만 새 창·클립보드 쓰기를 허락해요). Promise 를 돌려주는 `before` 는 무시하고 기록해요. 처리기 오류는 기록하고 다음으로 넘어가요.
+- **동기 액션**(`session.open`, `link.open`, `clipboard.copy`, `renderer.block`, `notify.show`, `message.render`): 누르는 동안 끝나야 해요(iOS 는 누른 동안에만 새 창·클립보드 쓰기를 허락해요). Promise 를 돌려주는 `before` 는 무시하고 기록해요. 처리기 오류는 기록하고 다음으로 넘어가요.
 - 처리기 오류, 시간 초과, 무시된 Promise 는 그 익스텐션 이름으로 운영 탭에 모여요.
 :::
 
@@ -91,9 +91,33 @@ export default function setup(bridge: Bridge) {
 | `link.open` | `{url, from, target?: '_self'}` | — | 새 창으로 여는 모든 링크, 같은 창으로 넘기는 곳(`_self`) |
 | `clipboard.copy` | `{text, kind: 'code'\|'message'\|'link'\|'other'}` | — | 클립보드에 쓰는 모든 곳 |
 | `renderer.block` | `{lang, text, closed, isLast, sid?}` | 그릴 것 | 답 안의 펜스 블록마다(`around` 만) |
+| `message.render` | `{sid, seq, text, quiet: {ext, name, label} \| null, isLast}` | `{text}` 또는 `{hide: true, reason?}` | 답(Claude 의 답 글)마다(`around` 만) |
 | `notify.show` | `{text, sid?}` | 없음 | 서버 알림 토스트 |
 
 `renderer.block` 의 기본 구현은 코드 상자예요. `around` 에서 그릴 React 요소를 돌려주거나, 내 블록이 아니면 `next(args)` 를 돌려줘요. `closed` 는 펜스가 닫혔는지예요(답을 쓰는 중이면 `false`).
+
+### 답 하나 다루기 `message.render`
+
+`message.render` 는 Claude 의 답 하나를 통째로 받아요. 답을 접거나 글을 바꿀 수 있어요. `around` 만 붙일 수 있고, `uses.actions` 에 적어야 해요.
+
+```ts
+// 끝이 [잡담] 인 답은 화면에서만 접어요
+bridge.actions.around('message.render', (a, next) =>
+  a.text.trimEnd().endsWith('[잡담]') ? { hide: true, reason: '잡담' } : next(a))
+
+// 말을 바꿔요
+bridge.actions.around('message.render', (a, next) => {
+  const v = next(a)
+  return 'hide' in v ? v : { text: v.text.replaceAll('TODO', '할 일') }
+})
+```
+
+- 접은 답은 지워지지 않아요. 타임라인에 한 줄과 **펼치기**로 남고, 펼치면 글이 그대로 나와요.
+- 이 처리기에는 Claude 의 답 글만 와요. 결정 카드, 경고·오류, 사람 말은 오지 않아요. 그래서 권한 요청과 경고는 늘 보여요.
+- 글을 바꾸면 답 아래에 "<이름> 이 바꿈 · 원문 보기" 가 붙어요. 누가 바꿨는지(`by`)는 페이지가 붙여요. 익스텐션이 정하지 못해요.
+- `messages.quiet` 규칙이 조용하게 만든 답은 처리기가 무엇을 돌려줘도 접힌 채예요. `quiet` 인자로 그 규칙을 알 수 있어요.
+- 이 훅으로만 접으면 화면에서만 접혀요. 알림과 "새 답" 점은 그대로 나가요. 막으려면 [`messages.quiet`](#조용한-답-messages-quiet)을 쓰세요.
+- 맥과 짝지은 기기에서는 익스텐션이 뜨지 않아서 이 훅도 돌지 않아요.
 
 ::: details 액션별 자세한 규칙
 - `composer.submit`: 그 sid 의 입력칸이 이 창에 있을 때만 보내요. 없으면 `{sent: false, reason: 'no-composer'}` 예요. `text` 가 없으면 입력칸의 글을 보내고, 첨부는 입력칸에 붙은 것이에요. 실패 이유는 `empty`(비었음), `sending`(이미 보내는 중), `duplicate`(10초 안에 같은 글), `upload`(영상·파일 올리기 실패)예요. 보내지면 입력칸·첨부·초안을 비워요. 처리기가 정하는 동안 입력칸은 보내는 중(버튼 꺼짐)이에요.
@@ -244,7 +268,7 @@ bridge.commands.register({
 
 | 이름 | 언제 | 본문(공통 필드 외) |
 |---|---|---|
-| `session.done` | 세션의 턴이 끝났을 때 | `session` |
+| `session.done` | 세션의 턴이 끝났을 때 | `session`, `quiet?: true` |
 | `decision.waiting` | 결정 카드가 답을 기다릴 때 | `session`, `card: {id, kind, title, tool?, options}` |
 | `decision.answered` | 결정에 답했을 때 | `session`, `card: {id}`, `n`, `via: 'card'\|'message'\|'auto'\|'terminal'`, `by` |
 
@@ -261,6 +285,7 @@ bridge.actions.after('session.done', (ev) => {
 
 ::: details 이벤트의 자세한 규칙
 - 서버는 동의한 익스텐션이 하나라도 있는 사람의 열린 페이지에 `{t: "ext-event", event}` 를 보내요. 본문은 서버 이벤트와 같아요. [알림 웹훅과 훅](/guide/operate/hooks#서버가-내는-이벤트)의 "서버가 내는 이벤트" 를 보세요.
+- `session.done` 의 `quiet: true` 는 턴이 조용한 답으로 끝났다는 뜻이에요. 이때 알림 웹훅(`notify`)에는 보내지 않아요. [조용한 답](#조용한-답-messages-quiet)을 보세요.
 - `POST /api/ext/<id>/events/<eventId>/claim`: 그 사람에게 보낸 이벤트가 아니면 404, (익스텐션, 이벤트)마다 처음만 200, 이후 409 예요. `events.claim` 은 200 이면 `true`, 그 밖에는 `false` 예요.
 - 서버는 보낸 이벤트와 claim 을 사람마다 10분·1000개 기억해요. 무중단 교체 때는 넘기지만, 서버를 완전히 다시 시작하면 잊어요.
 - 대표 페이지는 최상위 창이 Web Lock `bridge-ext-primary` 를 잡아 정해요. 분할 칸은 대표가 되지 않아요. 대표가 닫히면 기다리던 다음 창이 이어받아요.
@@ -289,6 +314,10 @@ entry: ./dist/index.js
 uses:
   actions: [composer.submit, renderer.block, session.done]
   slots: [composer.actions, session.menu, session-list.row.badges, settings.section]
+messages:
+  quiet:
+    - suffix: "[조용히]"
+      label: 할 일 없음
 ```
 
 | 키 | 필수 | 설명 |
@@ -298,8 +327,9 @@ uses:
 | `version` | 예 | 익스텐션의 버전 글이에요 |
 | `extensionApi` | 예 | 요구하는 API 버전(정수)이에요. 이 서버는 `1` 까지예요 |
 | `entry` | 예 | 폴더 안의 `.js`·`.mjs` 파일이에요 |
-| `uses.actions` | 아니오 | 쓰는 액션과 이벤트 이름이에요. [액션 목록](#액션-목록)의 열 개와 `session.done`·`decision.waiting`·`decision.answered` 중에서 골라요 |
+| `uses.actions` | 아니오 | 쓰는 액션과 이벤트 이름이에요. [액션 목록](#액션-목록)의 열한 개(`message.render` 포함)와 이벤트 셋 `session.done`·`decision.waiting`·`decision.answered` 중에서 골라요 |
 | `uses.slots` | 아니오 | 쓰는 slot 이름이에요 |
+| `messages.quiet[]` | 아니오 | `{suffix, label?}`. 끝이 `suffix` 인 답을 조용한 답으로 봐요. `suffix` 는 1~40자, 한 줄, 앞뒤 공백·제어 문자·`⟦`·`⟧` 없이요. `label` 은 40자까지예요. 익스텐션마다 5개까지예요. [조용한 답](#조용한-답-messages-quiet)을 보세요 |
 | `server.routes[]` | 아니오 | `{path, upstream, signingSecret, headers?}`. 서버가 중계하는 라우트예요 |
 | `server.hooks` | 아니오 | `<액션·이벤트>.after: [webhook…]`. 동의한 사람의 이벤트만 가요 |
 
@@ -311,6 +341,56 @@ uses:
 - `signingSecret` 은 16자 이상이에요.
 - `headers` 에 `X-Bridge-*`·`Cookie`·`Host` 같은 헤더는 쓸 수 없어요. 값의 `${user.KEY}` 는 요청 때 그 사람의 비밀값이에요.
 - `server.hooks` 의 이름은 서버 훅의 액션·이벤트 이름에 `.after` 를 붙인 것만 돼요. 종류는 `webhook` 만이에요. `before` 와 `exec` 는 `bridge.yaml` 의 `hooks` 에서만 써요.
+:::
+
+## 조용한 답 `messages.quiet`
+
+`extension.yaml` 에 끝 글자를 적으면, 그 글자로 끝난 Claude 의 답을 **조용한 답**으로 봐요. 예를 들어 예약 작업이 할 일 없이 끝나 답 끝에 `[조용히]` 를 쓴 경우예요. 화면 훅 `message.render` 는 화면만 바꾸지만, 이 규칙은 알림까지 막아요.
+
+```yaml [extension.yaml]
+messages:
+  quiet:
+    - suffix: "[조용히]"
+      label: 할 일 없음      # 접힌 줄에 보일 말(선택, 40자)
+```
+
+- 정규식이 아니라 **끝 글자**예요. 글 끝의 공백·탭·줄바꿈을 지운 뒤 `suffix` 로 끝나는지 봐요. 규칙이 여럿이면 `bridge.yaml` 순서로 보고 첫 것을 써요.
+- 대상은 Claude 의 답 글뿐이에요. 사람 말, 결정 카드, 도구, 알림 줄, API 가 답 대신 쓴 오류는 대상이 아니에요.
+
+**조용한 답이면 이렇게 돼요.**
+
+| 건너뛰는 것 | 그대로인 것 |
+|---|---|
+| 화면에서 한 줄로 접어요(펼치기로 열어요) | 웹 푸시·APNs: 원래 답마다 보내지 않아요 |
+| 세션 목록의 "새 답" 점 | 맡긴 세션의 답 이어받기(delegate follow) |
+| 알림 웹훅(`notify`)의 `session.done` | `bridge.yaml` 훅과 익스텐션 훅: `quiet: true` 를 달아 보내요 |
+| Slack 스레드 글 | |
+
+::: details 턴 규칙과 동의
+- **판정 단위는 턴의 마지막 답이에요.** 조용한 답이 오면 같은 턴의 앞선 글("확인해 볼게요")도 새 답 점을 띄우지 않아요.
+- 같은 턴에 경고, 결정 카드, 알림 줄이 있으면 그 턴은 조용하지 않아요. 표지 하나로 경고를 묻을 수 없게 하려는 것이에요. API 오류 답은 조용한 답이 되지 않아요.
+- **그 사람이 직접 동의했을 때만** 써요. 동의 글에 "답을 접어요: 끝이 `"[조용히]"` 인 Claude 의 답은 …" 이 보여요. 규칙을 고치면 해시가 바뀌어 다시 물어요. `extensionConsent: false` 인 서버에서는 규칙을 쓰지 않아요.
+- 동의를 거두면 예전에 접힌 답도 펼쳐 보여요(알림은 이미 지나갔어요).
+:::
+
+::: details 봉인한 세션
+서버는 봉인된 답의 글을 못 봐요. 그래서 봉인하는 맥에서는 익스텐션 규칙을 쓰지 않아요. 맥에서 사람이 직접 정한 끝 글자만 써요.
+
+```sh [맥의 터미널]
+node ~/.claude-bridge/agent.mjs trust quiet add "[조용히]"
+node ~/.claude-bridge/agent.mjs trust quiet rm "[조용히]"
+node ~/.claude-bridge/agent.mjs trust quiet     # 목록
+```
+
+5개까지예요. 이 규칙으로 접은 답은 표지가 `mac` 이에요. 서버에는 "그 맥 주인이 정한 끝으로 끝났다" 는 한 가지만 알려져요.
+:::
+
+::: details 폴링, 로컬 화면, 한계
+- 폴링은 SSE 와 같은 메시지를 받아서 `quiet` 도 같이 와요. 로컬 화면(127.0.0.1)은 터미널 화면과 목록만 보여서 대상이 아니에요.
+- 표지는 답의 맨 끝에 써요. 서버는 선택지·할 일 블록을 뗀 글로, 봉인한 맥은 원래 글로 판정해요. 40,000자로 잘린 답은 끝 표지가 없어져요.
+- 한 턴의 앞선 중간 글은 올 때 바로 Slack 스레드에 올라가요. 끝에서 조용하다고 판정돼도 되돌리지 않아요.
+- 맥의 `agent.json` 훅의 `session.done` 에는 `quiet` 이 없어요.
+- 화면 훅만으로 접은 답은 알림을 막지 못해요.
 :::
 
 ## 버전 규칙 `extensionApi`
@@ -325,7 +405,7 @@ uses:
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/ext/<id>/<hash>/<파일>` | 익스텐션 파일이에요. 로그인(401), 지금 해시(404), 그 해시에 동의(403)여야 해요 |
-| GET | `/api/ext` | `[{id, name, version, entry, hash, extensionApi, uses, routes, hooks, storesData, consented, loadError?, errors?}]`. `/api/me` 의 `extensions` 도 같아요 |
+| GET | `/api/ext` | `[{id, name, version, entry, hash, extensionApi, uses, routes, hooks, storesData, consented, quiet, quietAgreed, loadError?, errors?}]`. `quiet` 은 규칙 목록, `quietAgreed` 는 이 사람이 그 규칙에 직접 동의했는지예요. `/api/me` 의 `extensions` 도 같아요 |
 | POST·DELETE | `/api/ext/<id>/consent` | 동의 `{hash}`(지금 해시가 아니면 409)와 거두기예요 |
 | GET·PUT·DELETE | `/api/ext/<id>/storage/<scope>/<키>` | [저장](#저장-storage)이에요 |
 | PUT·DELETE·GET | `/api/ext/<id>/secrets[/<키>]` | 비밀값이에요 |

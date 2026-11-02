@@ -150,6 +150,8 @@ export default function setup(bridge: Bridge) {
 - 나중에 켜고 끄려면 설정 → **플러그인** 탭의 "익스텐션" 카드에서 스위치를 바꿔요. 바꾸면 화면을 다시 불러와요.
 - 운영자가 익스텐션 파일을 고쳐 해시가 바뀌면, 모두 다시 동의해야 해요.
 
+익스텐션은 `extension.yaml` 의 `messages.quiet` 로 끝 글자(예: `[조용히]`)를 선언해 그 글자로 끝난 답을 접고, "새 답" 점·알림 웹훅·Slack 글을 내지 않게 할 수도 있어요. 동의 창에 "답을 접어요" 로 보여 줘요. 그 사람이 직접 동의했을 때만 쓰고, `extensionConsent: false` 인 서버에서는 쓰지 않아요. 자세한 것은 [조용한 답](/reference/extension-api#조용한-답-messages-quiet)을 보세요.
+
 운영자가 모두에게 묻지 않고 켜려면 `bridge.yaml` 에 `extensionConsent: false` 를 적어요. 그러면 모두 동의한 것으로 봐요.
 
 ::: details 동의에 관한 더 많은 규칙

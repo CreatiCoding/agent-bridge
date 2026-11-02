@@ -670,9 +670,21 @@ func statusFromAgent(uid, hostID string, msg M) {
 		meta.set("coding", false)
 	}
 	over := phase == "idle" || phase == "ended"
+	// A turn starts (REQ-F-850): where its quiet answer and its alarms are counted from.
+	if was != "busy" && phase == "busy" {
+		meta.set("turnSeq", numOr0(meta.get("seq")))
+		meta.set("turnLoud", numOr0(meta.get("loudSeq")))
+	}
 	// A turn ended (REQ-F-817): the event that says the work is done.
 	if was == "busy" && phase == "idle" {
-		emitEvent("session.done", meta.uid(), orderedObj{{"session", sessionOfEvent(meta)}})
+		more := orderedObj{{"session", sessionOfEvent(meta)}}
+		// The turn ended on a quiet answer of its own and raised no alarm (REQ-F-850): said so; the notify webhooks do
+		// not get it (emitEvent). A last line that comes after the turn's end leaves it loud.
+		turn := numOr0(meta.get("turnSeq"))
+		if truthy(meta.get("lastQuiet")) && numOr0(meta.get("quietSeq")) > turn && numOr0(meta.get("alarmSeq")) <= turn {
+			more = append(more, kv{"quiet", true})
+		}
+		emitEvent("session.done", meta.uid(), more)
 	}
 	// A session that was handed work ended a turn: the one that handed it over hears of it (REQ-F-760 rule 11).
 	if truthy(meta.get("delegatedBy")) && was == "busy" && over {

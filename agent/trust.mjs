@@ -505,7 +505,45 @@ function personText(o) {
  * is what this Mac just typed from the page: such a line gets "bridgeEcho": true, since the server can no longer
  * compare the words (eventlog.go isEcho).
  */
-export function sealLine(line, seal, isEcho = () => false) {
+// ---------- 조용한 답 (REQ-F-850) ----------
+// The same test as server/quiet.go and ui/src/lib/quiet.ts (cases in server/testdata/quiet-cases.json). A sealing
+// Mac runs it on the words the server cannot read and marks the line ("bridgeQuiet": <extension id>), plain.
+
+/** The first rule whose end the answer has (end spaces, tabs and newlines ignored), or null. */
+export function quietOf(text, rules) {
+  if (typeof text !== 'string' || !text || text.includes('⟦bt1:')) return null
+  const t = text.replace(/[ \t\r\n]+$/, '')
+  if (!t) return null
+  for (const r of rules ?? []) if (r?.suffix && t.endsWith(r.suffix)) return r
+  return null
+}
+/** quietSuffixOk in server/quiet.go: 1-40 characters on one line, nothing around to trim, no control character or seal bracket. */
+export function quietSuffixOk(s) {
+  if (typeof s !== 'string') return false
+  const n = [...s].length
+  return n >= 1 && n <= 40 && s.trim() === s && !/[\u0000-\u001f\u007f-\u009f⟦⟧]/.test(s)
+}
+/**
+ * The ends chosen at this Mac's terminal (`trust quiet add`, agent.json `trustQuiet`), as rules marked "mac". Never
+ * the server's: a server choosing the ends could learn, one plain mark at a time, how sealed answers end.
+ */
+export function quietChosen(config) {
+  const out = []
+  for (const x of Array.isArray(config?.trustQuiet) ? config.trustQuiet : []) {
+    if (out.length >= QUIET_MAC_MAX) break
+    if (quietSuffixOk(x) && !out.some((r) => r.suffix === x)) out.push({ ext: 'mac', suffix: x })
+  }
+  return out
+}
+export const QUIET_MAC_MAX = 5
+
+/** Claude's answer words in a transcript line (each text block), or [] when the line is not an answer. */
+function answerTexts(o) {
+  if (o?.type !== 'assistant' || !Array.isArray(o?.message?.content)) return []
+  return o.message.content.filter((x) => x?.type === 'text' && typeof x.text === 'string').map((x) => x.text)
+}
+
+export function sealLine(line, seal, isEcho = () => false, quiet = []) {
   let o
   try {
     o = JSON.parse(line)
@@ -531,6 +569,10 @@ export function sealLine(line, seal, isEcho = () => false) {
   }
   const out = walk(o, [])
   if (said != null && said.trim() && isEcho(said)) out.bridgeEcho = true
+  if (quiet.length) {
+    const hit = answerTexts(o).map((t) => quietOf(t, quiet)).find(Boolean)
+    if (hit) out.bridgeQuiet = hit.ext
+  }
   return JSON.stringify(out)
 }
 
@@ -640,6 +682,7 @@ const HELP = `trust: 서버를 믿지 않는 맥 (docs/TRUST-DESIGN.md)
   trust                 지금 모드와 짝지은 기기
   trust mode <off|warn|enforce>
   trust seal <on|off>   대화·화면 내용을 짝지은 기기만 풀 수 있게 봉인해 내보냄(기본 off)
+  trust quiet [add|rm <끝 글자>]  봉인한 답 중 이 글자로 끝나는 답을 조용한 답으로 표시(새 답·알림 없음, 5개까지)
   trust pair            5분 동안 짝짓기를 받고, 기기 화면의 6자리 숫자를 여기 입력해 확인
   trust devices         짝지은 기기
   trust remove <id>     기기 해제(앞으로의 봉인 키도 바뀜)
@@ -691,6 +734,29 @@ export async function trustCli(words, { stateDir, configPath, hostId, ask, out =
     writeJson(configPath, c)
     out(arg === 'on' ? '봉인을 켰어요. 모드가 off 가 아니고 짝지은 기기가 있으면, 대화·화면·카드 내용을 짝지은 기기만 풀 수 있게 봉인해 내보내요(그림은 평문). 알림·Slack 에는 내용이 가지 않아요.' : '봉인을 껐어요. 이제 내용을 평문으로 내보내요.')
     if (arg === 'on' && modeOf(c, t.devices().length) === 'off') out('지금 모드가 off 라 봉인하지 않아요: `trust mode warn` 또는 `trust mode enforce`.')
+    return 0
+  }
+  if (cmd === 'quiet') {
+    const c = cfg()
+    const now = quietChosen(c).map((r) => r.suffix)
+    if (!arg) {
+      out(now.length ? `조용한 답의 끝 글자(봉인 중에만 씀):\n${now.map((x) => `  ${x}`).join('\n')}` : '조용한 답의 끝 글자가 없어요: `trust quiet add "[조용히]"`')
+      return 0
+    }
+    const [op, ...rest] = [arg, ...words.slice(2)]
+    const word = rest.join(' ')
+    if ((op !== 'add' && op !== 'rm') || !word) return (out('trust quiet add|rm <끝 글자>'), 1)
+    if (op === 'add') {
+      if (!quietSuffixOk(word)) return (out('끝 글자는 앞뒤 공백·제어 문자·⟦⟧ 없는 한 줄 1~40자예요'), 1)
+      if (now.includes(word)) return (out(`이미 있어요: ${word}`), 0)
+      if (now.length >= QUIET_MAC_MAX) return (out(`${QUIET_MAC_MAX}개까지예요. 먼저 \`trust quiet rm\` 으로 빼세요`), 1)
+      c.trustQuiet = [...now, word]
+    } else {
+      if (!now.includes(word)) return (out(`그런 끝 글자가 없어요: ${word}`), 1)
+      c.trustQuiet = now.filter((x) => x !== word)
+    }
+    writeJson(configPath, c)
+    out(op === 'add' ? `더했어요: 봉인한 답이 "${word}" 로 끝나면 조용한 답으로 표시해요(서버는 표시만 보고 글은 못 봐요). 에이전트가 2초 안에 읽어요.` : `뺐어요: ${word}`)
     return 0
   }
   if (cmd === 'remove') {

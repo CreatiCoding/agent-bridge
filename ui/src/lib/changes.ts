@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.404',
+    date: '2026-11-03',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '익스텐션이 답 하나를 통째로 다룬다: around 만 받는 액션 message.render({sid, seq, text, quiet, isLast} → {text} 또는 {hide: true, reason?}). 접힌 답은 "🤫 조용히 접은 답" 한 줄과 펼치기로 남고, 바뀐 답은 "<이름> 이 바꿈 · 원문 보기"를 단다. 카드·경고·오류·사람 말은 훅에 오지 않는다',
+        refs: ['REQ-F-850', 'REQ-F-822'],
+      },
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: 'extension.yaml 의 messages.quiet(끝 글자 suffix, 정규식 아님, 5개)로 끝나는 Claude 의 답은 조용한 답: 접혀 보이고 새 답 점·알림 웹훅(session.done 에 quiet: true)·Slack 스레드 글을 내지 않는다. 턴의 마지막 답 단위이며 같은 턴에 경고·카드가 있거나 API 오류 답이면 조용하지 않다',
+        refs: ['REQ-F-850', 'REQ-F-825', 'REQ-F-817'],
+      },
+      {
+        kind: 'security',
+        scope: ['server', 'agent'],
+        text: '조용한 답 규칙은 사람이 직접 동의했을 때만 쓴다(extensionConsent: false 면 안 씀). 봉인하는 맥은 서버가 고른 규칙을 받지 않고 맥 터미널의 trust quiet add|rm 으로 정한 끝 글자만 판정해 평문 표지 bridgeQuiet: "mac" 을 붙인다(서버가 봉인된 답의 끝을 맞춰 보지 못하게)',
+        refs: ['REQ-F-850', 'REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.403',
     date: '2026-11-03',
+    commit: '351a309',
     changes: [
       {
         kind: 'added',

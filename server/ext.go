@@ -31,7 +31,7 @@ var (
 	extKeyRe  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 	extPathRe = regexp.MustCompile(`^/([A-Za-z0-9._~-]+/)*$`)
 	// What the page's actions and the events it hears are called (uses.actions): lib/actions plus the events.
-	EXT_ACTIONS = []string{"composer.submit", "message.send", "permission.answer", "session.open", "session.create", "session.close", "link.open", "clipboard.copy", "renderer.block", "notify.show", "session.done", "decision.waiting", "decision.answered"}
+	EXT_ACTIONS = []string{"composer.submit", "message.send", "permission.answer", "session.open", "session.create", "session.close", "link.open", "clipboard.copy", "renderer.block", "message.render", "notify.show", "session.done", "decision.waiting", "decision.answered"}
 	EXT_SLOTS   = []string{"composer.actions", "session.menu", "session-list.row.badges", "settings.section"}
 	// What /ext/ serves; anything else (HTML, SVG) is 404 so nothing in the folder opens as a page of this origin.
 	EXT_FILE_TYPES = map[string]string{".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2"}
@@ -61,7 +61,8 @@ type extDef struct {
 	Env                           []string
 	Files                         map[string][]byte
 	Hash                          string
-	Err                           string // why it is not loaded ("" when it is)
+	Quiet                         []quietRule // messages.quiet (REQ-F-850)
+	Err                           string      // why it is not loaded ("" when it is)
 }
 
 // EXTS: the extensions of this server, in bridge.yaml's order; those with Err are listed but not served.
@@ -243,7 +244,7 @@ func (d *extDef) load(getenv func(string) string) (err error) {
 			err = refused(bad)
 		}
 	}()
-	top := []string{"id", "name", "version", "extensionApi", "entry", "uses", "server"}
+	top := []string{"id", "name", "version", "extensionApi", "entry", "uses", "server", "messages"}
 	for _, kv := range root.pairs {
 		if !contains(top, kv.key) {
 			return &yamlErr{kv.line, "모르는 키 " + kv.key + " (받는 키: " + strings.Join(top, ", ") + ")"}
@@ -320,6 +321,12 @@ func (d *extDef) load(getenv func(string) string) (err error) {
 			}
 		}
 	}
+	d.Quiet = []quietRule{}
+	if m := root.get("messages"); m != nil && !m.null {
+		if err := d.readMessages(m, str); err != nil {
+			return err
+		}
+	}
 	d.Routes = []extRoute{}
 	d.Hooks = map[string][]hookTarget{}
 	if s := root.get("server"); s != nil && !s.null {
@@ -339,6 +346,51 @@ func (d *extDef) load(getenv func(string) string) (err error) {
 			default:
 				return &yamlErr{kv.line, "모르는 키 server." + kv.key + " (받는 키: routes, hooks)"}
 			}
+		}
+	}
+	return nil
+}
+
+// readMessages: `messages: {quiet: [{suffix, label?}]}` (REQ-F-850). Literal ends only, up to QUIET_RULES_MAX.
+func (d *extDef) readMessages(n *yNode, str func(*yNode, string, bool) (string, error)) error {
+	if n.kind != yMap {
+		return &yamlErr{n.line, "messages 아래는 quiet 목록입니다"}
+	}
+	for _, kv := range n.pairs {
+		if kv.key != "quiet" {
+			return &yamlErr{kv.line, "모르는 키 messages." + kv.key + " (받는 키: quiet)"}
+		}
+		if kv.val == nil || kv.val.kind != yList {
+			return &yamlErr{kv.line, "messages.quiet 는 목록이어야 합니다(- suffix: \"[조용히]\")"}
+		}
+		if len(kv.val.items) > QUIET_RULES_MAX {
+			return &yamlErr{kv.line, "messages.quiet 는 " + strconv.Itoa(QUIET_RULES_MAX) + "개까지입니다"}
+		}
+		for _, it := range kv.val.items {
+			if it.kind != yMap {
+				return &yamlErr{it.line, "messages.quiet[] 의 항목은 \"키: 값\" 이어야 합니다(suffix, label)"}
+			}
+			for _, p := range it.pairs {
+				if p.key != "suffix" && p.key != "label" {
+					return &yamlErr{p.line, "모르는 키 messages.quiet[]." + p.key + " (받는 키: suffix, label)"}
+				}
+			}
+			suffix, err := str(it.get("suffix"), "messages.quiet[].suffix", true)
+			if err != nil {
+				return err
+			}
+			// str trims; the raw value is what the test compares, so one with spaces around is refused, not changed.
+			if raw := it.get("suffix"); raw != nil && strings.TrimSpace(raw.raw) != raw.raw {
+				return &yamlErr{it.line, "messages.quiet[].suffix 앞뒤에 공백을 둘 수 없습니다"}
+			}
+			if !quietSuffixOk(suffix) {
+				return &yamlErr{it.line, "messages.quiet[].suffix 는 앞뒤 공백·제어 문자·⟦⟧ 없는 한 줄 1~" + strconv.Itoa(QUIET_SUFFIX_MAX) + "자여야 합니다"}
+			}
+			label, err := str(it.get("label"), "messages.quiet[].label", false)
+			if err != nil {
+				return err
+			}
+			d.Quiet = append(d.Quiet, quietRule{Ext: d.ID, Suffix: suffix, Label: quietLabel(label)})
 		}
 	}
 	return nil
@@ -503,7 +555,7 @@ func extList(uid string) []any {
 		}
 		sort.Slice(hooks, func(i, j int) bool { return jsonStr(hooks[i]) < jsonStr(hooks[j]) })
 		o := orderedObj{{"id", d.ID}, {"name", d.Name}, {"version", d.Version}, {"entry", "/ext/" + d.ID + "/" + d.Hash + "/" + d.Entry}, {"hash", d.Hash},
-			{"extensionApi", d.API}, {"uses", orderedObj{{"actions", d.Actions}, {"slots", d.Slots}}}, {"routes", routes}, {"hooks", hooks}, {"storesData", true},
+			{"extensionApi", d.API}, {"uses", orderedObj{{"actions", d.Actions}, {"slots", d.Slots}}}, {"routes", routes}, {"hooks", hooks}, {"quiet", quietList(d)}, {"quietAgreed", quietAgreed(uid, d)}, {"storesData", true},
 			{"consented", d.Err == "" && (!cfgOn("extensionConsent") || c[d.ID] == d.Hash)}}
 		if d.Err != "" {
 			o = append(o, kv{"loadError", d.Err})

@@ -1,6 +1,6 @@
 // The conversation, drawn from the folded log. Tool calls in a row become one compact block; each can be
 // opened to see what it ran and what came back.
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { clock, duration, shortLabel } from '../lib/format'
 import { Markdown, MarkdownContext } from '../lib/markdown'
@@ -14,6 +14,8 @@ import { act, command, sessionPost } from './session-menu'
 import { TodoAskCard, todoAskOf } from './session-extras'
 import { copyText } from '../lib/builtin-actions'
 import { errorText, get } from '../lib/api'
+import { actionsVersion, watchActions } from '../lib/actions'
+import { messageShown, quietFor } from '../lib/quiet'
 
 export function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
   const [zoom, setZoom] = useState(1)
@@ -170,20 +172,71 @@ function NoteView({ it, session }: { it: Extract<Item, { t: 'note' }>; session: 
 }
 
 const TextMsg = memo(TextMsgView, (a, b) => a.it === b.it && a.last === b.last && a.session.closed === b.session.closed && a.session.seat?.where === b.session.seat?.where)
-function TextMsgView({ it, session, last, onSend, onImage }: { it: Extract<Item, { t: 'text' }>; session: Session; last: boolean; onSend: (text: string) => void; onImage: (s: string) => void }) {
-  const html = isHtmlDocument(it.text)
+type TextProps = { it: Extract<Item, { t: 'text' }>; session: Session; last: boolean; onSend: (text: string) => void; onImage: (s: string) => void }
+
+/**
+ * One of Claude's answers through message.render (REQ-F-850): an extension may fold or change it, the page keeps it
+ * reachable. A fold is one line that opens; changed words say who changed them and offer the answer's own.
+ */
+function TextMsgView(p: TextProps) {
+  const { it, session, last } = p
+  useSyncExternalStore(watchActions, actionsVersion)
+  const quiet = quietFor(it.quiet, it.text)
+  const shown = messageShown({ sid: session.id, seq: it.seq, text: it.text, quiet, isLast: last })
+  const [open, setOpen] = useState(false)
+  const [own, setOwn] = useState(false)
+  if (shown.folded && !open)
+    return (
+      <div className="msg-folded" data-quiet={quiet?.ext ?? 'hook'}>
+        <span className="msg-folded-mark" aria-hidden>
+          🤫
+        </span>
+        <span className="grow">
+          조용히 접은 답{shown.reason ? ` · ${shown.reason}` : ''}
+          {shown.by.length ? <span className="muted"> · {shown.by.join(', ')}</span> : null}
+        </span>
+        <Button size="sm" tone="ghost" onClick={() => setOpen(true)}>
+          펼치기
+        </Button>
+      </div>
+    )
+  const text = own ? it.text : shown.text
+  return (
+    <>
+      <TextBody {...p} text={text} choices={!shown.folded} />
+      {shown.folded || shown.changed ? (
+        <div className="msg-changed muted">
+          {shown.folded ? `조용히 접은 답${shown.by.length ? ` · ${shown.by.join(', ')}` : ''}` : `${shown.by.join(', ') || '익스텐션'} 이 바꿈`}
+          {shown.changed ? (
+            <Button size="sm" tone="ghost" onClick={() => setOwn(!own)}>
+              {own ? '바꾼 글 보기' : '원문 보기'}
+            </Button>
+          ) : null}
+          {shown.folded ? (
+            <Button size="sm" tone="ghost" onClick={() => setOpen(false)}>
+              접기
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+function TextBody({ it, session, last, onSend, onImage, text, choices }: TextProps & { text: string; choices: boolean }) {
+  const html = isHtmlDocument(text)
   const where = useMemo(() => ({ sid: session.id, isLast: last }), [session.id, last])
   return (
     <div className="msg-text">
       {html ? (
-        <HtmlPreview html={it.text} />
+        <HtmlPreview html={text} />
       ) : (
         <MarkdownContext.Provider value={where}>
-          <Markdown text={it.text} />
+          <Markdown text={text} />
         </MarkdownContext.Provider>
       )}
-      {html ? null : <LocalThumbs session={session} paths={localImages(it.text)} onOpen={onImage} />}
-      {it.choices?.length && last && !session.closed && session.seat?.where !== 'slack' ? (
+      {html ? null : <LocalThumbs session={session} paths={localImages(text)} onOpen={onImage} />}
+      {choices && it.choices?.length && last && !session.closed && session.seat?.where !== 'slack' ? (
         <div className="choices">
           {it.choices.map((c) => (
             <Choice key={c} text={c} onSend={onSend} />

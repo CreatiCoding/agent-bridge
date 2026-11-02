@@ -2175,6 +2175,31 @@ select.input {
   font-weight: 600;
   margin-bottom: 4px;
 }
+/* 조용한 답 (REQ-F-850): a folded answer is one line that opens; a changed one says so under it. */
+.msg-folded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 4px 4px 4px 12px;
+  min-width: 0;
+}
+.msg-folded .grow {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.msg-changed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: var(--fs-small);
+  margin-top: -4px;
+}
 .held {
   display: flex;
   align-items: center;

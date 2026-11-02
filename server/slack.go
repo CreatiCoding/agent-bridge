@@ -775,6 +775,11 @@ func (s *slackInst) onEvent(thread string, evAny any) {
 	if !s.here(thread) {
 		return
 	}
+	// 조용한 답 (REQ-F-850): not posted; a message in the thread would notify whoever follows it.
+	if typ == "text" && truthy(ev["quiet"]) {
+		s.inOrder(func() { s.endRun(thread) })
+		return
+	}
 	if typ == "msg" && truthy(ev["auto"]) && !eph {
 		s.inOrder(func() { s.allowed(thread, ev) })
 		return

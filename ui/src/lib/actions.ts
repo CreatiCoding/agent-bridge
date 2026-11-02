@@ -25,7 +25,18 @@ export interface ActionMap {
   'clipboard.copy': { args: { text: string; kind: 'code' | 'message' | 'link' | 'other' }; result: unknown }
   'renderer.block': { args: { lang: string; text: string; closed: boolean; isLast: boolean; sid?: string }; result: unknown }
   'notify.show': { args: { text: string; sid?: string }; result: void }
+  'message.render': { args: MessageArgs; result: MessageView }
 }
+/** One of Claude's answers as the page is about to draw it (REQ-F-850). `quiet`: an agreed rule folds it. */
+export interface MessageArgs {
+  sid: string
+  seq: number
+  text: string
+  quiet: { ext: string; name: string; label: string } | null
+  isLast: boolean
+}
+/** What to draw: the words (maybe changed), or folded to one line. `by`: the extensions that changed it (the page sets it). */
+export type MessageView = { text: string; by?: string[] } | { hide: true; reason?: string; text?: string; by?: string[] }
 export type ActionName = keyof ActionMap
 export type Args<N extends ActionName> = ActionMap[N]['args']
 export type Result<N extends ActionName> = ActionMap[N]['result']
@@ -46,6 +57,7 @@ export const ACTIONS: Record<ActionName, { sync: boolean; onTimeout?: 'cancel' |
   'clipboard.copy': { sync: true },
   'renderer.block': { sync: true, aroundOnly: true },
   'notify.show': { sync: true },
+  'message.render': { sync: true, aroundOnly: true },
 }
 
 /** How long a before/around may take before it calls next(), unless it asks for more (up to MAX_WAIT_MS). */
@@ -142,7 +154,7 @@ const isThenable = (x: unknown): x is PromiseLike<unknown> => !!x && typeof (x a
  * Runs an action through its handlers. A sync action returns what its default (or an around) returned; any other
  * returns a promise: the default's result, { cancel } when a handler stopped it, or the default's own error.
  */
-export function dispatch<N extends ActionName>(name: N, args: Args<N>): N extends 'session.open' | 'link.open' | 'clipboard.copy' | 'renderer.block' | 'notify.show' ? Result<N> : Promise<Result<N> | Cancel> {
+export function dispatch<N extends ActionName>(name: N, args: Args<N>): N extends 'session.open' | 'link.open' | 'clipboard.copy' | 'renderer.block' | 'notify.show' | 'message.render' ? Result<N> : Promise<Result<N> | Cancel> {
   return run(name, args, null) as never
 }
 

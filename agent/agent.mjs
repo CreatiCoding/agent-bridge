@@ -24,7 +24,7 @@ import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TA
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
-import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, sealOut, sealLine } from './trust.mjs'
+import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
@@ -187,6 +187,9 @@ const writeJson = (p, v) => {
     // And `trustSeal` (`trust seal on|off`): a config read at start must not turn sealing back off (REQ-S-098).
     if (disk.trustSeal === undefined) delete v.trustSeal
     else v.trustSeal = disk.trustSeal
+    // And `trustQuiet` (`trust quiet add|rm`, REQ-F-850): the ends that mark sealed answers quiet.
+    if (disk.trustQuiet === undefined) delete v.trustQuiet
+    else v.trustQuiet = disk.trustQuiet
     // So is `localUi` (the local screen, LOCAL-UI-DESIGN §3): `local on|off|ota` writes it, no server command does.
     if (disk.localUi === undefined) delete v.localUi
     else v.localUi = disk.localUi
@@ -769,7 +772,7 @@ let welcomed = false
 // ---------- a Mac that does not trust the server (REQ-S-090~, docs/TRUST-DESIGN.md) ----------
 
 const trust = new Trust({ stateDir: STATE_DIR, hostId: config.hostId })
-let trustSeen = { at: 0, mode: 'off', seal: false }
+let trustSeen = { at: 0, mode: 'off', seal: false, quiet: [] }
 /** agent.json's `trust`, read again every 2 s: it is changed at the terminal (`trust mode`), never by the server. */
 function trustMode() {
   const t = Date.now()
@@ -779,7 +782,8 @@ function trustMode() {
   const seal = sealChosen(cfg)
   if (trustSeen.at && mode !== trustSeen.mode) log('info', 'trust', `모드 ${trustSeen.mode} → ${mode}`)
   if (trustSeen.at && seal !== trustSeen.seal) log('info', 'trust', `봉인 ${seal ? '켬' : '끔'}`)
-  trustSeen = { at: t, mode, seal }
+  // 조용한 답 (REQ-F-850): the ends set at this terminal (`trust quiet`), never the server's, mark sealed answers.
+  trustSeen = { at: t, mode, seal, quiet: quietChosen(cfg) }
   trustSettle(mode)
   return mode
 }
@@ -2410,7 +2414,7 @@ function tail(sid, s) {
       try {
         saveLineImages(line, IMAGES_DIR)
       } catch {}
-      const out = seal ? sealLine(line, seal, echo) : line
+      const out = seal ? sealLine(line, seal, echo, trustSeen.quiet) : line
       if (size + out.length > MAX_CHUNK) flush()
       batch.push(out)
       size += out.length

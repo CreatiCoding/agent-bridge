@@ -137,9 +137,11 @@ test('동기 액션: 결과를 바로 돌려주고, Promise 를 돌려주는 bef
   assert.equal(isCancel({ ok: true }), false)
 })
 
-test('공개 액션 10개와 그 성질이 설계(§6.2)와 같다', () => {
-  assert.deepEqual(Object.keys(ACTIONS).sort(), ['clipboard.copy', 'composer.submit', 'link.open', 'message.send', 'notify.show', 'permission.answer', 'renderer.block', 'session.close', 'session.create', 'session.open'])
-  for (const n of ['session.open', 'link.open', 'clipboard.copy', 'renderer.block', 'notify.show']) assert.equal(ACTIONS[n].sync, true, n)
+test('공개 액션 11개와 그 성질이 설계(§6.2)와 같다', () => {
+  assert.deepEqual(Object.keys(ACTIONS).sort(), ['clipboard.copy', 'composer.submit', 'link.open', 'message.render', 'message.send', 'notify.show', 'permission.answer', 'renderer.block', 'session.close', 'session.create', 'session.open'])
+  for (const n of ['session.open', 'link.open', 'clipboard.copy', 'renderer.block', 'notify.show', 'message.render']) assert.equal(ACTIONS[n].sync, true, n)
+  // message.render (REQ-F-850) takes around only, like renderer.block.
+  assert.equal(ACTIONS['message.render'].aroundOnly, true)
   assert.equal(ACTIONS['session.close'].onTimeout, 'skip')
   assert.throws(() => before('nope.action', () => {}), /모르는 액션/)
 })

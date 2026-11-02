@@ -274,6 +274,7 @@ corepack yarn build    # tsc 타입 검사 + ui/dist. 서버는 이것을 / 에�
 - `test/e2e-adopt.mjs` 는 bridge 밖에서 만든 대화를 가져와 이어 가는 것과, 에이전트를 끄고 터미널을 없앤 뒤(다시 켜진 맥처럼) 세션이 같은 대화로 되살아나는 것을 확인한다.
 - `test/e2e-ui.mjs` 는 조작 페이지(`/`)로 새 세션·답·흐린 말풍선·권한 카드·이름·설정·터미널 화면·PC 화면·통계·기기·종료와 이어서 열기를 확인한다(에이전트 하나, 실제 `claude` 세션). 시스템 Chrome 으로 돌리려면 `CHANNEL=chrome`.
 - `test/e2e-accounts.mjs` 는 Claude 계정(설정 → Claude 계정)을 더하고, 로그인 주소를 받고, 세션을 다른 계정으로 옮겼다가 돌아와도 대화를 기억하는지, 계정을 빼는 것을 확인한다. 두 번째 실제 로그인 없이 돌리는 방법은 파일 머리에 있다.
+- `test/e2e-ext-quiet.mjs` 는 익스텐션의 조용한 답(`messages.quiet`)과 `message.render` 를 확인한다: 표지로 끝나는 답이 한 줄로 접히고 펼쳐지는지, 새 답 점이 안 뜨는지, 익스텐션이 바꾼 글에 표시와 원문 보기가 붙는지(서버·에이전트를 스스로 띄움, 실제 `claude` 세션).
 - `test/e2e-tabs.mjs` 는 조작 페이지(`/`)를 연 한 브라우저의 여러 탭을 확인한다: 연동하던 탭이 멈추면 기다리던 탭이 넘겨받는지, 넘겨받은 탭을 닫으면 곧바로 이어지는지, 기다리던 탭을 새로고침하면 그 탭이 넘겨받는지. `claude` 세션은 띄우지 않는다.
 
 e2e 는 Playwright 가 필요하다(이 저장소의 의존성은 아니다). 예: `PLAYWRIGHT=<playwright 의 index.mjs> AGENT_A=/tmp/agentA WORK=<작업 폴더> SHOTS=<스크린샷 폴더> node test/e2e-ui.mjs`. 파일마다 필요한 환경 변수는 파일 머리에 있다.

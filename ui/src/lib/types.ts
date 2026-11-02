@@ -135,6 +135,9 @@ export interface Session {
   moves: { at: number; from: string; to: string; lines: number; sourceOnline: boolean; warnings: string[] }[]
   conv: string
   seq: number
+  /** 조용한 답 (REQ-F-850): the last answer was quiet; the "새 답" dot counts from loudSeq then. */
+  lastQuiet?: boolean
+  loudSeq?: number
   lastAt: number
   last: string
   preview: string
@@ -310,7 +313,7 @@ export interface State {
 /** One entry of a session's numbered log. */
 export type Ev = { seq: number; at: number } & (
   | { k: 'user'; id?: string; text: string; via?: string; command?: boolean; images?: string[] }
-  | { k: 'text'; text: string; choices?: string[] }
+  | { k: 'text'; text: string; choices?: string[]; quiet?: string }
   | { k: 'tool'; tool: string; name: string; label: string; detail?: string; input?: string }
   | { k: 'tool_end'; tool: string; error?: boolean; text?: string; images?: string[] }
   | { k: 'todos'; items: Todo[] }

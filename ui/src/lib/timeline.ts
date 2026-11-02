@@ -4,7 +4,7 @@ import type { Card, Ev, Todo } from './types'
 
 export type Item =
   | { t: 'user'; key: string; seq: number; at: number; id: string; text: string; images: string[]; via?: string; command?: boolean; marks: string[] }
-  | { t: 'text'; key: string; seq: number; at: number; text: string; choices?: string[] }
+  | { t: 'text'; key: string; seq: number; at: number; text: string; choices?: string[]; quiet?: string }
   | { t: 'tool'; key: string; seq: number; at: number; id: string; name: string; label: string; detail?: string; input?: string; done: boolean; error?: boolean; output?: string; images?: string[] }
   | { t: 'card'; key: string; seq: number; at: number; card: Card; result?: string; closed: boolean }
   | { t: 'held'; key: string; seq: number; at: number; id: string; n: number }
@@ -98,7 +98,7 @@ export function fold(prev: Folded, events: Ev[]): Folded {
         break
       }
       case 'text':
-        add({ t: 'text', key: `t:${e.seq}`, ...base, text: e.text, choices: e.choices })
+        add({ t: 'text', key: `t:${e.seq}`, ...base, text: e.text, choices: e.choices, ...(e.quiet ? { quiet: e.quiet } : {}) })
         break
       case 'tool':
         add({ t: 'tool', key: `x:${e.tool}`, ...base, id: e.tool, name: e.name, label: e.label, detail: e.detail, input: e.input, done: false })

@@ -84,6 +84,22 @@ func logEvents(meta *Sess, events []any) {
 		k := mstr(e, "k")
 		if k == "text" {
 			meta.set("lastMine", false)
+			// 조용한 답 (REQ-F-850): no "새 답" dot and no preview. The page counts the dot from loudSeq while lastQuiet;
+			// the turn's earlier words go quiet with it (one answer = the turn's last words), not its alarms.
+			if truthy(e["quiet"]) {
+				meta.set("lastQuiet", true)
+				meta.set("quietSeq", seq)
+				meta.set("loudSeq", maxF(numOr0(meta.get("alarmSeq")), numOr0(meta.get("turnLoud"))))
+				continue
+			}
+			meta.set("lastQuiet", false)
+			meta.set("loudSeq", seq)
+		}
+		// What a turn cannot be quiet with (REQ-F-850): a warning, a line of the bridge's, a decision card.
+		if k == "line" || k == "card" || (k == "notice" && e["tone"] == "warn") {
+			meta.set("alarmSeq", seq)
+			meta.set("loudSeq", seq)
+			meta.set("lastQuiet", false)
 		}
 		// retention.previews: false keeps no words of the conversation in the session record (REQ-F-812).
 		if (k == "text" || k == "user") && cfgOn("retention.previews") {
@@ -979,6 +995,7 @@ func family(m string) string {
 func convert(meta *Sess, lines []string) []any {
 	out := []any{}
 	copied := copiedInFork(meta)
+	var rules []quietRule
 	for _, line := range lines {
 		trackBackground(meta, line)
 		if len(copied) > 0 {
@@ -990,6 +1007,8 @@ func convert(meta *Sess, lines []string) []any {
 		opts := evOpts{cwd: meta.str("cwd"), home: meta.str("home"), silent: meta.silentTools, image: func(t, d any) any { return imageRef(meta.uid(), t, d, nil) }}
 		// A sealed Mac marks the line that is what the page just said (REQ-S-095): the words cannot be compared here.
 		marked := strings.Contains(line, `"bridgeEcho":true`)
+		quietMark := quietLineMark(line)
+		synthetic := strings.Contains(line, `"model":"<synthetic>"`)
 		for _, ea := range lineToEvents(line, opts) {
 			e := asM(ea)
 			k := mstr(e, "k")
@@ -1025,6 +1044,18 @@ func convert(meta *Sess, lines []string) []any {
 				}
 			} else if k == "text" && truthy(meta.get("reviewLoop")) && roundRe.MatchString(mstr(e, "text")) {
 				meta.set("reviewLoop", false)
+			}
+			// 조용한 답 (REQ-F-850): a sealed answer by its Mac's own mark, any other by the agreed extensions' ends.
+			// An error the API wrote in the answer's place (model <synthetic>) is never quiet.
+			if k == "text" && !synthetic {
+				if rules == nil {
+					rules = quietRulesOf(meta.uid())
+				}
+				if quietMark != "" && hasSeal(mstr(e, "text")) {
+					e["quiet"] = quietMark
+				} else if r := quietOf(mstr(e, "text"), rules); r != nil {
+					e["quiet"] = r.Ext
+				}
 			}
 			if k == "text" && truthy(meta.get("reportAuto")) && REPORT_DONE_RE.MatchString(mstr(e, "text")) {
 				meta.set("reportDeployed", true)

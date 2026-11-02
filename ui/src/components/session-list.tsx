@@ -234,7 +234,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
   /** Every session a group and the groups inside it hold, ended ones too: what emptying it deletes. */
   const heldIn = (id: string): number => (state.groups.groups.find((g) => g.id === id)?.items.length ?? 0) + childrenOf(id).reduce((n, c) => n + heldIn(c), 0)
   const within = (id: string, of: string): boolean => id === of || (!!byGroup.get(id)?.parent && within(byGroup.get(id)!.parent!, of))
-  const unread = (s: Session) => s.id !== activeId && s.seq > (seen[s.id] ?? 0) && !(s as { lastMine?: boolean }).lastMine && (seen[s.id] ?? 0) > 0
+  const unread = (s: Session) => s.id !== activeId && (s.lastQuiet ? s.loudSeq ?? 0 : s.seq) > (seen[s.id] ?? 0) && !(s as { lastMine?: boolean }).lastMine && (seen[s.id] ?? 0) > 0
 
   const drop = async (group: string | null, before: string | null) => {
     const id = dragId

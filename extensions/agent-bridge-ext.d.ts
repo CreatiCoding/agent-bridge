@@ -63,14 +63,30 @@ export interface ActionMap {
   /** A fenced block in an answer; around only. Return what to draw, or next(args). */
   'renderer.block': { args: { lang: string; text: string; closed: boolean; isLast: boolean; sid?: string }; result: unknown }
   'notify.show': { args: { text: string; sid?: string }; result: void }
+  /**
+   * One of Claude's answers, whole; around only (REQ-F-850). Return next(args), { text } (changed words: the page
+   * marks them and offers the answer's own), or { hide: true, reason? } (one folded line that opens). An answer an
+   * agreed `messages.quiet` rule made quiet stays folded whatever a handler returns.
+   */
+  'message.render': { args: MessageArgs; result: MessageView }
 }
+export interface MessageArgs {
+  sid: string
+  seq: number
+  text: string
+  /** The rule that made it quiet (the server kept its "새 답" dot and notifications back), or null. */
+  quiet: { ext: string; name: string; label: string } | null
+  isLast: boolean
+}
+/** `by` is set by the page (the extensions that folded or changed it). */
+export type MessageView = { text: string; by?: string[] } | { hide: true; reason?: string; text?: string; by?: string[] }
 export type ActionName = keyof ActionMap
 export type Args<N extends ActionName> = ActionMap[N]['args']
 export type Result<N extends ActionName> = ActionMap[N]['result']
 /** Returned by a before (or an around instead of calling next) to stop the action; the reason is shown. */
 export type Cancel = { cancel: string }
 /** Actions that run inside a press or a render: their handlers must not wait (a Promise from before is ignored). */
-export type SyncAction = 'session.open' | 'link.open' | 'clipboard.copy' | 'renderer.block' | 'notify.show'
+export type SyncAction = 'session.open' | 'link.open' | 'clipboard.copy' | 'renderer.block' | 'notify.show' | 'message.render'
 
 export interface Ctx {
   /** Dispatch again, skipping this handler. */
@@ -111,6 +127,8 @@ interface EventBase {
 export interface SessionDone extends EventBase {
   name: 'session.done'
   session: EventSession
+  /** The turn ended on a quiet answer (REQ-F-850): the notify webhooks did not get it. */
+  quiet?: true
 }
 export interface DecisionWaiting extends EventBase {
   name: 'decision.waiting'
@@ -306,7 +324,7 @@ export interface Bridge {
   /** This extension's id. */
   id: string
   actions: {
-    before: <N extends Exclude<ActionName, 'renderer.block'>>(name: N, fn: BeforeFn<N>, opts?: HookOpts) => () => void
+    before: <N extends Exclude<ActionName, 'renderer.block' | 'message.render'>>(name: N, fn: BeforeFn<N>, opts?: HookOpts) => () => void
     around: <N extends ActionName>(name: N, fn: AroundFn<N>, opts?: HookOpts) => () => void
     after: {
       <N extends ActionName>(name: N, fn: AfterFn<N>, opts?: HookOpts): () => void

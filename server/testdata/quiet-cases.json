@@ -1,0 +1,33 @@
+{
+  "rules": [
+    { "ext": "aa", "suffix": "[조용히]", "label": "할 일 없음" },
+    { "ext": "bb", "suffix": "(no-op)", "label": "" },
+    { "ext": "bb", "suffix": "[조용히]", "label": "두 번째" }
+  ],
+  "cases": [
+    { "text": "오늘 할 일이 없어요. [조용히]", "want": "aa|[조용히]" },
+    { "text": "오늘 할 일이 없어요. [조용히]  \n\t\r\n", "want": "aa|[조용히]" },
+    { "text": "[조용히]", "want": "aa|[조용히]" },
+    { "text": "끝 (no-op)", "want": "bb|(no-op)" },
+    { "text": "[조용히] 로 시작하지만 끝은 다름", "want": "" },
+    { "text": "끝에 마침표 [조용히].", "want": "" },
+    { "text": "전각 공백 뒤 [조용히]　", "want": "" },
+    { "text": "봉인 ⟦bt1:0a1b2c3d:QUJD⟧ [조용히]", "want": "" },
+    { "text": "", "want": "" },
+    { "text": "   ", "want": "" },
+    { "text": "😀 이모지 뒤 [조용히]", "want": "aa|[조용히]" },
+    { "text": "대소문자 (NO-OP)", "want": "" }
+  ],
+  "valid": [
+    { "suffix": "[조용히]", "ok": true },
+    { "suffix": "", "ok": false },
+    { "suffix": " [조용히]", "ok": false },
+    { "suffix": "[조용히] ", "ok": false },
+    { "suffix": "두\n줄", "ok": false },
+    { "suffix": "⟦bt1:", "ok": false },
+    { "suffix": "제어\u0007", "ok": false },
+    { "suffix": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가", "ok": true },
+    { "suffix": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가", "ok": false },
+    { "suffix": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", "ok": true }
+  ]
+}

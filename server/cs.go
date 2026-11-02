@@ -564,6 +564,9 @@ func toCsEvent(e M, ctx csOpts) any {
 		return out
 	case "text":
 		set("type", "text", "ts", "t"+seq, "text", e["text"])
+		if truthy(e["quiet"]) {
+			out["quiet"] = e["quiet"]
+		}
 		if truthy(e["choices"]) {
 			out["choices"] = e["choices"]
 		}
