@@ -1,0 +1,122 @@
+:root {
+  --bg: #f6f6f4;
+  --panel: #ffffff;
+  --text: #1d1d1b;
+  --muted: #6b6b66;
+  --line: #deddd7;
+  --accent: #2f6f4f;
+  --warn: #a4471d;
+  --term-bg: #151513;
+  --term-fg: #e6e6e1;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121211;
+    --panel: #1b1b19;
+    --text: #e8e8e3;
+    --muted: #9a9a93;
+    --line: #2e2e2a;
+    --accent: #6fbf94;
+    --warn: #e58b5f;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  min-height: 36px;
+}
+button:hover { border-color: var(--accent); }
+button.ghost { background: transparent; }
+.top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.grow { flex: 1; }
+.pill {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.pill:empty { display: none; }
+.muted { color: var(--muted); font-size: 13px; }
+.warn { color: var(--warn); }
+.center { padding: 32px 16px; max-width: 560px; margin: 0 auto; }
+.center pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+#app { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+#sessions {
+  width: 240px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 8px;
+}
+#sessions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  border-radius: 8px;
+}
+#sessions button[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+#sessions .sub { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+#pane { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px 16px; gap: 8px; }
+#pane[hidden] { display: none; }
+.bar { display: flex; align-items: center; gap: 8px; }
+#screen {
+  flex: 1;
+  min-height: 200px;
+  margin: 0;
+  overflow: auto;
+  background: var(--term-bg);
+  color: var(--term-fg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: 12.5px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre;
+}
+#card { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+#card .opts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.keys { display: flex; flex-wrap: wrap; gap: 6px; }
+#send { display: flex; gap: 8px; align-items: stretch; }
+#send textarea {
+  flex: 1;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel);
+  color: var(--text);
+  resize: vertical;
+}
+footer { padding: 6px 16px; border-top: 1px solid var(--line); }
+@media (max-width: 720px) {
+  #app { flex-direction: column; }
+  #sessions { width: auto; flex: none; border-right: 0; border-bottom: 1px solid var(--line); display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; }
+  #sessions button { width: auto; min-width: 140px; margin: 0; }
+  #screen { font-size: 11px; min-height: 120px; }
+  #pane { padding: 8px 12px; }
+  #send textarea { min-height: 44px; }
+  footer { display: none; }
+}

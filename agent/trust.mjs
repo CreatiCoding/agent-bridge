@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 2
+export const TRUST_VERSION = 3
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -104,6 +104,8 @@ export const TRUST_CLASS = {
   // the state of the link, and the Mac's copy of the log
   delegated: 'off', sudoans: 'off', sudopass: 'off', sudo: 'off', adopt: 'off', release: 'off', http: 'off', ws: 'off',
   sudooff: 'free', log: 'free', putimg: 'free', welcome: 'free', check: 'free', ping: 'free', rehello: 'free', report: 'free', resync: 'free', bg: 'free', models: 'free', update: 'free',
+  // the local screen's bundle: checked by the maintainer's signature and a seq that only grows, like update (REQ-F-844)
+  localui: 'free',
   // reads: what comes back is sealed
   events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free',
   // actions

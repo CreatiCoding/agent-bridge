@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, folderHeld, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, restStoppedText, madeDirWhy } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
@@ -25,12 +25,14 @@ import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, sealOut, sealLine } from './trust.mjs'
+import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS } from './localui.mjs'
+import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -111,7 +113,9 @@ const awakeCmd = words[0] === 'awake' ? words[1] || 'status' : null
 const startCmd = words[0] === 'start'
 /** `trust …`: pairing, devices and the mode, at this Mac's terminal only (REQ-S-090). */
 const trustCmd = words[0] === 'trust'
-if (words[0] && !trustCmd && !doctorOnly && !linkOnly && !startCmd && headlessLogin === null && !['install', 'uninstall', 'status'].includes(serviceCmd) && !['setup', 'remove', 'status'].includes(awakeCmd)) {
+/** `local …`: the local screen's link, on/off and its bundles, at this Mac's terminal only (REQ-F-843). */
+const localCmd = words[0] === 'local'
+if (words[0] && !trustCmd && !localCmd && !doctorOnly && !linkOnly && !startCmd && headlessLogin === null && !['install', 'uninstall', 'status'].includes(serviceCmd) && !['setup', 'remove', 'status'].includes(awakeCmd)) {
   console.error(`모르는 명령입니다: ${words.join(' ')}`)
   process.exit(1)
 }
@@ -180,6 +184,12 @@ const writeJson = (p, v) => {
     const disk = readJson(p, {})
     if (disk.trust === undefined) delete v.trust
     else v.trust = disk.trust
+    // And `trustSeal` (`trust seal on|off`): a config read at start must not turn sealing back off (REQ-S-098).
+    if (disk.trustSeal === undefined) delete v.trustSeal
+    else v.trustSeal = disk.trustSeal
+    // So is `localUi` (the local screen, LOCAL-UI-DESIGN §3): `local on|off|ota` writes it, no server command does.
+    if (disk.localUi === undefined) delete v.localUi
+    else v.localUi = disk.localUi
   }
   fs.writeFileSync(`${p}.tmp`, JSON.stringify(v, null, 2), { mode: 0o600 })
   fs.renameSync(`${p}.tmp`, p)
@@ -213,6 +223,15 @@ if (trustCmd) {
   const code = await trustCli(words.slice(1), { stateDir: STATE_DIR, configPath, hostId: config.hostId, ask: (q) => rl.question(q) })
   rl.close()
   process.exit(code)
+}
+if (localCmd) {
+  // A ticket is a file in localui/ that only this user can write: the running agent takes it at /local/api/login.
+  const ui = new LocalUi({ dir: path.join(STATE_DIR, 'localui'), builtin: { doc: LOCAL_DOC, sig: LOCAL_SIG, bundle: LOCAL_BUNDLE }, log: (level, m) => level !== 'info' && console.error(m) })
+  const running = () => fetch(`http://127.0.0.1:${config.port}/ping`, { signal: AbortSignal.timeout(1500) }).then((r) => r.ok).catch(() => false)
+  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
+  const screenless = process.platform !== 'darwin' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY
+  const open = noOpen || screenless ? null : (link) => spawn(opener, [link], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+  process.exit(await localCli(words.slice(1), { configPath, ui, port: config.port, open, running }))
 }
 if (!/^https?:\/\//.test(config.site) && !doctorOnly && !['status', 'uninstall'].includes(serviceCmd)) {
   console.error(`사용법:
@@ -870,6 +889,132 @@ setInterval(() => {
   trust.checkConfirm()
   if (trust.devices().length !== before) (log('info', 'trust', '기기를 짝지음'), (trustSeen.at = 0), hello().catch(() => {}))
 }, 500).unref()
+// ---------- the local screen (REQ-F-843~845, REQ-S-096~098, docs/LOCAL-UI-DESIGN.md) ----------
+
+const localUi = new LocalUi({ dir: path.join(STATE_DIR, 'localui'), builtin: { doc: LOCAL_DOC, sig: LOCAL_SIG, bundle: LOCAL_BUNDLE }, log: (level, m) => log(level, 'localui', m) })
+let localSeen = { at: 0, v: localUiOf(config) }
+/** agent.json's `localUi`, read again every 2 s like `trust`: changed at the terminal (`local …`), never by the server. */
+function localUiNow() {
+  const t = Date.now()
+  if (t - localSeen.at < 2000) return localSeen.v
+  const v = localUiOf(readJson(configPath, {}))
+  if (localSeen.at && (v.on !== localSeen.v.on || v.ota !== localSeen.v.ota)) (log('info', 'localui', `로컬 화면 ${v.on ? '켬' : '끔'} · 원격 묶음 ${v.ota ? '받음' : '안 받음'}`), hello().catch(() => {}))
+  localSeen = { at: t, v }
+  return v
+}
+const localInfo = () => {
+  const v = localUiNow()
+  return { on: v.on, ota: v.ota, ...(v.on ? localUi.info() : { api: localUi.api, active: null }) }
+}
+setInterval(() => localUi.tick(), 5000).unref()
+/** What the local screen did, in trust's own log while this Mac does not trust the server (§5). */
+const localAudit = (what, sid) => trustOn() && trust.audit(`local ${what}${sid ? ` ${String(sid).slice(0, 8)}` : ''}`)
+/** Failed sign-ins in the last minute: ten at most (§4.3). */
+let localFails = []
+
+/** /local/…: the local screen's files and its API. Nothing here opens with the bridge tab's key or the hook key. */
+async function localHttp(req, res, url) {
+  const port = config.port
+  const json = (code, v) => void res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }).end(JSON.stringify(v))
+  if (!localUiNow().on) return void res.writeHead(404).end()
+  // DNS rebinding: a page of another name that resolves to 127.0.0.1 sends its own name here.
+  if (!localHostOk(req.headers.host, port) || !localOriginOk(req.headers.origin, port)) return void res.writeHead(403).end()
+  if (url.pathname === '/local') return void res.writeHead(302, { Location: '/local/' }).end()
+  const sub = url.pathname.slice('/local/'.length)
+  if (!sub.startsWith('api/')) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return void res.writeHead(405).end()
+    const a = localUi.active()
+    if (!a) return void res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', ...LOCAL_FILE_HEADERS }).end('로컬 화면 묶음의 서명을 확인하지 못해 띄우지 않아요. 맥 터미널: node ~/.claude-bridge/agent.mjs local status')
+    const name = sub || 'index.html'
+    const f = a.files.get(name)
+    if (!f) return void res.writeHead(404, LOCAL_FILE_HEADERS).end()
+    // Only a page the person opened (typed, from the terminal, or reloaded) starts the trial: a request another
+    // page makes (an <img>, a window it opens) must not get a good bundle rolled back (REQ-S-096).
+    const opened = req.headers['sec-fetch-dest'] === 'document' && req.headers['sec-fetch-mode'] === 'navigate' && ['none', 'same-origin'].includes(req.headers['sec-fetch-site'])
+    if (name === 'index.html' && opened) localUi.served(a)
+    return void res.writeHead(200, { 'Content-Type': f.type, 'Content-Length': f.body.length, ...LOCAL_FILE_HEADERS }).end(req.method === 'HEAD' ? undefined : f.body)
+  }
+  const op = sub.slice('api/'.length)
+  // Only this page's own requests: a form or a plain link of another page cannot send the header (no CORS here).
+  if (req.headers['x-local-ui'] !== '1') return json(403, { error: '로컬 화면의 요청이 아니에요' })
+  let body = {}
+  if (req.method === 'POST') {
+    if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) return json(415, { error: 'JSON 만 받아요' })
+    const chunks = []
+    let size = 0
+    for await (const c of req) {
+      size += c.length
+      if (size > 64 * 1024) return json(413, { error: '너무 커요' })
+      chunks.push(c)
+    }
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') ?? {}
+    } catch {
+      return json(400, { error: 'JSON 이 아니에요' })
+    }
+    if (typeof body !== 'object') return json(400, { error: '요청이 올바르지 않아요' })
+  } else if (req.method !== 'GET') return json(405, { error: '쓸 수 없는 방법' })
+  if (op === 'booted' && req.method === 'POST') return (localUi.booted(localUi.active()?.version), json(200, { ok: true }))
+  if (op === 'login' && req.method === 'POST') {
+    const now = Date.now()
+    localFails = localFails.filter((t) => now - t < 60_000)
+    if (localFails.length >= 10) return json(429, { error: '잠시 뒤에 다시 해 주세요' })
+    if (!localUi.takeTicket(body.ticket)) return (localFails.push(now), json(403, { error: '링크가 맞지 않거나 시간이 지났어요' }))
+    log('info', 'localui', '로컬 화면에 로그인함')
+    localAudit('login')
+    return json(200, localUi.issue(localUiNow().sessionHours))
+  }
+  const tok = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(String(req.headers.authorization ?? ''))?.[1]
+  if (!tok || !localUi.tokenOk(tok)) return json(401, { error: '로그인이 필요해요' })
+  if (op === 'logout' && req.method === 'POST') return (localUi.drop(tok), json(200, { ok: true }))
+  if (op === 'state' && req.method === 'GET') {
+    const list = []
+    for (const [id, s] of sessions) {
+      const card = s.card?.open && s.card.kind !== 'stuck' ? { id: s.card.id, title: String(s.card.title ?? ''), options: (s.card.options ?? []).map((o) => ({ n: o.n, label: String(o.label ?? '') })) } : null
+      list.push({ id, name: path.basename(s.cwd || '') || id.slice(0, 8), cwd: s.cwd ?? '', alive: s.alive !== false, busy: !!s.turn, phase: phaseOf(s), held: s.held.length, card })
+    }
+    const a = localUi.active()
+    return json(200, { name: config.name, hostId: config.hostId, linked: !!client, trust: trustMode(), bundle: a ? { source: a.source, version: a.version } : null, sessions: list })
+  }
+  const s = sessions.get(String(body.sid ?? url.searchParams.get('sid') ?? ''))
+  const sid = s ? String(body.sid ?? url.searchParams.get('sid')) : ''
+  if (!s) return json(404, { error: '이 맥에 그런 세션이 없어요' })
+  // With 300 lines of history: what Claude said a moment ago has often scrolled off the visible screen.
+  if (op === 'screen' && req.method === 'GET') return json(200, { text: (await tmuxRaw('capture-pane', '-p', '-e', '-S', '-300', '-t', pane(s))).replace(/\n+$/, '') })
+  if (req.method !== 'POST') return json(405, { error: '쓸 수 없는 방법' })
+  if (op === 'send') {
+    const text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (!text || Buffer.byteLength(text) > 16 * 1024) return json(400, { error: '글이 비었거나 너무 길어요(16 KB)' })
+    log('info', 'localui', `로컬 화면에서 글 ${text.length}자`, sid)
+    localAudit('send', sid)
+    // Marked as the Mac's own (held `signed`): typed by the person at this Mac, it is not thrown away by enforce.
+    await inject(sid, s, text, crypto.randomUUID(), true)
+    publish(sid, s)
+    return json(200, { ok: true })
+  }
+  if (op === 'key') {
+    const keys = Array.isArray(body.keys) ? body.keys.filter((k) => KEYS.has(k)).slice(0, 20) : []
+    if (!keys.length) return json(400, { error: '보낼 수 있는 키가 없어요' })
+    localAudit(`key ${keys.join(' ')}`, sid)
+    for (const k of keys) await tmux('send-keys', '-t', pane(s), k)
+    return json(200, { ok: true })
+  }
+  if (op === 'esc') {
+    localAudit('esc', sid)
+    await interrupt(sid, s)
+    publish(sid, s)
+    return json(200, { ok: true })
+  }
+  if (op === 'answer') {
+    if (!s.card?.open || s.card.id !== body.card) return json(409, { error: '이미 다른 화면으로 바뀌었어요. 다시 보세요' })
+    localAudit(`answer ${String(body.n).slice(0, 8)}`, sid)
+    await answerCard(sid, s, body.card, body.n)
+    publish(sid, s)
+    return json(200, { ok: true })
+  }
+  return json(404, { error: '모르는 요청' })
+}
+
 /** The background work this Mac counted for a session (BgTracker, §5.3 refresh). */
 const ownBg = (s) => (s.bgTrack ? s.bgTrack.running() : [])
 
@@ -890,7 +1035,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo() })
+  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo() })
 }
 
 // ---------- tmux sessions ----------
@@ -1011,7 +1156,8 @@ function autoAllowAnswer(sid, ev) {
   // Still asked, as a card, even in 전부 허용 (REQ-F-759). The dialog this leaves to be drawn must not be pressed
   // by the screen reader below either, which may not know which call it is about.
   // 전부 허용 that asks nothing (allowAll, REQ-F-796): no risky call is held back either.
-  const risk = s.allowAll ? null : riskyCall(tool, { cwd: s.cwd, home: os.homedir() })
+  // The Mac-terminal-only files and commands are asked about even then (REQ-S-098).
+  const risk = s.allowAll ? bridgeSelfCall(tool) : riskyCall(tool, { cwd: s.cwd, home: os.homedir() })
   s.guarded = risk ? { reason: risk, at: Date.now() } : null
   if (risk) {
     log('info', 'dialog', `안전한 전부 허용이라 ${risk} 는 물어봄: ${ev.tool_name}`, sid)
@@ -1759,7 +1905,7 @@ async function surfaceDialog(sid, s, screen) {
   // Just answered and not yet redrawn: not a new question.
   if (s.answered?.sig === sig && Date.now() - s.answered.at < 3000) return true
   const guarded = s.guarded && Date.now() - s.guarded.at < 120_000 ? s.guarded.reason : null
-  const risk = s.autoAllow && !s.allowAll && proceed ? guarded ?? (tool ? riskyCall(tool, { cwd: s.cwd, home: os.homedir() }) : null) : null
+  const risk = s.autoAllow && proceed ? guarded ?? (tool ? (s.allowAll ? bridgeSelfCall(tool) : riskyCall(tool, { cwd: s.cwd, home: os.homedir() })) : null) : null
   if (risk && !guarded) note(sid, `⚠️ *안전한 전부 허용*이라 ${risk}는 물어봐요.`, 'warn')
   if (s.autoAllow && proceed && !risk) {
     // 전부 허용: the widest allow that ends with the session, never one that is written into the settings.
@@ -3796,6 +3942,19 @@ const commands = {
     const p = updatePolicyOf(config.update)
     log('info', 'update', `새 버전 ${build} 을 받음(관리자 서명 확인 · 순번 ${seq}). ${p.mode === 'always' ? '곧 바꿉니다' : `${p.from}~${p.to}시 사이에 바꿉니다(사이트에서 지금 바꿀 수도 있음)`}(일하는 세션은 그대로 이어짐)`)
     health().catch(() => {})
+  },
+  /**
+   * A local screen bundle the server passes on (REQ-F-844): taken only when this Mac takes them, signed by the
+   * maintainer and newer than what it has (LOCAL-UI-DESIGN §2.6). The server can send or hold it back, nothing more.
+   */
+  localui({ doc, sig, bundle }) {
+    const v = localUiNow()
+    if (!v.on || !v.ota) return
+    // Like agent updates: a checkout being worked on, or --no-auto-update, keeps the screen it has.
+    if (noAutoUpdate || path.resolve(AGENT_DIR) !== path.resolve(STATE_DIR)) return log('info', 'localui', `새 화면 묶음이 왔지만 ${noAutoUpdate ? '--no-auto-update 라' : '설치본이 아닌 곳에서 실행 중이라'} 그대로 둠`)
+    const r = localUi.offer({ doc, sig, bundle })
+    if (r.result === 'installed') hello().catch(() => {})
+    else if (r.result !== 'same') log(r.result === 'verify_failed' ? 'error' : 'info', 'localui', `받은 화면 묶음을 쓰지 않음: ${r.result}${r.why ? ` (${r.why})` : ''}${r.seq ? ` (순번 ${r.seq} ≤ ${r.floor})` : ''}`)
   },
   /** When this Mac takes a new agent (REQ-F-832): only at night (from~to o'clock) or as soon as it arrives. */
   updatePolicy({ reqId, mode, from, to, skipBusy }) {
@@ -5894,6 +6053,16 @@ setInterval(async () => {
 
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin
+  // The local screen first: its own page, at this address, with its own sign-in (REQ-S-097).
+  if (/^\/local(\/|$|\?)/.test(req.url ?? '')) {
+    try {
+      return await localHttp(req, res, new URL(req.url, 'http://127.0.0.1'))
+    } catch (e) {
+      log('error', 'localui', e.stack || e.message)
+      if (!res.headersSent) res.writeHead(500).end()
+      return
+    }
+  }
   // Only the configured site's pages may talk to this agent.
   if (origin && origin !== SITE_ORIGIN) return res.writeHead(403).end()
   const cors = {

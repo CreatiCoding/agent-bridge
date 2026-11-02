@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>로컬 화면</title>
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <strong id="host">로컬 화면</strong>
+  <span id="link" class="pill"></span>
+  <span class="grow"></span>
+  <button id="logout" class="ghost" hidden>나가기</button>
+</header>
+<main id="login" class="center" hidden>
+  <h1>이 맥의 로컬 화면</h1>
+  <p>서버가 닿지 않아도 이 맥의 세션을 보고 입력할 수 있어요.</p>
+  <p>맥 터미널에서 아래 명령으로 링크를 받아 여세요(5분 안에 한 번).</p>
+  <pre>node ~/.claude-bridge/agent.mjs local</pre>
+  <p id="login-msg" class="warn"></p>
+</main>
+<main id="app" hidden>
+  <nav id="sessions" aria-label="세션"></nav>
+  <section id="view">
+    <div id="empty" class="center"><p>왼쪽에서 세션을 고르세요.</p></div>
+    <div id="pane" hidden>
+      <div class="bar"><strong id="title"></strong><span id="phase" class="pill"></span></div>
+      <div id="card" hidden></div>
+      <pre id="screen" tabindex="0"></pre>
+      <div class="keys">
+        <button data-esc>Esc 멈추기</button>
+        <button data-key="Enter">Enter</button>
+        <button data-key="Up">↑</button>
+        <button data-key="Down">↓</button>
+        <button data-key="Tab">Tab</button>
+        <button data-key="C-c">Ctrl-C</button>
+      </div>
+      <form id="send">
+        <textarea id="text" rows="3" placeholder="세션에 보낼 글 (⌘/Ctrl+Enter 로 보내기)"></textarea>
+        <button type="submit">보내기</button>
+      </form>
+      <p id="msg" class="muted"></p>
+    </div>
+  </section>
+</main>
+<footer id="foot" class="muted"></footer>
+</body>
+</html>

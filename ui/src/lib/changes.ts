@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.398',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '서버가 내려가도 쓰는 로컬 화면: 맥 터미널의 `node ~/.claude-bridge/agent.mjs local` 이 일회용 링크를 열고, 에이전트가 http://127.0.0.1:<port>/local/ 에서 그 맥의 세션 목록·터미널 화면을 보여 주며 글·키·Esc·권한 답을 보낸다. 서버·연동 탭 없이 동작한다',
+        refs: ['REQ-F-843', 'IF-267'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '로컬 화면 묶음: 에이전트에 들어 있는 묶음(builtin)으로 처음부터 오프라인으로 뜨고, 연동 중 서버가 더 새 관리자 서명 묶음을 보내면 서명·해시를 확인해 staged → install 로 바꾼다. 깨지면 builtin 으로 되돌리고, 터미널에서 `local on|off|ota on|off|status|rollback|reset`. agent.json `localUi` 기본 켜짐',
+        refs: ['REQ-F-844', 'REQ-F-845', 'IF-268'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '로컬 화면 입구는 127.0.0.1·자기 포트의 Host·Origin 만, 일회용 입장권(5분·한 번)과 로컬 토큰으로만 열리고 연동 키로는 열리지 않는다. 묶음은 관리자 키 서명과 늘기만 하는 순번이 맞을 때만 쓴다',
+        refs: ['REQ-S-096', 'REQ-S-097'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '맥 터미널 전용 파일·명령(trust·localui 폴더, agent.mjs trust|local)은 묻지 않는 전부 허용에서도 묻는다. 에이전트가 agent.json 을 쓸 때 trustSeal 을 덮어써 봉인을 끌 수 있던 것을 고침. TRUST_VERSION 3',
+        refs: ['REQ-S-098', 'REQ-S-094'],
+      },
+    ],
+  },
+  {
     version: '1.397',
     date: '2026-11-02',
+    commit: '347927b',
     changes: [
       {
         kind: 'fixed',

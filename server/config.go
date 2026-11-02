@@ -105,7 +105,7 @@ func cacheOf(c any) any {
 	return out
 }
 
-var AGENT_FILES = []string{"agent.mjs", "dialog.mjs", "preview.mjs", "screen.mjs", "plugins.mjs", "skills.mjs", "split.mjs", "guard.mjs", "accounts.mjs", "voice.mjs", "mcp.mjs", "cache.mjs", "scrub.mjs", "store.mjs", "stats.mjs", "mux.mjs", "keys.mjs", "trust.mjs"}
+var AGENT_FILES = []string{"agent.mjs", "dialog.mjs", "preview.mjs", "screen.mjs", "plugins.mjs", "skills.mjs", "split.mjs", "guard.mjs", "accounts.mjs", "voice.mjs", "mcp.mjs", "cache.mjs", "scrub.mjs", "store.mjs", "stats.mjs", "mux.mjs", "keys.mjs", "trust.mjs", "localui.mjs", "localbundle.mjs"}
 
 func env(k string) string { return os.Getenv(k) }
 
@@ -342,6 +342,10 @@ func prepare() {
 		errorLine("agent/agent.sig 의 순번(" + jsString(AGENT_SIG["seq"]) + ")이 전에 내보낸 것(" + numStr(SEQ_SEEN) + ")보다 작습니다. 맥들이 거절하므로 업데이트를 보내지 않습니다(node scripts/sign-agent.mjs 로 다시 서명).")
 	}
 	AGENT_SIGNED = AGENT_SIG_OK && !AGENT_SEQ_BACK
+	LOCALUI = loadLocalBundle(localBundlePath())
+	if !LOCALUI.OK {
+		errorLine("agent/localbundle.mjs 의 로컬 화면 묶음 서명을 확인하지 못해 맥에 보내지 않습니다(node scripts/sign-agent.mjs).")
+	}
 	if !AGENT_SIG_OK {
 		errorLine("agent/agent.sig 가 에이전트 파일(build " + AGENT_BUILD + ")의 서명이 아닙니다. 맥들은 이 업데이트를 받지 않습니다(node scripts/sign-agent.mjs).")
 	}

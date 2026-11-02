@@ -481,6 +481,8 @@ func helloFromAgent(uid, hostID string, msg M) {
 		}
 		toHost(hostID, M{"t": "update", "build": AGENT_BUILD, "names": anyList(AGENT_FILES), "sig": or("legacy", ""), "msig": or("msig", ""), "seq": or("seq", 0.0)})
 	}
+	// The local screen's bundle, to a Mac that serves an older one (REQ-F-844). Signed by the maintainer; passed on.
+	offerLocalUi(uid, hostID, msg)
 	broadcastState(uid)
 }
 

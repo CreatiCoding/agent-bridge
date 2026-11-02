@@ -58,7 +58,7 @@
 
 - **서버가 준 글은 사람에게 보이기 전에 서명하지 않는다.** 받아쓰기 결과, 서버가 만든 문구·버튼 글, 확장이 만든 글이 그렇다. 짝지은 맥에서는 받아쓰기 "전송" 자동 보내기를 끄고 입력칸에 채워 사람이 보내게 한다. 받아쓰기 결과는 봉인돼 있어야 하고(`m` 조각, 그 녹음의 SHA-256 을 함께 봉인) 페이지는 자기 녹음과 맞을 때만 채운다.
 - **짝지은 기기에서는 확장(ext)을 띄우지 않는다.** 확장 코드는 같은 출처에서 돌아 기기 키를 쓰고 풀린 글을 읽을 수 있다(`ui/src/lib/ext-host.tsx`).
-- **서명 표시는 맥만 붙인다.** 들어온 명령의 `signed`·`autoAllowSigned` 칸은 모든 모드에서 늘 버린다. held 의 `signed`, 세션의 `autoAllowSigned` 는 `verify()` 가 맞을 때만 맥이 붙이고, 서명 없이 전부 허용이 바뀌면(어느 모드든) `autoAllowSigned` 를 지운다.
+- **서명 표시는 맥만 붙인다.** 들어온 명령의 `signed`·`autoAllowSigned` 칸은 모든 모드에서 늘 버린다. held 의 `signed`, 세션의 `autoAllowSigned` 는 `verify()` 가 맞을 때만 맥이 붙이고(held 의 `signed` 는 맥 앞 사람이 로컬 화면(1.398, `docs/LOCAL-UI-DESIGN.md`)으로 보낸 글에도 붙인다), 서명 없이 전부 허용이 바뀌면(어느 모드든) `autoAllowSigned` 를 지운다.
 - **켤 때 한 번 정리하고, 그 밖의 예전 상태는 남는다.** 맥은 `trust/state.json` 에 `{mode, purgedAt}` 을 둔다. 모드가 실제로 `enforce` 로 바뀐 때(그 파일의 mode 가 enforce 가 아니었을 때) 한 번만: 서명 표시(`signed`)가 없는 붙잡아 둔 글(held)을 버리고, 서명으로 켜지 않은(`autoAllowSigned` 가 없는) 전부 허용(autoAllow·allowAll)을 끄고 기록한다. 다시 켜기·업데이트·재부팅 뒤 되살리기에서는 하지 않는다. 그 전에 서버가 써 둔 폴더의 CLAUDE.md·AGENTS.md·SESSION.md 같은 파일은 그대로다(안내에 적는다).
 
 ## 3. 모드
@@ -197,12 +197,13 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | `/host`(로컬 미리보기 정보), `/login-state`(헤드리스 로그인 상태 알림), `/ping`, `/bg-open`(일회 토큰) | 지금 그대로. 동작을 일으키지 않는다 |
 | `/hook`, `/statusline`, `/delegate`, `/askpass`, `/visible-login` | `hookKey` 만. 연동 키로는 403. CLI `link --visible` 은 `hookKey` 로 부르게 바꾼다 |
 | `/file`(영상·파일 올리기) | `enforce` 거부, `warn` 받고 기록 |
+| `/local/*`(로컬 화면, 1.398) | 연동 키·`hookKey` 로는 열리지 않음. 맥 터미널 `local open` 의 일회용 입장권 → 로컬 토큰으로만, Host·Origin 은 `127.0.0.1:<port>` 만. 서버를 거치지 않는 맥 앞 사람의 요청이라 서명을 확인하지 않고 `trust/audit.log` 에 `local …` 로 남긴다. 화면 묶음은 관리자 서명·순번 하한(`localui` 명령은 `free`) |
 | 키 없이·예전 키로 온 요청의 연동 다시 열기(`reopenLink`·`restartBgForKey`, 맥에서 브라우저를 엶) | 하지 않음 |
 | 맥이 내는 `delegate`(MCP 위임), `sudoask` | `enforce` 에서 내지 않고 바로 실패. 기억한 sudo 비밀번호는 지운다 |
 
 ### 5.7 업데이트 되돌리기 막기
 
-- `agent/trust.mjs` 가 `export const TRUST_VERSION = 1` 과 `TRUST_MIN_SEQ`(trust 가 처음 들어간 서명 순번)를 둔다. 맥에는 `agent.sig` 가 없어 새로 설치한 맥의 하한은 `TRUST_MIN_SEQ` 다. `trust` 가 `off` 가 아니면 `update` 를 받을 때와 받아 둔 업데이트를 **깔 때**(`applyUpdate`) 모두, 파일에 `trust.mjs` 가 없거나 그 `TRUST_VERSION` 이 지금보다 작거나 순번이 `max(updateSeq, TRUST_MIN_SEQ)` 이하면 거부한다(관리자 서명이 맞아도). trust 경로의 보안 수정(이 파일뿐 아니라 `agent.mjs` 의 봉인·명령 다시 만들기·입구 검사를 고칠 때도)마다 `TRUST_VERSION` 을 올려, 알려진 구멍이 있는 예전 trust 빌드로 되돌릴 수 없게 한다.
+- `agent/trust.mjs` 가 `export const TRUST_VERSION = 1` 과 `TRUST_MIN_SEQ`(trust 가 처음 들어간 서명 순번)를 둔다. 맥에는 `agent.sig` 가 없어 새로 설치한 맥의 하한은 `TRUST_MIN_SEQ` 다. `trust` 가 `off` 가 아니면 `update` 를 받을 때와 받아 둔 업데이트를 **깔 때**(`applyUpdate`) 모두, 파일에 `trust.mjs` 가 없거나 그 `TRUST_VERSION` 이 지금보다 작거나 순번이 `max(updateSeq, TRUST_MIN_SEQ)` 이하면 거부한다(관리자 서명이 맞아도). trust 경로의 보안 수정(이 파일뿐 아니라 `agent.mjs` 의 봉인·명령 다시 만들기·입구 검사(1.398 의 `/local/` 입구 포함)를 고칠 때도)마다 `TRUST_VERSION` 을 올려(1.394 에 2, 1.398 에 3: 로컬 화면 입구와 `agent.json` 의 `trustSeal` 을 에이전트가 덮어쓰지 않게 한 수정), 알려진 구멍이 있는 예전 trust 빌드로 되돌릴 수 없게 한다.
 
 ## 6. 봉인
 
@@ -292,3 +293,4 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 
 1. **1단계 (SPEC 1.392)**: `agent/trust.mjs`(키·짝짓기·CLI·재전송·분류표·명령 다시 만들기), `agent.mjs` 의 입구 정리·`/cmd` 확인·`delegate`/`sudo`/`welcome`/`flush`/`putimg`/`update` 처리. 서버: `X-Bridge-Auth` 대기열, `/api/hosts/:id/trust`, 호스트 상태의 `trust`. 화면: `ui/src/lib/trust.ts`(키·짝짓기·서명·경로표), 설정 → 이 기기 "맥 짝짓기" 카드, 경고. 시험: 단위 + e2e(짝짓기 → enforce 에서 서명 없는 send 거부·서명한 send 실행·재전송 거부).
 2. **2단계 (SPEC 1.394)**: 봉인, `trust seal on` 으로 따로 켬(에이전트 emit·대화 줄, 화면 풀기·보내는 글 봉인, 서버의 자르기·알림·Slack·훅·에코 처리, 카드 덩어리). 그림은 평문, 평문 경고는 하지 않음. 시험: 봉인 왕복 단위(`test/unit/trust.test.mjs`, `server/sealtext_test.go`), e2e 로 서버 기록·데이터 폴더에 원문이 없는지(`test/e2e-trust.mjs`).
+3. **로컬 화면과 맞추기 (SPEC 1.398)**: 서버가 내려가도 쓰는 로컬 화면(`docs/LOCAL-UI-DESIGN.md`). 입구 표에 `/local/`, 맥 터미널 전용 파일·명령(`trust/`·`localui/`·`agent.mjs trust|local`)은 묻지 않는 전부 허용에서도 묻는다(`bridgeSelfCall`), `writeJson` 이 `trustSeal` 도 디스크 값을 지킨다, `TRUST_VERSION` 3.

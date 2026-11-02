@@ -10,9 +10,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { signedText, manifestOf, manifestSigned } from '../agent/guard.mjs'
+import { makeBundle, docOf, signDoc, verify as localVerify } from '../agent/localui.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export function agentFiles() {
@@ -50,6 +51,23 @@ export function priorSeqs({ fetch = false } = {}) {
   } catch {}
   return { local, main }
 }
+/** The local screen's bundle bytes, made from agent/localui/ as it is (REQ-F-843, docs/LOCAL-UI-DESIGN.md §2.2). */
+export function localBundleText() {
+  const dir = path.join(ROOT, 'agent/localui')
+  return makeBundle(Object.fromEntries(fs.readdirSync(dir).filter((f) => !f.startsWith('.')).map((f) => [f, fs.readFileSync(path.join(dir, f))])))
+}
+/** agent/localbundle.mjs as the sign script writes it: one line per value, each a JSON string (the server reads these). */
+export const localBundleModule = (doc, sig, bundle) =>
+  `// Made by scripts/sign-agent.mjs from agent/localui/ — do not edit. The local screen's builtin bundle (REQ-F-843):\n// DOC is the signed update document, SIG the maintainer's signature of it, BUNDLE the bundle bytes.\nexport const DOC = ${JSON.stringify(doc)}\nexport const SIG = ${JSON.stringify(sig)}\nexport const BUNDLE = ${JSON.stringify(bundle)}\n`
+/** What agent/localbundle.mjs holds now, or null. */
+export async function savedLocalBundle() {
+  try {
+    const m = await import(`${pathToFileURL(path.join(ROOT, 'agent/localbundle.mjs')).href}?t=${Date.now()}`)
+    return { doc: m.DOC, sig: m.SIG, bundle: m.BUNDLE }
+  } catch {
+    return null
+  }
+}
 export const agentBuild = () => agentFiles().reduce((h, f) => h.update(fs.readFileSync(path.join(ROOT, 'agent', f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
@@ -77,13 +95,22 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(file
     process.exit(1)
   }
   const key = crypto.createPrivateKey(fs.readFileSync(keyFile))
-  const files = agentFileTexts()
   // Grows with every signing, so an older signed agent cannot be sent again as an update: seconds since 1970, but
   // always past this checkout's last seq and origin/main's (R7-M1). A worktree signed earlier than one already on main
   // would otherwise ship a smaller seq, and every Mac would refuse it for good. Taking back an agent version is
   // signing it again, which gives it a new seq.
   const { local, main } = priorSeqs({ fetch: true })
   const seq = Math.max(Math.floor(Date.now() / 1000), local + 1, main + 1)
+  // The local screen's bundle first (it is an agent file): signed again, under this seq, only when it changed, so an
+  // unchanged bundle keeps its document and Macs are not sent the same screen again (LOCAL-UI-DESIGN §2.3).
+  const bundle = localBundleText()
+  const had = await savedLocalBundle()
+  if (!had || had.bundle !== bundle || !localVerify(had).ok) {
+    const doc = docOf(bundle, seq)
+    fs.writeFileSync(path.join(ROOT, 'agent/localbundle.mjs'), localBundleModule(doc, signDoc(doc, key), bundle))
+    console.log(`agent/localbundle.mjs: 로컬 화면 묶음 ${JSON.parse(doc).version} · seq ${seq} 서명함`)
+  }
+  const files = agentFileTexts()
   const msig = crypto.sign(null, Buffer.from(manifestOf(files, seq)), key).toString('base64')
   if (!manifestSigned(files, seq, msig)) {
     console.error('이 키는 에이전트가 믿는 키(agent/keys.mjs)가 아닙니다. 새로 만들려면 --init.')

@@ -204,12 +204,32 @@ function discardsWork(c) {
 }
 
 /**
+ * A tool call that reaches what only the person at this Mac's terminal may do (REQ-S-098): the trust and local
+ * screen files (pairing confirmations, sign-in tickets) or the agent's own `trust`/`local` commands. Asked even
+ * under 전부 허용 that asks nothing (allowAll): a session told to by what it read must not sign itself in.
+ */
+export function bridgeSelfCall(tool) {
+  const name = String(tool?.name ?? '')
+  const input = tool?.input ?? {}
+  const files = /\.claude-bridge\/(trust|localui)\b/
+  if (name === 'Bash') {
+    const c = String(input.command ?? '')
+    if (files.test(c) || /\bagent\.mjs['"]?\s+(local|trust)\b/.test(c)) return '맥 터미널 전용 동작(짝짓기·로컬 화면)'
+    return null
+  }
+  const file = String(input.file_path ?? input.notebook_path ?? input.path ?? '')
+  return file && files.test(file) ? '맥 터미널 전용 동작(짝짓기·로컬 화면)' : null
+}
+
+/**
  * What 전부 허용 still asks the person about (REQ-F-759): a tool call that deletes outside the session's folder,
  * rewrites git history on a remote or throws away work, runs as root, reads this Mac's secrets, or changes Claude
  * Code's own settings or what macOS starts at login. Returns why in a few words, or null. A command is only read
  * as written: what a script it runs does inside is not seen.
  */
 export function riskyCall(tool, { cwd = '', home = '' } = {}) {
+  const own = bridgeSelfCall(tool)
+  if (own) return own
   const name = String(tool?.name ?? '')
   const input = tool?.input ?? {}
   const secret = /(^|[\s'"=:/])(~|\$HOME|\$\{HOME\})?\/?\.ssh(\/|\b)|\.claude-bridge-signing\b|\.claude-bridge\/(agent\.json|hook\.header|openai\.key|browser)\b|(^|[\s'"=/])\.env(?!\.(example|sample|template|dist)\b)(\.[\w.-]+)?(?=$|[\s'";|&)])|\bsecurity\s+(find-generic-password|find-internet-password|dump-keychain|export)\b|Library\/Keychains/
