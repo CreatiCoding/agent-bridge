@@ -28,7 +28,7 @@ export interface User {
   admin: boolean
 }
 
-export type SettingsTab = 'launch' | 'prompt' | 'accounts' | 'device' | 'plugins' | 'voice' | 'admin' | 'changes' | 'more'
+export type SettingsTab = 'devices' | 'launch' | 'prompt' | 'accounts' | 'device' | 'plugins' | 'voice' | 'admin' | 'changes' | 'more'
 
 /** What the page is showing: route is 'session' on a session's page (then sid), else another page's name. */
 export interface Current {

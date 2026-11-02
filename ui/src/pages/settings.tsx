@@ -21,6 +21,7 @@ import { copyText, linkClick, openLink } from '../lib/builtin-actions'
 import { resolve, type SlotItem } from '../lib/slots'
 import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
 import { ExtAdmin, ExtSettings } from '../components/ext-panels'
+import { DeviceBoard } from '../components/device-board'
 
 export interface Plugin {
   id: string
@@ -635,22 +636,44 @@ function DeleteAccount({ me }: { me: Me | null }) {
   )
 }
 
+/** A card of links to other pages: a phone shows the names alone (the hints made 시작 가이드 break over two lines). */
+function LinkCard({ label, items, wide }: { label: string; items: { icon: string; label: string; hint: string; to: string }[]; wide: boolean }) {
+  return (
+    <section className="card-box">
+      <nav className="link-list" aria-label={label}>
+        {items.map((x) => (
+          <a key={x.label} className="link-row" href={x.to} onClick={/^https?:/.test(x.to) ? linkClick(x.to, 'settings', '_self') : undefined}>
+            <Icon name={x.icon} />
+            <span className="grow">{x.label}</span>
+            {wide ? <span className="muted">{x.hint}</span> : null}
+            <Icon name="forward" />
+          </a>
+        ))}
+      </nav>
+    </section>
+  )
+}
+
 // The 운영 tab's code is its own file, fetched only when an admin opens the tab.
 const AdminPanel = lazy(() => import('./admin').then((m) => ({ default: m.AdminPanel })))
 
 // `short`: the label on a phone, where all the tabs share one row (styles.css .page-tab-short).
+// 기기 first (REQ-F-842): /settings opens the hosts at a glance. 프롬프트 is part of 세션 and 변경 기록 of 더 보기; their
+// addresses (/settings/prompt, /settings/changes) still open (TAB_OF).
 const TABS: { id: SettingsTab; label: string; short?: string; icon: string; admin?: true; feature?: Feature }[] = [
-  { id: 'launch', label: '새 세션', icon: 'plus' },
-  { id: 'prompt', label: '프롬프트', icon: 'doc' },
+  { id: 'devices', label: '기기', icon: 'laptop' },
+  { id: 'launch', label: '세션', icon: 'plus' },
   { id: 'accounts', label: 'Claude 계정', short: '계정', icon: 'user' },
-  { id: 'device', label: '이 기기', icon: 'phone' },
+  { id: 'device', label: '화면·알림', short: '화면', icon: 'phone' },
   // Slack and the extensions' switches live here: shown when features.slack is on or the server has an extension (REQ-F-812).
   { id: 'plugins', label: '플러그인', icon: 'plugin' },
   { id: 'voice', label: '음성', icon: 'mic', feature: 'voice' },
   { id: 'admin', label: '운영', icon: 'shield', admin: true },
-  { id: 'changes', label: '변경 기록', icon: 'clock' },
   { id: 'more', label: '더 보기', icon: 'list' },
 ]
+
+/** The tab an address lights up: the two that no longer have one of their own sit inside another. */
+const TAB_OF: Partial<Record<SettingsTab, SettingsTab>> = { prompt: 'launch', changes: 'more' }
 
 /**
  * settings.section (REQ-F-824): what an extension adds to a tab (plugins unless it names one), under the tab's own
@@ -673,6 +696,7 @@ function SettingsSlot({ me, tab }: { me: Me | null; tab: SettingsTab }) {
 
 export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
   const wide = useWide()
+  const at = TAB_OF[tab] ?? tab
   const hasExt = !!(me as { extensions?: unknown[] } | null)?.extensions?.length
   const [prompt, setPrompt] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -701,7 +725,12 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
   }, [])
   // Drawn once everything has arrived (or failed): drawn piece by piece, each card grew as its part came in and
   // pushed the cards below it down (a layout shift of 0.44 on a phone).
-  const ready = (prompt != null || !!errs.prompt) && (plugins != null || !!errs.plugins) && (opts !== undefined || !!errs.opts) && (launch != null || !!errs.launch)
+  // 기기 reads the state everyone already has, so it does not wait for the rest.
+  const ready = at === 'devices' || ((prompt != null || !!errs.prompt) && (plugins != null || !!errs.plugins) && (opts !== undefined || !!errs.opts) && (launch != null || !!errs.launch))
+  // /settings/prompt: the 세션 tab, scrolled to 기본 프롬프트.
+  useEffect(() => {
+    if (ready && tab === 'prompt') requestAnimationFrame(() => document.getElementById('settings-prompt')?.scrollIntoView({ block: 'start' }))
+  }, [ready, tab])
   return (
     <div className="main">
       <div className="topbar">
@@ -715,7 +744,7 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
           own address (/settings/<tab>), so a link can open the right one. */}
       <div className="page-tabs" role="tablist" aria-label="설정">
         {TABS.filter((t) => (!t.admin || me?.admin) && (!t.feature || featureOn(t.feature)) && (t.id !== 'plugins' || featureOn('slack') || hasExt)).map((t) => (
-          <a key={t.id} role="tab" aria-selected={tab === t.id} className={`page-tab${tab === t.id ? ' on' : ''}`} href={href({ name: 'settings', tab: t.id })} onClick={(e) => (e.preventDefault(), go({ name: 'settings', tab: t.id }, { replace: true }))}>
+          <a key={t.id} role="tab" aria-selected={at === t.id} className={`page-tab${at === t.id ? ' on' : ''}`} href={href({ name: 'settings', tab: t.id })} onClick={(e) => (e.preventDefault(), go({ name: 'settings', tab: t.id }, { replace: true }))}>
             <Icon name={t.icon} />
             {t.short ? (
               <>
@@ -734,8 +763,19 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             <Spinner />
           </div>
         ) : (
-        <div className="page stack">
-          {tab === 'launch' ? (
+        <div className={`page stack${at === 'devices' ? ' page-board' : ''}`}>
+          {at === 'devices' ? <DeviceBoard me={me} /> : null}
+          {at === 'devices' ? (
+            <LinkCard
+              label="기기 관리 화면"
+              wide={wide}
+              items={[
+                { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더·세션 정리', to: href({ name: 'disk' }) },
+                { icon: 'laptop', label: '기기 화면', hint: '맥 연결·상태·로그·다시 시작', to: href({ name: 'hosts' }) },
+              ]}
+            />
+          ) : null}
+          {at === 'launch' ? (
           <section className="card-box">
             <CardHead title="새 세션·복제 기본값" help="새 세션은 이 값으로 시작해요(새 세션 화면에서 그 세션만 바꿀 수 있어요). 복제·가벼운 복제도 이 값으로 띄워요. 지정 안 한 항목은 새 세션이면 맥의 기본값, 복제면 원래 세션의 값을 따라요." />
             {errs.opts || errs.launch ? (
@@ -745,14 +785,14 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             )}
           </section>
           ) : null}
-          {tab === 'launch' ? (
+          {at === 'launch' ? (
           <section className="card-box">
             <CardHead title="모델 라우팅" help="메인 세션은 기본 모델로 판단하고, 가벼운 일은 맞는 모델·effort 의 서브에이전트에 맡겨 비용을 줄여요. 기본은 꺼짐이고, 켜면 새로 여는 세션부터 적용돼요." />
             <RoutingSettings opts={opts ?? null} />
           </section>
           ) : null}
-          {tab === 'prompt' ? (
-          <section className="card-box">
+          {at === 'launch' ? (
+          <section className="card-box" id="settings-prompt">
             <CardHead title="기본 프롬프트" help="모든 세션의 시스템 프롬프트에 덧붙여요. 저장하면 열린 세션을 새로고침해 바로 적용하고, 일하던 세션은 다시 뜬 뒤 하던 작업을 이어가요." />
             {errs.prompt ? (
               <LoadError what="저장된 프롬프트를" error={errs.prompt} onRetry={() => load('prompt')} />
@@ -782,8 +822,8 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             )}
           </section>
           ) : null}
-          {tab === 'accounts' ? <AccountsPanel /> : null}
-          {tab === 'device' ? (
+          {at === 'accounts' ? <AccountsPanel /> : null}
+          {at === 'device' ? (
           <section className="card-box">
             <div className="stack">
               <PushToggle />
@@ -825,16 +865,15 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             </div>
           </section>
           ) : null}
-          {tab === 'device' ? <TrustPanel /> : null}
-          {tab === 'device' ? <Versions /> : null}
-          {tab === 'device' ? (
+          {at === 'device' ? <TrustPanel /> : null}
+          {at === 'device' ? (
           <section className="card-box">
             <CardHead title="아이콘" help="계정에 저장돼요. 이 계정으로 연 모든 기기에 같이 적용돼요. 채움은 아이콘 칸 안에서 그림이 차지하는 정도예요." />
             <IconSettings initial={getIcons()} />
           </section>
           ) : null}
-          {tab === 'plugins' ? <ExtSettings /> : null}
-          {tab === 'plugins' && featureOn('slack') ? (
+          {at === 'plugins' ? <ExtSettings /> : null}
+          {at === 'plugins' && featureOn('slack') ? (
           <section className="card-box">
             {errs.plugins ? (
               <LoadError what="플러그인 목록을" error={errs.plugins} onRetry={() => load('plugins')} />
@@ -874,9 +913,9 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             )}
           </section>
           ) : null}
-          {tab === 'voice' && featureOn('voice') ? <VoiceSettings /> : null}
+          {at === 'voice' && featureOn('voice') ? <VoiceSettings /> : null}
           {/* 운영 (REQ-F-741): its own tab, shown to admins; anyone else who opens /settings/admin is told so. */}
-          {tab === 'admin' ? (
+          {at === 'admin' ? (
             me?.admin ? (
               <Suspense
                 fallback={
@@ -893,33 +932,39 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             )
           ) : null}
           {/* 변경 기록 (REQ-F-744): for everyone, newest release first. */}
+          {tab === 'changes' ? (
+            <a className="dev-head-link" href={href({ name: 'settings', tab: 'more' })} onClick={(e) => (e.preventDefault(), go({ name: 'settings', tab: 'more' }, { replace: true }))}>
+              ← 더 보기
+            </a>
+          ) : null}
           {tab === 'changes' ? <ChangeLog /> : null}
-          {/* What used to fill the list's ⋯ menu: the other pages of the site, kept here so the menu stays short. */}
+          {/* What used to fill the list's ⋯ menu: the other pages of the site, kept here so the menu stays short.
+              기기·디스크 관리 moved to the 기기 tab (REQ-F-842); 변경 기록 and 버전 are here now. */}
           {tab === 'more' ? (
-          <section className="card-box">
-            <nav className="link-list" aria-label="다른 화면">
-              {[
-                { icon: 'laptop', label: '기기', hint: '맥 연결·상태·로그', to: href({ name: 'hosts' }) },
-                { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더', to: href({ name: 'disk' }) },
+            <LinkCard
+              label="다른 화면"
+              wide={wide}
+              items={[
                 { icon: 'chart', label: '사용 통계', hint: '일한 시간·PR', to: href({ name: 'stats' }) },
                 { icon: 'chart', label: '성능 리포트', hint: '화면별 점수·개선 기록', to: href({ name: 'quality' }) },
                 ...(featureOn('skills') ? [{ icon: 'plugin', label: '스킬', hint: '골라서 설치', to: '/skills' }] : []),
+                { icon: 'clock', label: '변경 기록', hint: '판마다 바뀐 것', to: href({ name: 'settings', tab: 'changes' }) },
+              ]}
+            />
+          ) : null}
+          {tab === 'more' ? (
+            <LinkCard
+              label="도움말·정보"
+              wide={wide}
+              items={[
                 { icon: 'info', label: '시작 가이드', hint: '처음 시작 · 멀티 계정', to: href({ name: 'guide', path: 'start' }) },
                 { icon: 'shield', label: '개인정보 처리방침', hint: '저장하는 것·보관·제3자', to: '/privacy' },
                 // AGPL-3.0 section 13 (REQ-F-791): the source of what this server runs.
                 ...(me?.source ? [{ icon: 'link', label: '소스 코드', hint: 'AGPL-3.0', to: me.source }] : []),
-              ].map((x) => (
-                <a key={x.label} className="link-row" href={x.to} onClick={/^https?:/.test(x.to) ? linkClick(x.to, 'settings', '_self') : undefined}>
-                  <Icon name={x.icon} />
-                  <span className="grow">{x.label}</span>
-                  {/* A phone shows the names alone: the hints made 시작 가이드 break over two lines. */}
-                  {wide ? <span className="muted">{x.hint}</span> : null}
-                  <Icon name="forward" />
-                </a>
-              ))}
-            </nav>
-          </section>
+              ]}
+            />
           ) : null}
+          {tab === 'more' ? <Versions /> : null}
           {/* The demo account has no GitHub login, and the demo refuses this call. */}
           {tab === 'more' && me && !me.demo && featureOn('skills') ? <SkillsRepoBox /> : null}
           {tab === 'more' && me?.recipients?.length ? (
@@ -934,7 +979,9 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             </section>
           ) : null}
           {tab === 'more' ? <DeleteAccount me={me} /> : null}
-          <SettingsSlot me={me} tab={tab} />
+          <SettingsSlot me={me} tab={tab === 'prompt' ? 'launch' : tab} />
+          {/* An extension's card for 프롬프트 (REQ-F-824) still shows where that tab went. */}
+          {at === 'launch' ? <SettingsSlot me={me} tab="prompt" /> : null}
         </div>
         )}
       </div>

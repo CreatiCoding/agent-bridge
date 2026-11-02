@@ -4215,6 +4215,183 @@ body.group-sorting * {
   font-weight: 600;
   border-bottom-color: var(--accent);
 }
+/* Settings → 기기 (REQ-F-842): one card per host, CPU·메모리·디스크 bars, battery and 세션 정리 in a line each. One
+   column on a phone, as many 300 px columns as fit on a wider screen. */
+.page-board {
+  max-width: 1040px;
+}
+.dev-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dev-section + .dev-section {
+  margin-top: 12px;
+}
+.page .dev-section-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--fs-large);
+}
+.dev-section-head .muted {
+  font-size: var(--fs-small);
+  font-weight: 400;
+}
+.dev-head-link {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+.dev-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 10px;
+}
+.dev-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+@media (hover: hover) {
+  .dev-card:hover {
+    border-color: var(--line-strong);
+  }
+}
+.dev-card:active {
+  background: var(--hover);
+}
+.dev-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.dev-card-off .dev-meters {
+  opacity: 0.55;
+}
+.dev-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dev-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-medium);
+}
+.dev-card-state {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--fs-xsmall);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.dev-card-head > svg {
+  flex: none;
+  color: var(--faint);
+}
+.dev-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.dev-meter-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-small);
+}
+.dev-meter-label {
+  flex: none;
+  color: var(--muted);
+}
+.dev-meter-val {
+  min-width: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.dev-bar {
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.dev-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  /* Neutral while all is well, so amber and red are what catches the eye. */
+  background: color-mix(in srgb, var(--text) 42%, transparent);
+}
+.dev-bar-warn > span {
+  background: var(--amber);
+}
+.dev-bar-bad > span {
+  background: var(--red);
+}
+.dev-meter:has(.dev-bar-warn) .dev-meter-val {
+  color: var(--amber);
+}
+.dev-meter:has(.dev-bar-bad) .dev-meter-val {
+  color: var(--red);
+  font-weight: 600;
+}
+.dev-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.dev-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+  font-size: var(--fs-small);
+}
+.dev-line-key {
+  color: var(--muted);
+}
+.dev-mode {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--fs-xsmall);
+}
+.dev-mode-auto {
+  border-color: transparent;
+  background: var(--green-soft);
+  color: var(--green);
+}
+.dev-mode-off {
+  color: var(--muted);
+}
+.dev-low {
+  color: var(--red);
+}
+.dev-ask {
+  color: var(--amber);
+}
+.dev-ask > svg {
+  flex: none;
+}
 /* Settings → 변경 기록: one release (SPEC version), its changes grouped by kind. */
 .release {
   display: flex;

@@ -125,8 +125,10 @@ test('디스크 관리 메뉴 /disk: 조작 페이지 주소로 열린다 (REQ-F
     await srv.login('alice')
     const r = await srv.api('alice', '/disk')
     assert.equal(r.status, 200)
-    const src = (await import('node:fs')).readFileSync(new URL('../../ui/src/lib/router.ts', import.meta.url), 'utf8')
-    assert.match(src, /if \(p === '\/disk'\) return \{ name: 'disk' \}/)
+    assert.equal((await srv.api('alice', '/disk?host=abc')).status, 200, '/disk?host=<id> 도 (REQ-F-842)')
+    const { matchRoute } = await import('../../ui/src/lib/router.ts')
+    assert.deepEqual(matchRoute('/disk'), { name: 'disk' })
+    assert.deepEqual(matchRoute('/disk?host=abc'), { name: 'disk', host: 'abc' })
   } finally {
     await srv.stop()
   }

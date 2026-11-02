@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.393',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '설정 첫 화면 "기기": 기기마다 카드 한 장에 연결 상태, CPU·메모리·디스크 사용률 막대(디스크 85% 노랑·95% 빨강), 배터리, 세션 정리 방식(자동·제안만·끔)과 내릴 세션·제안 수. 카드를 누르면 그 기기의 디스크 관리·세션 정리가 펼쳐진 채 열린다(/disk?host=<id>). 운영자는 다른 사용자 기기를 같은 카드로 아래에 따로 본다(세션 정리 숫자는 주인이 허용했을 때만)',
+        refs: ['REQ-F-842', 'REQ-F-803', 'REQ-F-804', 'REQ-F-807'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '설정 탭을 다시 묶음: 기기 · 세션(새 세션 기본값·모델 라우팅·기본 프롬프트) · 계정 · 화면·알림 · 플러그인 · 음성 · 운영 · 더 보기(다른 화면·도움말·버전·변경 기록). /settings/prompt·/settings/changes·/settings/launch·/disk 주소는 그대로 열린다',
+        refs: ['REQ-F-711', 'REQ-F-744'],
+      },
+    ],
+  },
+  {
     version: '1.392',
     date: '2026-11-02',
+    commit: 'ac9c8f1',
     changes: [
       {
         kind: 'security',

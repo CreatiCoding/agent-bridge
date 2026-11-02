@@ -687,7 +687,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   {featureOn('sessionMove') ? <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} /> : null}
                 </>
               ) : null}
-              {h && !others ? <Row left={<Icon name="folder" />} title="디스크 관리" sub="캐시·머지된 worktree·큰 폴더 정리는 디스크 관리 메뉴에서 기기별로 한 번에 봐요" onClick={() => go({ name: 'disk' })} chevron /> : null}
+              {h && !others ? <Row left={<Icon name="folder" />} title="디스크 관리" sub="캐시·머지된 worktree·큰 폴더 정리는 디스크 관리 메뉴에서 기기별로 한 번에 봐요" onClick={() => go({ name: 'disk', host: h.id })} chevron /> : null}
               {linux ? (
                 <div className="banner">
                   <Icon name="info" />

@@ -11,7 +11,7 @@ export type Route =
   | { name: 'quality' }
   | { name: 'host'; id: string; sid?: string }
   | { name: 'hosts' }
-  | { name: 'disk' }
+  | { name: 'disk'; host?: string }
   | { name: 'report'; id: string }
   | { name: 'settings'; tab?: SettingsTab }
   | { name: 'guide'; path: GuidePath }
@@ -21,7 +21,9 @@ export type Route =
 export type GuidePath = 'start' | 'accounts'
 
 /** The settings page's tabs; the first is what /settings opens. */
-export const SETTINGS_TABS = ['launch', 'prompt', 'accounts', 'device', 'plugins', 'voice', 'admin', 'changes', 'more'] as const
+// 'prompt' and 'changes' have no tab of their own any more (REQ-F-842): their addresses still open, inside 세션 and
+// 더 보기, so links and bookmarks keep working.
+export const SETTINGS_TABS = ['devices', 'launch', 'prompt', 'accounts', 'device', 'plugins', 'voice', 'admin', 'changes', 'more'] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 
 /** The route a path (with its query) names, or null when it is not one of this page's (/recovery, /guide/mcp, …). */
@@ -43,7 +45,11 @@ export function matchRoute(url: string): Route | null {
   if (p === '/stats') return { name: 'stats' }
   if (p === '/quality') return { name: 'quality' }
   if (p === '/hosts') return { name: 'hosts' }
-  if (p === '/disk') return { name: 'disk' }
+  if (p === '/disk') {
+    // 설정 → 기기의 카드 (REQ-F-842): /disk?host=<id> opens that host's box.
+    const host = /(?:^|&)host=([\w-]+)/.exec(q)?.[1]
+    return { name: 'disk', ...(host ? { host } : {}) }
+  }
   // The admin page of before is now the settings page's 운영 tab; /admin (bookmarks, links) opens that tab.
   if (p === '/admin') return { name: 'settings', tab: 'admin' }
   if ((m = /^\/admin\/reports\/([\w-]+)$/.exec(p))) return { name: 'report', id: m[1] }
@@ -59,7 +65,7 @@ export function matchRoute(url: string): Route | null {
 export const parseRoute = (url: string): Route => matchRoute(url) ?? { name: 'home' }
 
 export const href = (r: Route) =>
-  ({ home: '/', session: `/s/${(r as { id?: string }).id}`, new: '/new', stats: '/stats', quality: '/quality', host: `/hosts/${(r as { id?: string }).id}${(r as { sid?: string }).sid ? `?sid=${(r as { sid?: string }).sid}` : ''}`, hosts: '/hosts', disk: '/disk', report: `/admin/reports/${(r as { id?: string }).id}`, settings: `/settings${(r as { tab?: string }).tab && (r as { tab?: string }).tab !== 'launch' ? `/${(r as { tab?: string }).tab}` : ''}`, split: `/split?s=${((r as { ids?: string[] }).ids ?? []).join(',')}`, guide: `/guide${(r as { path?: string }).path && (r as { path?: string }).path !== 'start' ? `/${(r as { path?: string }).path}` : ''}` })[r.name]
+  ({ home: '/', session: `/s/${(r as { id?: string }).id}`, new: '/new', stats: '/stats', quality: '/quality', host: `/hosts/${(r as { id?: string }).id}${(r as { sid?: string }).sid ? `?sid=${(r as { sid?: string }).sid}` : ''}`, hosts: '/hosts', disk: `/disk${(r as { host?: string }).host ? `?host=${(r as { host?: string }).host}` : ''}`, report: `/admin/reports/${(r as { id?: string }).id}`, settings: `/settings${(r as { tab?: string }).tab && (r as { tab?: string }).tab !== 'devices' ? `/${(r as { tab?: string }).tab}` : ''}`, split: `/split?s=${((r as { ids?: string[] }).ids ?? []).join(',')}`, guide: `/guide${(r as { path?: string }).path && (r as { path?: string }).path !== 'start' ? `/${(r as { path?: string }).path}` : ''}` })[r.name]
 
 const ROUTE_EVENT = 'cb-route'
 

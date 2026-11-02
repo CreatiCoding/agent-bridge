@@ -92,9 +92,9 @@ interface OtherHost {
 }
 
 /** An operator's view of everyone else's hosts: ask, wait, and manage once the owner grants it. */
-function OthersSection({ me }: { me: Me }) {
+function OthersSection({ me, focus }: { me: Me; focus?: string }) {
   const [list, setList] = useState<OtherHost[] | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(focus ?? null)
   const [busy, setBusy] = useState<string | null>(null)
   const load = () =>
     get<{ users: { login: string; hosts: Omit<OtherHost, 'login'>[] }[] }>('/api/admin/overview').then(
@@ -118,6 +118,11 @@ function OthersSection({ me }: { me: Me }) {
     }
     setBusy(null)
   }
+  // Came from a card on 설정 → 기기 (REQ-F-842): bring that host's row into view once the list is in.
+  const found = !!focus && !!list?.some((h) => h.id === focus)
+  useEffect(() => {
+    if (found) scrollToHost(focus!)
+  }, [found, focus])
   if (!list?.length) return null
   return (
     <>
@@ -127,7 +132,7 @@ function OthersSection({ me }: { me: Me }) {
         const can = mine && granted(h.diskHelp)
         const shown = open === h.id && can
         return (
-          <div key={h.id} className="stack" style={{ gap: 8 }}>
+          <div key={h.id} id={`disk-${h.id}`} className="stack" style={{ gap: 8 }}>
             <Row
               left={<span className={`dot dot-${h.online ? 'green' : 'grey'}`} />}
               title={`${h.login} · ${h.name}`}
@@ -162,11 +167,21 @@ function OthersSection({ me }: { me: Me }) {
   )
 }
 
-export function DiskPage({ me }: { me: Me | null }) {
+/** The row of a host, at the top of the page's scroll. */
+function scrollToHost(id: string) {
+  requestAnimationFrame(() => document.getElementById(`disk-${id}`)?.scrollIntoView({ block: 'start' }))
+}
+
+/** `host`: /disk?host=<id> (a card on 설정 → 기기, REQ-F-842) opens that host's box and shows its row. */
+export function DiskPage({ me, host }: { me: Me | null; host?: string }) {
   const wide = useWide()
   const loaded = useStateLoaded()
   const hosts = useStore((s) => s.state?.hosts ?? [])
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(host ?? null)
+  const mine = !!host && hosts.some((h) => h.id === host)
+  useEffect(() => {
+    if (mine) scrollToHost(host!)
+  }, [mine, host])
   // Fullest first: the one most likely to need clearing is at the top.
   const list = [...hosts].sort((a, b) => (b.sys?.disk?.pct ?? -1) - (a.sys?.disk?.pct ?? -1))
   return (
@@ -184,7 +199,7 @@ export function DiskPage({ me }: { me: Me | null }) {
           {list.map((h) => {
             const shown = open === h.id
             return (
-              <div key={h.id} className="stack" style={{ gap: 8 }}>
+              <div key={h.id} id={`disk-${h.id}`} className="stack" style={{ gap: 8 }}>
                 <Row
                   left={<span className={`dot dot-${h.online ? 'green' : 'grey'}`} />}
                   title={h.name}
@@ -203,7 +218,7 @@ export function DiskPage({ me }: { me: Me | null }) {
               </div>
             )
           })}
-          {me?.admin ? <OthersSection me={me} /> : null}
+          {me?.admin ? <OthersSection me={me} focus={mine ? undefined : host} /> : null}
         </div>
       </div>
     </div>

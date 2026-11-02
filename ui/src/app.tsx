@@ -96,7 +96,7 @@ function appMenu(at: HTMLElement, me: Me | null, phone = false) {
             'sep',
           ] as MenuEntry[])
         : []),
-      { label: '설정', icon: 'settings', hint: '기기 · 통계 · 스킬 · 화면', onSelect: () => go({ name: 'settings' }) },
+      { label: '설정', icon: 'settings', hint: '기기 · 세션 · 화면 · 더 보기', onSelect: () => go({ name: 'settings' }) },
       { label: '문제 제보', icon: 'support', onSelect: openReport },
       'sep',
       { header: me ? `${shownName(me)}${me.admin ? ' · 운영자' : ''}` : '' },
@@ -195,13 +195,13 @@ function Main({ route, me }: { route: Route; me: Me | null }) {
     case 'hosts':
       return <HostsPage me={me} />
     case 'disk':
-      return <DiskPage me={me} />
+      return <DiskPage me={me} host={route.host} />
     case 'host':
       return <HostPage id={route.id} sid={route.sid} />
     case 'report':
       return <ReportPage key={route.id} id={route.id} />
     case 'settings':
-      return <SettingsPage me={me} tab={route.tab ?? 'launch'} />
+      return <SettingsPage me={me} tab={route.tab ?? 'devices'} />
     case 'guide':
       return <GuidePage me={me} path={route.path} />
     default:
