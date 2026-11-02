@@ -988,9 +988,17 @@ func convert(meta *Sess, lines []string) []any {
 		}
 		meta.hasSilent = true
 		opts := evOpts{cwd: meta.str("cwd"), home: meta.str("home"), silent: meta.silentTools, image: func(t, d any) any { return imageRef(meta.uid(), t, d, nil) }}
+		// A sealed Mac marks the line that is what the page just said (REQ-S-095): the words cannot be compared here.
+		marked := strings.Contains(line, `"bridgeEcho":true`)
 		for _, ea := range lineToEvents(line, opts) {
 			e := asM(ea)
 			k := mstr(e, "k")
+			if k == "user" && marked {
+				if echo := asArr(meta.get("echo")); len(echo) > 0 {
+					meta.set("echo", echo[1:])
+				}
+				continue
+			}
 			if k == "user" && isEcho(meta, e["text"]) {
 				continue
 			}

@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.394',
+    date: '2026-11-02',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui', 'server', 'agent'],
+        text: '서버를 믿지 않는 맥의 내용 봉인(선택, 기본 꺼짐): 맥 터미널에서 `trust seal on` 을 켜면 대화·터미널 화면·권한 카드·알림 글을 짝지은 기기만 풀 수 있게 봉인해 내보낸다. 서버·짝짓지 않은 브라우저에는 🔒 로 보이고, 푸시·Slack·웹훅에는 내용이 가지 않는다. 그림은 평문',
+        refs: ['REQ-S-095'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '설정 → 화면·알림 "맥 짝짓기" 에 봉인 여부를 보이고, 봉인하지 않는 맥에는 켜는 법을 안내한다. 봉인하는 맥에 보내는 글도 봉인한 뒤 서명한다',
+        refs: ['REQ-S-095', 'REQ-S-089'],
+      },
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '봉인 중에는 대화 파일 내보내기(다른 맥으로 옮기기)를 서버로 보내지 않고, trust 판(TRUST_VERSION)을 2로 올려 봉인 없는 빌드로 되돌리지 못하게 한다',
+        refs: ['REQ-S-095', 'REQ-S-094'],
+      },
+    ],
+  },
+  {
     version: '1.393',
     date: '2026-11-02',
+    commit: '20715a2',
     changes: [
       {
         kind: 'added',

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Trust, TRUST_CLASS, TRUST_VERSION, TRUST_MIN_SEQ, classOf, rebuild, hashesHold, pairCommit, pairSas, sha256Hex, textMac, updateKeepsTrust, modeOf, BgTracker, b64u, unb64u, SKEW_MS } from '../../agent/trust.mjs'
+import { Trust, TRUST_CLASS, TRUST_VERSION, TRUST_MIN_SEQ, classOf, rebuild, hashesHold, pairCommit, pairSas, sha256Hex, textMac, updateKeepsTrust, modeOf, BgTracker, b64u, unb64u, SKEW_MS, sealLine, sealOut, sealCard, sealPersonText, sealChosen } from '../../agent/trust.mjs'
 
 const subtle = globalThis.crypto.subtle
 const enc = new TextEncoder()
@@ -185,4 +185,82 @@ test('background work is counted from the transcript, not told by the server', (
   assert.equal(b.running()[0].label, 'npm run dev')
   b.line(JSON.stringify({ type: 'user', message: { content: '<task-notification><tool-use-id>tu1</tool-use-id><status>completed</status></task-notification>' } }))
   assert.equal(b.running().length, 0)
+})
+
+// ---------- 1.394: what leaves the Mac, sealed (REQ-S-095) ----------
+
+/** The page's opening (ui/src/lib/trust.ts openPiece): AES-GCM under K, AAD bt1|host|kid. */
+async function pageOpen(k, hostId, text) {
+  const key = await subtle.importKey('raw', k, 'AES-GCM', false, ['decrypt'])
+  let out = text
+  for (const m of [...text.matchAll(/⟦bt1:([0-9a-f]{8}):([A-Za-z0-9_-]+)⟧/g)]) {
+    const b = unb64u(m[2])
+    const plain = await subtle.decrypt({ name: 'AES-GCM', iv: b.subarray(0, 12), additionalData: enc.encode(`bt1|${hostId}|${m[1]}`) }, key, b.subarray(12))
+    out = out.replace(m[0], JSON.parse(new TextDecoder().decode(plain)).v)
+  }
+  return out
+}
+
+test('sealing is chosen at the terminal: off unless trustSeal is true, and only with a mode and a device', async () => {
+  assert.equal(sealChosen({}), false)
+  assert.equal(sealChosen({ trustSeal: 'yes' }), false)
+  assert.equal(sealChosen({ trustSeal: true }), true)
+  const t = open(tmp())
+  assert.equal(t.info('enforce', true).seal, false, '기기 없음')
+  await pair(t, await device())
+  assert.equal(t.info('enforce', true).seal, true)
+  assert.equal(t.info('off', true).seal, false, '모드 off')
+  assert.equal(t.info('enforce', false).seal, false, '고르지 않음')
+})
+
+test('a transcript line: words sealed, structure and pictures plain, the echo marked; the page opens it back', async () => {
+  const t = open(tmp())
+  const { k } = await pair(t, await device())
+  const seal = t.sealer()
+  const answer = JSON.stringify({ type: 'assistant', uuid: 'u1', sessionId: 's1', timestamp: 'T', message: { role: 'assistant', model: 'claude-x', id: 'm1', type: 'message', content: [{ type: 'text', text: '비밀 답' }, { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'cat secret.txt', run_in_background: true } }] } })
+  const out = JSON.parse(sealLine(answer, seal))
+  assert.equal(out.type, 'assistant')
+  assert.equal(out.message.model, 'claude-x')
+  assert.equal(out.message.content[1].name, 'Bash')
+  assert.equal(out.message.content[1].input.run_in_background, true)
+  assert.doesNotMatch(JSON.stringify(out), /비밀 답|secret\.txt/)
+  assert.equal(await pageOpen(k, 'host-a', out.message.content[0].text), '비밀 답')
+  assert.equal(await pageOpen(k, 'host-a', out.message.content[1].input.command), 'cat secret.txt')
+  // A person's line: the server's tags stay, the words go sealed; the line that is what the page said is marked.
+  const said = JSON.stringify({ type: 'user', uuid: 'u2', message: { role: 'user', content: '<system-reminder>몰래</system-reminder>\n내가 쓴 글\n[Image #1]' } })
+  const o2 = JSON.parse(sealLine(said, seal, (x) => x.includes('내가 쓴 글')))
+  assert.equal(o2.bridgeEcho, true)
+  assert.match(o2.message.content, /^<system-reminder>⟦bt1:[^⟧]+⟧<\/system-reminder>\n?⟦bt1:[^⟧]+⟧\[Image #1\]$/)
+  assert.equal(await pageOpen(k, 'host-a', o2.message.content), '<system-reminder>몰래</system-reminder>\n내가 쓴 글\n[Image #1]')
+  assert.equal(JSON.parse(sealLine(said, seal, () => false)).bridgeEcho, undefined)
+  // Pictures stay plain (R5): the server asks the Mac for them by their bytes.
+  const pic = JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0' } }] } })
+  assert.equal(JSON.parse(sealLine(pic, seal)).message.content[0].source.data, 'iVBORw0')
+  // What the bridge typed keeps its start: the server tells it from what the person said.
+  assert.match(sealPersonText('[정정] 방금 보낸 글', seal), /^\[정정\] ⟦bt1:/)
+})
+
+test('messages: words sealed field by field, a card as one piece holding its id', async () => {
+  const t = open(tmp())
+  const { k } = await pair(t, await device())
+  const seal = t.sealer()
+  const sc = sealOut({ t: 'screen', sid: 's1', reqId: 'r', text: '터미널 화면' }, seal)
+  assert.equal(sc.reqId, 'r')
+  assert.equal(await pageOpen(k, 'host-a', sc.text), '터미널 화면')
+  const st = sealOut({ t: 'status', sid: 's1', phase: 'busy', held: [{ id: 'h1', text: '붙잡은 글' }], tool: { name: 'Bash', title: 'rm -rf x' } }, seal)
+  assert.equal(st.phase, 'busy')
+  assert.equal(st.held[0].id, 'h1')
+  assert.doesNotMatch(JSON.stringify(st), /붙잡은 글|rm -rf/)
+  const card = { id: 'c1', kind: 'permission', open: true, at: 1, title: 'Bash 실행?', context: 'rm -rf /', options: [{ n: 1, label: '예' }, { n: 2, label: '아니오' }] }
+  const c = sealOut({ t: 'card', sid: 's1', card }, seal).card
+  assert.deepEqual(c.options, [{ n: 1, label: '🔒' }, { n: 2, label: '🔒' }])
+  assert.equal(c.id, 'c1')
+  assert.equal(c.title, '🔒')
+  assert.doesNotMatch(JSON.stringify(c), /rm -rf|Bash 실행/)
+  const w = JSON.parse(await pageOpen(k, 'host-a', c.sealed))
+  assert.equal(w.id, 'c1', '덩어리 안의 id: 다른 카드로 옮기면 화면이 버튼을 그리지 않음')
+  assert.equal(w.options[1].label, '아니오')
+  assert.deepEqual(sealCard({ id: 'c2', open: false, result: '허용' }, seal), { id: 'c2', open: false, result: '허용' }, '닫힘 알림은 그대로')
+  const hello = { t: 'hello', hostId: 'host-a' }
+  assert.deepEqual(sealOut(hello, seal), hello, '메타데이터는 평문')
 })

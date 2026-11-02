@@ -553,7 +553,7 @@ func (s *slackInst) post(threadTs any, text any, blocks []any) M {
 	if threadTs != nil {
 		args = append(args, kv{"thread_ts", threadTs})
 	}
-	args = append(args, kv{"text", truncate(jsStringU(text), 3900)})
+	args = append(args, kv{"text", truncate(maskSeals(jsStringU(text)), 3900)})
 	if blocks != nil {
 		if len(blocks) > 50 {
 			blocks = blocks[:50]
@@ -566,6 +566,7 @@ func (s *slackInst) post(threadTs any, text any, blocks []any) M {
 
 // postMd: what a session says goes as markdown_text; if Slack will not take that, as mrkdwn for 10 minutes.
 func (s *slackInst) postMd(threadTs any, md string) M {
+	md = maskSeals(md)
 	if nowMs()-s.mdRefused > 600_000 {
 		var r M
 		err := try(func() {

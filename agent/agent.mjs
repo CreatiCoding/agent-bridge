@@ -24,7 +24,7 @@ import { TOOLS as BRIDGE_TOOLS } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
-import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION } from './trust.mjs'
+import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, sealOut, sealLine } from './trust.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
@@ -712,26 +712,32 @@ let welcomed = false
 // ---------- a Mac that does not trust the server (REQ-S-090~, docs/TRUST-DESIGN.md) ----------
 
 const trust = new Trust({ stateDir: STATE_DIR, hostId: config.hostId })
-let trustSeen = { at: 0, mode: 'off' }
+let trustSeen = { at: 0, mode: 'off', seal: false }
 /** agent.json's `trust`, read again every 2 s: it is changed at the terminal (`trust mode`), never by the server. */
 function trustMode() {
   const t = Date.now()
   if (t - trustSeen.at < 2000) return trustSeen.mode
-  const mode = modeOf(readJson(configPath, {}), trust.devices().length)
+  const cfg = readJson(configPath, {})
+  const mode = modeOf(cfg, trust.devices().length)
+  const seal = sealChosen(cfg)
   if (trustSeen.at && mode !== trustSeen.mode) log('info', 'trust', `모드 ${trustSeen.mode} → ${mode}`)
-  trustSeen = { at: t, mode }
+  if (trustSeen.at && seal !== trustSeen.seal) log('info', 'trust', `봉인 ${seal ? '켬' : '끔'}`)
+  trustSeen = { at: t, mode, seal }
   trustSettle(mode)
   return mode
 }
 // What the page shows of this Mac's trust (mode, the pairing window, its devices) follows the terminal's changes.
 let trustShown = ''
 setInterval(() => {
-  const i = trust.info(trustMode())
-  const now = `${i.mode}|${i.window}|${i.devices.map((d) => d.id).join(',')}`
+  const i = trustInfo()
+  const now = `${i.mode}|${i.seal}|${i.window}|${i.devices.map((d) => d.id).join(',')}`
   if (trustShown && now !== trustShown) hello().catch(() => {})
   trustShown = now
 }, 2000).unref()
 const trustOn = () => trustMode() !== 'off'
+/** Whether what leaves this Mac is sealed now (§6, 1.394): chosen at the terminal, a mode, and a device to read it. */
+const trustSealing = () => trust.sealing(trustMode()) && trustSeen.seal
+const trustInfo = () => trust.info(trustMode(), trustSeen.seal)
 const enforcing = () => trustMode() === 'enforce'
 /**
  * Once, when the mode really becomes enforce: what came in unsigned before is not carried into it (§2.4). Held
@@ -775,7 +781,7 @@ function trustRefuse(cmd, why) {
   log('warn', 'trust', `거부: ${cmd.t}${cmd.op ? `/${cmd.op}` : ''} (${why})`, cmd.sid)
   trust.audit(`refused ${cmd.t}${cmd.op ? `/${cmd.op}` : ''}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}: ${why}`)
   const message = `🔒 이 맥은 짝지은 기기가 서명한 명령만 받아요: ${cmd.t} 거부 (${why})`
-  emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message: trustSealText(message, cmd.sid) })
+  emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message })
   if (cmd.sid && sessions.has(cmd.sid) && !cmd.reqId) toast(cmd.sid, message)
   return null
 }
@@ -818,11 +824,24 @@ function trustText(text, sid) {
   if (t === null) throw new Error('봉인된 글을 열지 못했어요(다른 맥·다른 세션의 글이거나 키가 바뀜). 페이지를 새로 고쳐 주세요')
   return t
 }
-/** A text that leaves this Mac, sealed while sealing is on (§6). */
-// Sealing what leaves the Mac is the second step (§9): until the page can open it, text goes out as it is.
-const TRUST_SEALING = false
-function trustSealText(text, sid) {
-  return TRUST_SEALING && trust.sealing(trustMode()) ? trust.seal(String(text ?? ''), 'm', sid) : text
+/** What the page said in a session lately, as this Mac typed it: its transcript line is marked bridgeEcho (§6.2). */
+function trustSaid(s, text) {
+  if (!trustSealing()) return
+  const norm = trustNorm(text)
+  if (!norm) return
+  const t = Date.now()
+  s.trustSaid = [...(s.trustSaid ?? []).filter((x) => t - x.at < 30 * 60_000), { norm: norm.slice(0, 200), at: t }].slice(-20)
+}
+// The server's normal() (eventlog.go): pictures' lines out, spaces folded.
+const trustNorm = (t) => String(t ?? '').replace(/\n?\[(?:Image|File) attached: [^\]]*\]/g, '').replace(/\[Image #\d+\]/g, '').replace(/\s+/g, ' ').trim()
+function trustEchoOf(s) {
+  return (said) => {
+    const n = trustNorm(said)
+    const i = (s.trustSaid ?? []).findIndex((x) => n.includes(x.norm))
+    if (i < 0) return false
+    s.trustSaid.splice(i, 1)
+    return true
+  }
 }
 /** Sessions closed here, so that `open` (이어가기) rebuilds one from this Mac's own record, not the server's (§5.3). */
 const closedPath = path.join(STATE_DIR, 'trust', 'closed.json')
@@ -856,6 +875,11 @@ const ownBg = (s) => (s.bgTrack ? s.bgTrack.running() : [])
 
 function emit(msg) {
   if (!client) return
+  // Words leave sealed while sealing is on (§6.2). Transcript lines were sealed where they were read (tail).
+  if (msg.t !== 'lines' && msg.t !== 'hello' && trustSealing()) {
+    const seal = trust.sealer()
+    if (seal) msg = sealOut(msg, seal)
+  }
   stats.sent++
   // The new key itself goes by client.write in rotateKey, not here.
   client.write(`data: ${hideKeys(JSON.stringify(msg), ownKeys())}\n\n`)
@@ -866,7 +890,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trust.info(trustMode()) })
+  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo() })
 }
 
 // ---------- tmux sessions ----------
@@ -2176,6 +2200,9 @@ function tail(sid, s) {
     let batch = []
     let size = 0
     let from = s.lineNo
+    // Sealed here, before the chunks are measured: a sealed line is longer than the plain one (§6.2).
+    const seal = trustSealing() ? trust.sealer() : null
+    const echo = seal ? trustEchoOf(s) : null
     const flush = () => {
       if (batch.length) emit({ t: 'lines', sid, from, lines: batch })
       from += batch.length
@@ -2195,9 +2222,10 @@ function tail(sid, s) {
       try {
         saveLineImages(line, IMAGES_DIR)
       } catch {}
-      if (size + line.length > MAX_CHUNK) flush()
-      batch.push(line)
-      size += line.length
+      const out = seal ? sealLine(line, seal, echo) : line
+      if (size + out.length > MAX_CHUNK) flush()
+      batch.push(out)
+      size += out.length
       s.lineNo++
     }
     flush()
@@ -2528,6 +2556,8 @@ const commands = {
    */
   export({ reqId, sid, conv, from }) {
     const s = sessions.get(sid)
+    // The whole transcript in plain would go through the server: not while what leaves is sealed (§6.2).
+    if (trustSealing()) return emit({ t: 'export', reqId, ok: false, error: '이 맥은 내용을 봉인해 내보내고 있어서 대화 파일을 서버로 보내지 않아요' })
     try {
       // A session that ended was let go here: its conversation is found by its id, in any account's folder.
       const file = s ? transcriptPath(s, sid) : findTranscript(conv, null)
@@ -2745,6 +2775,7 @@ const commands = {
     const s = sessions.get(sid)
     if (!s) return
     text = trustText(text, sid)
+    trustSaid(s, text)
     if (enforcing()) videos = []
     // Pictures become files on this Mac, and the message says where they are: Claude reads them from there.
     // The name is the picture's id on the server, which is how its copy there is found again (REQ-F-014).
@@ -3789,7 +3820,7 @@ const commands = {
     const reply = (x) => emit({ t: 'trust', reqId, ok: true, ...x })
     try {
       const mode = trustMode()
-      if (op === 'info') return reply({ info: trust.info(mode) })
+      if (op === 'info') return reply({ info: trustInfo() })
       if (op === 'pair1') return reply(trust.pair1({ c }, mode))
       if (op === 'pair3') return reply(trust.pair3({ pid, spub, dpub, nb, name }))
       if (op === 'pair4') return reply(trust.pair4({ pid }))
@@ -3798,7 +3829,7 @@ const commands = {
         if (!trust.remove(String(id ?? ''))) throw new Error('그런 기기가 없어요')
         log('info', 'trust', `기기 해제: ${id}`)
         hello().catch(() => {})
-        return reply({ info: trust.info(trustMode()) })
+        return reply({ info: trustInfo() })
       }
       throw new Error('모르는 요청이에요')
     } catch (e) {

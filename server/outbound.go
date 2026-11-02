@@ -217,12 +217,12 @@ func emitEvent(name, uid string, more orderedObj) {
 	}
 	ev, login := eventOf(name, uid, more)
 	extEmit(name, uid, ev, login) // extensions' hooks and pages (REQ-F-826)
-	body := jsonBytes(ev)
+	body := maskSealsBytes(jsonBytes(ev))
 	for _, t := range targets {
 		go deliverEvent(t, body, uid, login)
 	}
 	if len(hooks) > 0 {
-		hb := jsonBytes(append(append(orderedObj{}, ev...), kv{"hook", name + ".after"}))
+		hb := maskSealsBytes(jsonBytes(append(append(orderedObj{}, ev...), kv{"hook", name + ".after"})))
 		for _, t := range hooks {
 			go afterHook(name, t, hb, uid, login)
 		}

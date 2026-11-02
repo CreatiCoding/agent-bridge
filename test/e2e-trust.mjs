@@ -1,7 +1,9 @@
-// End-to-end check of a Mac that does not trust the server (REQ-S-090~093): pairing at the Mac's terminal, the
-// page's signatures, and what the Mac refuses in enforce (no signature, a reused one, one for another text).
+// End-to-end check of a Mac that does not trust the server (REQ-S-090~095): pairing at the Mac's terminal, the
+// page's signatures, what the Mac refuses in enforce (no signature, a reused one, one for another text), and
+// sealing (`trust seal on`): the paired page reads the words, the server and an unpaired page see pieces.
+// DATA=<the server's data folder> also searches it for the sealed word.
 // Needs a running server, one agent (see README: 개발) and playwright (not a dependency of this repo):
-//   PLAYWRIGHT=… AGENT_A=/tmp/agentA WORK=<folder> SHOTS=<folder> node test/e2e-trust.mjs
+//   PLAYWRIGHT=… AGENT_A=/tmp/agentA WORK=<folder> SHOTS=<folder> [DATA=<folder>] node test/e2e-trust.mjs
 // It changes the agent's trust mode and leaves it off at the end.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -155,6 +157,42 @@ try {
   await until(() => /refused updatePolicy/.test(audit()), 15000, 'updatePolicy 거부')
   ok(true, '서명 없는 업데이트 시간 바꾸기 거부')
 
+  step('봉인(1.394): 내용은 짝지은 기기만 읽음')
+  cli('seal', 'on')
+  await sleep(2500)
+  await phone.goto(`${SITE}/settings/device`)
+  await phone.waitForSelector('text=봉인', { timeout: 15000 })
+  ok(true, '설정에 봉인 표시')
+  await phone.goto(`${SITE}/s/${sid}`)
+  await phone.fill('.inputbox textarea', 'Reply with exactly the word SEALWORD and nothing else.')
+  await phone.click('.inputbox .send')
+  await answered('SEALWORD')
+  ok(true, '짝지은 기기에서 봉인된 답이 풀려 보임')
+  const mine = await phone.evaluate(() => document.body.innerText.split('the word SEALWORD and').length - 1)
+  ok(mine === 1, `내 말풍선이 풀려 한 번만 보임(에코는 bridgeEcho 로 빠짐) (${mine})`)
+  const evs = await (await otherCtx.request.get(`${SITE}/api/sessions/${sid}/events`)).text()
+  ok(!/SEALWORD/.test(evs) && /⟦bt1:/.test(evs), '서버가 주는 대화 기록에는 봉인 조각만')
+  if (process.env.DATA) {
+    const hits = []
+    const walk = (d) => {
+      for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, f.name)
+        if (f.isDirectory()) walk(p)
+        else if (f.isFile() && fs.statSync(p).size < 64 * 1024 * 1024 && fs.readFileSync(p).includes('SEALWORD')) hits.push(p)
+      }
+    }
+    walk(process.env.DATA)
+    ok(!hits.length, `서버 데이터 폴더에 평문 없음 ${hits.join(' ')}`)
+  }
+  const stranger = watch(await otherCtx.newPage(), 'other')
+  await stranger.goto(`${SITE}/s/${sid}`)
+  await stranger.waitForFunction(() => [...document.querySelectorAll('.msg-text')].some((m) => m.textContent.includes('🔒')), null, { timeout: 20000 })
+  ok(!(await stranger.locator('.msg-text', { hasText: 'SEALWORD' }).count()), '짝짓지 않은 브라우저에는 🔒')
+  await phone.screenshot({ path: `${shots}/trust-4-sealed.png` })
+  await stranger.close()
+  cli('seal', 'off')
+  await sleep(2500)
+
   step('설정에서 해제')
   await phone.goto(`${SITE}/settings/device`)
   await phone.waitForSelector('text=서명 필수', { timeout: 15000 })
@@ -172,6 +210,7 @@ try {
   for (const [i, p] of mac.pages().concat(phoneCtx.pages(), otherCtx.pages()).entries()) await p.screenshot({ path: `${shots}/trust-fail-${i}.png` }).catch(() => {})
   process.exitCode = 1
 } finally {
+  cli('seal', 'off')
   cli('mode', 'off')
   await browser.close()
 }

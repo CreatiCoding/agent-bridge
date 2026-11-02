@@ -379,7 +379,14 @@ func jsSliceFrom(s string, a int) string {
 }
 
 // jsSliceTo is s.slice(0, b).
-func jsSliceTo(s string, b int) string { return jsSlice(s, 0, b) }
+func jsSliceTo(s string, b int) string {
+	out := jsSlice(s, 0, b)
+	// A sealed piece is never cut in two (REQ-S-095): what would be half of one becomes 🔒.
+	if len(out) < len(s) && strings.Contains(out, "⟦") {
+		return sealSafeEnd(out)
+	}
+	return out
+}
 
 // jsSlice is s.slice(a, b) (negative indexes count from the end).
 func jsSlice(s string, a, b int) string {
@@ -410,7 +417,7 @@ func jsSub(s string, a, b int) string {
 // truncate is the s.length > n ? s.slice(0, n-1)+'…' : s of every module.
 func truncate(s string, n int) string {
 	if jsLen(s) > n {
-		return jsSliceTo(s, n-1) + "…"
+		return sealSafeEnd(jsSliceTo(s, n-1)) + "…"
 	}
 	return s
 }
@@ -420,7 +427,7 @@ func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return jsSliceTo(s, n)
+	return sealSafeEnd(jsSliceTo(s, n))
 }
 
 // jsIndexOf is s.indexOf(sub) in UTF-16 units (ASCII fast path).

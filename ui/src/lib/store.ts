@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import { loadList, saveList } from './cache'
 import type { Ev, State } from './types'
 import { sawBuild } from './fresh'
+import { openDeep } from './trust'
 
 export type Link = 'connecting' | 'live' | 'retrying'
 
@@ -101,49 +102,64 @@ export function connect() {
     } catch {
       return
     }
-    if (msg.t === 'state') {
-      const { t: _t, ...state } = msg
-      set({ state: state as unknown as State })
-      saveList(state)
-      sawBuild(state.ui)
-    } else if (msg.t === 'state_delta' && store.state) {
-      // Only what changed: rows not named keep the very objects they were, so their components do not redraw.
-      const prev = store.state
-      const d = msg as unknown as Partial<State> & { changed?: State['sessions']; order?: string[] }
-      const fresh = new Map((d.changed ?? []).map((r) => [r.id, r]))
-      const old = new Map(prev.sessions.map((r) => [r.id, r]))
-      const order = d.order ?? prev.sessions.map((r) => r.id)
-      const next: State = {
-        ...prev,
-        ...(d.hosts ? { hosts: d.hosts } : {}),
-        ...(d.groups ? { groups: d.groups } : {}),
-        ...(d.splits ? { splits: d.splits } : {}),
-        ...(d.notices ? { notices: d.notices } : {}),
-        ...(d.places ? { places: d.places } : {}),
-        ...(d.ui ? { ui: d.ui } : {}),
-        sessions: order.map((id) => fresh.get(id) ?? old.get(id)).filter((r): r is State['sessions'][number] => !!r),
-      }
-      set({ state: next })
-      saveList(next as unknown as Record<string, unknown>)
-      sawBuild(d.ui)
-    } else if (msg.t === 'ev' && msg.locked) {
-      // A locked session only says there is news; a tab that unlocked it asks for it.
-      for (const f of pokeListeners) f(String(msg.sid))
-    } else if (msg.t === 'ev') {
-      const sid = String(msg.sid)
-      const events = msg.events as Ev[]
-      for (const f of eventListeners.get(sid) ?? []) f(events)
-      // Once written to the log, the text read off the screen is no longer news.
-      if (events.some((e) => e.k === 'text') && store.writing[sid]) set({ writing: { ...store.writing, [sid]: '' } })
-    } else if (msg.t === 'preview') {
-      set({ writing: { ...store.writing, [String(msg.sid)]: String(msg.text ?? '') } })
-    } else if (msg.t === 'screen') {
-      set({ screens: { ...store.screens, [String(msg.sid)]: String(msg.text ?? '') } })
-    } else if (msg.t === 'ext-event' || msg.t === 'ext-reload') {
-      for (const f of extListeners) f(msg)
-    } else if (msg.t === 'notice') {
-      for (const f of toastListeners) f(String(msg.text ?? ''), msg.sid ? String(msg.sid) : undefined)
+    // A sealing Mac's words come as pieces (REQ-S-095): opened before use, and every message keeps its place in line.
+    if (opening || m.data.includes('⟦bt')) {
+      opening++
+      inLine = inLine
+        .then(() => openDeep(msg).catch(() => msg))
+        .then(handle, () => {})
+        .finally(() => opening--)
+      return
     }
+    handle(msg)
+  }
+}
+
+let opening = 0
+let inLine: Promise<unknown> = Promise.resolve()
+function handle(msg: { t: string; [k: string]: unknown }) {
+  if (msg.t === 'state') {
+    const { t: _t, ...state } = msg
+    set({ state: state as unknown as State })
+    saveList(state)
+    sawBuild(state.ui)
+  } else if (msg.t === 'state_delta' && store.state) {
+    // Only what changed: rows not named keep the very objects they were, so their components do not redraw.
+    const prev = store.state
+    const d = msg as unknown as Partial<State> & { changed?: State['sessions']; order?: string[] }
+    const fresh = new Map((d.changed ?? []).map((r) => [r.id, r]))
+    const old = new Map(prev.sessions.map((r) => [r.id, r]))
+    const order = d.order ?? prev.sessions.map((r) => r.id)
+    const next: State = {
+      ...prev,
+      ...(d.hosts ? { hosts: d.hosts } : {}),
+      ...(d.groups ? { groups: d.groups } : {}),
+      ...(d.splits ? { splits: d.splits } : {}),
+      ...(d.notices ? { notices: d.notices } : {}),
+      ...(d.places ? { places: d.places } : {}),
+      ...(d.ui ? { ui: d.ui } : {}),
+      sessions: order.map((id) => fresh.get(id) ?? old.get(id)).filter((r): r is State['sessions'][number] => !!r),
+    }
+    set({ state: next })
+    saveList(next as unknown as Record<string, unknown>)
+    sawBuild(d.ui)
+  } else if (msg.t === 'ev' && msg.locked) {
+    // A locked session only says there is news; a tab that unlocked it asks for it.
+    for (const f of pokeListeners) f(String(msg.sid))
+  } else if (msg.t === 'ev') {
+    const sid = String(msg.sid)
+    const events = msg.events as Ev[]
+    for (const f of eventListeners.get(sid) ?? []) f(events)
+    // Once written to the log, the text read off the screen is no longer news.
+    if (events.some((e) => e.k === 'text') && store.writing[sid]) set({ writing: { ...store.writing, [sid]: '' } })
+  } else if (msg.t === 'preview') {
+    set({ writing: { ...store.writing, [String(msg.sid)]: String(msg.text ?? '') } })
+  } else if (msg.t === 'screen') {
+    set({ screens: { ...store.screens, [String(msg.sid)]: String(msg.text ?? '') } })
+  } else if (msg.t === 'ext-event' || msg.t === 'ext-reload') {
+    for (const f of extListeners) f(msg)
+  } else if (msg.t === 'notice') {
+    for (const f of toastListeners) f(String(msg.text ?? ''), msg.sid ? String(msg.sid) : undefined)
   }
 }
 

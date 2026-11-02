@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 1
+export const TRUST_VERSION = 2
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -244,8 +244,16 @@ export class Trust {
     })
     return bad ? null : out
   }
-  info(mode) {
-    return { mode, version: TRUST_VERSION, fp: fs.existsSync(this.p.host) ? this.fingerprint() : '', devices: this.devices().map((d) => ({ id: d.id, name: d.name, at: d.at, used: d.used ?? 0 })), window: this.windowOpen() }
+  /** seal: whether `trust seal on` was chosen; what is reported is whether sealing really happens. */
+  info(mode, seal = false) {
+    return { mode, version: TRUST_VERSION, seal: !!seal && this.sealing(mode), fp: fs.existsSync(this.p.host) ? this.fingerprint() : '', devices: this.devices().map((d) => ({ id: d.id, name: d.name, at: d.at, used: d.used ?? 0 })), window: this.windowOpen() }
+  }
+  /** One reading of the key in use, for sealing a whole message (a line has many strings). */
+  sealer(dir = 'm') {
+    const k = this.contentKeys()
+    if (!k?.keys?.[k.current]) return null
+    const key = unb64u(k.keys[k.current])
+    return (text, sid) => sealWith(key, k.current, this.hostId, text, dir, sid)
   }
   windowOpen() {
     const w = readJson(this.p.window, null)
@@ -432,11 +440,188 @@ export function updateKeepsTrust(files, seq, floor) {
   return null
 }
 
+// ---------- what leaves the Mac, sealed (§6, 1.394) ----------
+
+/** Sealing is a second choice made at the terminal (`trust seal on`): off unless agent.json says `trustSeal: true`. */
+export const sealChosen = (config) => config?.trustSeal === true
+
+/** The text the page sends for 압축 (server/live.go COMPACT_TEXT): the server compares it as it is. */
+const COMPACT_TEXT = '/compact 이어서 할 수 있게 지금까지의 결정과 이유, 관련 파일, 진행 상황, 다음에 할 일을 남겨 주세요'
+/** What the bridge itself types into a session (server/eventlog.go bridgeTypedRe): the server reads the start. */
+const BRIDGE_TYPED_RE = /^(\[정정\] |\[새로고침\] |\[이전 대화에서 이어감 |지금까지의 대화를 이어받을 다음 세션이 읽을 SESSION\.md|Write SESSION\.md in the working folder now|Continue the work described in this handover)/
+/** The wrapping tags the server reads in a person's line (server/events.go ENVELOPE_RE, and summary·status). */
+const TAG_NAMES = 'channel|task-notification|system-reminder|agent-message|local-command-[a-z-]+|command-name|command-message|command-args|bash-input|bash-stdout|bash-stderr|summary|status'
+const PLAIN_BITS = new RegExp(`<\\/?(?:${TAG_NAMES})(?:\\s[^>]*)?>|^\\[Request interrupted by user(?: for tool use)?\\]$|\\[Image attached: [^\\]\\n]*\\]|\\[Image #\\d+\\]`, 'gim')
+
+/** A person's text: the server's tags and markers stay as they are, every other run of text is sealed (§6.2). */
+export function sealPersonText(text, seal) {
+  const t = String(text)
+  if (t === COMPACT_TEXT) return t
+  const pre = BRIDGE_TYPED_RE.exec(t)?.[0] ?? ''
+  const rest = t.slice(pre.length)
+  const piece = (x) => (/\S/.test(x) ? seal(x) : x)
+  let out = pre
+  let last = 0
+  for (const m of rest.matchAll(PLAIN_BITS)) {
+    out += piece(rest.slice(last, m.index))
+    const tag = /^<(\/?)([a-z-]+)(\s[^>]*)?>$/i.exec(m[0])
+    out += tag && tag[3]?.trim() ? `<${tag[1]}${tag[2]} ${seal(tag[3].trim())}>` : m[0]
+    last = m.index + m[0].length
+  }
+  return out + piece(rest.slice(last))
+}
+
+const TOP_PLAIN = new Set(['type', 'subtype', 'uuid', 'parentUuid', 'sessionId', 'timestamp', 'version', 'cwd', 'gitBranch', 'isSidechain', 'isMeta', 'userType', 'requestId', 'level', 'toolUseID', 'logicalParentUuid', 'promptId'])
+const MSG_PLAIN = new Set(['role', 'model', 'id', 'stop_reason', 'type'])
+const PART_PLAIN = new Set(['type', 'id', 'name', 'tool_use_id', 'is_error', 'media_type'])
+/** Whether the string at this path of a transcript line stays plain: only the structure the server reads (§6.2). */
+function plainPath(p) {
+  const k = p[p.length - 1]
+  if (p.length === 1) return TOP_PLAIN.has(k)
+  if (p[0] === 'message' && p.length === 2) return MSG_PLAIN.has(k)
+  // Pictures stay plain: the server shows them by asking the Mac (img), which it could not do with sealed bytes (R5).
+  if (p[p.length - 2] === 'source') return k === 'type' || k === 'media_type' || k === 'data'
+  if (p.includes('content') && typeof p[p.length - 2] === 'number' && PART_PLAIN.has(k)) return true
+  if (p.includes('todos') && k === 'status') return true
+  if (p[0] === 'attachment' && (k === 'type' || p.includes('addedNames'))) return p.length === 2 || p.includes('addedNames')
+  return false
+}
+
+/** What a person said in a line, plain (for bridgeEcho), or null when the line is not a person's words. */
+function personText(o) {
+  if (o?.type !== 'user' || o?.message?.role !== 'user') return null
+  const c = o.message.content
+  if (typeof c === 'string') return c
+  if (!Array.isArray(c) || c.some((x) => x?.type === 'tool_result')) return null
+  return c.filter((x) => x?.type === 'text').map((x) => x.text).join('\n')
+}
+
+/**
+ * One transcript line with its words sealed and its structure plain. isEcho(text) says whether the person's text
+ * is what this Mac just typed from the page: such a line gets "bridgeEcho": true, since the server can no longer
+ * compare the words (eventlog.go isEcho).
+ */
+export function sealLine(line, seal, isEcho = () => false) {
+  let o
+  try {
+    o = JSON.parse(line)
+  } catch {
+    return line.trim() ? seal(line) : line
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return line
+  const said = personText(o)
+  const person = o.type === 'user' && o.message?.role === 'user'
+  const walk = (v, p) => {
+    if (typeof v === 'string') {
+      if (!v || hasSeal(v) || plainPath(p)) return v
+      const words = person && p[0] === 'message' && p[1] === 'content' && (p.length === 2 || p[p.length - 1] === 'text')
+      return words ? sealPersonText(v, seal) : seal(v)
+    }
+    if (Array.isArray(v)) return v.map((x, i) => walk(x, [...p, i]))
+    if (v && typeof v === 'object') {
+      const out = {}
+      for (const [k, x] of Object.entries(v)) out[k] = walk(x, [...p, k])
+      return out
+    }
+    return v
+  }
+  const out = walk(o, [])
+  if (said != null && said.trim() && isEcho(said)) out.bridgeEcho = true
+  return JSON.stringify(out)
+}
+
+// Keys whose strings are structure, not words, in the replies sealed field by field below.
+const STRUCT = new Set(['t', 'sid', 'reqId', 'id', 'kind', 'type', 'state', 'status', 'code', 'ok', 'tone', 'level', 'number', 'sha', 'branch', 'head', 'base', 'url', 'repo', 'at'])
+function sealDeep(v, seal, key = '') {
+  if (typeof v === 'string') return !v || hasSeal(v) || STRUCT.has(key) ? v : seal(v)
+  if (Array.isArray(v)) return v.map((x) => sealDeep(x, seal, key))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sealDeep(x, seal, k)]))
+  return v
+}
+
+/** The card a person answers, as one sealed piece holding its id: the server can neither change nor move a choice (§6.4). */
+const CARD_PLAIN = new Set(['id', 'kind', 'open', 'auto', 'at', 'result'])
+export function sealCard(card, seal) {
+  if (!card || typeof card !== 'object') return card
+  const words = Object.fromEntries(Object.entries(card).filter(([k]) => !CARD_PLAIN.has(k)))
+  if (!Object.keys(words).length) return card
+  const out = { ...Object.fromEntries(Object.entries(card).filter(([k]) => CARD_PLAIN.has(k))), sealed: seal(JSON.stringify({ ...words, id: card.id })) }
+  // What the server sees in place of the words: the shape it counts (how many choices), never the words.
+  if (Array.isArray(card.options)) out.options = card.options.map((o) => (o && typeof o === 'object' ? { n: o.n, label: '🔒' } : '🔒'))
+  if (typeof card.title === 'string') out.title = '🔒'
+  if (typeof card.result === 'string') out.result = card.result
+  return out
+}
+
+/**
+ * A message the agent sends, its words sealed (§6.2). `lines` are sealed where they are read (sealLine), pictures
+ * stay plain (R5). seal(text, sid) makes one piece. The message is copied, never changed in place.
+ */
+export function sealOut(msg, seal) {
+  if (!msg || typeof msg !== 'object') return msg
+  const sid = typeof msg.sid === 'string' ? msg.sid : ''
+  const S = (v) => (typeof v === 'string' && v && !hasSeal(v) ? seal(v, sid) : v)
+  const d = (v) => sealDeep(v, (x) => seal(x, sid))
+  const m = { ...msg }
+  switch (m.t) {
+    case 'screen':
+    case 'preview':
+    case 'note':
+    case 'toast':
+      m.text = S(m.text)
+      break
+    case 'error':
+      m.message = S(m.message)
+      m.error = S(m.error)
+      break
+    case 'status':
+      if (Array.isArray(m.held)) m.held = m.held.map((h) => (h && typeof h === 'object' ? { ...h, text: S(h.text) } : S(h)))
+      if (m.tool && typeof m.tool === 'object') m.tool = { ...m.tool, title: S(m.tool.title) }
+      if (Array.isArray(m.running)) m.running = m.running.map((r) => (typeof r === 'string' ? S(r) : r && typeof r === 'object' ? { ...r, label: S(r.label), title: S(r.title) } : r))
+      if (Array.isArray(m.servers)) m.servers = m.servers.map((x) => (x && typeof x === 'object' ? { ...x, title: S(x.title) } : x))
+      break
+    case 'card':
+      m.card = sealCard(m.card, (x) => seal(x, sid))
+      break
+    case 'btw':
+      m.answer = S(m.answer)
+      m.error = S(m.error)
+      break
+    case 'file':
+      m.content = S(m.content)
+      m.name = S(m.name)
+      m.path = S(m.path)
+      break
+    case 'voice':
+      m.text = S(m.text)
+      break
+    case 'recent':
+      if (Array.isArray(m.conversations)) m.conversations = m.conversations.map((c) => (c && typeof c === 'object' ? { ...c, title: S(c.title), first: S(c.first), last: S(c.last) } : c))
+      break
+    case 'folder':
+    case 'flushed':
+      if (m.folder) m.folder = d(m.folder)
+      break
+    case 'prsearch':
+    case 'prstates':
+      for (const k of Object.keys(m)) if (!STRUCT.has(k)) m[k] = d(m[k])
+      break
+    case 'stats':
+      if (m.prs) m.prs = d(m.prs)
+      break
+    case 'logs':
+      if (Array.isArray(m.entries)) m.entries = m.entries.map((e) => (e && typeof e === 'object' ? { ...e, text: S(e.text) } : e))
+      break
+  }
+  return m
+}
+
 // ---------- the terminal (`node ~/.claude-bridge/agent.mjs trust …`) ----------
 
 const HELP = `trust: 서버를 믿지 않는 맥 (docs/TRUST-DESIGN.md)
   trust                 지금 모드와 짝지은 기기
   trust mode <off|warn|enforce>
+  trust seal <on|off>   대화·화면 내용을 짝지은 기기만 풀 수 있게 봉인해 내보냄(기본 off)
   trust pair            5분 동안 짝짓기를 받고, 기기 화면의 6자리 숫자를 여기 입력해 확인
   trust devices         짝지은 기기
   trust remove <id>     기기 해제(앞으로의 봉인 키도 바뀜)
@@ -449,7 +634,7 @@ export async function trustCli(words, { stateDir, configPath, hostId, ask, out =
   const cfg = () => readJson(configPath, {})
   const show = () => {
     const d = t.devices()
-    out(`모드: ${modeOf(cfg(), d.length)}${cfg().trust ? '' : ' (agent.json 에 trust 칸 없음)'}`)
+    out(`모드: ${modeOf(cfg(), d.length)}${cfg().trust ? '' : ' (agent.json 에 trust 칸 없음)'} · 봉인 ${sealChosen(cfg()) ? 'on' : 'off'}`)
     out(d.length ? d.map((x) => `  ${x.id}  ${x.name}  짝지은 때 ${new Date(x.at).toLocaleString()}${x.used ? ` · 마지막 서명 ${new Date(x.used).toLocaleString()}` : ''}`).join('\n') : '  짝지은 기기 없음')
     if (fs.existsSync(t.p.host)) out(`맥 키 지문: ${t.fingerprint()}`)
   }
@@ -479,6 +664,15 @@ export async function trustCli(words, { stateDir, configPath, hostId, ask, out =
     out(`모드를 ${arg} 로 바꿨어요. 에이전트가 2초 안에 읽어요.`)
     if (arg === 'enforce') out('이제 짝지은 기기가 서명한 명령만 실행해요. 이 맥은 다시 설치(curl … | bash)하지 마세요: 서버가 준 파일을 그대로 깔게 됩니다.')
     if (arg !== 'off' && !t.devices().length) out('아직 짝지은 기기가 없어요: `trust pair` 로 짝지으세요.')
+    return 0
+  }
+  if (cmd === 'seal') {
+    if (arg !== 'on' && arg !== 'off') return (out(`trust seal on|off (지금 ${sealChosen(cfg()) ? 'on' : 'off'})`), 1)
+    const c = cfg()
+    c.trustSeal = arg === 'on'
+    writeJson(configPath, c)
+    out(arg === 'on' ? '봉인을 켰어요. 모드가 off 가 아니고 짝지은 기기가 있으면, 대화·화면·카드 내용을 짝지은 기기만 풀 수 있게 봉인해 내보내요(그림은 평문). 알림·Slack 에는 내용이 가지 않아요.' : '봉인을 껐어요. 이제 내용을 평문으로 내보내요.')
+    if (arg === 'on' && modeOf(c, t.devices().length) === 'off') out('지금 모드가 off 라 봉인하지 않아요: `trust mode warn` 또는 `trust mode enforce`.')
     return 0
   }
   if (cmd === 'remove') {

@@ -356,7 +356,7 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     else if (method !== 'POST') return []
     else if (op === 'say' || op === 'send') {
       xs = op === 'say' ? await sayIntents(s, h, str(body.text), body.images) : [{ t: 'send', i: await sendI(sid, str(body.text), body.images) }]
-      if (xs[0]?.t === 'send' && op === 'say' && !/^[:/]/.test(str(body.text).trim())) lastSaid.set(sid, str(body.text).slice(0, 100_000))
+      if (xs[0]?.t === 'send' && op === 'say' && !/^[:/]/.test(plainOf(str(body.text)).trim())) lastSaid.set(sid, plainOf(str(body.text)).slice(0, 100_000))
     } else if (op === 'do') xs = await doIntents(s, str(body.cmd), str(body.arg).trim())
     else if (op === 'answer') xs = [{ t: 'answer', i: { sid, card: body.card, n: body.n === 'esc' || body.n === 'enter' ? body.n : Number(body.n) } }]
     else if (op === 'setting') xs = [{ t: 'setting', i: { sid, kind: body.kind, value: str(body.value).slice(0, 60) } }]
@@ -424,4 +424,119 @@ export async function authHeader(method: string, path: string, body: unknown): P
   if (!xs.length) return null
   const toks = await Promise.all(xs.slice(0, 8).map(sign))
   return b64u(enc.encode(JSON.stringify(toks)))
+}
+
+// ---------- sealed pieces (§6, REQ-S-095) ----------
+// A Mac with `trust seal on` sends its words as ⟦bt1:<kid>:<iv‖ct‖tag>⟧ under a key only its paired devices hold.
+// The page opens them where it receives them (the stream and every API answer) and seals what it sends there.
+
+const PIECE_RE = /⟦bt1:([0-9a-f]{8}):([A-Za-z0-9_-]{38,})⟧/g
+/** The start of a piece the server cut (it should not: server sealSafeEnd), shown as 🔒. */
+const CUT_RE = /⟦bt1:[0-9a-f]{0,8}:?[A-Za-z0-9_-]*$/
+export const LOCKED = '🔒'
+const opened = new Map<string, string>()
+const sealedByMe = new Map<string, string>()
+
+async function openPiece(piece: string, kid: string, body: string): Promise<string> {
+  const hit = opened.get(piece)
+  if (hit != null) return hit
+  let out = LOCKED
+  for (const h of hostRecs.values()) {
+    const k = h.keys[kid]
+    if (!k) continue
+    try {
+      const b = unb64u(body)
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: enc.encode(`bt1|${h.hostId}|${kid}`) }, k.aes, b.slice(12))
+      const o = JSON.parse(new TextDecoder().decode(plain)) as { v?: unknown }
+      if (typeof o.v === 'string') out = o.v
+    } catch {}
+    break
+  }
+  if (opened.size > 5000) opened.clear()
+  opened.set(piece, out)
+  return out
+}
+
+/** A string with its pieces opened (🔒 where this device cannot). */
+export async function openText(s: string): Promise<string> {
+  if (!s.includes('⟦bt')) return s
+  await loadTrust()
+  const parts: (string | Promise<string>)[] = []
+  let last = 0
+  for (const m of s.matchAll(PIECE_RE)) {
+    parts.push(s.slice(last, m.index), openPiece(m[0], m[1], m[2]))
+    last = m.index! + m[0].length
+  }
+  parts.push(s.slice(last).replace(CUT_RE, LOCKED))
+  return (await Promise.all(parts)).join('')
+}
+
+/** A whole answer or stream message, every string in it opened; a sealed card is put back together (§6.4). */
+export async function openDeep<T>(v: T): Promise<T> {
+  const walk = async (x: unknown): Promise<unknown> => {
+    if (typeof x === 'string') return x.includes('⟦bt') ? openText(x) : x
+    if (Array.isArray(x)) return Promise.all(x.map(walk))
+    if (x && typeof x === 'object') {
+      const o: Record<string, unknown> = {}
+      for (const [k, y] of Object.entries(x)) o[k] = await walk(y)
+      if (typeof (x as Record<string, unknown>).sealed === 'string' && 'id' in o) return cardOf(o)
+      return o
+    }
+    return x
+  }
+  return (await walk(v)) as T
+}
+
+/** A card whose words came as one sealed piece holding its id: only a piece for this very card is shown with buttons. */
+function cardOf(o: Record<string, unknown>) {
+  const { sealed, ...rest } = o
+  try {
+    const w = JSON.parse(String(sealed)) as Record<string, unknown>
+    if (w && w.id === o.id) return { ...rest, ...w }
+  } catch {}
+  return { ...rest, title: '맥에서 확인할 수 없는 카드', options: [], context: '' }
+}
+
+const hostOf = (hostId: string) => getStore().state?.hosts.find((h) => h.id === hostId)
+/** Whether what this page sends to that Mac is sealed: it seals what it sends out, and this device holds its key. */
+export const sealsTo = (hostId: string) => pairedWith(hostId) && !!hostOf(hostId)?.trust?.seal
+
+async function sealPiece(hostId: string, sid: string, text: string) {
+  const h = hostRecs.get(hostId)!
+  const iv = rand(12)
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: enc.encode(`bt1|${hostId}|${h.kid}`) }, h.keys[h.kid].aes, enc.encode(JSON.stringify({ d: 'u', s: sid, v: text }))))
+  return `⟦bt1:${h.kid}:${b64u(cat(iv, ct))}⟧`
+}
+
+/**
+ * What a person writes to a sealing Mac, sealed: a ':' command stays as it is (the server reads it, and the Mac
+ * takes only what the page signed), a '/name' keeps its first word so the server still sees the command.
+ */
+export async function sealFor(hostId: string, sid: string, text: string) {
+  if (!text.trim() || !sealsTo(hostId) || text.includes('⟦bt1:') || /^\s*:[a-z]+(?:\s|$)/.test(text)) return text
+  const lead = /^\s*\/[\w:-]+\s*/.exec(text)?.[0] ?? ''
+  const rest = text.slice(lead.length)
+  if (!rest.trim()) return text
+  const out = lead + (await sealPiece(hostId, sid, rest))
+  if (sealedByMe.size > 200) sealedByMe.clear()
+  sealedByMe.set(out, text)
+  return out
+}
+/** The words this page sealed, back (what a 정정 names is the plain text). */
+function plainOf(s: string) {
+  return sealedByMe.get(s) ?? s
+}
+
+/** A request body with its words sealed for the Mac it goes to (send, say, btw, a new session's first words). */
+export async function sealBody(method: string, path: string, body: unknown): Promise<unknown> {
+  if (method !== 'POST' || !body || typeof body !== 'object' || !hostRecs.size) return body
+  const b = body as Body
+  const p = path.split('?')[0]
+  const sm = /^\/api\/sessions\/([\w-]+)\/(say|send|btw)$/.exec(p)
+  if (sm && typeof b.text === 'string') {
+    const s = sessionOf(sm[1])
+    if (s && sealsTo(s.hostId)) return { ...b, text: await sealFor(s.hostId, s.id, b.text) }
+  }
+  if (p === '/api/sessions' && typeof b.prompt === 'string' && typeof b.hostId === 'string' && sealsTo(b.hostId)) return { ...b, prompt: await sealFor(b.hostId, '', b.prompt) }
+  return body
 }

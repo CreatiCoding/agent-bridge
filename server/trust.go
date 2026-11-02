@@ -124,7 +124,7 @@ func cleanTrust(v any) any {
 		}
 		devs = append(devs, M{"id": id, "name": jsSliceTo(mstr(d, "name"), 64), "at": jsNumber(mget(d, "at")), "used": jsNumber(mget(d, "used"))})
 	}
-	return M{"mode": mode, "version": jsNumber(o["version"]), "fp": jsSliceTo(mstr(o, "fp"), 32), "devices": devs, "window": truthy(o["window"])}
+	return M{"mode": mode, "version": jsNumber(o["version"]), "seal": o["seal"] == true, "fp": jsSliceTo(mstr(o, "fp"), 32), "devices": devs, "window": truthy(o["window"])}
 }
 
 // hostTrustAPI: POST /api/hosts/:id/trust — pairing and the device list, carried to the Mac (owner only).

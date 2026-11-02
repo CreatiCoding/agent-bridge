@@ -67,6 +67,7 @@ function HostRow({ h }: { h: Host }) {
       <div className="hstack">
         <div className="grow" style={{ fontSize: 'var(--fs-medium)' }}>
           {h.name} {t ? <Badge tone={t.mode === 'enforce' ? 'green' : t.mode === 'warn' ? 'amber' : 'grey'}>{MODE_LABEL[t.mode]}</Badge> : <Badge>지원 안 함</Badge>}{' '}
+          {t?.seal ? <Badge tone="green">봉인</Badge> : null}{' '}
           {mine && listed ? <Badge tone="blue">이 기기와 짝지음</Badge> : mine ? <Badge tone="red">맥 목록에 없음</Badge> : null}
           {t?.fp ? <div className="muted" style={{ fontSize: 'var(--fs-small)' }}>맥 지문 {t.fp}</div> : null}
         </div>
@@ -89,6 +90,11 @@ function HostRow({ h }: { h: Host }) {
       {t && t.mode !== 'off' && !mine && !sas ? (
         <div className="muted" style={{ fontSize: 'var(--fs-small)' }}>
           {t.window ? '맥에서 짝짓기 창이 열려 있어요.' : <>먼저 그 맥 터미널에서 <code>node ~/.claude-bridge/agent.mjs trust pair</code> 를 실행하세요.</>}
+        </div>
+      ) : null}
+      {t && t.mode !== 'off' && t.devices?.length && !t.seal ? (
+        <div className="muted" style={{ fontSize: 'var(--fs-small)' }}>
+          대화·화면 내용은 아직 평문으로 서버를 지나요. 짝지은 기기만 읽게 하려면 그 맥에서: <code>node ~/.claude-bridge/agent.mjs trust seal on</code>
         </div>
       ) : null}
       {t && t.mode === 'off' ? (

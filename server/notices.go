@@ -174,6 +174,14 @@ func addNotice(uid string, n M) {
 			delete(n, "act")
 		}
 	}
+	// A sealed Mac's words reach no push or notice list: the session and "새 알림" only (REQ-S-095).
+	if hasSeal(jsString(n["title"])) || hasSeal(jsString(n["text"])) {
+		n = shallow(n)
+		n["title"] = maskSeals(jsString(n["title"]))
+		if hasSeal(jsString(n["text"])) {
+			n["text"] = "새 알림"
+		}
+	}
 	list := noticesOf(uid, nil)
 	for _, x := range list {
 		if mget(x, "key") == n["key"] {

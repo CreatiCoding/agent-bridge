@@ -1,7 +1,7 @@
 // Requests to the bridge server. Every change is JSON from this origin (the server refuses anything else).
 // A failure is an Error whose message is the server's own sentence, ready to show.
 import { sessionOfPath, setToken, tokenOf } from './locks'
-import { authHeader } from './trust'
+import { authHeader, openDeep, sealBody } from './trust'
 
 export class ApiError extends Error {
   status: number
@@ -17,6 +17,8 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
   let res: Response
   const sid = sessionOfPath(path)
   const token = sid ? tokenOf(sid) : null
+  // Words for a Mac that seals are sealed before they are signed: the signature names the sealed text (REQ-S-095).
+  if (body !== undefined) body = await sealBody(method, path, body).catch(() => body)
   // A request that makes a paired Mac act carries this device's signature (REQ-S-091).
   const auth = method === 'GET' ? null : await authHeader(method, path, body).catch(() => null)
   try {
@@ -36,7 +38,9 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
     throw new ApiError(401, '로그인이 필요해요')
   }
   const type = res.headers.get('content-type') ?? ''
-  const data = type.includes('application/json') ? await res.json().catch(() => ({})) : {}
+  const raw = type.includes('application/json') ? await res.json().catch(() => ({})) : {}
+  // A sealing Mac's words come back as pieces: opened here for every caller (REQ-S-095).
+  const data = JSON.stringify(raw).includes('⟦bt') ? await openDeep(raw).catch(() => raw) : raw
   // Some routes answer 200 with ok:false and a note (the ones the vendored page used); treat both alike.
   // A lock token that no longer works (the server restarted, or the lock changed) is dropped: the page asks again.
   if (res.status === 423 && sid && token) setToken(sid, null)
