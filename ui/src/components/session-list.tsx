@@ -11,6 +11,7 @@ import { prefetch } from '../lib/session-log'
 import { GROUP_DEPTH, groupHeight, groupTree, look, titleOf } from '../lib/sessions'
 import { useStore } from '../lib/store'
 import type { Host, Session } from '../lib/types'
+import { runnerLabel } from '../lib/runner'
 import { openPreset, presetActions, splitRoom } from '../lib/split'
 import { Ago, Badge, Collapse, Icon, IconButton, Row, SectionHeader, Segmented, useTick, useWide } from '../kit'
 import { confirmDialog, openMenu, promptDialog } from '../kit/overlay'
@@ -145,6 +146,8 @@ function RowBadges({ s, l }: { s: Session; l: ReturnType<typeof look> }) {
     { id: 'slack', builtin: true, render: () => (s.seat?.where === 'slack' ? <Badge tone="violet">Slack</Badge> : null) },
     // Driven by a session on another Mac (다른 맥에 맡기기): told apart from the ones the person works in.
     { id: 'delegated', builtin: true, render: () => (s.delegatedBy ? <Badge tone="violet">맡김</Badge> : null) },
+    // A session in another CLI than Claude Code (REQ-F-851): its name, so the row says what answers there.
+    { id: 'runner', builtin: true, render: () => (runnerLabel(s) ? <Badge>{runnerLabel(s)}</Badge> : null) },
   ]
   const items = resolve<RowBadge>('session-list.row.badges', builtin, (b) => b as unknown as SlotItem, (i, isBuiltin) => ({ ...(i as unknown as RowBadge), builtin: isBuiltin }))
   const added = items.filter((b) => !b.builtin)

@@ -9,6 +9,7 @@ import { modelName, MODE_NAMES } from '../lib/sessions'
 import { useStore } from '../lib/store'
 import { todoKey } from '../lib/timeline'
 import type { CacheUsage, Options, Session, Todo } from '../lib/types'
+import { runnerCan, runnerLabel } from '../lib/runner'
 import { Button, Chip, Collapse, Field, Help, Icon, IconButton, Segmented, Spinner, Switch } from '../kit'
 import { openMenu, Sheet, toast, type MenuEntry } from '../kit/overlay'
 import { act, command, sessionPost } from './session-menu'
@@ -377,6 +378,8 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
         <Spinner />
       ) : (
         <>
+          {runnerLabel(s) ? <p className="muted">{runnerLabel(s)} 세션이에요. 모델·생각 수준·권한 모드는 터미널의 {runnerLabel(s)} 에서 바꿔요.</p> : null}
+          {runnerCan(s, 'model') ? (
           <Field label="모델" hint="Claude Code 가 이 맥의 기본값으로도 저장해요">
             <select className="input" value={opts.models.some((m) => m.value === model) ? model : ''} onChange={(e) => act(() => command(s, 'model', e.target.value), '모델을 바꿨어요')}>
               {!opts.models.some((m) => m.value === model) ? <option value="">{modelName(model) || '알 수 없음'}</option> : null}
@@ -387,9 +390,13 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
               ))}
             </select>
           </Field>
+          ) : null}
+          {runnerCan(s, 'effort') ? (
           <Field label="생각 수준 (effort)">
             <Segmented label="effort" value={s.state.effort ?? ''} options={opts.efforts.map((e) => ({ value: e, label: e }))} onChange={(v) => act(() => command(s, 'effort', v), `effort ${v}`)} />
           </Field>
+          ) : null}
+          {runnerCan(s, 'mode') ? (
           <Field label="권한 모드" hint={<AllowHint mode={mode} />}>
             <select className={`input${mode === 'allowAll' ? ' input-allow-all' : ''}`} value={mode} onChange={(e) => void setMode(s, e.target.value)}>
               {opts.modes.map((m) => (
@@ -399,6 +406,7 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
               ))}
             </select>
           </Field>
+          ) : null}
           <div className="setting-line">
             <span className="grow">
               <b style={{ fontSize: 'var(--fs-medium)' }}>싱크할 때 자동 push</b>

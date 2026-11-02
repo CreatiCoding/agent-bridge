@@ -64,7 +64,13 @@ export function NewSessionPage() {
   // The Claude account on that Mac (설정 → Claude 계정): asked only when it has more than one; the last pick is kept.
   const accounts = host?.accounts ?? []
   const [accountPick, setAccountPick] = useState<string>(() => getPref('newAccount', ''))
-  const account = accounts.find((a) => a.id === accountPick && a.loggedIn !== false)?.id ?? ''
+  // Which CLI runs it (REQ-F-851): asked only when the Mac has another than Claude Code; the last pick is kept.
+  const runners = host?.runners ?? []
+  const [runnerPick, setRunnerPick] = useState<string>(() => getPref('newRunner', 'claude'))
+  const runner = runners.some((r) => r.id === runnerPick) ? runnerPick : 'claude'
+  const claude = runner === 'claude'
+  const accountPicked = accounts.find((a) => a.id === accountPick && a.loggedIn !== false)?.id ?? ''
+  const account = claude ? accountPicked : ''
 
   useEffect(() => {
     get<Options>('/api/options').then(setOpts, () => {})
@@ -125,10 +131,11 @@ export function NewSessionPage() {
       // the session's box sends one: videos up first, then words, pictures and videos together. The Mac holds a
       // message said while the session is still starting and hands it over once it is up.
       const first = attached ? { prompt: '', title: prompt } : { prompt }
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, model, effort, mode, create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: '' }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
-      setPref('newAccount', account)
+      if (claude) setPref('newAccount', account)
+      setPref('newRunner', runner)
       if (!auto) setPref('newCwd', cwd)
       if (attached) {
         try {
@@ -189,7 +196,19 @@ export function NewSessionPage() {
               </div>
             </Field>
           ) : null}
-          {tab === 'new' && accounts.length > 1 ? (
+          {tab === 'new' && runners.length > 1 ? (
+            <Field label="실행기" hint={claude ? undefined : `${runners.find((r) => r.id === runner)?.name ?? runner} 는 대화 보기·입력·권한 카드만 돼요. 모델·권한 모드·복제·다른 맥으로 옮기기는 없어요`}>
+              <div className="hstack" style={{ flexWrap: 'wrap' }}>
+                {runners.map((r) => (
+                  <Button key={r.id} tone={r.id === runner ? 'soft' : 'plain'} icon="terminal" onClick={() => setRunnerPick(r.id)}>
+                    {r.name}
+                    {r.version ? <span className="muted" style={{ fontWeight: 400 }}> {r.version}</span> : null}
+                  </Button>
+                ))}
+              </div>
+            </Field>
+          ) : null}
+          {tab === 'new' && claude && accounts.length > 1 ? (
             <Field label="Claude 계정" hint="로그인이 필요한 계정은 설정 → Claude 계정에서 먼저 로그인해요">
               <div className="hstack" style={{ flexWrap: 'wrap' }}>
                 {accounts.map((a) => (
@@ -327,7 +346,7 @@ export function NewSessionPage() {
               </div>
             ) : null}
           </div>
-          {more && opts ? (
+          {!claude ? null : more && opts ? (
             <>
               <Field label="모델">
                 <select className="input" value={model} onChange={(e) => setModel(e.target.value)}>

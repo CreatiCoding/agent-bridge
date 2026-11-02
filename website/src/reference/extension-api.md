@@ -153,7 +153,7 @@ bridge.actions.around('message.render', (a, next) => {
 - 항목의 `id` 는 그 slot 안에서 하나여야 하고, 페이지의 id 와 같으면 거절해요.
 - **페이지 자기 항목의 id** (`order`·`replace`·`hide` 에 쓸 수 있어요):
   - `composer.actions`: `attach`, `chips`, `mic`, `send`
-  - `session-list.row.badges`: `state`, `slack`, `delegated`
+  - `session-list.row.badges`: `state`, `slack`, `delegated`, `runner`
   - `session.menu`: `split`, `split-add`, `split-full`, `split-leave`, `same-group`, `copy-path`, `screen`, `todos`, `doc`, `place`, `resume`, `rename`, `remove`, `group`, `refresh`, `compact`, `fork`, `lightfork`, `trim-log`, `move-host`, `move-account`, `move-cwd`, `lock`, `favorite`, `rest`, `log`, `end`, `trash`
   - `settings.section`: 없음
 - `session.menu` 의 순서는 공개하지 않아요. 구분선은 `{id, sep: true}`, 제목은 `{id, header}` 예요. 하위 메뉴 `items` 는 항목만 받아요. 목록의 스와이프 동작은 slot 이 아니에요.

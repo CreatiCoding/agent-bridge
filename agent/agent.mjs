@@ -28,11 +28,13 @@ import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textM
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
+import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, sessionsRoot, findRollout, findNewRollout, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -484,7 +486,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}) }) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -741,7 +743,7 @@ function sendAllStats() {
 
 const projectDir = (cwd, account = '') => path.join(projectsOf(account), cwd.replace(/[^a-zA-Z0-9]/g, '-'))
 /** The transcript Claude Code writes for the session's current conversation. A hook's own path wins over the guess. */
-const transcriptPath = (s, sid) => s.transcript || path.join(projectDir(s.cwd, s.account), `${s.conv || sid}.jsonl`)
+const transcriptPath = (s, sid) => s.transcript || (isClaude(s) ? path.join(projectDir(s.cwd, s.account), `${s.conv || sid}.jsonl`) : mirrorPath(sid))
 const expandHome = (p) => (p === '~' || p.startsWith('~/') ? path.join(HOME, p.slice(1)) : p)
 
 // ---------- hooks (agent.json, REQ-F-821) ----------
@@ -911,7 +913,7 @@ function trustRememberClosed(sid, s) {
   try {
     trust.ensure()
     const list = readJson(closedPath, {})
-    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
+    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}) }), ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
     const keep = Object.entries(list).sort((a, b) => b[1].at - a[1].at).slice(0, 200)
     writeJson(closedPath, Object.fromEntries(keep))
   } catch (e) {
@@ -921,7 +923,7 @@ function trustRememberClosed(sid, s) {
 /** What `open` may use while trust is on: this Mac's record of the session, or null. */
 function trustOpenRecord(sid) {
   const s = sessions.get(sid)
-  const r = s ? { cwd: s.cwd, conv: s.conv || sid, account: s.account, chrome: s.chrome, mdFile: s.mdFile, autoPush: s.autoPush !== false, model: s.model, effort: s.effort, mode: s.mode } : readJson(closedPath, {})[sid]
+  const r = s ? { cwd: s.cwd, conv: s.conv || sid, runner: s.runner, rollout: s.rollout, account: s.account, chrome: s.chrome, mdFile: s.mdFile, autoPush: s.autoPush !== false, model: s.model, effort: s.effort, mode: s.mode } : readJson(closedPath, {})[sid]
   return r && typeof r.cwd === 'string' ? r : null
 }
 // The terminal's confirmation of a pairing is a file (`trust pair`): looked at while one waits.
@@ -1077,7 +1079,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo() })
+  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
 }
 
 // ---------- tmux sessions ----------
@@ -1217,6 +1219,167 @@ function autoAllowAnswer(sid, ev) {
  */
 const BRIDGE_PROMPT = 'This session is also read and driven from a web page (claude-bridge), often on a phone. When you want the person to pick between a few short options, end your answer with a fenced block tagged `choices`, one option per line, at most 6; the page shows them as buttons. Do not use it for anything else. For work of three or more steps, keep the page\'s to-do panel current with the `mcp__bridge__todos` tool: the whole list each time, one item in_progress while you work on it, completed as soon as it is done.'
 
+// ---------- other runners (REQ-F-851, agent/runners.mjs, agent/codex.mjs) ----------
+
+/** The codex program: CLAUDE_BRIDGE_CODEX, else `codex` on the PATH. Offered only once it answers `--version`. */
+const CODEX_BIN = process.env.CLAUDE_BRIDGE_CODEX || 'codex'
+const RUNNERS = { codex: CODEX }
+let codexVersion = null
+/** Asked at start and every 10 minutes: a codex that hangs (a quarantined download) or is gone is simply not offered. */
+function probeCodex() {
+  execFile(CODEX_BIN, ['--version'], { timeout: 8000, env: claudeEnv() }, async (err, out) => {
+    const v = err ? null : (/(\d+\.\d+\.\d+[\w.-]*)/.exec(String(out)) ?? [])[1] ?? null
+    const tmuxOk = v ? (await run('tmux', ['-V'])).ok : false
+    const now = v && tmuxOk ? v : null
+    if (now === codexVersion) return
+    codexVersion = now
+    log('info', 'runner', now ? `codex ${now} 를 세션 실행기로 쓸 수 있음` : 'codex 를 쓸 수 없음 (없거나 응답하지 않음, 또는 tmux 없음)')
+    if (client && welcomed) hello().catch(() => {})
+  })
+}
+setTimeout(probeCodex, 1500).unref()
+setInterval(probeCodex, 600_000).unref()
+/** The runners this Mac offers, Claude Code first: what hello tells the server. */
+const runnerList = () => [runnerBrief(CLAUDE), ...(codexVersion ? [runnerBrief(CODEX, codexVersion)] : [])]
+const runnerIds = () => runnerList().map((r) => r.id)
+/** Another runner's conversation in Claude Code's transcript shape: the agent's own copy, made from codex's file. */
+const MIRROR_DIR = path.join(STATE_DIR, 'runners')
+const mirrorPath = (sid) => path.join(MIRROR_DIR, `${sid}.jsonl`)
+const codexRoot = () => sessionsRoot(process.env, HOME)
+/** What the bridge tells codex (developer instructions): the choices block; codex has no bridge tools. */
+const CODEX_PROMPT = 'This session is also read and driven from a web page (claude-bridge), often on a phone. When you want the person to pick between a few short options, end your answer with a fenced block tagged `choices`, one option per line, at most 6; the page shows them as buttons. Do not use it for anything else.'
+/** What a runner that cannot do something says when it is asked. */
+const cannot = (sid, s, what) => (toast(sid, `${RUNNERS[s.runner]?.name ?? s.runner} 세션에서는 ${what} 을(를) 쓸 수 없어요`), true)
+
+/**
+ * Starts codex in a tmux terminal: zeropty's terminal is a socket that only programs on a JS runtime can be told is a
+ * terminal, and codex is a native program. `opts.prompt`: the first message, on the command line. A session whose
+ * conversation is known (`s.rollout`) goes on with it (`codex resume <id>`).
+ */
+async function launchCodex(sid, s, opts) {
+  const stillOpen = async (made) => {
+    if (!s.closed) return
+    if (made) await tmux('kill-session', '-t', `=${s.tmux}`)
+    throw new SessionClosed()
+  }
+  await stillOpen(false)
+  if (!codexVersion) throw new Error('이 맥에서 codex 를 쓸 수 없어요 (설치돼 있지 않거나 응답하지 않아요)')
+  s.tmux = `cb-${config.hostId.slice(0, 4)}-${sid.slice(0, 8)}`
+  await tmux('kill-session', '-t', `=${s.tmux}`)
+  s.mux = 'tmux'
+  delete s.zsock
+  placeTerminal(s.tmux, 'tmux')
+  await tmux('kill-session', '-t', `=${s.tmux}`)
+  await stillOpen(false)
+  resetRuntime(s)
+  s.starting = true
+  s.launchedAt = Date.now()
+  clearTimeout(s.slowStart)
+  s.slowStart = setTimeout(() => s.starting && note(sid, '⏳ 세션이 아직 뜨는 중입니다 (예상보다 오래 걸리고 있습니다). 터미널 창은 열려 있으니 조금만 더 기다려 주세요.'), 90_000)
+  s.slowStart.unref?.()
+  if (s.worktreeGone && s.cwd && !fs.existsSync(s.cwd)) fs.mkdirSync(s.cwd, { recursive: true })
+  const promptsDir = path.join(STATE_DIR, 'prompts')
+  fs.mkdirSync(promptsDir, { recursive: true, mode: 0o700 })
+  // The instructions go through a file read by the shell, like claude's (tmux refuses a command line over ~16 KB),
+  // as one `-c developer_instructions=<TOML string>`. While trust is on, this Mac's own prompt (REQ-S-092).
+  const promptFile = path.join(promptsDir, `${sid}.txt`)
+  const said = sessionPrompt(CODEX_PROMPT, { sysPrompt: trustOn() ? trustPrompt() : s.sysPrompt })
+  fs.writeFileSync(promptFile, `developer_instructions=${JSON.stringify(said)}`, { mode: 0o600 })
+  const args = codexArgs({ resume: s.rollout || null, model: s.model, cwd: s.cwd, prompt: Array.isArray(opts) ? undefined : opts?.prompt })
+  const clean = 'unset ZEROPTY_SOCK CLAUDECODE CLAUDE_PID CLAUDE_EFFORT CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXECPATH CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_SESSION_ATTENDED CLAUDE_CODE_SESSION_ID CLAUDE_CODE_SSE_PORT'
+  // The `-c` before the positional arguments: `codex resume <id>` takes the same options after its name.
+  const head = args[0] === 'resume' ? ['resume', args[1]] : []
+  const rest = args[0] === 'resume' ? args.slice(2) : args
+  const cmd = `${clean}; ${shq(CODEX_BIN)} ${head.map(shq).join(' ')} -c "$(cat ${shq(promptFile)})" ${rest.map(shq).join(' ')}; echo "[codex exited $?]"; sleep 6`
+  // The agent reads the rollouts where this codex writes them: a CODEX_HOME the agent has goes to the terminal too.
+  const home = process.env.CODEX_HOME ? ['-e', `CODEX_HOME=${process.env.CODEX_HOME}`] : []
+  const r = await tmux('new-session', '-d', '-s', s.tmux, '-x', '220', '-y', '80', '-c', s.cwd, ...home, cmd)
+  await stillOpen(true)
+  if (!r.ok) throw new Error(`tmux: ${r.err}`)
+  await sleep(3000)
+  await stillOpen(true)
+  const screen = await term.capture(pane(s))
+  if (!(await alive(s)) || /\[codex exited \d+\]/.test(screen)) {
+    throw new Error(`codex 가 바로 끝났습니다: ${screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'}`)
+  }
+  s.alive = true
+  s.aliveAt = Date.now()
+  log('info', 'session', '터미널: tmux (codex)', sid)
+}
+
+/**
+ * Codex's rollout → the session's mirror, then the turn from what codex wrote: task_started opens it, task_complete
+ * and turn_aborted close it. The rollout of a codex just started is found by its folder and start time, and its id
+ * becomes the session's conversation (said to the server like a /clear, `conv`).
+ */
+function codexSync(sid, s) {
+  if (!s.rollout) {
+    if (!s.launchedAt || s.alive === false) return
+    const taken = new Set([...sessions.values()].map((x) => x.rollout).filter(Boolean))
+    const found = findNewRollout({ root: codexRoot(), cwd: s.cwd, since: s.launchedAt, taken })
+    if (!found) return
+    s.rollout = found.id
+    s.conv = found.id
+    s.rolloutFile = found.file
+    saveSessions()
+    log('info', 'session', `codex 대화 → ${found.id.slice(0, 8)}`, sid)
+    emit({ t: 'conv', sid, conv: found.id, replay: false })
+  }
+  if (!s.rolloutFile || !fs.existsSync(s.rolloutFile)) s.rolloutFile = findRollout(codexRoot(), s.rollout)
+  if (!s.rolloutFile) return
+  const r = syncMirror({ rollout: s.rolloutFile, mirror: mirrorPath(sid), sid, state: (s.mirror ??= {}) })
+  if (r.missing) return void (s.rolloutFile = null)
+  for (const sig of r.signals) {
+    s.activityAt = Date.now()
+    if (sig === 'begin' && !s.turn) beginTurn(sid, s)
+    // A mirror made again only says whether a turn is open at its end: it never closes one that was just started.
+    else if (!r.rebuilt && sig !== 'begin' && s.turn) endTurn(sid, s, sig === 'aborted' ? 'codex: 중단됨' : 'codex: 턴 끝')
+  }
+}
+
+/** One look at a codex terminal (watch): the folder trust question, approvals as cards, the start. */
+async function watchCodex(sid, s, screen) {
+  if (trustDialog(screen)) {
+    // As claude's folder trust: nobody is at the terminal while it starts, and the session was asked for this folder.
+    if (s.starting && /^\s*›\s*1\.\s+Trust and continue/m.test(screen)) {
+      await term.sendKeys(pane(s), ['Enter'])
+      log('info', 'dialog', 'codex 폴더 신뢰를 넘김', sid)
+      return
+    }
+    s.wait = { reason: 'dialog', since: s.wait?.since ?? Date.now() }
+    return
+  }
+  const idle = codexIdle(screen)
+  if (s.starting && idle && Date.now() - s.launchedAt >= 7000) (s.starting = false), clearTimeout(s.slowStart), releaseHeld(sid, s, 'started')
+  if (CODEX_WORKING_RE.test(screen)) s.activityAt = Date.now()
+  const a = parseApproval(screen)
+  if (a) {
+    const sig = `codex|${a.question}|${a.context}|${a.options.map((o) => o.label).join('|')}`
+    if (s.card?.open && s.card.sig === sig) return void (s.gone = 0)
+    if (s.answered?.sig === sig && Date.now() - s.answered.at < 3000) return
+    if (s.card?.open) foldCard(sid, s, '다른 확인 창으로 넘어감')
+    openCard(sid, s, { kind: 'permission', sig, title: a.question, context: a.context, options: a.options.map((o) => ({ n: o.n, label: o.label, kind: /^No\b/i.test(o.label) ? 'deny' : /don'?t ask again|always/i.test(o.label) ? 'allow-always' : /session/i.test(o.label) ? 'allow-session' : 'allow-once' })) })
+    return
+  }
+  if (s.card?.open && s.card.kind !== 'stuck' && ++s.gone >= 2) foldCard(sid, s, '터미널에서 답함')
+  if (s.wait && !s.card?.open) s.wait = null
+  // A turn codex never closed (its process ended mid-turn): an idle box for a minute with a quiet mirror.
+  if (s.turn && idle && Date.now() - s.activityAt >= TURN_STALE_MS && transcriptQuietMs(mirrorPath(sid)) >= TURN_STALE_MS) endTurn(sid, s, 'codex: 화면이 쉬고 있어 턴을 닫음')
+}
+
+/** A card's answer on a codex terminal: the key the option names, once the same question is still on screen. */
+async function answerCodex(sid, s, card, n, label) {
+  const now = parseApproval(await term.capture(pane(s)))
+  const flat = (t) => String(t ?? '').replace(/\s+/g, ' ').trim()
+  if (!now) return void (foldCard(sid, s, '이미 닫힌 창'), toast(sid, '이미 닫힌 창이에요'))
+  if (flat(now.question) !== flat(card.title) || flat(now.context) !== flat(card.context)) return toast(sid, '이미 다른 질문으로 바뀌었어요. 지금 화면을 확인해 주세요')
+  const o = now.options.find((x) => String(x.n) === String(n))
+  if (!o) return toast(sid, '그 선택지가 화면에 없어요')
+  await term.sendKeys(pane(s), [o.key])
+  log('info', 'dialog', `codex 승인 답: ${o.key}`, sid)
+  foldCard(sid, s, label)
+}
+
 /**
  * A session closed (deleted or moved away) while its terminal was being started: the start stops, and a terminal it
  * already made is closed again, so nothing is left running that no session owns.
@@ -1236,6 +1399,7 @@ async function launch(sid, s, claudeArgs) {
   }
 }
 async function launchNow(sid, s, claudeArgs) {
+  if (!isClaude(s)) return launchCodex(sid, s, claudeArgs)
   // `close` may come at any await below. Before the terminal exists, the start stops; once it may exist, the
   // terminal goes too (close's own kill may have run before it was made).
   const stillOpen = async (made) => {
@@ -1756,7 +1920,8 @@ async function deliver(sid, s, text, attempts = 1) {
     // -p brackets the paste so a newline inside stays part of the message; -d drops the buffer afterwards.
     await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', pane(s))
     // A long paste takes the terminal a moment to take in; Enter before that is lost.
-    await sleep(200 + Math.min(1500, Math.floor(text.length / 20)))
+    // Codex takes an Enter within 120 ms of typed text as a new line (its paste-burst check): it waits a second.
+    await sleep((isClaude(s) ? 200 : 1000) + Math.min(1500, Math.floor(text.length / 20)))
   }
   await term.sendKeys(pane(s), ['Enter'])
   log('info', 'send', `delivered by keys (${text.length}자)`, sid)
@@ -1804,6 +1969,7 @@ async function verifyInjected(sid, s) {
   if (!check || !(await alive(s))) return
   const screen = await term.capture(pane(s))
   const head = check.text.split('\n')[0].slice(0, 30)
+  if (!isClaude(s)) return verifyCodex(sid, s, check, screen, head)
   if (inputBoxHas(screen, head)) {
     if (check.attempts >= 3) return log('warn', 'send', '글이 입력칸에 남아 있고 Enter 를 세 번 눌러도 보내지지 않음', sid)
     log('warn', 'send', '글이 입력칸에 남아 있어 Enter 를 다시 누름', sid)
@@ -1825,6 +1991,26 @@ async function verifyInjected(sid, s) {
   log('error', 'send', '보낸 글이 세션에 전달되지 않음', sid)
   endTurn(sid, s)
   note(sid, '⚠️ 방금 메시지가 세션에 전달되지 않은 것 같습니다 (두 번 보냈지만 응답이 시작되지 않음). 화면을 확인해 주세요.', 'warn')
+}
+
+/** verifyInjected for codex: Enter again while the text sits in the box; never typed a second time (no duplicate). */
+async function verifyCodex(sid, s, check, screen, head) {
+  if (codexBoxHas(screen, head)) {
+    if (check.attempts >= 3) return log('warn', 'send', '글이 입력칸에 남아 있고 Enter 를 세 번 눌러도 보내지지 않음', sid)
+    log('warn', 'send', '글이 입력칸에 남아 있어 Enter 를 다시 누름', sid)
+    await term.sendKeys(pane(s), ['Enter'])
+    return watchInjected(sid, s, check.text, check.attempts + 1, check.at)
+  }
+  tail(sid, s)
+  if (transcriptHasPrompt(mirrorPath(sid), check.text, check.at - 1000)) return
+  if (CODEX_WORKING_RE.test(screen) || parseApproval(screen)) return
+  if (s.turn && codexIdle(screen) && !transcriptHasPrompt(mirrorPath(sid), check.text, check.at - 1000)) {
+    // Not seen in the rollout yet: one more look later, then say so.
+    if (check.attempts < 2) return watchInjected(sid, s, check.text, check.attempts + 1, check.at)
+    log('error', 'send', '보낸 글이 codex 대화에 들어가지 않음', sid)
+    endTurn(sid, s)
+    note(sid, '⚠️ 방금 메시지가 세션에 전달되지 않은 것 같습니다. 화면을 확인해 주세요.', 'warn')
+  }
 }
 
 // ---------- hooks ----------
@@ -2044,6 +2230,7 @@ async function answerCard(sid, s, cardId, n) {
   // A confirmation's answer in the reader's words; anything else by the label that was on screen.
   const label = (card.kind === 'permission' && { 'allow-once': '허용', 'allow-session': '이 세션 동안 허용', 'allow-always': '항상 허용', deny: '거부' }[option?.kind]) || `선택: ${option?.label ?? `${n}번`}`
   if (card.kind === 'stuck') return
+  if (!isClaude(s)) return answerCodex(sid, s, card, n, label)
   const flat = (t) => String(t ?? '').replace(/\s+/g, ' ').trim()
   if (card.kind === 'keyed') {
     // The button was drawn for one question. If the screen has moved on, it is not pressed (REQ-F-095).
@@ -2130,6 +2317,15 @@ function unsentInBox(screen) {
 }
 async function interrupt(sid, s) {
   const turn = s.turn
+  if (!isClaude(s)) {
+    // Codex writes turn_aborted when Esc stops a turn: the rollout says whether it stopped.
+    await term.sendKeys(pane(s), ['Escape'])
+    await sleep(1000)
+    tail(sid, s)
+    if (s.card?.open && s.card.kind !== 'stuck') foldCard(sid, s, '취소함 (Esc)')
+    if (!turn) return toast(sid, '이미 쉬고 있었어요. 멈출 작업이 없어요')
+    return toast(sid, s.turn ? 'Esc 를 보냈지만 아직 작업 중으로 보여요. 잠시 뒤 화면을 확인하세요' : '⏹️ 멈췄어요. 다음 지시를 기다려요')
+  }
   await term.sendKeys(pane(s), ['Escape'])
   if (turn) s.escAt = Date.now()
   log('info', 'esc', 'sent', sid)
@@ -2267,7 +2463,7 @@ async function watch(sid, s) {
         log('warn', 'session', `claude 가 끝남 (${muxOf(s)} 세션 없음)`, sid)
         if (s.card?.open) foldCard(sid, s, '세션이 끝남')
         const lost = s.held.splice(0).length
-        note(sid, '세션이 끝났어요 (claude 가 종료됨). 글을 보내면 대화 그대로 다시 엽니다.', 'warn')
+        note(sid, isClaude(s) ? '세션이 끝났어요 (claude 가 종료됨). 글을 보내면 대화 그대로 다시 엽니다.' : '세션이 끝났어요 (codex 가 종료됨). 글을 보내면 대화 그대로 다시 엽니다.', 'warn')
         if (lost) note(sid, `⚠️ 세션이 끝나 붙잡아 둔 메시지 ${lost}개는 전달하지 못했습니다.`, 'warn')
         // Kept on disk: an agent that restarts (an update) knows it already said so, and does not say it again.
         s.alive = false
@@ -2283,6 +2479,7 @@ async function watch(sid, s) {
     }
     s.alive = true
     const screen = await term.capture(pane(s))
+    if (!isClaude(s)) return void (await watchCodex(sid, s, screen), publish(sid, s))
 
     // Nobody is at the terminal to accept folder trust, and a model switch was already chosen. A project MCP
     // server is not accepted here: its dialog becomes a card (R1-M1).
@@ -2357,6 +2554,7 @@ async function watch(sid, s) {
 
 /** What Claude is writing right now. The transcript only gets a block when it is finished. */
 async function readPreview(sid, s) {
+  if (!isClaude(s)) return
   if (!s.turn || s.wait || s.alive === false) return
   const text = writingPreview(await term.captureAnsi(pane(s)), s.preview)
   // '' while busy is a thinking pause, or the block scrolled away: what was shown stays.
@@ -2366,6 +2564,7 @@ async function readPreview(sid, s) {
 // ---------- transcript tail ----------
 
 function tail(sid, s) {
+  if (!isClaude(s)) codexSync(sid, s)
   const file = transcriptPath(s, sid)
   let stat
   try {
@@ -2726,7 +2925,7 @@ function convHere(sid, a) {
   let text = ''
   let partial = false
   if (fs.existsSync(file)) {
-    if (!insideAny(file, allProjects().map((p) => p.dir))) return { ok: false, error: '그 세션의 대화 기록을 읽을 수 없어요' }
+    if (!insideAny(file, [...allProjects().map((p) => p.dir), ...(isClaude(s) ? [] : [MIRROR_DIR])])) return { ok: false, error: '그 세션의 대화 기록을 읽을 수 없어요' }
     try {
       const st = fs.statSync(file)
       const from = Math.max(0, st.size - READ_TAIL)
@@ -2824,6 +3023,81 @@ function sudoSpawn(pw, args, { cwd = HOME, ms = 15_000 } = {}) {
     p.stdin.on('error', () => {})
     p.stdin.end(`${pw}\n`)
   })
+}
+
+/** A new session in another runner (REQ-F-851): the same checks on the folder as claude's, then codex. */
+async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base }) {
+  try {
+    if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
+    if (prompt) prompt = trustText(prompt, sid)
+    const want = expandHome(cwd || '~')
+    if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
+    if (!fs.existsSync(want) && create === true) {
+      fs.mkdirSync(want, { recursive: true })
+      if (typeof base === 'string' && base) rememberMadeDir(sid, want, expandHome(base))
+    }
+    if (!fs.existsSync(want)) throw Object.assign(new Error(`이 맥에 그 폴더가 없습니다: ${want}`), { missing: true })
+    if (!fs.statSync(want).isDirectory()) throw new Error(`폴더가 아닙니다: ${want}`)
+    const dir = fs.realpathSync(want)
+    const s = { runner: rid, cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(/^[\w.-]{1,60}$/.test(model || '') && !/^claude/i.test(model) ? { model } : {}) }
+    resetRuntime(s)
+    sessions.set(sid, s)
+    const onLine = !!prompt && Buffer.byteLength(prompt) <= FIRST_PROMPT_MAX
+    if (prompt && !onLine) Object.assign(s, { keepHeld: true, held: [{ id: crypto.randomUUID(), at: Date.now(), text: prompt }] })
+    try {
+      await launch(sid, s, { prompt: onLine ? prompt : undefined })
+    } catch (e) {
+      sessions.delete(sid)
+      throw e
+    } finally {
+      delete s.keepHeld
+    }
+    saveSessions()
+    emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: '' })
+    agentHook('session.create', sid, dir)
+  } catch (e) {
+    log('error', 'new', `세션을 시작하지 못함: ${e.message}`, sid)
+    emit({ t: 'opened', reqId, sid, ok: false, error: e.message, missing: !!e.missing })
+  }
+}
+
+/**
+ * Opens a codex session again on this Mac (a reopen, a wake, a revive): its conversation is codex's rollout here, never
+ * a copy from the server. Its id comes from this Mac's own record first.
+ */
+async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysPrompt, record }) {
+  try {
+    const old = sessions.get(sid)
+    const id = [old?.rollout, record?.rollout, conv].find((x) => typeof x === 'string' && CODEX_ID_RE.test(x))
+    if (!id) throw new Error('이 codex 세션은 대화가 시작되기 전에 끝나 이어 열 수 없어요. 새 세션을 열어 주세요')
+    const file = findRollout(codexRoot(), id)
+    if (!file) throw new Error('이 맥에 그 codex 대화 기록이 없어요. codex 세션은 띄운 맥에서만 다시 열 수 있어요')
+    let dir = expandHome(home && (cwd === home || String(cwd).startsWith(`${home}/`)) ? path.join(HOME, cwd.slice(home.length)) : cwd)
+    if (!dir || !fs.existsSync(dir)) throw new Error(`이 맥에 그 폴더가 없어요: ${dir}`)
+    dir = fs.realpathSync(dir)
+    if (old) await tmux('kill-session', '-t', `=${old.tmux}`)
+    const s = { runner: 'codex', cwd: dir, autoPush: autoPush !== false, conv: id, rollout: id, rolloutFile: file, sysPrompt: String(sysPrompt ?? old?.sysPrompt ?? '').slice(0, 8000), ...((old?.model ?? model) && /^[\w.-]{1,60}$/.test(old?.model ?? model) && !/^claude/i.test(old?.model ?? model) ? { model: old?.model ?? model } : {}) }
+    // The mirror made again from the rollout, and reading resumes at its end: the server has these lines (a resync
+    // asks for any it does not).
+    s.mirror = {}
+    syncMirror({ rollout: file, mirror: mirrorPath(sid), sid, state: s.mirror })
+    const text = fs.readFileSync(mirrorPath(sid), 'utf8')
+    Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skip: 0, lineBase: 0 })
+    resetRuntime(s)
+    sessions.set(sid, s)
+    try {
+      await launch(sid, s, {})
+    } catch (e) {
+      e instanceof SessionClosed || !old ? sessions.delete(sid) : sessions.set(sid, old)
+      throw e
+    }
+    saveSessions()
+    log('info', 'open', `codex 대화를 이어서 엶 (${s.lineNo}줄)`, sid)
+    emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: '' })
+  } catch (e) {
+    log('error', 'open', `세션을 열지 못함: ${e.message}`, sid)
+    emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
+  }
 }
 
 const commands = {
@@ -3009,8 +3283,12 @@ const commands = {
     emit({ t: 'pong', ts })
   },
   rehello: hello,
-  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing, base }) {
+  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing, base, runner }) {
     try {
+      // Claude Code unless the command names another runner this Mac has (REQ-F-851). Signed while trust is on.
+      const rid = pickRunner(runner, runnerIds())
+      if (!rid) throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
+      if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base })
       // The server names the session: a name that is a path, or one already here, is not taken (REQ-S-092).
       if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
       if (prompt) prompt = trustText(prompt, sid)
@@ -3062,8 +3340,17 @@ const commands = {
     }
   },
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
-  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing }) {
+  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner }) {
     try {
+      // Another runner's session (REQ-F-851): the runner this Mac recorded wins over what the server says.
+      const known = sessions.get(sid) ?? (safeConvId(sid) ? readJson(closedPath, {})[sid] : null)
+      const rid = known ? (known.runner || 'claude') : trustOn() ? 'claude' : runner || 'claude'
+      if (rid !== 'claude') {
+        if (rid !== 'codex') throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
+        const r = trustOn() ? trustOpenRecord(sid) : null
+        if (trustOn() && !r) throw new Error('이 맥은 서버를 믿지 않는 모드라, 이 맥에 기록이 있는 세션만 다시 열 수 있어요')
+        return await openCodex(reqId, sid, r ? { conv: r.conv, cwd: r.cwd, autoPush: r.autoPush, model: r.model, record: r, sysPrompt } : { conv, cwd, home, autoPush, model, sysPrompt, record: known })
+      }
       // Only a session this Mac has a record of, from that record: nothing the server sends with it (REQ-S-092).
       if (trustOn()) {
         const r = safeConvId(sid) ? trustOpenRecord(sid) : null
@@ -3267,6 +3554,7 @@ const commands = {
     const s = sessions.get(sid)
     if (!s) return
     // Only this Mac marks 전부 허용 as turned on by a signature; any other change takes the mark away (§2.4).
+    if (autoAllow === true && !can(s, 'autoAllow', RUNNERS)) return void cannot(sid, s, '전부 허용')
     if (typeof autoAllow === 'boolean' || typeof allowAll === 'boolean') s.autoAllowSigned = !!signed && autoAllow === true
     if (typeof autoPush === 'boolean') Object.assign(s, { autoPush, folderAt: 0 })
     if (autoAllow === true && (await alive(s))) {
@@ -3311,6 +3599,8 @@ const commands = {
     sessions.delete(sid)
     saveSessions()
     fs.rmSync(path.join(STATE_DIR, 'prompts', `${sid}.txt`), { force: true })
+    // Another runner's mirror is made from its own record, which stays: the copy goes with the session.
+    if (!isClaude(s)) fs.rmSync(mirrorPath(sid), { force: true })
     emit({ t: 'closed', sid })
     agentHook('session.close', sid, s.cwd)
   },
@@ -3328,6 +3618,7 @@ const commands = {
   },
   async setting({ sid, kind, value }) {
     const s = sessions.get(sid)
+    if (s && !can(s, kind, RUNNERS)) return void cannot(sid, s, String(kind))
     if (s) await setSetting(sid, s, kind, String(value ?? ''))
     if (s) publish(sid, s)
   },
@@ -3373,6 +3664,7 @@ const commands = {
         defaults = undefined
       }
       if (!from) throw new Error('이 맥에 그 세션이 없습니다')
+      if (!can(from, 'fork', RUNNERS)) throw new Error('이 실행기의 세션은 복제할 수 없어요')
       // A session that is being reopened is copied once it is back: its transcript is in use until then.
       for (let i = 0; i < 60 && from.refreshing; i++) await sleep(500)
       tail(sid, from)
@@ -3416,6 +3708,7 @@ const commands = {
     const from = sessions.get(sid)
     const fail = (error, more = {}) => emit({ t: 'opened', reqId, sid: newSid, ok: false, error, ...more })
     if (!from) return fail('이 맥에 그 세션이 없습니다')
+    if (!can(from, 'fork', RUNNERS)) return fail('이 실행기의 세션은 복제할 수 없어요')
     if (from.lightforking) return fail('이미 가벼운 복제를 하고 있습니다')
     from.lightforking = true
     try {
@@ -3488,6 +3781,7 @@ const commands = {
     const mb = (n) => `${(n / 1048576).toFixed(1)}MB`
     try {
       if (!s) throw new Error('이 맥에 그 세션이 없습니다')
+      if (!can(s, 'trim', RUNNERS)) throw new Error('이 실행기의 세션은 대화 기록을 정리할 수 없어요')
       if (isLinked(s.account)) throw new Error('연결한 폴더의 대화 기록은 bridge 가 고치지 않아요(그 폴더를 쓰는 도구의 기록이에요)')
       if (s.turn || s.wait || s.refreshing || s.lightforking || s.launching || s.alive === false) throw new Error('쉬고 있는 세션만 기록을 정리할 수 있어요')
       const file = transcriptPath(s, sid)
@@ -3818,6 +4112,7 @@ const commands = {
   async skills({ reqId, sid }) {
     const s = sessions.get(sid)
     if (!s) return emit({ t: 'skills', reqId, ok: false, error: '이 맥에 그 세션이 없습니다' })
+    if (!can(s, 'skills', RUNNERS)) return emit({ t: 'skills', reqId, ok: false, error: '이 실행기의 세션에는 스킬 목록이 없어요' })
     try {
       // Counted across every conversation on this Mac, kept between calls: only what was added is read again.
       skillUsage ??= new SkillUsage({ statePath: path.join(STATE_DIR, 'skill-usage.json'), projectsDir: path.join(CLAUDE_DIR, 'projects') })
@@ -3838,6 +4133,7 @@ const commands = {
   async btw({ reqId, sid, text }) {
     const s = sessions.get(sid)
     if (!s) return emit({ t: 'btw', reqId, ok: false, error: '이 맥에 그 세션이 없습니다' })
+    if (!can(s, 'btw', RUNNERS)) return emit({ t: 'btw', reqId, ok: false, error: '이 실행기의 세션에서는 /btw 를 쓸 수 없어요' })
     const q = String(trustText(text, sid) ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000)
     await tmux('send-keys', '-t', pane(s), '-l', `/btw ${q}`)
     await sleep(200)

@@ -12,6 +12,7 @@ import { NONE, useStore } from '../lib/store'
 import { featureOn } from '../lib/features'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
+import { runnerCan, runnerLabel } from '../lib/runner'
 import { Button, Chip, Empty, Icon, IconButton, LoadError, Spinner, useTick, useWide, wideNow } from '../kit'
 import { openMenu, toast } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
@@ -224,7 +225,7 @@ const LOG_NUDGE_AT = 0.9 * LOG_BLOCK
  */
 function BigLogNudge({ s }: { s: Session }) {
   const size = s.state.size ?? 0
-  if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || size < LOG_NUDGE_AT) return null
+  if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || size < LOG_NUDGE_AT || !runnerCan(s, 'trim')) return null
   return (
     <div className="banner" role="status" style={{ background: 'var(--violet-soft)' }}>
       <Icon name="warn" />
@@ -248,7 +249,7 @@ function LightNudge({ s }: { s: Session }) {
   const [compactAt, setCompactAt] = useState(0)
   useTick(10_000)
   const ctx = s.state.cache?.ctx ?? 0
-  if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || s.state.phase !== 'idle') return null
+  if (s.closed || s.locked || !s.state.alive || s.state.handedOffTo || s.state.phase !== 'idle' || !runnerCan(s, 'compact')) return null
   if ((s.state.size ?? 0) >= LOG_NUDGE_AT) return null
   if (ctx < LIGHT_NUDGE_AT || (closedAt != null && ctx < closedAt + LIGHT_NUDGE_AGAIN)) return null
   if (Date.now() - compactAt < COMPACT_WAIT_MS) return null
@@ -854,7 +855,7 @@ export function SessionPage({ id }: { id: string }) {
             <>
               <Chip icon="settings" onClick={() => setSheet('settings')}>
                 {/* 전부 허용 has its own chip (it can be switched off there): not said here too. */}
-                {[model || '모델', s.state.effort, !s.state.autoAllow && s.state.mode && s.state.mode !== 'default' ? s.state.mode : null].filter(Boolean).join(' · ')}
+                {[runnerLabel(s), model || '모델', s.state.effort, !s.state.autoAllow && s.state.mode && s.state.mode !== 'default' ? s.state.mode : null].filter(Boolean).join(' · ')}
               </Chip>
               {away ? (
                 <Chip icon="move" tone="warn" onClick={() => void toBridge(s)} title="눌러서 브릿지로 가져오기">

@@ -12,7 +12,7 @@ const plain = (slot, list) => resolve(slot, list, (b) => (typeof b === 'string' 
 test('slot 4개와 내장 항목 id 가 설계(§7.1)와 같다', () => {
   assert.deepEqual([...SLOTS], ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section'])
   assert.deepEqual([...BUILTIN_IDS['composer.actions']], ['attach', 'chips', 'mic', 'send'])
-  assert.deepEqual([...BUILTIN_IDS['session-list.row.badges']], ['state', 'slack', 'delegated'])
+  assert.deepEqual([...BUILTIN_IDS['session-list.row.badges']], ['state', 'slack', 'delegated', 'runner'])
   for (const id of ['place', 'resume', 'rename', 'remove', 'group', 'refresh', 'todos', 'compact', 'fork', 'lightfork', 'trim-log', 'move-host', 'move-account', 'move-cwd', 'lock', 'favorite', 'rest', 'log', 'end', 'trash', 'split', 'screen', 'doc'])
     assert.ok(BUILTIN_IDS['session.menu'].includes(id), id)
   assert.throws(() => register('nope', { id: 'x' }), /모르는 slot/)

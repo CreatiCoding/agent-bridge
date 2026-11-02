@@ -386,6 +386,8 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     for (const k of ['model', 'effort'] as const) if (typeof body[k] === 'string') i[k] = str(body[k]).slice(0, k === 'model' ? 60 : 10)
     if (typeof body.account === 'string' && body.account) i.account = body.account
     if (body.chrome === false) i.chrome = false
+    // The runner is signed too (REQ-F-851): a server cannot start another program than the one asked for.
+    if (typeof body.runner === 'string' && body.runner && body.runner !== 'claude') i.runner = body.runner.slice(0, 16)
     return [{ h, t: 'new', i }]
   }
   const hm = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/([\w-]+)$/.exec(path)

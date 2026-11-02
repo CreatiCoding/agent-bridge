@@ -16,7 +16,7 @@ export const BUILTIN_IDS: Record<SlotName, readonly string[]> = {
     // an open one
     'group', 'refresh', 'compact', 'fork', 'lightfork', 'trim-log', 'move-host', 'move-account', 'move-cwd', 'lock', 'favorite', 'rest', 'log', 'end', 'trash',
   ],
-  'session-list.row.badges': ['state', 'slack', 'delegated'],
+  'session-list.row.badges': ['state', 'slack', 'delegated', 'runner'],
   'settings.section': [],
 }
 

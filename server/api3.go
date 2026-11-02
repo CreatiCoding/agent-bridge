@@ -462,6 +462,7 @@ func sessionEvents(res *Res, u *url.URL, meta *Sess) {
 }
 
 func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) bool {
+	runnerGate(meta, op, b)
 	switch op {
 	case "say":
 		text := strField(b, "text")

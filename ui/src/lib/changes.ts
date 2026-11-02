@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.405',
+    date: '2026-11-03',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '세션 실행기: 세션마다 띄우는 CLI 를 기록한다(없으면 Claude Code). 맥이 hello 의 runners 로 쓸 수 있는 실행기를 알리고, 새 세션 화면은 둘 이상일 때만 "실행기"를 묻는다(기본 Claude Code, 마지막 선택 기억).',
+        refs: ['REQ-F-851', 'IF-016', 'IF-088', 'ERR-347'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: 'OpenAI Codex CLI 실행기: codex --version 이 8 s 안에 답하는 맥에서 tmux 로 codex 를 띄우고, ~/.codex/sessions 의 rollout 만 읽어 Claude Code 트랜스크립트 모양 사본으로 바꿔 대화를 보인다. 턴은 rollout 의 task_started·task_complete, 명령 승인 질문은 권한 카드, 다시 열기는 codex resume. codex 의 로그인·설정 파일은 읽지 않는다.',
+        refs: ['REQ-F-851', 'IF-097', 'IF-098'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'ui'],
+        text: '실행기가 못 하는 기능(모델·effort·권한 모드, 복제, 옮기기, 압축, 기록 정리, /btw, 스킬, 전부 허용)은 화면에서 숨기고 서버가 409 로 거절한다. 목록 행 배지·설정 칩에 실행기 이름. trust 의 new 서명 항목에 runner(TRUST_VERSION 4).',
+        refs: ['REQ-F-851', 'REQ-F-824', 'ERR-348', 'ERR-349', 'REQ-S-092'],
+      },
+    ],
+  },
+  {
     version: '1.404',
     date: '2026-11-03',
+    commit: '9af2b79',
     changes: [
       {
         kind: 'added',
