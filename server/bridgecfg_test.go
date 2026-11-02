@@ -156,7 +156,14 @@ func TestBridgeConfigFileRules(t *testing.T) {
 }
 
 func TestConfigFileReadableAndChownSkip(t *testing.T) {
-	dir := t.TempDir()
+	// Not t.TempDir(): that lives under the runner's TMPDIR, which may be 0700 (macOS per-user TMPDIR, a CI job's
+	// own temp folder), and then no other user can reach anything in it. /tmp (1777) and / let anyone pass, so the
+	// folder's own mode is the only thing that decides. MkdirTemp makes it 0700.
+	dir, err := os.MkdirTemp("/tmp", "cb-cfgtest-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
 	f := filepath.Join(dir, "bridge.yaml")
 	_ = os.WriteFile(f, []byte("a: 1\n"), 0o600)
 	me := os.Getuid()
@@ -171,7 +178,6 @@ func TestConfigFileReadableAndChownSkip(t *testing.T) {
 		t.Error("0700 폴더 안이면 0644 라도 남은 지나갈 수 없음")
 	}
 	_ = os.Chmod(dir, 0o755)
-	_ = os.Chmod(filepath.Dir(dir), 0o755)
 	if !readableBy(f, me+12345, me+12345) {
 		t.Error("0644 이고 폴더를 지나갈 수 있으면 누구나 읽음")
 	}
