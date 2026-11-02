@@ -499,6 +499,7 @@ func main() {
 	loadModels()
 	startModelsCheck()
 	startHeartbeat()
+	startPollSweep()
 	loadAppBuild()
 	loadReportAuto()
 	startReportTimers()

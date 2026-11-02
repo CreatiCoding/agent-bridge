@@ -1274,6 +1274,19 @@ select.input {
   border-bottom: 1px solid var(--line);
 }
 
+/* Fetching instead of a stream (REQ-F-849): a small word at the top corner, not a warning. */
+.poll-chip {
+  align-self: flex-end;
+  margin: 4px 10px -2px auto;
+  padding: 1px 8px;
+  font-size: var(--fs-xsmall);
+  line-height: 18px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  width: fit-content;
+}
+
 /* ---------- session list ---------- */
 .list-tools {
   display: flex;

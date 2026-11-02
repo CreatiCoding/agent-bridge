@@ -5,7 +5,7 @@ import { getAppSnooze, getPref, setAppSnooze, setPref } from './lib/local'
 import { APP_UPDATE_SNOOZE_MS, appVersion, TESTFLIGHT_URL, updateDue } from './lib/app-version'
 import { go, href, type Route, useRoute } from './lib/router'
 import { look } from './lib/sessions'
-import { getStore, onServerToast, reportFocus, useStore } from './lib/store'
+import { getStore, linkWhy, onServerToast, reportFocus, useStore } from './lib/store'
 import { Button, Icon, IconButton, Logo, Spinner, useWide } from './kit'
 import { confirmDialog, openMenu, OverlayHost, type MenuEntry } from './kit/overlay'
 import { PermissionModal } from './components/permission-modal'
@@ -51,6 +51,7 @@ import { runShortcut } from './lib/shortcuts'
 
 function ConnBanner() {
   const link = useStore((s) => s.link)
+  const mode = useStore((s) => s.mode)
   const downSince = useStore((s) => s.downSince)
   const [, tick] = useState(0)
   useEffect(() => {
@@ -58,6 +59,13 @@ function ConnBanner() {
     const t = setInterval(() => tick((n) => n + 1), 2000)
     return () => clearInterval(t)
   }, [link])
+  // Fetching because streams do not get through here (REQ-F-849): said small, it works, only a little slower.
+  if (link === 'live' && mode === 'poll')
+    return (
+      <div className="poll-chip" role="status" title={`실시간 연결(스트림)이 이 네트워크에서 막혀 몇 초마다 확인해 받고 있어요. 가끔 다시 시도해 풀리면 실시간으로 돌아가요.${linkWhy() ? ` (${linkWhy()})` : ''}`}>
+        폴링
+      </div>
+    )
   // A blip of a few seconds (a deploy, a network change) is not worth a word.
   if (link === 'live' || !downSince || Date.now() - downSince < 8000) return null
   return (

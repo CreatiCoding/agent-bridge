@@ -35,7 +35,7 @@ export function clientDebug(sid: string | null) {
     display: { standalone: media('(display-mode: standalone)') || !!nav.standalone, dark: media('(prefers-color-scheme: dark)'), reducedMotion: media('(prefers-reduced-motion: reduce)'), theme: document.documentElement.dataset.theme ?? null },
     network: { online: navigator.onLine, ...(nav.connection ? { type: nav.connection.effectiveType, rtt: nav.connection.rtt, downlink: nav.connection.downlink, saveData: nav.connection.saveData } : {}) },
     memory: nav.deviceMemory ?? null,
-    link: { state: st.link, downSince: st.downSince ?? null },
+    link: { state: st.link, mode: st.mode, downSince: st.downSince ?? null },
     session: s ? { id: s.id, title: s.title, phase: s.state.phase, alive: s.state.alive, closed: s.closed } : null,
     errors: [...seen],
   }

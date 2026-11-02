@@ -239,71 +239,10 @@ func apiBridge(req *Req, res *Res, u *url.URL, uid string) bool {
 		if ownHost(uid, qnil(u, "hostId"))["conn"] != qnil(u, "conn") {
 			refuse(409, NOT_BRIDGE_TAB)
 		}
-		// The page it replaces is told so, or its EventSource would reconnect and take the host back.
-		if old, ok := bridges.Get(hostID); ok {
-			old.End("data: {\"t\":\"replaced\"}\n\n")
-		}
-		var s *Stream
-		s = openStream(req, res, func() {
-			if cur, ok := bridges.Get(hostID); !ok || cur != Sink(s) {
-				return
-			}
-			bridges.Delete(hostID)
-			st := live(hostID)
-			st["disconnectedAt"] = float64(nowMs())
-			st["stale"] = false
-			st["rtt"] = nil
-			hosts.Val(hostID)["lastSeen"] = float64(nowMs())
-			touchGlobals()
-			// What the host last said stays, but nothing is being written or asked through a dead link.
-			for _, m := range sessions.Values() {
-				if m.host() == hostID {
-					m.set("card", nil)
-					m.set("writing", "")
-				}
-			}
-			gone := func() {
-				stopLinkGone(hostID)
-				if online(hostID) || !hosts.Has(hostID) {
-					return
-				}
-				record(uid, hostID, M{"level": "warn", "area": "link", "text": "연동 페이지와의 연결이 끊김"})
-				broadcastState(uid)
-			}
-			// A tab that said goodbye has left: at once. A dropped stream gets a moment to come back (REQ-F-831).
-			if truthy(st["leaving"]) {
-				st["leaving"] = false
-				gone()
-				return
-			}
-			stopLinkGone(hostID)
-			linkGone[hostID] = setTimeout(LINK_GRACE, gone)
-			broadcastState(uid)
-		})
-		// Back within the grace: said as a short drop, not as a new connection.
-		blip := -1.0
-		if stopLinkGone(hostID) {
-			blip = float64(nowMs()) - jsNumber(live(hostID)["disconnectedAt"])
-		}
-		live(hostID)["leaving"] = false
-		bridges.Set(hostID, s)
-		// EventSource waits 3 s by default before it reconnects: a bridge page that lost its stream comes back in 1 s.
-		s.Write("retry: 1000\n\n")
-		// Which web files this server has: a bridge tab that heard another one before reloads to run the new relay.
-		s.Write("data: " + jsonStr(M{"t": "web", "hash": WEB_HASH}) + "\n\n")
-		trace(hostID, "stream open via HTTP/"+req.httpVersion+" ua="+jsSliceTo(jsStringU(headerOrNil(req, "user-agent")), 120)+" enc="+jsStringU(headerOrNil(req, "accept-encoding")))
-		st := live(hostID)
-		st["connectedAt"] = float64(nowMs())
-		st["connects"] = numOr0(st["connects"]) + 1
-		st["health"] = nil
-		st["healthAt"] = nil
-		st["page"] = nil
-		linkText := "연동 페이지 연결됨"
-		if blip >= 0 {
-			linkText = "연동 페이지가 " + strconv.FormatFloat(blip/1000, 'f', 1, 64) + "초 끊겼다가 다시 연결됨"
-		}
-		record(uid, hostID, M{"area": "link", "text": linkText})
-		broadcastState(uid)
+		openBridge(uid, hostID, qstr(u, "conn"), bridgeGen(u), req, func(onClose func()) *Stream { return openStream(req, res, onClose) })
+		return true
+	case get && p == "/api/bridge/poll":
+		bridgePoll(req, res, u, uid)
 		return true
 	case post && p == "/api/bridge/up":
 		b := body(req, 32*1024*1024)
@@ -417,6 +356,10 @@ func apiControl(req *Req, res *Res, u *url.URL, uid string) bool {
 	if pageApi(req, res, u, uid) {
 		return true
 	}
+	if get && p == "/api/classic/stream" && qstr(u, "probe") == "1" {
+		probeStream(req, res)
+		return true
+	}
 	if get && p == "/api/classic/stream" {
 		key := randHex(8)
 		s := openStream(req, res, func() {
@@ -427,7 +370,13 @@ func apiControl(req *Req, res *Res, u *url.URL, uid string) bool {
 		addControl(uid, key, s)
 		// Only a page that says it can merge them gets deltas.
 		s.wantsDelta = qstr(u, "delta") == "1"
+		// A page that watches for silence (REQ-F-849) gets pings it can see.
+		s.pingData = qstr(u, "hb") == "1"
 		sendState(s, stateOf(uid))
+		return true
+	}
+	if get && p == "/api/classic/poll" {
+		classicPoll(req, res, u, uid)
 		return true
 	}
 	if post && p == "/api/sessions" {
@@ -930,4 +879,85 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	return false
+}
+
+// openBridge: hostID's bridge is now the stream (or the fetched place, REQ-F-849) that mk makes; the one before it
+// is told it was replaced. onClose, handed to mk, is what a dropped link does.
+func openBridge(uid, hostID, conn string, gen int64, req *Req, mk func(onClose func()) *Stream) *Stream {
+	if old, ok := bridges.Get(hostID); ok {
+		// A late request of the same tab's older attempt (it switched between streaming and fetching since).
+		if o, isStream := old.(*Stream); isStream && o.bconn == conn && o.gen > gen && !o.ended && !o.gone {
+			pollStale()
+		}
+	}
+	// The page it replaces is told so, or its EventSource would reconnect and take the host back.
+	if old, ok := bridges.Get(hostID); ok {
+		old.End("data: {\"t\":\"replaced\"}\n\n")
+	}
+	var s *Stream
+	s = mk(func() {
+		if cur, ok := bridges.Get(hostID); !ok || cur != Sink(s) {
+			return
+		}
+		bridges.Delete(hostID)
+		st := live(hostID)
+		st["disconnectedAt"] = float64(nowMs())
+		st["stale"] = false
+		st["rtt"] = nil
+		hosts.Val(hostID)["lastSeen"] = float64(nowMs())
+		touchGlobals()
+		// What the host last said stays, but nothing is being written or asked through a dead link.
+		for _, m := range sessions.Values() {
+			if m.host() == hostID {
+				m.set("card", nil)
+				m.set("writing", "")
+			}
+		}
+		gone := func() {
+			stopLinkGone(hostID)
+			if online(hostID) || !hosts.Has(hostID) {
+				return
+			}
+			record(uid, hostID, M{"level": "warn", "area": "link", "text": "연동 페이지와의 연결이 끊김"})
+			broadcastState(uid)
+		}
+		// A tab that said goodbye has left: at once. A dropped stream gets a moment to come back (REQ-F-831).
+		if truthy(st["leaving"]) {
+			st["leaving"] = false
+			gone()
+			return
+		}
+		stopLinkGone(hostID)
+		linkGone[hostID] = setTimeout(LINK_GRACE, gone)
+		broadcastState(uid)
+	})
+	// Back within the grace: said as a short drop, not as a new connection.
+	blip := -1.0
+	if stopLinkGone(hostID) {
+		blip = float64(nowMs()) - jsNumber(live(hostID)["disconnectedAt"])
+	}
+	live(hostID)["leaving"] = false
+	s.bconn, s.gen = conn, gen
+	bridges.Set(hostID, s)
+	// EventSource waits 3 s by default before it reconnects: a bridge page that lost its stream comes back in 1 s.
+	s.Write("retry: 1000\n\n")
+	// Which web files this server has: a bridge tab that heard another one before reloads to run the new relay.
+	s.Write("data: " + jsonStr(M{"t": "web", "hash": WEB_HASH}) + "\n\n")
+	trace(hostID, "stream open via HTTP/"+req.httpVersion+" ua="+jsSliceTo(jsStringU(headerOrNil(req, "user-agent")), 120)+" enc="+jsStringU(headerOrNil(req, "accept-encoding")))
+	st := live(hostID)
+	st["connectedAt"] = float64(nowMs())
+	st["connects"] = numOr0(st["connects"]) + 1
+	st["health"] = nil
+	st["healthAt"] = nil
+	st["page"] = nil
+	linkText := "연동 페이지 연결됨"
+	if blip >= 0 {
+		linkText = "연동 페이지가 " + strconv.FormatFloat(blip/1000, 'f', 1, 64) + "초 끊겼다가 다시 연결됨"
+	}
+	if s.poll != nil {
+		linkText += " (스트림이 막혀 폴링)"
+	}
+	record(uid, hostID, M{"area": "link", "text": linkText})
+	broadcastState(uid)
+	return s
 }

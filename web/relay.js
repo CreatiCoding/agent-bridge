@@ -201,55 +201,223 @@ export function startRelay(ui = {}, opts = {}) {
     }
   }
 
-  function connectServer() {
+  // ---- the server's way down: a stream, or fetching when a proxy holds streams back (REQ-F-849) ----
+  /** A stream must bring its first message (the server's 'web') this soon; the server pings every 15 s after. */
+  const DOWN_FIRST_MS = 10_000
+  const DOWN_STALL_MS = 40_000
+  /** This many failed stream attempts in a row, while the server answers plain requests, and the tab fetches. */
+  const DOWN_FAILS = 2
+  const PROBE_FIRST_MS = 60_000
+  const PROBE_MAX_MS = 15 * 60_000
+  const PROBE_RESET_MS = 10 * 60_000
+  let downMode = 'sse'
+  let downFails = 0
+  let downFirst = false
+  /** When the stream brought its first message: only one that then stays well a while clears the failures. */
+  let downLiveAt = 0
+  let downTimer = 0
+  let serverHeard = 0
+  let downRun = 0
+  let downAbort = null
+  let probeDelay = PROBE_FIRST_MS
+  let streamSince = 0
+  let checkingDown = false
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+  /** Stop listening to the server, whichever way. */
+  function closeDown() {
     serverStream?.close()
-    serverReady = false
-    const es = (serverStream = new EventSource(`/api/bridge/stream?hostId=${hostId}&conn=${conn}`))
+    serverStream = null
+    clearTimeout(downTimer)
+    downRun++
+    downAbort?.abort()
+  }
+
+  /** The server is reachable on this link (first message, or a fetch answered). */
+  function serverUp(fresh) {
+    const again = serverReady === null || (fresh && serverReady === true)
+    serverReady = true
+    link('server', 'on', downMode === 'poll' ? '연결됨 (스트림이 막혀 폴링)' : '연결됨')
+    // After a dropped connection the server has forgotten this host's state: have the agent introduce itself again.
+    if (again) toAgent({ t: 'rehello' }).catch(() => {})
+    pump()
+  }
+
+  function fromServer(cmd) {
+    serverHeard = Date.now()
+    if (cmd.t === 'replaced') return standDown('다른 탭이나 브라우저가 연동을 넘겨받음')
+    // The server's web files changed (a deploy): this tab runs the new relay by reloading once (REQ-F-761).
+    if (cmd.t === 'web') {
+      if (webSeen && cmd.hash && cmd.hash !== webSeen) return location.reload()
+      webSeen = cmd.hash || webSeen
+      return
+    }
+    diag.fromServer++
+    if (cmd.t !== 'welcome' && cmd.t !== 'ping') log(`← ${cmd.t}`)
+    // The server waits on commands that carry a reqId: tell it at once that the tab has it, and at once if the agent cannot be reached.
+    if (cmd.reqId) (queue.push({ t: 'got', reqId: cmd.reqId }), pump())
+    toAgentAgain(cmd).then(
+      () => diag.toAgentOk++,
+      (err) => {
+        diag.toAgentFail++
+        report('error', 'relay', `${cmd.t} 를 에이전트로 전달하지 못함: ${err.message}`)
+        if (cmd.reqId) (queue.push({ t: 'relayfail', reqId: cmd.reqId, error: err.message }), pump())
+      },
+    )
+  }
+
+  function connectServer() {
+    if (downMode === 'poll') return void startDownPoll()
+    closeDown()
+    if (serverReady !== null) serverReady = false
+    downFirst = false
+    // gen: this attempt; a late request of an older one (stream or fetch) must not replace it on the server.
+    const es = (serverStream = new EventSource(`/api/bridge/stream?hostId=${hostId}&conn=${conn}&gen=${downRun}`))
+    const firstLate = () => es === serverStream && !downFirst && downFailed('첫 메시지가 오지 않음')
+    downTimer = setTimeout(firstLate, DOWN_FIRST_MS)
     es.onopen = () => {
-      const again = serverReady === null
-      serverReady = true
-      link('server', 'on', '연결됨')
-      // After a dropped connection the server has forgotten this host's state: have the agent introduce itself again.
-      if (again) toAgent({ t: 'rehello' }).catch(() => {})
-      pump()
+      if (es !== serverStream) return
+      serverUp(false)
     }
     es.onmessage = (e) => {
-      const cmd = JSON.parse(e.data)
-      if (cmd.t === 'replaced') return standDown('다른 탭이나 브라우저가 연동을 넘겨받음')
-      // The server's web files changed (a deploy): this tab runs the new relay by reloading once (REQ-F-761).
-      if (cmd.t === 'web') {
-        if (webSeen && cmd.hash && cmd.hash !== webSeen) return location.reload()
-        webSeen = cmd.hash || webSeen
-        return
+      if (es !== serverStream) return
+      if (!downFirst) {
+        downFirst = true
+        downLiveAt = Date.now()
+        clearTimeout(downTimer)
       }
-      diag.fromServer++
-      if (cmd.t !== 'welcome' && cmd.t !== 'ping') log(`← ${cmd.t}`)
-      // The server waits on commands that carry a reqId: tell it at once that the tab has it, and at once if the agent cannot be reached.
-      if (cmd.reqId) (queue.push({ t: 'got', reqId: cmd.reqId }), pump())
-      toAgentAgain(cmd).then(
-        () => diag.toAgentOk++,
-        (err) => {
-          diag.toAgentFail++
-          report('error', 'relay', `${cmd.t} 를 에이전트로 전달하지 못함: ${err.message}`)
-          if (cmd.reqId) (queue.push({ t: 'relayfail', reqId: cmd.reqId, error: err.message }), pump())
-        },
-      )
+      fromServer(JSON.parse(e.data))
     }
     es.onerror = () => {
       if (es !== serverStream) return
-      // 409: the server no longer takes this tab as the host's bridge. EventSource does not retry that.
-      if (es.readyState === EventSource.CLOSED) {
-        // A stream the proxy sent to its sign-in page ends the same way: asked once more to tell the two apart.
-        if (opts.background)
-          return void fetch('/api/me', { cache: 'no-store', redirect: 'manual' }).then(
-            (r) => (turnedAway(r) ? loginLost(turnedAway(r)) : standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요')),
-            () => standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요'),
-          )
-        return standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요')
-      }
+      // 409: the server no longer takes this tab as the host's bridge. EventSource does not retry that. A proxy
+      // that refuses or cuts streams ends one the same way: an empty send up tells them apart.
+      if (es.readyState === EventSource.CLOSED || !downFirst) return void downFailed(downFirst ? '스트림이 닫힘' : '스트림이 열리지 않음')
       serverReady = null
       link('server', 'wait', '다시 연결하는 중')
+      // The browser reconnects by itself: that stream must bring its first message in time too.
+      downFirst = false
+      clearTimeout(downTimer)
+      downTimer = setTimeout(firstLate, DOWN_FIRST_MS)
     }
+  }
+
+  /** Whether this tab is still the host's bridge and signed in: an empty send up answers that, and nothing else. */
+  async function stillBridge() {
+    const r = await fetch('/api/bridge/up', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, conn, msgs: [] }), signal: AbortSignal.timeout(8000), redirect: 'manual' }).catch(() => null)
+    if (!r) return 'down'
+    const away = turnedAway(r)
+    if (away) return void loginLost(away)
+    if (r.status === 409 || r.status === 404) return void standDown('서버가 이 탭의 연동을 받지 않음 — 새로고침해 주세요')
+    return r.ok ? 'ok' : 'down'
+  }
+
+  /** A stream attempt failed: tell a blocked stream from a server that is down, and fetch after a few. */
+  async function downFailed(why) {
+    if (checkingDown || stopped || downMode === 'poll') return
+    checkingDown = true
+    serverStream?.close()
+    serverStream = null
+    clearTimeout(downTimer)
+    serverReady = null
+    link('server', 'wait', '다시 연결하는 중')
+    try {
+      const was = conn
+      const st = await stillBridge()
+      if (!st || stopped || conn !== was) return
+      // The server itself does not answer (a deploy, no network): not the stream's fault.
+      if (st === 'ok' && navigator.onLine) downFails++
+      if (downFails >= DOWN_FAILS) {
+        report('warn', 'relay', `서버 스트림이 이 네트워크에서 막혀 폴링으로 받음 (${why})`)
+        if (streamSince && Date.now() - streamSince > PROBE_RESET_MS) probeDelay = PROBE_FIRST_MS
+        downMode = 'poll'
+        startDownPoll()
+      } else setTimeout(() => !stopped && conn === was && connectServer(), st === 'ok' ? 1000 : 3000)
+    } finally {
+      checkingDown = false
+    }
+  }
+
+  function startDownPoll() {
+    closeDown()
+    void downPoll(downRun, conn)
+  }
+
+  async function downPoll(run, myConn) {
+    let since = 0
+    let longOk = true
+    let errs = 0
+    let first = true
+    let probeAt = Date.now() + probeDelay
+    while (run === downRun && !stopped && conn === myConn) {
+      if (Date.now() >= probeAt) {
+        if (await probeStream()) {
+          if (run !== downRun || stopped) return
+          report('info', 'relay', '서버 스트림이 다시 통해 스트림으로 돌아감')
+          downMode = 'sse'
+          downFails = 0
+          streamSince = Date.now()
+          serverReady = null
+          connectServer()
+          return
+        }
+        probeDelay = Math.min(probeDelay * 2, PROBE_MAX_MS)
+        probeAt = Date.now() + probeDelay
+      }
+      const wait = longOk ? 20 : 0
+      downAbort = new AbortController()
+      let pause = longOk ? 0 : 1000
+      try {
+        const r = await fetch(`/api/bridge/poll?${new URLSearchParams({ hostId, conn: myConn, since, wait, gen: run })}`, { cache: 'no-store', redirect: 'manual', signal: AbortSignal.any([downAbort.signal, AbortSignal.timeout(wait * 1000 + 15_000)]) })
+        if (run !== downRun) return
+        const away = turnedAway(r)
+        if (away) return loginLost(away)
+        if (r.status === 409) return standDown('다른 탭이나 브라우저가 연동을 넘겨받음')
+        // 429: too soon; 410: a newer request of this tab answers (this one was late). Neither is a failure.
+        if (r.status === 429 || r.status === 410) pause = 1000
+        else {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          const j = await r.json()
+          if (run !== downRun) return
+          // An answer to another since than the one asked (a proxy that answered a retried request): not ours.
+          if (j.since !== since) throw new Error('since')
+          errs = 0
+          since = j.last
+          if (first || j.fresh || serverReady !== true) serverUp(!first && !!j.fresh)
+          first = false
+          for (const d of j.msgs) {
+            if (run !== downRun || stopped) return
+            fromServer(JSON.parse(d))
+          }
+          // News flows: a short breath before the next fetch (the server refuses one sooner than 200 ms).
+          if (j.msgs.length) pause = Math.max(pause, 250)
+        }
+      } catch {
+        if (run !== downRun) return
+        diag.upFail++
+        // A proxy that also cuts a fetch that waits: fetch without waiting, every second.
+        if (++errs >= 2 && wait > 0) longOk = false
+        if (errs >= 2 && serverReady === true) (serverReady = null), link('server', 'wait', '다시 연결하는 중')
+        pause = Math.min(2000 * errs, 30_000)
+      }
+      if (pause) await sleep(pause)
+    }
+  }
+
+  /** Whether a stream gets through now: the probe's messages a second apart must arrive apart, not all at the end. */
+  function probeStream() {
+    return new Promise((resolve) => {
+      const at = []
+      // The page stream's address, so a proxy that sorts by address treats the probe as it treats streams.
+      const p = new EventSource('/api/classic/stream?probe=1')
+      const end = (ok) => (p.close(), clearTimeout(t), resolve(ok))
+      const t = setTimeout(() => end(false), 7_000)
+      p.onmessage = () => {
+        at.push(Date.now())
+        if (at.length >= 3 && at[at.length - 1] - at[0] >= 1_500) end(true)
+      }
+      p.onerror = () => end(false)
+    })
   }
 
   function pageStatus() {
@@ -290,15 +458,15 @@ export function startRelay(ui = {}, opts = {}) {
   let busyTries = 0
   const counts = { takeovers: 0, repairs: 0 }
   /** What this tab's relay is doing, for the page that shows it and for tests. */
-  window.__relay = { state: () => ({ holding: !!release, healthy: healthy(), stopped, waiting: !!waitingSince, ...counts, ...said }) }
+  window.__relay = { state: () => ({ holding: !!release, healthy: healthy(), stopped, waiting: !!waitingSince, down: downMode, ...counts, ...said }) }
 
   /** Start this tab's relay over without giving up its place: what reloading the tab would do. */
   function restart(why) {
     diag.agentReconnects++
     report('warn', 'relay', `연동을 처음부터 다시 시작함: ${why}`)
     agentStream?.close()
-    serverStream?.close()
-    agentStream = serverStream = null
+    closeDown()
+    agentStream = null
     serverReady = false
     conn = null
     hostId = null
@@ -381,7 +549,7 @@ export function startRelay(ui = {}, opts = {}) {
   addEventListener('pagehide', () => {
     if (hostId && conn && !stopped) navigator.sendBeacon('/api/bridge/bye', new Blob([JSON.stringify({ hostId, conn })], { type: 'application/json' }))
     agentStream?.close()
-    serverStream?.close()
+    closeDown()
   })
   addEventListener('pageshow', (e) => e.persisted && location.reload())
   if (opts.confirmLeave)
@@ -390,6 +558,19 @@ export function startRelay(ui = {}, opts = {}) {
       e.preventDefault()
       e.returnValue = ''
     })
+
+  // The server's stream too (it pings every 15 s). The watch's own pauses (a sleeping laptop, a frozen tab) are
+  // not the stream's fault: after one, the stream gets a fresh allowance.
+  let downTick = Date.now()
+  setInterval(() => {
+    const now = Date.now()
+    const slept = now - downTick > 15_000
+    downTick = now
+    if (stopped || downMode !== 'sse' || !serverStream || !downFirst) return
+    if (slept) serverHeard = now
+    else if (now - downLiveAt > 2 * DOWN_STALL_MS) downFails = 0
+    if (now - serverHeard > DOWN_STALL_MS) downFailed(`${Math.round((now - serverHeard) / 1000)}초째 서버 스트림이 조용함`)
+  }, 5_000)
 
   // A stream that is open but silent is worse than a closed one: nothing reconnects it. Reopen it ourselves.
   setInterval(() => {
@@ -413,8 +594,8 @@ export function startRelay(ui = {}, opts = {}) {
     if (stopped) return
     stopped = true
     agentStream?.close()
-    serverStream?.close()
-    agentStream = serverStream = null
+    closeDown()
+    agentStream = null
     serverReady = false
     conn = null
     queue.length = 0

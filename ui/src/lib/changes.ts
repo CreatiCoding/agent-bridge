@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.403',
+    date: '2026-11-03',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '실시간 연결(SSE)이 막힌 네트워크(긴 응답·스트리밍을 끊거나 버퍼링하는 프록시)에서 조작 화면이 멈추지 않는다: 첫 메시지 10초·조용함 50초로 막힘을 보고, 서버가 일반 요청에 답할 때만 세어 2번이면 GET /api/classic/poll 커서 조회(같은 delta 메시지, 보일 때 20초 기다리는 조회·숨었을 때 30초)로 받는다. 화면 오른쪽 위에 작은 "폴링" 표시',
+        refs: ['REQ-F-849', 'IF-271', 'IF-015'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '연동 탭도 서버 명령 스트림이 막히면 GET /api/bridge/poll 로 받는다(다시 붙으면 rehello, 시도 번호로 늦은 옛 요청 거절). 둘 다 60초 뒤부터(실패마다 2배, 최대 15분) 같은 주소의 탐침(probe=1)이 따로따로 오면 SSE 로 돌아간다',
+        refs: ['REQ-F-849', 'IF-272', 'IF-075'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '조회는 스트림과 같은 인증·자리 한도(사람당 32)를 쓰고, 너무 잦은 조회(429)·늦은 요청(410)·사람당 새 자리 분당 30개·밀린 양 1 MiB(연동 4 MiB)·5분(연동 30초) 만료로 서버 부하를 묶는다',
+        refs: ['REQ-F-849', 'IF-271', 'IF-272'],
+      },
+    ],
+  },
+  {
     version: '1.402',
     date: '2026-11-02',
+    commit: '2b8fd33',
     changes: [
       {
         kind: 'added',

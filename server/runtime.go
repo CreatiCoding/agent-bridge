@@ -422,6 +422,10 @@ type Stream struct {
 	lastState  *stateSnap
 	wantsDelta bool
 	pingEvery  time.Duration
+	pingData   bool     // pings as a message the page sees ({"t":"ping"}), so it can tell a silent stream (REQ-F-849)
+	poll       *pollBuf // a place that is fetched instead of streamed (poll.go)
+	bconn      string   // a bridge's: the tab's conn and attempt (bridgeGen)
+	gen        int64
 	cut        func() // makes a write that is stuck on a client that stopped reading give up
 }
 
@@ -440,6 +444,19 @@ func (s *Stream) Write(chunk string) bool {
 	defer s.smu.Unlock()
 	if s.ended || s.gone {
 		return false
+	}
+	if s.poll != nil {
+		if !s.pollAdd(chunk) {
+			// A bridge tab's place over its room: closed, and the tab's next fetch starts a new link.
+			s.gone = true
+			if s.poll.waiter != nil {
+				close(s.poll.waiter)
+				s.poll.waiter = nil
+			}
+			go locked("poll over", s.pollClosed)
+			return false
+		}
+		return true
 	}
 	if s.queued > 0 && s.queued+len(chunk) > STREAM_BACKLOG_MAX {
 		s.queue = nil
@@ -460,6 +477,9 @@ func (s *Stream) Write(chunk string) bool {
 func (s *Stream) Pending() int {
 	s.smu.Lock()
 	defer s.smu.Unlock()
+	if s.poll != nil {
+		return s.poll.size
+	}
 	return s.queued
 }
 
@@ -468,6 +488,19 @@ func (s *Stream) End(chunk string) {
 	s.smu.Lock()
 	defer s.smu.Unlock()
 	if s.ended {
+		return
+	}
+	if s.poll != nil {
+		if chunk != "" && !s.gone {
+			s.pollAdd(chunk)
+		}
+		s.ended = true
+		if s.poll.waiter != nil {
+			close(s.poll.waiter)
+			s.poll.waiter = nil
+		}
+		// The owner hears it as soon as it can, like a stream that ended (s.smu is held here).
+		go locked("poll end", s.pollClosed)
 		return
 	}
 	if chunk != "" && !s.gone {
@@ -502,7 +535,11 @@ func (s *Stream) run(w http.ResponseWriter, hr *http.Request, status int) {
 		for {
 			select {
 			case <-ticker.C:
-				s.Write(": ping\n\n")
+				if s.pingData {
+					s.Write("data: {\"t\":\"ping\"}\n\n")
+				} else {
+					s.Write(": ping\n\n")
+				}
 			case <-done:
 				return
 			}
