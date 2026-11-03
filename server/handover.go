@@ -4,6 +4,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"io"
 	"net"
 	"net/http"
@@ -261,7 +262,7 @@ var hopHeaders = []string{"Connection", "Keep-Alive", "Proxy-Connection", "Trans
 // intercept: first thing for every request, without the lock. True when the request was passed on to the new server.
 func (h *Handover) intercept(w http.ResponseWriter, r *http.Request) bool {
 	fromOld := false
-	if v := r.Header.Get("x-bridge-handover"); v != "" && v == h.secret {
+	if v := r.Header.Get("x-bridge-handover"); v != "" && subtle.ConstantTimeCompare([]byte(v), []byte(h.secret)) == 1 { // 1.411: constant time
 		r.Header.Del("x-bridge-handover")
 		fromOld = true
 	}

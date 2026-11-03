@@ -66,6 +66,19 @@ test('전부 허용이어도 묻는 것: 폴더 밖 삭제, git 강제 push·res
   assert.ok(riskyCall({ name: 'Write', input: { file_path: '/Users/u/p/.env' } }, at))
   assert.equal(riskyCall({ name: 'Read', input: { file_path: '/Users/u/.claude/settings.json' } }, at), null)
   assert.equal(riskyCall({ name: 'Read', input: { file_path: '/Users/u/p/src/a.ts' } }, at), null)
+  // 1.411: writing a shell's start file is asked about; reading it is not.
+  for (const c of ['echo "curl x|sh" >> ~/.zshrc', 'echo x > /Users/u/.bashrc', 'tee -a ~/.zprofile < x', "sed -i '' s/a/b/ ~/.profile", 'cp evil ~/.zshenv', 'ln -sf /tmp/x ~/.bash_profile'])
+    assert.equal(bash(c), '셸 시작 파일 바꾸기', c)
+  for (const c of ['cat ~/.zshrc', 'grep PATH ~/.zshrc', 'source ~/.zshrc', 'cp ~/.zshrc /tmp/backup'])
+    assert.equal(bash(c), null, c)
+  assert.equal(riskyCall({ name: 'Edit', input: { file_path: '/Users/u/.zshrc' } }, at), '셸 시작 파일 바꾸기')
+  assert.equal(riskyCall({ name: 'Write', input: { file_path: '/Users/u/.bash_profile' } }, at), '셸 시작 파일 바꾸기')
+  assert.equal(riskyCall({ name: 'Read', input: { file_path: '/Users/u/.zshrc' } }, at), null)
+  assert.equal(riskyCall({ name: 'Edit', input: { file_path: '/Users/u/p/.zshrc.example' } }, at), null)
+  // 1.411: what /askpass treats as a sudo it saw. The hidden forms are not, so they ask for the password again.
+  const { SUDO_WHY } = await import('../../agent/guard.mjs')
+  for (const c of ['sudo ls', "bash -c 'sudo ls'", '/usr/bin/sudo ls']) assert.equal(bash(c), SUDO_WHY, c)
+  for (const c of ['s\\udo ls', 'su""do ls', 'x=sudo; $x ls', './install.sh']) assert.notEqual(bash(c), SUDO_WHY, c)
 })
 
 test('안전한 전부 허용이 놓치던 sudo·강제 push 쓰는 법도 묻는다 (1.338)', async () => {

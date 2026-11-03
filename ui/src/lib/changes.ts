@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.411',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '세션의 sudo 가 명령에 보이지 않으면(s\\udo, su""do, $x, 스크립트 안) 관리자 권한이 열려 있어도 비밀번호를 다시 물음. 전에는 전부 허용에서 위험 호출 판별을 지나 열린 5분 동안 묻지 않고 root 로 돌 수 있었음',
+        refs: ['REQ-F-764', 'REQ-F-759'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '전부 허용이어도 셸 시작 파일(.zshrc, .bashrc, .profile …)에 쓰는 호출은 물음',
+        refs: ['REQ-F-759'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '무중단 배포의 넘김 머리글을 비밀값과 상수 시간으로 비교',
+        refs: ['REQ-F-064'],
+      },
+    ],
+  },
+  {
     version: '1.410',
     date: '2026-11-04',
+    commit: 'cf1f6f5',
     changes: [
       {
         kind: 'fixed',

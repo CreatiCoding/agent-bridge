@@ -227,6 +227,10 @@ export function bridgeSelfCall(tool) {
  * Code's own settings or what macOS starts at login. Returns why in a few words, or null. A command is only read
  * as written: what a script it runs does inside is not seen.
  */
+/** riskyCall's answer for a sudo it read in the command; /askpass hands the kept password only to these (1.411). */
+export const SUDO_WHY = '관리자 권한(sudo)'
+/** Files a shell reads at every start: one line added there runs in every later terminal and session (1.411). */
+const SHELL_RC = String.raw`\.(zshrc|zshenv|zprofile|zlogin|bashrc|bash_profile|bash_login|profile)\b`
 export function riskyCall(tool, { cwd = '', home = '' } = {}) {
   const own = bridgeSelfCall(tool)
   if (own) return own
@@ -238,7 +242,7 @@ export function riskyCall(tool, { cwd = '', home = '' } = {}) {
     const c = String(input.command ?? '')
     // sudo as a word of its own, also inside quotes (`bash -c 'sudo …'`), backticks, by path (`/usr/bin/sudo`) or
     // escaped (`\sudo`): with the admin password open (REQ-F-764) each of these runs as root without asking (1.338).
-    if (/(^|[\s;&|(`'"/\\])sudo($|[\s'"`;&|)])/.test(c)) return '관리자 권한(sudo)'
+    if (/(^|[\s;&|(`'"/\\])sudo($|[\s'"`;&|)])/.test(c)) return SUDO_WHY
     // Short flags run together (`-fu`), a mirror push, and a push that deletes a remote branch (`--delete`, `-d`,
     // `:<ref>`, `--prune`) rewrite the remote as much as `-f` does (1.338).
     if (/\bgit\b[^;&|\n]*\spush\b[^;&|\n]*(\s(--force(-with-lease|-if-includes)?|--mirror|--delete|--prune|-[a-zA-Z]*[fd][a-zA-Z]*)\b|\s\+[\w./-]+|\s:[\w./-]+)/.test(c)) return 'git 강제 push'
@@ -248,6 +252,10 @@ export function riskyCall(tool, { cwd = '', home = '' } = {}) {
     if (/\bfind\b[^;&|\n]*\s(-delete\b|-exec(dir)?\s+(\S*\/)?rm\b)/.test(c)) return '파일 일괄 삭제(find)'
     if (secret.test(c)) return '비밀 파일'
     if (settings.test(c)) return 'Claude 설정·로그인 항목 바꾸기'
+    // Written to, not read: a redirect, tee, sed -i, or a copy, move or link whose last word (the target) it is.
+    const rcWrite = new RegExp(String.raw`(>>?\s*|\b(tee|sed\s+-i)\b[^;&|\n]*\s)['"]?(\S*/)?` + SHELL_RC)
+    const rcTarget = new RegExp(String.raw`\b(cp|mv|ln|install)\b[^;&|\n]*\s['"]?(\S*/)?` + SHELL_RC + String.raw`['"]?\s*($|[;&|\n])`)
+    if (rcWrite.test(c) || rcTarget.test(c)) return '셸 시작 파일 바꾸기'
     if (removesOutside(c, cwd, home)) return '세션 폴더 밖 삭제'
     return null
   }
@@ -255,6 +263,7 @@ export function riskyCall(tool, { cwd = '', home = '' } = {}) {
   if (!file) return null
   if (secret.test(file)) return '비밀 파일'
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name) && settings.test(file)) return 'Claude 설정·로그인 항목 바꾸기'
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(name) && new RegExp(String.raw`(^|/)` + SHELL_RC + '$').test(file)) return '셸 시작 파일 바꾸기'
   return null
 }
 

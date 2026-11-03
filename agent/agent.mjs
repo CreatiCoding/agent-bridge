@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -3048,8 +3048,11 @@ function sudoForget() {
   sudoPass = null
   sudoState()
 }
-/** Asks the server whether this session may use root now; resolves { ok, error }. */
-function sudoAsk(sid, what) {
+/**
+ * Asks the server whether this session may use root now; resolves { ok, error }. fresh: ask the person for the
+ * password again even while it is kept (the sudo was not in the command the guard read, 1.411).
+ */
+function sudoAsk(sid, what, { fresh = false } = {}) {
   const areq = crypto.randomUUID()
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -3058,7 +3061,7 @@ function sudoAsk(sid, what) {
       resolve({ ok: false, error: '비밀번호를 기다리다 2분이 지났어요' })
     }, SUDO_ASK_MS)
     sudoWaits.set(areq, (r) => (clearTimeout(timer), sudoWaits.delete(areq), resolve(r)))
-    emit({ t: 'sudoask', areq, sid, what: String(what ?? '').slice(0, 300), need: !sudoPass })
+    emit({ t: 'sudoask', areq, sid, what: String(what ?? '').slice(0, 300), need: fresh || !sudoPass })
   })
 }
 /** Runs sudo with the password on its stdin; resolves { code, out }. -k: a cached sudo ticket is never what lets it through. */
@@ -6847,7 +6850,10 @@ const server = http.createServer(async (req, res) => {
     if (!s) return void res.writeHead(403).end()
     if (enforcing()) return (note(sid, '🔐 이 맥은 서버를 믿지 않는 모드라 sudo 에 비밀번호를 넘기지 않아요.', 'warn'), void res.writeHead(403).end())
     const what = s.lastTool?.name === 'Bash' ? String(s.lastTool.input?.command ?? '') : ''
-    const a = await sudoAsk(sid, what || 'sudo')
+    // The kept password goes only to a sudo the guard saw in the command (REQ-F-759 asked about it). One it could not
+    // read (`s\udo`, `su""do`, `$x`, inside a script) asks for the password again, kept or not (1.411).
+    const seen = s.lastTool?.name === 'Bash' && riskyCall(s.lastTool) === SUDO_WHY
+    const a = await sudoAsk(sid, seen ? what : `(명령에 sudo 가 보이지 않음) ${what || 'sudo'}`, { fresh: !seen })
     if (!a.ok || !sudoPass) {
       note(sid, `🔐 sudo 에 비밀번호를 넘기지 않았어요: ${a.error ?? '관리자 권한이 닫혔어요'}`, 'warn')
       return void res.writeHead(403).end()
