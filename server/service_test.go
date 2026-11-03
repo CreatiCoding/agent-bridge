@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -188,4 +189,55 @@ func TestServiceHosts(t *testing.T) {
 	ok(t, !hasHome, "no home folder")
 	code, _ = call("POST")
 	eq(t, code, 404, "only GET")
+}
+
+// 1.410: a retry with the same key gets the session the first try opened (its answer lost to a 502 while a deploy
+// swapped the server), never someone else's, a closed one or the person's own.
+func TestServiceStartKey(t *testing.T) {
+	keepT, keepU, keepA, keepUsers, keepAccess, keepS, keepData, keepH := SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, sessions, DATA, hosts
+	defer func() {
+		SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, sessions, DATA, hosts = keepT, keepU, keepA, keepUsers, keepAccess, keepS, keepData, keepH
+	}()
+	tok := "0123456789abcdef0123456789abcdef"
+	SERVICE_TOKEN, SERVICE_UID, DATA = tok, "gh1", t.TempDir()
+	users, access, sessions, hosts = newOMap[M](), newOMap[M](), newOMap[*Sess](), newOMap[M]()
+	post := func(key string) (status int, out M) {
+		r := httptest.NewRequest("POST", "/api/service/sessions", strings.NewReader(string(jsonBytes(M{"prompt": "hi", "host": "nope", "key": key}))))
+		r.Header.Set("Authorization", "Bearer "+tok)
+		r.Header.Set("Content-Type", "application/json")
+		req := newReq(r)
+		res := newRes(req)
+		withLock(func() {
+			defer func() {
+				if e, isRefuse := recover().(*Refuse); isRefuse {
+					status = e.Status
+				}
+			}()
+			serviceAPI(req, res, r.URL.Path)
+			status = res.status
+		})
+		if status == 200 {
+			v, _ := parseJSON(res.body)
+			out, _ = v.(M)
+		}
+		return
+	}
+	withLock(func() {
+		ALLOWED = []string{"svc-one"}
+		users.Set("gh1", M{"login": "svc-one", "name": "svc-one", "avatar": ""})
+		sessions.Set("svc", newSess(M{"id": "svc", "uid": "gh1", "host": "h1", "service": true, "serviceKey": "run-1"}))
+		sessions.Set("gone", newSess(M{"id": "gone", "uid": "gh1", "host": "h1", "service": true, "serviceKey": "run-2", "closed": true}))
+		sessions.Set("own", newSess(M{"id": "own", "uid": "gh1", "host": "h1", "serviceKey": "run-3"}))
+		sessions.Set("other", newSess(M{"id": "other", "uid": "gh2", "host": "h2", "service": true, "serviceKey": "run-4"}))
+	})
+	st, out := post("run-1")
+	eq(t, st, 200, "same key: the session already opened")
+	eq(t, out["id"], "svc", "its id")
+	eq(t, out["reused"], true, "marked reused")
+	for _, k := range []string{"run-2", "run-3", "run-4", "run-5"} {
+		st, _ = post(k)
+		eq(t, st, 404, k+": not reused, goes on to open one (no such Mac here)")
+	}
+	st, _ = post("bad key!")
+	eq(t, st, 400, "a key outside [A-Za-z0-9._:-]{1,128}")
 }

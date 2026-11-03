@@ -32,11 +32,22 @@ const read = (file) => {
     return null
   }
 }
-const write = (file, v) => {
+/**
+ * As root (before dropRoot), a file goes to whoever owns the data folder: the old server already runs as that user
+ * and cannot read a 0600 file root owns, so it would never see the request (1.410).
+ */
+export const writeAs = (file, v, { euid = process.geteuid?.() ?? -1, chown = fs.lchownSync } = {}) => {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(v), { mode: 0o600 })
+  if (euid === 0) {
+    try {
+      const st = fs.statSync(path.dirname(file))
+      if (st.uid !== 0) chown(tmp, st.uid, st.gid)
+    } catch {}
+  }
   fs.renameSync(tmp, file)
 }
+const write = (file, v) => writeAs(file, v)
 
 /**
  * @param {string} dir the data folder both servers see
