@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.407',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'ui'],
+        text: 'bridge.yaml 의 features.reports: false 로 문제 제보를 끔. 새 제보·영상 올리기는 403, 서비스센터 버튼과 ⋯ 메뉴의 "문제 제보"를 숨김. 보낸 제보 보기·지우기와 운영 화면의 제보는 그대로',
+        refs: ['REQ-F-812'],
+      },
+    ],
+  },
+  {
     version: '1.406',
     date: '2026-11-03',
+    commit: '4c3d04b',
     changes: [
       {
         kind: 'fixed',

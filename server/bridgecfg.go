@@ -39,6 +39,7 @@ var CFG_KEYS = []cfgKey{
 	{"features.skills", "", "bool", true},
 	{"features.slack", "", "bool", true},
 	{"features.remoteKeys", "", "bool", true},
+	{"features.reports", "", "bool", true},
 	{"features.permissionModes", "", "modes", LAUNCH_MODES},
 	{"csp.frameSrc", "", "src", []string{}},
 	{"csp.imgSrc", "", "src", []string{}},

@@ -388,6 +388,8 @@ export interface Features {
   skills: boolean
   slack: boolean
   remoteKeys: boolean
+  /** 1.406: false hides 문제 제보 (features.reports); an older server says nothing, which is on. */
+  reports?: boolean
   permissionModes: string[]
   background: boolean
   proxyLogin?: boolean

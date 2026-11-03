@@ -5,6 +5,7 @@ import { getAppSnooze, getPref, setAppSnooze, setPref } from './lib/local'
 import { APP_UPDATE_SNOOZE_MS, appVersion, TESTFLIGHT_URL, updateDue } from './lib/app-version'
 import { go, href, type Route, useRoute } from './lib/router'
 import { look } from './lib/sessions'
+import { featureOn } from './lib/features'
 import { getStore, linkWhy, onServerToast, reportFocus, useStore } from './lib/store'
 import { Button, Icon, IconButton, Logo, Spinner, useWide } from './kit'
 import { confirmDialog, openMenu, OverlayHost, type MenuEntry } from './kit/overlay'
@@ -105,7 +106,7 @@ function appMenu(at: HTMLElement, me: Me | null, phone = false) {
           ] as MenuEntry[])
         : []),
       { label: '설정', icon: 'settings', hint: '기기 · 세션 · 화면 · 더 보기', onSelect: () => go({ name: 'settings' }) },
-      { label: '문제 제보', icon: 'support', onSelect: openReport },
+      ...(featureOn('reports') ? [{ label: '문제 제보', icon: 'support', onSelect: openReport } as MenuEntry] : []),
       'sep',
       { header: me ? `${shownName(me)}${me.admin ? ' · 운영자' : ''}` : '' },
       {
@@ -513,7 +514,7 @@ function AppRail({ me, route, collapsed, need, onToggle, onSearch, onNotices }: 
       {collapsed && <IconButton icon="plus" label="새 세션" onClick={() => go({ name: 'new' })} active={route.name === 'new'} />}
       {collapsed && <IconButton icon="search" label="검색 (⌘K)" onClick={onSearch} />}
       <span className="grow" />
-      <IconButton icon="support" label="문제 제보" onClick={openReport} />
+      {featureOn('reports') && <IconButton icon="support" label="문제 제보" onClick={openReport} />}
       <Bell onClick={onNotices} />
       <IconButton icon="settings" label="설정" onClick={() => go({ name: 'settings' })} active={route.name === 'settings'} />
       <IconButton icon="user" label={me ? `${shownName(me)} · 메뉴` : '메뉴'} onClick={(e) => appMenu(e.currentTarget, me)} />

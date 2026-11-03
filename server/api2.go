@@ -832,6 +832,7 @@ func apiAdmin(req *Req, res *Res, u *url.URL, uid string) bool {
 	}
 	// ---------- 제보 (REQ-F-735 ~ REQ-F-737) ----------
 	if post && p == "/api/reports/upload" {
+		needFeature("reports") // features.reports off: no new reports; those already sent stay readable and deletable
 		if limited(req, 20, "report-upload") {
 			refuse(429, "너무 자주 올렸어요. 잠시 뒤에 다시 해 주세요")
 		}
@@ -847,6 +848,7 @@ func apiAdmin(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if post && p == "/api/reports" {
+		needFeature("reports")
 		if limited(req, 10, "report") {
 			refuse(429, "너무 자주 제보했어요. 잠시 뒤에 다시 해 주세요")
 		}

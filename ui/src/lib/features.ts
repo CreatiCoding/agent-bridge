@@ -9,7 +9,7 @@ export function setFeatures(f: Features | undefined) {
 }
 
 /** background is read-only: always on from 1.382 (false on a header-only server before it). */
-export type Feature = 'sessionMove' | 'webpush' | 'voice' | 'preview' | 'skills' | 'slack' | 'remoteKeys' | 'background'
+export type Feature = 'sessionMove' | 'webpush' | 'voice' | 'preview' | 'skills' | 'slack' | 'remoteKeys' | 'reports' | 'background'
 
 export const featureOn = (name: Feature) => current?.[name] !== false
 

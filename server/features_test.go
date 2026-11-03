@@ -24,7 +24,7 @@ func withCfg(t *testing.T, src string) {
 // AC-1477: without the keys every feature is on, as today; the keys read with their kinds.
 func TestFeatureKeysDefaultsAndValues(t *testing.T) {
 	withCfg(t, "")
-	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys"} {
+	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys", "reports"} {
 		ok(t, cfgOn("features."+f), f+" 기본은 켜짐")
 	}
 	ok(t, reflect.DeepEqual(cfgGet("features.permissionModes"), LAUNCH_MODES), "모드 기본은 여섯 전부")
@@ -147,15 +147,15 @@ func callAPI(t *testing.T, method, path, body string) (int, string) {
 // AC-1477: a feature turned off answers 403 at its API, /api/me says so, the mode list is filtered.
 func TestFeaturesOffAtAPI(t *testing.T) {
 	_ = withConfigServer(t)
-	withCfg(t, "features:\n  webpush: false\n  voice: false\n  skills: false\n  slack: false\n  permissionModes: [plan]\n")
+	withCfg(t, "features:\n  webpush: false\n  voice: false\n  skills: false\n  slack: false\n  reports: false\n  permissionModes: [plan]\n")
 	code, body := callAPI(t, "GET", "/api/me", "")
 	eq(t, code, 200)
-	jeq(t, oget(js(body), "features"), `{"background":true,"permissionModes":["default","plan"],"preview":true,"proxyLogin":false,"remoteKeys":true,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
+	jeq(t, oget(js(body), "features"), `{"background":true,"permissionModes":["default","plan"],"preview":true,"proxyLogin":false,"remoteKeys":true,"reports":false,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
 	// Who is signed in, and how (REQ-F-824: an extension's settings section gets them).
 	uid, _ := oget(js(body), "uid").(string)
 	ok(t, uid != "", body)
 	jeq(t, oget(js(body), "provider"), `"`+providerOf(uid)+`"`, body)
-	for _, c := range [][2]string{{"GET", "/api/push/key"}, {"POST", "/api/push/subscribe"}, {"POST", "/api/prefs/voice"}, {"GET", "/api/skills"}, {"GET", "/api/prefs/skills"}, {"POST", "/api/plugins/slack"}} {
+	for _, c := range [][2]string{{"GET", "/api/push/key"}, {"POST", "/api/push/subscribe"}, {"POST", "/api/prefs/voice"}, {"GET", "/api/skills"}, {"GET", "/api/prefs/skills"}, {"POST", "/api/plugins/slack"}, {"POST", "/api/reports"}, {"POST", "/api/reports/upload"}} {
 		code, _ = callAPI(t, c[0], c[1], "{}")
 		eq(t, code, 403, c[0]+" "+c[1])
 	}
@@ -170,4 +170,8 @@ func TestFeaturesOffAtAPI(t *testing.T) {
 	withCfg(t, "")
 	code, _ = callAPI(t, "GET", "/api/push/key", "")
 	eq(t, code, 200)
+	// features.reports off (AC-1585): only new reports stop; the list of those already sent still answers.
+	withCfg(t, "features:\n  reports: false\n")
+	code, _ = callAPI(t, "GET", "/api/reports", "")
+	eq(t, code, 200, "보낸 제보 목록은 그대로")
 }

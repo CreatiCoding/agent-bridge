@@ -59,6 +59,7 @@ description: 서버 설정 파일 bridge.yaml 이 받는 모든 키를 형식, �
 | `features.skills` | 스킬 링크, `/skills`, 스킬 저장소 설정 |
 | `features.slack` | 플러그인 탭, Slack 으로 옮기기, 시작 가이드의 Slack 단계. 저장된 연결은 남아요 |
 | `features.remoteKeys` | 터미널 화면 시트의 키 버튼 |
+| `features.reports` | 문제 제보(서비스센터 버튼과 ⋯ 메뉴의 "문제 제보", 새 제보·영상 올리기). 이미 받은 제보는 운영 화면에서 그대로 보고 지울 수 있어요 |
 
 | 키 | 형식 | 기본값 | 뜻 |
 |---|---|---|---|

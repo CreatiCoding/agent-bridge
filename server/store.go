@@ -320,7 +320,7 @@ func allowMode(all bool) string {
 // visible window, REQ-F-833), proxyLogin says the server takes only its proxy's header sign-in (REQ-F-816).
 func featuresOf() M {
 	out := M{"background": true, "proxyLogin": headerOnly()}
-	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys"} {
+	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys", "reports"} {
 		out[f] = cfgOn("features." + f)
 	}
 	modes := []any{}
