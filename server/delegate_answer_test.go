@@ -1,4 +1,4 @@
-// A done session whose events this server lost on a restart still reads as done with its answer (1.405).
+// A done session whose events this server lost on a restart still reads as done with its answer (1.406).
 package main
 
 import "testing"

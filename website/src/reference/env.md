@@ -118,6 +118,8 @@ description: Agent Bridge 서버와 맥 에이전트가 읽는 환경 변수 전
 | `CLAUDE_BRIDGE_LABEL` | `dev.claude-bridge.agent` | 아니오 | 다시 설치 | launchd 라벨과 plist 파일 이름이에요. Linux 에서는 systemd 사용자 유닛 이름이에요. |
 | `XDG_CONFIG_HOME` | `~/.config` | 아니오 | 다시 설치 | Linux 에서만 써요. `service install` 이 systemd 사용자 유닛을 `<값>/systemd/user/<라벨>.service` 에 둬요. |
 | `CLAUDE_BRIDGE_CLAUDE` | `claude` | 아니오 | 쓰이지 않음 | 세션과 점검에서 부르는 claude 명령 이름이나 경로예요. |
+| `CLAUDE_BRIDGE_CODEX` | `codex` | 아니오 | 쓰이지 않음 | Codex 세션에서 부르는 codex 명령 이름이나 경로예요. `--version` 에 8초 안에 답해야 새 세션 화면에 Codex 가 보여요. |
+| `CODEX_HOME` | `~/.codex` | 아니오 | 쓰이지 않음 | Codex 가 대화 기록을 두는 폴더예요. 에이전트는 그 안의 `sessions/` 만 읽고, Codex 세션의 터미널에도 같은 값을 줘요. 절대 경로가 아니면 기본값을 써요. |
 | `CLAUDE_BRIDGE_DEFAULT_BRANCHES` | `main,develop,master` | 아니오 | 쓰이지 않음 | 자동 push 하지 않는 기본 브랜치예요. 쉼표로 나누고 공백은 지우지 않아요. |
 | `CLAUDE_BRIDGE_SYNC_FILES` | `SESSION.md,AGENTS.md,CLAUDE.md` | 아니오 | 쓰이지 않음 | git 이 아닌 작업 폴더에서 옮길 때 따라가는 지침 파일이에요. |
 | `CLAUDE_BRIDGE_SKIP_TOOL_PROMPT` | 없음 | 아니오 | — | 값이 있으면 시작 때 tmux 설치를 묻지 않아요. 설치 스크립트가 `1` 로 둬요. |

@@ -1,0 +1,56 @@
+// A stand-in for an OpenAI Responses API endpoint (server-sent events), for the codex runner's e2e (test/e2e-codex.mjs):
+// codex is pointed at it through its own config (model_providers), so no account or key is used. Answers by the last
+// thing the user said:
+//  - after a tool's output: "명령 결과를 받았습니다: <output>"
+//  - "RUNCMD": an exec_command that asks to run outside the sandbox (codex shows its approval question)
+//  - "WAIT": waits 6 s, then answers (a turn that is still going)
+//  - anything else: "echo: <text>"
+//   node test/fixtures/fake-responses.mjs <port>
+import http from 'node:http'
+
+const port = Number(process.argv[2] || 18765)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+let seq = 0
+
+function lastUserText(input) {
+  for (let i = (input?.length ?? 0) - 1; i >= 0; i--) {
+    const it = input[i]
+    if (it.type !== 'message' || it.role !== 'user') continue
+    const real = (it.content || []).filter((c) => c.type === 'input_text' && !c.text.trimStart().startsWith('<') && !c.text.startsWith('# AGENTS.md')).map((c) => c.text)
+    if (real.length) return real.join('\n')
+  }
+  return ''
+}
+
+http
+  .createServer(async (req, res) => {
+    let body = ''
+    for await (const c of req) body += c
+    if (req.method === 'GET' && req.url.startsWith('/v1/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ object: 'list', data: [{ id: 'fake-model', object: 'model' }], models: [] }))
+    }
+    if (!(req.method === 'POST' && req.url.startsWith('/v1/responses'))) {
+      res.writeHead(404, { 'content-type': 'application/json' })
+      return res.end('{"error":{"message":"not found"}}')
+    }
+    let json = {}
+    try {
+      json = JSON.parse(body)
+    } catch {}
+    const id = `resp_${++seq}`
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+    const send = (ev) => res.write(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`)
+    const say = (text) => send({ type: 'response.output_item.done', item: { type: 'message', role: 'assistant', id: `msg_${seq}`, content: [{ type: 'output_text', text }] } })
+    send({ type: 'response.created', response: { id } })
+    const input = json.input || []
+    const last = input[input.length - 1]
+    const text = lastUserText(input)
+    if (last && /_output$/.test(last.type || '')) say(`명령 결과를 받았습니다: ${String(typeof last.output === 'string' ? last.output : JSON.stringify(last.output)).slice(0, 200)}`)
+    else if (text.includes('RUNCMD')) send({ type: 'response.output_item.done', item: { type: 'function_call', call_id: `call_${seq}`, name: 'exec_command', arguments: JSON.stringify({ cmd: 'echo hello-from-fake', sandbox_permissions: 'require_escalated', justification: '시험용 명령' }) } })
+    else if (text.includes('WAIT')) (await sleep(6000), say(`기다린 뒤 답: ${text}`))
+    else say(`echo: ${text}`)
+    send({ type: 'response.completed', response: { id, usage: { input_tokens: 100, input_tokens_details: null, output_tokens: 10, output_tokens_details: null, total_tokens: 110 } } })
+    res.end()
+  })
+  .listen(port, '127.0.0.1', () => console.log(`fake responses on ${port}`))

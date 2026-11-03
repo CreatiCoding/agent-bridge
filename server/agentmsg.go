@@ -352,6 +352,12 @@ func helloFromAgent(uid, hostID string, msg M) {
 	} else {
 		delete(h, "trust")
 	}
+	// The CLIs this Mac can run a session in (REQ-F-851): an agent before 1.405 says none, and has only Claude Code.
+	if r := cleanRunners(msg["runners"]); r != nil {
+		h["runners"] = r
+	} else {
+		delete(h, "runners")
+	}
 	name := ""
 	if truthy(msg["name"]) {
 		name = jsSliceTo(jsString(msg["name"]), 60)

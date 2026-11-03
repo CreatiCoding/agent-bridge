@@ -7,6 +7,7 @@ import { getStore } from '../lib/store'
 import { featureOn } from '../lib/features'
 import { bytes, folderPath, tokens } from '../lib/format'
 import type { Session } from '../lib/types'
+import { MENU_CAPS, runnerCan } from '../lib/runner'
 import { chooseDialog, confirmDialog, type MenuEntry, type MenuItem, promptDialog, toast } from '../kit/overlay'
 import { Icon, type IconName } from '../kit'
 import { tokenOf } from '../lib/locks'
@@ -284,6 +285,10 @@ export interface PageMenu {
  * (BUILTIN_IDS) and the whole goes through the session.menu slot.
  */
 export function sessionMenu(s: Session, opts: { groups?: { id: string; name: string }[]; wide?: boolean; page?: PageMenu } = {}): MenuEntry[] {
+  // What the session's runner cannot do is not offered (REQ-F-851).
+  return sessionMenuAll(s, opts).filter((e) => typeof e === 'string' || !e.id || !MENU_CAPS[e.id] || runnerCan(s, MENU_CAPS[e.id]))
+}
+function sessionMenuAll(s: Session, opts: { groups?: { id: string; name: string }[]; wide?: boolean; page?: PageMenu } = {}): MenuEntry[] {
   const host = getStore().state?.hosts.find((h) => h.id === s.hostId)
   const live = !s.closed && !!host?.online
   // In Slack the session is only read here: what would drive it waits until it is brought back.

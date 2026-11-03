@@ -94,6 +94,8 @@ func startSession(uid string, b M, req *Req) string {
 			}
 		}
 	}
+	// Claude Code unless the request names another runner this Mac has (REQ-F-851).
+	runner := pickRunner(hostID, b["runner"])
 	sid := uuidv4()
 	prompt := jsSliceTo(orStr(b["prompt"]), 100_000)
 	// The session exists from here on, as "starting".
@@ -102,6 +104,9 @@ func startSession(uid string, b M, req *Req) string {
 		title = jsSliceTo(collapse(prompt), 80)
 	}
 	meta := newMeta(uid, sid, hostID, M{"title": title})
+	if runner != "" {
+		meta.set("runner", runner)
+	}
 	st := noState()
 	st["alive"] = true
 	st["phase"] = "starting"
@@ -157,12 +162,20 @@ func startSession(uid string, b M, req *Req) string {
 		cwd = jsString(b["cwd"])
 	}
 	mode, autoAllow := startMode(jsSliceTo(orStr(b["mode"]), 20))
+	// Another runner takes none of Claude Code's launch settings (the person's defaults are Claude's).
+	if runner != "" {
+		mode, autoAllow = "", false
+		b["model"], b["effort"] = "", ""
+	}
 	cmd := M{"t": "new", "sid": sid, "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "create": b["create"] == true, "cwd": jsSliceTo(cwd, 1000), "prompt": prompt, "autoPush": true, "model": jsSliceTo(orStr(b["model"]), 60), "effort": jsSliceTo(orStr(b["effort"]), 10), "mode": mode}
 	if b["chrome"] == false {
 		cmd["chrome"] = false
 	}
-	if account != "" {
+	if account != "" && runner == "" {
 		cmd["account"] = account
+	}
+	if runner != "" {
+		cmd["runner"] = runner
 	}
 	// A folder made here for a hand-over (REQ-F-760): the Mac records it, with the base it must be under, so it can go.
 	if base, ok := b["dirBase"].(string); ok && base != "" && internal && cmd["create"] == true {
@@ -349,6 +362,11 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 		return "기본 계정"
 	}
 	reopen := !relocate && target == source && !switching
+	// Another runner's conversation is a file only its own Mac has, in its own folder (REQ-F-851): it is opened again
+	// there, never moved.
+	if r := runnerOf(meta); r != "" && !reopen {
+		refuse(409, r+" 세션은 띄운 맥·폴더에서만 다시 열 수 있어요")
+	}
 	st := meta.state()
 	if reopen && truthy(st["alive"]) {
 		refuse(409, "이미 그 호스트에서 돌고 있습니다")
@@ -448,6 +466,9 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 	}
 	if local {
 		open["local"] = true
+	}
+	if r := runnerOf(meta); r != "" {
+		open["runner"] = r
 	}
 	if truthy(meta.get("mdFile")) {
 		open["mdFile"] = meta.get("mdFile")

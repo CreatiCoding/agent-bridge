@@ -162,6 +162,8 @@ export interface Session {
   account?: string
   /** Opened by another session to hand it work (다른 맥에 맡기기, REQ-F-760): that session's id. */
   delegatedBy?: string
+  /** The CLI it runs (REQ-F-851): none or 'claude' is Claude Code; another is one its Mac listed in `runners`. */
+  runner?: string
 }
 
 /** A Claude account on a Mac (설정 → Claude 계정). Each is a config folder of its own with its own sign-in. */
@@ -229,6 +231,8 @@ export interface Host {
   lastError?: string | null
   /** Its Claude accounts, without e-mail addresses. An agent from before accounts sends none. */
   accounts?: Account[]
+  /** The CLIs a session can run in on it (REQ-F-851), Claude Code first, with what each can do. An older agent sends none. */
+  runners?: { id: string; name: string; version?: string; caps: string[] }[] | null
   /** What it has for speech (REQ-F-758). null from an agent that does not say. */
   voice?: VoiceStatus | null
   /** Whether it takes work handed over from the person's other Macs (REQ-F-760). */

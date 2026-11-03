@@ -225,7 +225,7 @@ var answerAsked = map[string]askedAnswer{}
 
 // macAnswer: a finished turn's answer when this server no longer holds it in memory. The events of a session whose
 // log lives on the Mac sit here only in memory, so after a restart a done session read as working with no answer,
-// and a caller waiting for "done" waited until its own timeout (1.405).
+// and a caller waiting for "done" waited until its own timeout (1.406).
 func macAnswer(meta *Sess, since float64) string {
 	now := float64(nowMs())
 	got, seen := answerAsked[meta.id()]

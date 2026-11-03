@@ -105,7 +105,7 @@ func cacheOf(c any) any {
 	return out
 }
 
-var AGENT_FILES = []string{"agent.mjs", "dialog.mjs", "preview.mjs", "screen.mjs", "plugins.mjs", "skills.mjs", "split.mjs", "guard.mjs", "accounts.mjs", "voice.mjs", "mcp.mjs", "cache.mjs", "scrub.mjs", "store.mjs", "stats.mjs", "mux.mjs", "keys.mjs", "trust.mjs", "localui.mjs", "localbundle.mjs"}
+var AGENT_FILES = []string{"agent.mjs", "dialog.mjs", "preview.mjs", "screen.mjs", "plugins.mjs", "skills.mjs", "split.mjs", "guard.mjs", "accounts.mjs", "voice.mjs", "mcp.mjs", "cache.mjs", "scrub.mjs", "store.mjs", "stats.mjs", "mux.mjs", "keys.mjs", "trust.mjs", "localui.mjs", "localbundle.mjs", "runners.mjs", "codex.mjs"}
 
 func env(k string) string { return os.Getenv(k) }
 

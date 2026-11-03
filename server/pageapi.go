@@ -643,7 +643,7 @@ func hostSummary(id string, h M, masked bool) M {
 		// Behind, and this server will hand it the new one: not when it sends none (R9-I1).
 		"outdated": behind && AGENT_SIGNED,
 		// Behind, but this server sends no update (R10-I2).
-		"updateBlocked": behind && !AGENT_SIGNED, "key": cleanKeyState(health["keyState"]), "sys": cleanSys(health["sys"]), "battery": h["battery"], "diskHelp": diskHelpView(h["diskHelp"]), "problems": float64(len(failing)), "problem": problem, "online": shownOnline(id), "stale": shownOnline(id) && truthy(st["stale"]), "lastSeen": h["lastSeen"], "healthAt": st["healthAt"], "rtt": st["rtt"], "errors": st["errors"], "lastError": lastError, "accounts": accts, "trust": h["trust"]}
+		"updateBlocked": behind && !AGENT_SIGNED, "key": cleanKeyState(health["keyState"]), "sys": cleanSys(health["sys"]), "battery": h["battery"], "diskHelp": diskHelpView(h["diskHelp"]), "problems": float64(len(failing)), "problem": problem, "online": shownOnline(id), "stale": shownOnline(id) && truthy(st["stale"]), "lastSeen": h["lastSeen"], "healthAt": st["healthAt"], "rtt": st["rtt"], "errors": st["errors"], "lastError": lastError, "accounts": accts, "trust": h["trust"], "runners": h["runners"]}
 }
 
 // hostDetail: a Mac's state for its owner, or for an operator looking at someone else's Mac (R1-M5).

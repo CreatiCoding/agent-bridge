@@ -43,6 +43,7 @@ const guide: DefaultTheme.SidebarItem[] = [
       { text: '알림과 웹 푸시', link: '/guide/use/notifications' },
       { text: '음성 입력', link: '/guide/use/voice' },
       { text: '모델 라우팅', link: '/guide/use/routing' },
+      { text: 'Codex 로 세션 열기', link: '/guide/use/codex' },
       { text: '기기 상태와 디스크 관리', link: '/guide/use/devices' },
       { text: 'Slack 플러그인', link: '/guide/use/slack' },
       { text: 'Linux 서버 연결하기', link: '/guide/use/linux' },

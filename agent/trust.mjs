@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 3
+export const TRUST_VERSION = 4
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -111,7 +111,7 @@ export const TRUST_CLASS = {
   // the bridge MCP's attach (by the id the session made) and another Mac's read_session (refused while sealing)
   attachment: 'free', convread: 'free',
   // actions
-  new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush'], keep: ['sid', 'prompt'] },
+  new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner'], keep: ['sid', 'prompt'] },
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
   send: { i: ['sid', 'textH', 'imgs'], keep: ['text', 'files', 'id'] },
   sendnow: { i: ['sid'] },
