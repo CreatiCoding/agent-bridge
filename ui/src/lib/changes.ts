@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.408',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 세션에 보낸 슬래시 명령(/status, /mcp …)이 답 없이 끝나던 것. Codex 는 결과를 터미널 화면에만 그려, 에이전트가 화면에서 읽어 대화에 알림으로 옮김',
+        refs: ['REQ-F-852'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 의 /diff 페이저나 /model 선택 창이 열린 채 남아 그 뒤에 보낸 글을 먹던 것. 내용을 알림으로 옮기고 닫으며, 글을 보내기 전에도 열린 창을 먼저 닫음. 슬래시 명령의 Enter 는 400 ms 뒤로(Codex 의 120 ms 붙여넣기 판정을 넘게)',
+        refs: ['REQ-F-852'],
+      },
+    ],
+  },
+  {
     version: '1.407',
     date: '2026-11-04',
+    commit: 'ff22b4d',
     changes: [
       {
         kind: 'added',

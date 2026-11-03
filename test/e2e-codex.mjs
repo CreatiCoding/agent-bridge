@@ -135,6 +135,20 @@ try {
   ok((await page.getByRole('menuitem', { name: '복제' }).count()) === 0, '세션 메뉴에 복제가 없음')
   await page.keyboard.press('Escape')
 
+  step('슬래시 명령의 결과와 열린 창 (REQ-F-852)')
+  // Codex draws these only on its screen: the agent reads them there into a note.
+  const noted = (re, ms = 20000) => until(async () => (await page.locator('.note').allTextContents()).some((t) => re.test(t)), ms)
+  await ctx.request.post(`${SITE}/api/sessions/${sid}/say`, { data: { text: '/status' }, headers: H })
+  ok((await noted(/\/status[\s\S]*Token usage/)) !== null, '/status 의 결과가 대화에 옴')
+  // A picker (/model) or a pager (/diff) is closed so the next message reaches codex, not the open view.
+  await ctx.request.post(`${SITE}/api/sessions/${sid}/say`, { data: { text: '/model' }, headers: H })
+  ok((await noted(/\/model/)) !== null, '/model 에도 알림이 옴')
+  await ctx.request.post(`${SITE}/api/sessions/${sid}/say`, { data: { text: '/diff' }, headers: H })
+  ok((await noted(/\/diff/)) !== null, '/diff 에도 알림이 옴')
+  if (shots) await page.screenshot({ path: path.join(shots, 'codex-slash.png') })
+  await ctx.request.post(`${SITE}/api/sessions/${sid}/say`, { data: { text: '명령 뒤 CODEX_SLASH' }, headers: H })
+  ok((await answered('echo: 명령 뒤 CODEX_SLASH')) !== null, '명령 뒤의 글이 codex 에 가서 답이 옴')
+
   step('다시 열어도 같은 대화')
   const before = await page.locator('.msg-text').filter({ hasText: 'echo: 첫 인사 CODEX_ONE' }).count()
   ok((await ctx.request.post(`${SITE}/api/sessions/${sid}/refresh`, { data: { when: 'now' }, headers: H })).ok(), '새로고침')
