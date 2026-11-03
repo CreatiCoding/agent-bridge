@@ -264,3 +264,19 @@ test('messages: words sealed field by field, a card as one piece holding its id'
   const hello = { t: 'hello', hostId: 'host-a' }
   assert.deepEqual(sealOut(hello, seal), hello, '메타데이터는 평문')
 })
+
+test('adopt is signed by its conversation and folder; what the server adds is dropped (AC-1586)', () => {
+  const rule = classOf({ t: 'adopt' })
+  assert.deepEqual(rule.i, ['conv', 'cwd'])
+  assert.deepEqual(rule.keep, ['sid'])
+  const cmd = { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'server-conv', cwd: '/server', sysPrompt: 'evil', routing: { x: 1 }, autoPush: true }
+  assert.deepEqual(rebuild(cmd, rule, { conv: 'c', cwd: '~/p' }), { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '~/p' })
+})
+
+test('agent adopt checks the signed folder and a live claude in every account folder (AC-1586)', () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const body = src.slice(src.indexOf('  async adopt({'), src.indexOf('  async account({'))
+  assert.match(body, /\bsigned\b[\s\S]*conversationInfo\(file[\s\S]*realpathSync/, '서명된 가져오기는 기록의 cwd 와 맞춰 봄')
+  assert.match(body, /convLive\(dir, conv\)/)
+  assert.doesNotMatch(body, /isLinked\(account\) && \(convLive/, '연결한 폴더만이 아니라 모든 폴더에서 검사')
+})

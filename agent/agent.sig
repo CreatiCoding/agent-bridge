@@ -1,1 +1,1 @@
-{"seq":1793638258,"msig":"EQCHqT1daXDGasEC/0JtgeMEskam3gR4m5vlpzZVZzIVrqnbpRkgqMOh+Kq6YoCisH5k+Sj1OHwWYGKXVBXBBg==","legacy":"V71TfpRp+ILShm6IbU0G5BkN6VCVUjvbUr2M4CoZFhtoLBjS6YrsZIUOZmw96H0Gdl/nFSmGfLE9fC/hu76SCw=="}
+{"seq":1793720610,"msig":"dnFDSL6TqKs9p+YmXK1B0mbig+zt9WrDfpMAhZOJHXW84tGbXsdHV0uVRlXkTtteX+IOgaigWhpsq1fhKVrVDA==","legacy":"LZIzUW6JpWnZSlIj4jss6qBRj7FCILnOV+cekC51ewpAIzQ0zYRPKmIEOGaI+oeCvb8jCx3N16g7FNPoVq2OCA=="}

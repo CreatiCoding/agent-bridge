@@ -394,6 +394,8 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
   if (hm && method === 'POST' && pairedWith(hm[1])) {
     const [, h, op] = hm
     if (op === 'heal') return [{ h, t: 'heal', i: { action: body.action } }]
+    // 맥의 대화 가져오기: the Mac checks that the conversation was written in the signed folder.
+    if (op === 'adopt' && typeof body.conv === 'string') return [{ h, t: 'adopt', i: { conv: body.conv, cwd: str(body.cwd).slice(0, 1000) } }]
     if (op === 'background') return [{ h, t: 'background', i: { on: body.on === true } }]
     if (op === 'awake') return [{ h, t: 'awake', i: { ...(typeof body.idle === 'boolean' ? { idle: body.idle } : {}), ...(typeof body.lid === 'boolean' ? { lid: body.lid } : {}) } }]
     if (op === 'compact') return [{ h, t: 'compact', i: { window: body.window ?? null } }]

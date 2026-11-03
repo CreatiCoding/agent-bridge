@@ -26,7 +26,26 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.408',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent', 'ui'],
+        text: '서명 필수(enforce) 맥에서도 "맥의 대화 이어 가기"를 쓴다. 가져오기를 끔에서 서명 명령으로 바꾸고 페이지가 대화 id·폴더를 서명. 맥은 대화 기록에 적힌 폴더가 서명한 폴더와 같을 때만 열고, 서버가 넣은 시스템 프롬프트·라우팅은 버림. TRUST_VERSION 5',
+        refs: ['REQ-F-048', 'REQ-S-091', 'REQ-S-093'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '기본 폴더(~/.claude)의 대화도 터미널·다른 도구가 지금 쓰는 중이면(실행 중 pid 또는 1분 안에 쓰인 기록) 가져오지 않음. 같은 기록에 claude 둘이 쓰던 것을 막음',
+        refs: ['REQ-F-048', 'REQ-F-848'],
+      },
+    ],
+  },
+  {
     version: '1.407',
+    commit: 'ff22b4d',
     date: '2026-11-04',
     changes: [
       {
