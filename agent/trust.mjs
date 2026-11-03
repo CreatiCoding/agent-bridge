@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 4
+export const TRUST_VERSION = 5
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -102,7 +102,7 @@ export function openWith(keyOf, hostId, piece) {
  */
 export const TRUST_CLASS = {
   // the state of the link, and the Mac's copy of the log
-  delegated: 'off', sudoans: 'off', sudopass: 'off', sudo: 'off', adopt: 'off', release: 'off', http: 'off', ws: 'off',
+  delegated: 'off', sudoans: 'off', sudopass: 'off', sudo: 'off', release: 'off', http: 'off', ws: 'off',
   sudooff: 'free', log: 'free', putimg: 'free', welcome: 'free', check: 'free', ping: 'free', rehello: 'free', report: 'free', resync: 'free', bg: 'free', models: 'free', update: 'free',
   // the local screen's bundle: checked by the maintainer's signature and a seq that only grows, like update (REQ-F-844)
   localui: 'free',
@@ -113,6 +113,9 @@ export const TRUST_CLASS = {
   // actions
   new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner'], keep: ['sid', 'prompt'] },
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
+  // 맥의 대화 가져오기: the conversation and its folder are signed; the Mac opens it only when its transcript was
+  // written in that folder (agent.mjs adopt). The server's sysPrompt·routing are dropped, as for new.
+  adopt: { i: ['conv', 'cwd'], keep: ['sid'] },
   send: { i: ['sid', 'textH', 'imgs'], keep: ['text', 'files', 'id'] },
   sendnow: { i: ['sid'] },
   esc: { i: ['sid'] },

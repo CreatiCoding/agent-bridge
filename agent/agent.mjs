@@ -662,8 +662,8 @@ function linkedLaunchWhy(id) {
   if (accountAuth.get(id)?.loggedIn === false) return '연결한 폴더가 로그인돼 있지 않아요. 그 폴더를 쓰는 도구에서 로그인하거나 맥 터미널에서 CLAUDE_CONFIG_DIR=<폴더> claude auth login 으로 로그인해 주세요'
   return null
 }
-/** Whether a running claude (another tool's, or a terminal's) holds this conversation in a linked folder now. */
-function linkedConvLive(dir, conv) {
+/** Whether a running claude (another tool's, or a terminal's) holds this conversation in a Claude folder (sessions/<pid>.json) now. */
+function convLive(dir, conv) {
   let names = []
   try {
     names = fs.readdirSync(path.join(dir, 'sessions')).filter((n) => /^\d+\.json$/.test(n))
@@ -4216,7 +4216,7 @@ const commands = {
     }
   },
   /** Take a conversation this Mac already has into a bridge session: `claude --resume` in its own folder. */
-  async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt, routing }) {
+  async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt, routing, signed }) {
     try {
       if (!/^[0-9a-f-]{36}$/.test(String(conv))) throw new Error('대화 id 가 올바르지 않습니다')
       if ([...sessions.values()].some((x) => x.conv === conv)) throw new Error('이미 bridge 세션으로 열려 있는 대화입니다')
@@ -4234,8 +4234,21 @@ const commands = {
         }
       }
       if (!file) throw new Error('이 맥에서 그 대화의 기록을 찾지 못했습니다')
-      // Another tool may be writing it right now: two claude on one transcript split the conversation.
-      if (isLinked(account) && (linkedConvLive(accountDir(account), conv) || Date.now() - fs.statSync(file).mtimeMs < 60_000)) throw new Error('다른 도구가 이 대화를 지금 쓰는 중이에요. 그쪽에서 끝난 뒤(1분 뒤) 다시 가져와 주세요')
+      // A signed adopt (trust, REQ-S-091) names a folder: the transcript must have been written there, so a server
+      // cannot pair a real conversation id with another folder.
+      if (signed) {
+        const st = fs.statSync(file)
+        const was = conversationInfo(file, st.size).cwd
+        let same = false
+        try {
+          same = !!was && fs.realpathSync(expandHome(was)) === fs.realpathSync(want)
+        } catch {}
+        if (!same) throw new Error('서명한 폴더와 대화 기록의 폴더가 달라요. 목록을 새로 고쳐 다시 가져와 주세요')
+      }
+      // Another tool (or a terminal) may be writing it right now: two claude on one transcript split the
+      // conversation. Checked in every account's folder, the default ~/.claude too.
+      const dir = accountDir(account)
+      if ((dir && convLive(dir, conv)) || Date.now() - fs.statSync(file).mtimeMs < 60_000) throw new Error('다른 도구(터미널 등)가 이 대화를 지금 쓰는 중이에요. 그쪽에서 끝난 뒤(1분 뒤) 다시 가져와 주세요')
       if (isLinked(account)) {
         const why = linkedLaunchWhy(account)
         if (why) throw new Error(why)
