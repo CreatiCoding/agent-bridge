@@ -4281,6 +4281,9 @@ const commands = {
   /** Take a conversation this Mac already has into a bridge session: `claude --resume` in its own folder. */
   async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt, routing, signed }) {
     try {
+      // The server names the session and the signature does not cover it: one that is a path, or one already here, is
+      // not taken, as for new and open (REQ-S-092, 1.412).
+      if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
       if (!/^[0-9a-f-]{36}$/.test(String(conv))) throw new Error('대화 id 가 올바르지 않습니다')
       if ([...sessions.values()].some((x) => x.conv === conv)) throw new Error('이미 bridge 세션으로 열려 있는 대화입니다')
       const want = expandHome(String(cwd || ''))

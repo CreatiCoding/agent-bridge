@@ -265,6 +265,26 @@ test('messages: words sealed field by field, a card as one piece holding its id'
   assert.deepEqual(sealOut(hello, seal), hello, '메타데이터는 평문')
 })
 
+test('the conversation list binds id, folder and title in one sealed piece (1.412, AC-1594)', async () => {
+  const t = open(tmp())
+  const { k } = await pair(t, await device())
+  const seal = t.sealer()
+  const conv = '2036d65e-db17-4844-b869-87abb5082a1a'
+  const r = sealOut({ t: 'recent', reqId: 'r', ok: true, home: '/Users/u', conversations: [{ conv, cwd: '/Users/u/p', title: '배포 고치기', first: '첫 글', last: '끝 글', mtime: 1, size: 2, active: false, exists: true }] }, seal)
+  const c = r.conversations[0]
+  assert.equal(c.conv, conv, '목록의 칸은 그대로(서버가 읽는 값)')
+  assert.doesNotMatch(JSON.stringify(r), /배포 고치기|첫 글|끝 글/)
+  assert.deepEqual(JSON.parse(await pageOpen(k, 'host-a', c.bound)), { conv, cwd: '/Users/u/p', title: '배포 고치기', first: '첫 글' })
+})
+
+test('agent adopt refuses a server sid that is a path or already open while trust is on (1.412, AC-1593)', () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const body = src.slice(src.indexOf('  async adopt({'), src.indexOf('  async account({'))
+  const first = body.slice(0, body.indexOf('conv))) throw'))
+  assert.match(first, /trustOn\(\) && \(!safeConvId\(sid\) \|\| sessions\.has\(sid\)\)/, '첫 검사, new·open 과 같음')
+  assert.ok(TRUST_VERSION >= 6, '고친 판보다 낮은 trust 로 내려가지 않게')
+})
+
 test('adopt is signed by its conversation and folder; what the server adds is dropped (AC-1586)', () => {
   const rule = classOf({ t: 'adopt' })
   assert.deepEqual(rule.i, ['conv', 'cwd'])

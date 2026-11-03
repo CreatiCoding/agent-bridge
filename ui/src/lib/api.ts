@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, raw = false): Promise<T> {
   let res: Response
   const sid = sessionOfPath(path)
   const token = sid ? tokenOf(sid) : null
@@ -38,9 +38,10 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
     throw new ApiError(401, '로그인이 필요해요')
   }
   const type = res.headers.get('content-type') ?? ''
-  const raw = type.includes('application/json') ? await res.json().catch(() => ({})) : {}
+  const rawBody = type.includes('application/json') ? await res.json().catch(() => ({})) : {}
   // A sealing Mac's words come back as pieces: opened here for every caller (REQ-S-095).
-  const data = JSON.stringify(raw).includes('⟦bt') ? await openDeep(raw).catch(() => raw) : raw
+  // A caller that must tell a sealed piece from plain text (getSealed) opens what it needs itself.
+  const data = !raw && JSON.stringify(rawBody).includes('⟦bt') ? await openDeep(rawBody).catch(() => rawBody) : rawBody
   // Some routes answer 200 with ok:false and a note (the ones the vendored page used); treat both alike.
   // A lock token that no longer works (the server restarted, or the lock changed) is dropped: the page asks again.
   if (res.status === 423 && sid && token) setToken(sid, null)
@@ -52,6 +53,8 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
 }
 
 export const get = <T>(path: string, signal?: AbortSignal) => call<T>('GET', path, undefined, signal)
+/** A GET whose sealed pieces are left as they came (the caller checks they are sealed, then opens them). */
+export const getSealed = <T>(path: string, signal?: AbortSignal) => call<T>('GET', path, undefined, signal, true)
 export const post = <T = { ok: true; note?: string }>(path: string, body: unknown = {}) => call<T>('POST', path, body)
 export const del = <T = { ok: true }>(path: string) => call<T>('DELETE', path)
 
