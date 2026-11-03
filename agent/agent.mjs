@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, sessionsRoot, findRollout, findNewRollout, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, sessionsRoot, findRollout, findNewRollout, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -1903,10 +1903,16 @@ async function deliver(sid, s, text, attempts = 1) {
   const slash = isSlash(text)
   if (slash && /^\/model\b/.test(text.trim())) s.modelAskAt = Date.now()
   if (!slash && !s.turn) beginTurn(sid, s)
+  const codex = !isClaude(s)
+  // A codex pager or picker still open would take this text (and its Enter could pick a model): closed first.
+  if (codex) await closeCodexView(sid, s)
+  let echoes = 0
   if (slash) {
-    // Typed, not pasted, with a moment for the command list to draw before Enter picks from it.
+    if (codex) echoes = slashEchoes(await codexHistory(s), text)
+    // Typed, not pasted, with a moment for the command list to draw before Enter picks from it. Codex takes an
+    // Enter within 120 ms of typed text as a new line (its paste-burst check): it gets more room.
     await tmux('send-keys', '-t', pane(s), '-l', text)
-    await sleep(150)
+    await sleep(codex ? CODEX_SLASH_ENTER_MS : 150)
   } else {
     // Unique per message: two sessions sending in the same millisecond must not share one (R1-L12).
     const buffer = `cb-${crypto.randomUUID()}`
@@ -1926,7 +1932,61 @@ async function deliver(sid, s, text, attempts = 1) {
   await term.sendKeys(pane(s), ['Enter'])
   log('info', 'send', `delivered by keys (${text.length}자)`, sid)
   if (!slash) watchInjected(sid, s, text, attempts)
+  else if (codex) codexSlashResult(sid, s, text.trim(), echoes).catch((e) => log('warn', 'send', `codex 명령 결과를 읽지 못함: ${e.message}`, sid))
   publish(sid, s)
+}
+
+// ---------- codex slash commands (REQ-F-852) ----------
+
+/** After typing a slash command, Enter waits this long: past codex's 120 ms paste-burst window, with room for a slow read. */
+const CODEX_SLASH_ENTER_MS = 400
+/** How long the agent looks for what a codex slash command showed: CODEX_SLASH_LOOKS looks, CODEX_SLASH_EVERY_MS apart. */
+const CODEX_SLASH_LOOKS = 10
+const CODEX_SLASH_EVERY_MS = 500
+/** Codex's screen with its history: what a command printed may have scrolled above the visible screen. */
+const codexHistory = (s) => tmuxRaw('capture-pane', '-p', '-S', '-2000', '-t', pane(s))
+/** Inside a code block, a ``` from the screen would end it early. */
+const fenced = (text) => `\`\`\`\n${String(text).replace(/```/g, '`​``')}\n\`\`\``
+
+/** A codex pager (q) or picker (Esc) left open: closed, so it does not take what is typed next. Returns what was closed. */
+async function closeCodexView(sid, s) {
+  for (let i = 0; i < 3; i++) {
+    const screen = await term.capture(pane(s))
+    const kind = codexPager(screen) ? 'pager' : codexPicker(screen) ? 'picker' : null
+    if (!kind) return i > 0
+    await term.sendKeys(pane(s), [kind === 'pager' ? 'q' : 'Escape'])
+    log('info', 'send', `codex 의 ${kind === 'pager' ? '페이저' : '선택 창'}를 닫음`, sid)
+    await sleep(300)
+  }
+  return true
+}
+
+/**
+ * Codex draws what a slash command shows only on its screen, never in the rollout: the agent reads it there and puts
+ * it in the conversation as a note. A pager's page or a picker's options are shown the same way, then closed.
+ */
+async function codexSlashResult(sid, s, cmd, echoes) {
+  for (let i = 0; i < CODEX_SLASH_LOOKS; i++) {
+    await sleep(CODEX_SLASH_EVERY_MS)
+    if (s.closed || !(await alive(s))) return
+    const screen = await term.capture(pane(s))
+    const pager = codexPager(screen)
+    const picker = pager ? null : codexPicker(screen)
+    if (pager || picker) {
+      await closeCodexView(sid, s)
+      const body = (pager ?? picker).text
+      if (pager) return note(sid, `\`${cmd}\` (codex 화면)${pager.more ? ' · 첫 화면만, 나머지는 맥의 터미널에서 볼 수 있어요' : ''}\n\n${body ? fenced(body) : '(내용 없음)'}`)
+      return note(sid, `\`${cmd}\` 은(는) codex 가 고르는 창을 엽니다. 페이지에서는 고를 수 없어 창을 닫았어요. 고르려면 맥의 터미널에서 codex 에 직접 입력해 주세요.${body ? `\n\n${fenced(body)}` : ''}`)
+    }
+    const full = await codexHistory(s)
+    if (slashEchoes(full, cmd) <= echoes) continue
+    const out = slashOutput(full, cmd)
+    // Echoed with nothing under it yet: a moment more for the rest to draw.
+    if (out == null || (!out && i < 3)) continue
+    return note(sid, out ? `\`${cmd}\` (codex 화면)\n\n${fenced(out)}` : `\`${cmd}\` 을(를) 실행했어요. codex 가 화면에 보여 준 내용은 없어요.`)
+  }
+  log('info', 'send', 'codex 명령의 결과를 화면에서 찾지 못함', sid)
+  note(sid, `\`${cmd}\` 을(를) codex 에 보냈어요. codex 는 이 명령의 결과를 대화 기록에 남기지 않아요. 맥의 터미널 화면에서 확인해 주세요.`)
 }
 
 /** Hand over everything held as one message, once nothing is running that it could cut into. */

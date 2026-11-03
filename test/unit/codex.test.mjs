@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -213,4 +213,50 @@ test('the screen: idle with an empty box, working, the folder trust question, te
   assert.ok(codexBoxHas('• 답\n› 보낸 글 첫 줄\n  둘째 줄\n', '보낸 글 첫'))
   assert.ok(!codexBoxHas(idle, '보낸 글'))
   assert.ok(!codexBoxHas('› 보낸 글\n• Working (2s • esc to interrupt)\n', '보낸 글'))
+})
+
+// Screens as codex 0.166 draws them in a 220x80 tmux terminal (REQ-F-852), cut down.
+const STATUS_SCREEN = `/status
+
+  >_ OpenAI Codex (v0.166.0)
+
+  Model:               fake-model (reasoning low, summaries auto)
+  Directory:           ~/w
+  Token usage:         0 total  (0 input + 0 output)
+
+/mcp
+
+🔌  MCP Tools
+
+  • docs: connected (3 tools)
+
+
+
+› Ask Codex to do anything
+
+  fake-model default · ~/w
+  ? for shortcuts
+`
+const PICKER = `\u203a hi\n\n• hello\n\n\n\n\n  Select Model and Effort\n\n\n\u203a 1. fake-model (current)  The one in use.\n  2. other-model            Another.\n\u2193\n  enter select \u00b7 esc back\n`
+const PAGER = `/ D I F F / / / / / / / / / /\n\`/diff\` \u2014 _not inside a git repository_\n~\n~\n${'\u2500'.repeat(40)} 100% \u2500\n \u2191/\u2193 to scroll \u00b7 pgup/pgdn to page \u00b7 home/end to jump\n q close\n`
+
+test('a slash command: what codex printed under its echo, and the pager or picker it left open', () => {
+  assert.equal(slashEchoes(STATUS_SCREEN, '/status'), 1)
+  assert.equal(slashEchoes(STATUS_SCREEN, '/diff'), 0)
+  assert.equal(slashOutput(STATUS_SCREEN, '/mcp'), '🔌  MCP Tools\n\n  • docs: connected (3 tools)')
+  assert.match(slashOutput(STATUS_SCREEN, '/status'), /^  >_ OpenAI Codex[\s\S]*Token usage:[\s\S]*• docs: connected/)
+  assert.equal(slashOutput(STATUS_SCREEN.replace(/› Ask Codex.*\n/, ''), '/mcp'), null)
+  assert.equal(slashOutput(STATUS_SCREEN, '/model'), null)
+  assert.equal(codexPager(STATUS_SCREEN), null)
+  assert.equal(codexPicker(STATUS_SCREEN), null)
+  assert.deepEqual(codexPager(PAGER), { text: '`/diff` — _not inside a git repository_', more: false })
+  assert.equal(codexPager(PAGER.replace('100%', '42%')).more, true)
+  assert.equal(codexPicker(PAGER), null)
+  assert.equal(codexPicker(PICKER).text, '  Select Model and Effort\n\n› 1. fake-model (current)  The one in use.\n  2. other-model            Another.')
+  assert.equal(codexPager(PICKER), null)
+  assert.equal(slashOutput(PICKER, '/model'), null)
+  // An approval question is a card, never a picker to close.
+  assert.equal(codexPicker(APPROVAL), null)
+  // A long page is cut, so the note keeps its closing fence.
+  assert.ok(slashOutput(`/x\n${'y'.repeat(5000)}\n› \n`, '/x').length <= 1602)
 })

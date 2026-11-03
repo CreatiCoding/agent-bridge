@@ -346,6 +346,69 @@ export function codexBoxHas(screen, head) {
   return lines.slice(i, i + 6).join('\n').includes(head) && !CODEX_WORKING_RE.test(lines.slice(i).join('\n'))
 }
 
+// ---------- slash commands ----------
+// Codex draws what a slash command shows (/status, /mcp, …) only on its screen: nothing of it goes into the rollout,
+// so the page would see no answer. Some commands open a full-screen pager (/diff: "q close") or a picker (/model:
+// "enter select · esc back") that stays open and takes whatever is typed next. The agent reads these off the screen.
+
+/** A note holds 2,000 characters (the server cuts there): what a command showed is cut first, so the note stays whole. */
+const SLASH_MAX = 1600
+const tidy = (lines) => {
+  const out = []
+  for (const l of lines.map((x) => x.replace(/\s+$/, ''))) if (l || (out.length && out[out.length - 1])) out.push(l)
+  while (out.length && !out[out.length - 1]) out.pop()
+  const text = out.join('\n')
+  return text.length > SLASH_MAX ? `${text.slice(0, SLASH_MAX)}\n…` : text
+}
+/** The last few lines with something on them: where codex puts a view's key hints. */
+const footer = (lines, n = 4) => lines.filter((l) => l.trim()).slice(-n)
+
+/** How many times `cmd` stands alone on a line, as codex echoes a slash command into its history. */
+export const slashEchoes = (screen, cmd) => screen.split('\n').filter((l) => l.trimEnd() === String(cmd).trim()).length
+
+/**
+ * What a slash command printed into codex's history: the lines under its last echo, down to the input box (the last
+ * "›" line). Null while the echo or the box below it is not on screen.
+ */
+export function slashOutput(screen, cmd) {
+  const lines = screen.split('\n')
+  const box = lines.findLastIndex((l) => /^\s*›(\s|$)/.test(l))
+  if (box < 0) return null
+  const echo = lines.slice(0, box).findLastIndex((l) => l.trimEnd() === String(cmd).trim())
+  if (echo < 0) return null
+  return tidy(lines.slice(echo + 1, box))
+}
+
+/** Codex's full-screen pager (/diff and the like): the page on screen without its title and key hints, and whether there is more. */
+export function codexPager(screen) {
+  const lines = screen.split('\n')
+  const foot = footer(lines)
+  if (!foot.some((l) => /^\s*q close\s*$/.test(l)) || !foot.some((l) => /to scroll/.test(l))) return null
+  const rule = lines.findLastIndex((l) => /^─{8,}.*%/.test(l.trim()))
+  const body = lines.slice(0, rule < 0 ? lines.length : rule).filter((l) => !/^~\s*$/.test(l))
+  if (body.length && /^\/(?: \S)+ \//.test(body[0])) body.shift()
+  const pct = rule < 0 ? null : /(\d+)%/.exec(lines[rule])?.[1]
+  return { text: tidy(body), more: pct != null && Number(pct) < 100 }
+}
+
+/** A picker codex opened in place of the input box (/model, /permissions …): its lines up to a wide gap. */
+export function codexPicker(screen) {
+  if (parseApproval(screen) || trustDialog(screen)) return null
+  const lines = screen.split('\n')
+  const foot = footer(lines, 2)
+  if (!foot.some((l) => /\benter (?:to )?select\b/i.test(l) || /\besc (?:to )?(?:go )?back\b/i.test(l))) return null
+  const at = lines.findLastIndex((l) => l === foot[foot.length - 1])
+  const body = []
+  let blanks = 0
+  for (let i = at - 1; i >= 0 && body.length < 30; i--) {
+    if (!lines[i].trim()) {
+      if (++blanks >= 3) break
+    } else blanks = 0
+    body.unshift(lines[i])
+  }
+  return { text: tidy(body.filter((l) => !/^\s*[↑↓]\s*$/.test(l))) }
+}
+
 /**
  * Codex's approval question ("Would you like to run the following command?", "… make the following edits?", …) with
  * its options. Each option ends with the key that picks it — "(y)", "(p)", "(esc)" — and that key, not a number, is
