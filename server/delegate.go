@@ -14,6 +14,7 @@ const (
 	DELEGATE_GROUP      = "Bridge 맡긴 세션"
 	DELEGATE_WAIT_MAX   = 1_800_000
 	DELEGATE_SETTLE_MS  = 5000
+	DELEGATE_ASK_MS     = 30_000
 	DELEGATE_REPORT_MAX = 6000
 	// 1.390: a delegated session whose answer was handed over closes itself, leaves the list at once, and the
 	// folder bridge made for it goes too. The session that handed the work keeps the last answers for delegate_status.
@@ -199,17 +200,56 @@ func delegatesOf(meta *Sess) []*Sess {
 	return out
 }
 
-// delegateState: where a session handed work to stands, from the events after `since`.
-func delegateState(meta *Sess, since float64) M {
+// lastAnswer: the newest text event after `since`.
+func lastAnswer(evs []any, since float64) string {
 	answer := ""
-	for _, e := range readEvents(meta, true) {
+	for _, e := range evs {
 		if mnum(e, "seq") > since && mstr(e, "k") == "text" && truthy(mget(e, "text")) {
 			answer = jsString(mget(e, "text"))
 		}
 	}
+	return answer
+}
+
+// askAnswerEvents: the session's text events, asked of its Mac (a variable so tests can stand in for the Mac).
+var askAnswerEvents = func(meta *Sess) []any { return recentEvents(meta, []string{"text"}) }
+
+// answerAsked: sid -> when the Mac was last asked for its answer and what it said, so a caller polling every
+// second (waitTurn) asks at most once per DELEGATE_ASK_MS.
+type askedAnswer struct {
+	at  float64
+	evs []any
+}
+
+var answerAsked = map[string]askedAnswer{}
+
+// macAnswer: a finished turn's answer when this server no longer holds it in memory. The events of a session whose
+// log lives on the Mac sit here only in memory, so after a restart a done session read as working with no answer,
+// and a caller waiting for "done" waited until its own timeout (1.406).
+func macAnswer(meta *Sess, since float64) string {
+	now := float64(nowMs())
+	got, seen := answerAsked[meta.id()]
+	if !seen || now-got.at >= DELEGATE_ASK_MS {
+		got.at, got.evs = now, askAnswerEvents(meta)
+		answerAsked[meta.id()] = got
+		for sid := range answerAsked {
+			if !sessions.Has(sid) {
+				delete(answerAsked, sid)
+			}
+		}
+	}
+	return lastAnswer(got.evs, since)
+}
+
+// delegateState: where a session handed work to stands, from the events after `since`.
+func delegateState(meta *Sess, since float64) M {
+	answer := lastAnswer(readEvents(meta, true), since)
 	phase := meta.state()["phase"]
 	if phase == nil {
 		phase = "ended"
+	}
+	if answer == "" && (truthy(meta.get("closed")) || phase == "idle" || phase == "ended") {
+		answer = macAnswer(meta, since)
 	}
 	state := "working"
 	if truthy(meta.get("closed")) {
