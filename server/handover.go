@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -55,11 +56,25 @@ func hoRead(file string) M {
 	return m
 }
 
-func hoWrite(file string, v any) {
+func hoWrite(file string, v any) { hoWriteWith(file, v, os.Geteuid(), os.Lchown) }
+
+// hoWriteWith is hoWrite with the effective uid and chown given (tests). The new server asks for the state before it
+// drops root (REQ-F-063), while the old one already runs as node: a 0600 file root wrote is one the old server
+// cannot read, so it never saw the request and every deploy started from disk without a handover (1.410). As root,
+// the file goes to whoever owns the data folder, the user both servers end up as.
+func hoWriteWith(file string, v any, euid int, chown func(string, int, int) error) {
 	tmp := file + "." + strconv.Itoa(os.Getpid()) + "." + randHex(4) + ".tmp"
-	if os.WriteFile(tmp, jsonBytes(v), 0o600) == nil {
-		_ = os.Rename(tmp, file)
+	if os.WriteFile(tmp, jsonBytes(v), 0o600) != nil {
+		return
 	}
+	if euid == 0 {
+		if st, err := os.Stat(filepath.Dir(file)); err == nil {
+			if s, ok := st.Sys().(*syscall.Stat_t); ok && s.Uid != 0 {
+				_ = chown(tmp, int(s.Uid), int(s.Gid))
+			}
+		}
+	}
+	_ = os.Rename(tmp, file)
 }
 
 func createHandover(dir string) *Handover {

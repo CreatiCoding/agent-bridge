@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
-import { createHandover } from '../../server/handover.mjs'
+import { createHandover, writeAs } from '../../server/handover.mjs'
 
 const listen = (handler) => new Promise((resolve) => { const s = http.createServer(handler); s.listen(0, () => resolve(s)) })
 const get = (port, p = '/x', headers = {}) => new Promise((resolve, reject) => http.get({ host: '127.0.0.1', port, path: p, headers }, (r) => { let b = ''; r.on('data', (d) => (b += d)); r.on('end', () => resolve({ status: r.statusCode, body: b })) }).on('error', reject))
@@ -77,4 +77,18 @@ test('a server stopped before the new one starts leaves nothing to wait for', as
   assert.ok(Date.now() - t0 < 500, 'no wait for a server that is not alive')
   assert.deepEqual(events, ['b:tookOver=false'])
   b.http.close()
+})
+
+test('as root the handover file goes to the data folder owner, so an old server running as that user reads it (1.410)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ho-own-'))
+  const file = path.join(dir, 'handover.json')
+  const calls = []
+  const chown = (p, uid, gid) => calls.push([uid, gid])
+  writeAs(file, { step: 'request' }, { euid: 1000, chown })
+  assert.deepEqual(calls, [])
+  writeAs(file, { step: 'done' }, { euid: 0, chown })
+  const st = fs.statSync(dir)
+  assert.deepEqual(calls, st.uid === 0 ? [] : [[st.uid, st.gid]])
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).step, 'done')
+  assert.deepEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp')), [])
 })

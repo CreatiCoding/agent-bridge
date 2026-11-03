@@ -122,3 +122,29 @@ func TestHandoverStoppedServer(t *testing.T) {
 	ok(t, time.Since(t0) < 500*time.Millisecond, "no wait for a server that is not alive")
 	jeq(t, log.list(), `["b:tookOver=false"]`)
 }
+
+// 1.410: as root (before dropRoot) the handover files go to the data folder's owner, so the old server running as
+// that user can read the request; not as root, nothing is chowned.
+func TestHandoverWriteOwner(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "handover.json")
+	var got []int
+	chown := func(p string, uid, gid int) error { got = append(got, uid, gid); return nil }
+	hoWriteWith(file, M{"step": "request"}, 1000, chown)
+	if len(got) != 0 {
+		t.Fatalf("not root: chown %v", got)
+	}
+	if hoRead(file)["step"] != "request" {
+		t.Fatal("not written")
+	}
+	hoWriteWith(file, M{"step": "done"}, 0, chown)
+	if os.Getuid() != 0 && (len(got) != 2 || got[0] != os.Getuid() || got[1] != os.Getgid()) {
+		t.Fatalf("root: want chown to the folder owner %d:%d, got %v", os.Getuid(), os.Getgid(), got)
+	}
+	if hoRead(file)["step"] != "done" {
+		t.Fatal("not written")
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(m) != 0 {
+		t.Fatalf("tmp left: %v", m)
+	}
+}

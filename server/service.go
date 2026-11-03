@@ -21,6 +21,7 @@ var (
 var (
 	serviceSessionRe = re(`^/api/service/sessions/([a-zA-Z0-9-]+)$`)
 	serviceCloseRe   = re(`^/api/service/sessions/([a-zA-Z0-9-]+)/close$`)
+	serviceKeyRe     = re(`^[A-Za-z0-9._:-]{1,128}$`)
 )
 
 // serviceAuthOk compares hashes so the check takes the same time whatever the length.
@@ -77,6 +78,21 @@ func serviceAPI(req *Req, res *Res, p string) {
 		if prompt == "" {
 			refuse(400, "prompt 가 비어 있어요")
 		}
+		// key (1.410): the caller's name for this request. A retry after a lost answer (a 502 while a deploy swapped
+		// the server) gets the session the first try opened instead of a second one.
+		key := jsTrim(strOr(b["key"], ""))
+		if key != "" && !serviceKeyRe.MatchString(key) {
+			refuse(400, "key 는 영문·숫자·._:- 로 128자까지예요")
+		}
+		if key != "" {
+			for _, sid := range sessions.Keys() {
+				c, _ := sessions.Get(sid)
+				if c != nil && c.uid() == uid && truthy(c.get("service")) && c.get("serviceKey") == key && !truthy(c.get("closed")) {
+					jsonRes(res, 200, M{"ok": true, "id": sid, "reused": true})
+					return
+				}
+			}
+		}
 		name := strings.ToLower(jsTrim(strOr(b["host"], "")))
 		target := ""
 		for _, id := range hosts.Keys() {
@@ -110,6 +126,9 @@ func serviceAPI(req *Req, res *Res, p string) {
 		sid := startSession(uid, M{"hostId": target, "cwd": cwd, "create": true, "prompt": prompt, "title": title, "mode": "autoAllow", "chrome": false}, &Req{internal: true, Header: map[string][]string{}})
 		c, _ := sessions.Get(sid)
 		c.set("service", true)
+		if key != "" {
+			c.set("serviceKey", key)
+		}
 		jsonRes(res, 200, M{"ok": true, "id": sid})
 		return
 	}

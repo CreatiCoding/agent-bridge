@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.410',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '무중단 배포 넘겨주기가 늘 실패하던 것. 새 서버가 root 로 쓴 요청 파일(0600)을 node 로 도는 옛 서버가 읽지 못해, 배포마다 디스크에서 시작하고 옛 서버의 처리 중 요청이 502 로 끊겼다. root 로 쓰는 넘겨주기 파일을 데이터 폴더 주인에게 넘김',
+        refs: ['REQ-F-063'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '서비스 API 세션 열기(POST /api/service/sessions)의 key: 같은 key 로 열린 닫히지 않은 서비스 세션이 있으면 새로 열지 않고 그 id 를 reused:true 로 돌려줌. 답을 잃은 뒤 다시 불러도 세션이 둘 생기지 않음',
+        refs: ['REQ-F-799', 'IF-249'],
+      },
+    ],
+  },
+  {
     version: '1.409',
     date: '2026-11-04',
+    commit: '64acc56',
     changes: [
       {
         kind: 'fixed',
