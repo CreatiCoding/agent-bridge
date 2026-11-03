@@ -48,6 +48,13 @@ export const writeAs = (file, v, { euid = process.geteuid?.() ?? -1, chown = fs.
   fs.renameSync(tmp, file)
 }
 const write = (file, v) => writeAs(file, v)
+/** The handover header against the secret, in constant time (1.411). */
+const sameSecret = (v, secret) => {
+  if (typeof v !== 'string') return false
+  const a = Buffer.from(v)
+  const b = Buffer.from(secret)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
+}
 
 /**
  * @param {string} dir the data folder both servers see
@@ -196,7 +203,7 @@ export function createHandover(dir, log) {
    * A request that arrives while the state is being written waits; nothing is answered with an error.
    */
   async function intercept(req, res) {
-    if (req.headers['x-bridge-handover'] === secret) {
+    if (sameSecret(req.headers['x-bridge-handover'], secret)) {
       // Used up here: nothing after this (the preview proxy to a local app) passes the secret on (R3-L1).
       delete req.headers['x-bridge-handover']
       return false
