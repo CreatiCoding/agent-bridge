@@ -2,13 +2,14 @@
 // pick one, or several, to carry them on here, each in its own folder, as the same conversation.
 // `/new?adopt=<id>,<id>…` opens this list with those already picked (a prepared move of many at once).
 import { useEffect, useState } from 'react'
-import { errorText, get, post } from '../lib/api'
+import { errorText, get, getSealed, post } from '../lib/api'
 import { ago, bytes, shortPath } from '../lib/format'
 import { go } from '../lib/router'
 import { Badge, Button, Empty, Icon, Spinner } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { openSession } from '../lib/builtin-actions'
 import { NONE, useStore } from '../lib/store'
+import { openSealed, openText, sealsTo } from '../lib/trust'
 
 interface Conversation {
   conv: string
@@ -22,6 +23,29 @@ interface Conversation {
   exists: boolean
   /** The Claude account whose folder has it ('' the main one); a linked folder's are taken in that folder. */
   account?: string
+  /** A sealing Mac's {conv, cwd, title, first} in one sealed piece (1.412). */
+  bound?: string
+}
+
+type Listed = { ok: true; home: string; conversations: Conversation[] }
+
+/**
+ * A sealing Mac's list as the Mac sent it (1.412): each row's id, folder and title come from its one sealed piece, so
+ * a server cannot put one conversation's title on another's id or folder, and a row without that piece is left out.
+ * The adopt the person signs names these conv·cwd.
+ */
+export async function boundList(r: Listed): Promise<Listed & { dropped: number }> {
+  const out: Conversation[] = []
+  for (const c of r.conversations ?? []) {
+    const b = await openSealed(c.bound)
+    let w: { conv?: unknown; cwd?: unknown; title?: unknown; first?: unknown } | null = null
+    try {
+      w = b ? JSON.parse(b) : null
+    } catch {}
+    if (!w || typeof w.conv !== 'string' || !/^[0-9a-f-]{36}$/.test(w.conv) || typeof w.cwd !== 'string') continue
+    out.push({ ...c, conv: w.conv, cwd: w.cwd, title: String(w.title ?? ''), first: String(w.first ?? ''), last: await openText(String(c.last ?? '')) })
+  }
+  return { ...r, conversations: out, dropped: (r.conversations?.length ?? 0) - out.length }
 }
 
 /** The ids the address asked for. */
@@ -29,7 +53,7 @@ export const presetAdopt = () => (/[?&]adopt=([\w,-]+)/.exec(location.search)?.[
 
 export function AdoptList({ hostId }: { hostId: string }) {
   const preset = presetAdopt()
-  const [list, setList] = useState<{ home: string; conversations: Conversation[] } | null>(null)
+  const [list, setList] = useState<{ home: string; conversations: Conversation[]; dropped?: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState<Set<string>>(() => new Set(preset))
@@ -40,7 +64,9 @@ export function AdoptList({ hostId }: { hostId: string }) {
   useEffect(() => {
     setList(null)
     setError(null)
-    get<{ ok: true; home: string; conversations: Conversation[] }>(`/api/hosts/${hostId}/recent${preset.length ? `?include=${preset.join(',')}` : ''}`).then(setList, (e) => setError(errorText(e)))
+    const path = `/api/hosts/${hostId}/recent${preset.length ? `?include=${preset.join(',')}` : ''}`
+    const load = sealsTo(hostId) ? getSealed<Listed>(path).then(boundList) : get<Listed>(path)
+    load.then(setList, (e) => setError(errorText(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostId, reads])
 
@@ -132,6 +158,12 @@ export function AdoptList({ hostId }: { hostId: string }) {
               </>
             )}
           </div>
+        </div>
+      ) : null}
+      {list.dropped ? (
+        <div className="banner">
+          <Icon name="warn" />
+          <div className="banner-body">봉인되지 않은 항목 {list.dropped}개는 뺐어요. 맥의 에이전트를 업데이트했는지 봐 주세요.</div>
         </div>
       ) : null}
       {missing.length ? (

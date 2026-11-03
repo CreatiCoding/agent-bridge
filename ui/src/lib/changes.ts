@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.412',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '서명 필수 맥의 대화 가져오기에서, 서명 밖인 세션 id 를 새 세션·열기와 같이 검사(경로 꼴이거나 이미 열린 세션 id 면 거절). trust 판 6',
+        refs: ['REQ-F-048', 'REQ-S-092'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'ui'],
+        text: '봉인 맥의 대화 목록은 항목마다 대화 id·폴더·제목을 한 조각으로 봉인하고, 페이지는 그 조각의 값으로만 보이고 서명함(서버가 제목과 다른 대화를 끼울 수 없음)',
+        refs: ['REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.411',
     date: '2026-11-04',
+    commit: '760ff9e',
     changes: [
       {
         kind: 'security',

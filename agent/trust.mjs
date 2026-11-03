@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 5
+export const TRUST_VERSION = 6
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -659,7 +659,9 @@ export function sealOut(msg, seal) {
       m.text = S(m.text)
       break
     case 'recent':
-      if (Array.isArray(m.conversations)) m.conversations = m.conversations.map((c) => (c && typeof c === 'object' ? { ...c, title: S(c.title), first: S(c.first), last: S(c.last) } : c))
+      // bound (1.412): the conversation id, its folder and the words the person picks it by, in one piece, so a server
+      // cannot show one conversation's title on another's id or folder (the page uses only what this piece says).
+      if (Array.isArray(m.conversations)) m.conversations = m.conversations.map((c) => (c && typeof c === 'object' ? { ...c, title: S(c.title), first: S(c.first), last: S(c.last), bound: S(JSON.stringify({ conv: c.conv, cwd: c.cwd, title: c.title ?? '', first: c.first ?? '' })) } : c))
       break
     case 'folder':
     case 'flushed':

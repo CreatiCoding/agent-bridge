@@ -478,6 +478,13 @@ export async function openText(s: string): Promise<string> {
   return (await Promise.all(parts)).join('')
 }
 
+/** The words of a string that is exactly one sealed piece this device opens, or null (plain text, 🔒, several pieces). */
+export async function openSealed(s: unknown): Promise<string | null> {
+  if (typeof s !== 'string' || !/^⟦bt1:[0-9a-f]{8}:[A-Za-z0-9_-]{38,}⟧$/.test(s)) return null
+  const v = await openText(s)
+  return v === LOCKED ? null : v
+}
+
 /** A whole answer or stream message, every string in it opened; a sealed card is put back together (§6.4). */
 export async function openDeep<T>(v: T): Promise<T> {
   const walk = async (x: unknown): Promise<unknown> => {
