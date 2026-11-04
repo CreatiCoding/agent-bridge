@@ -2,8 +2,62 @@
 // items sit in the same slot under their ids (the built-in items, listed where each slot is drawn); what is added
 // here goes before or after one of them. Nothing here knows about React: each place draws what resolve() gives.
 
-export const SLOTS = ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section', 'app.rail.items', 'app.menu.items'] as const
-export type SlotName = (typeof SLOTS)[number]
+/**
+ * How each slot's added items are drawn (REQ-F-865): `action` buttons in a row (more than fit go into a ⋯ menu),
+ * `menu` rows in a menu, `section` drawings stacked, `badge` drawings inline (two, then +n), `data` read by the page
+ * (a notice, a settings tab, a page). The first six are drawn their own way (REQ-F-824, REQ-F-863).
+ */
+export const SLOT_KIND = {
+  'composer.actions': 'own',
+  'session.menu': 'own',
+  'session-list.row.badges': 'own',
+  'settings.section': 'own',
+  'app.rail.items': 'own',
+  'app.menu.items': 'own',
+  // the session list
+  'session-list.toolbar': 'action',
+  'session-list.filters': 'section',
+  'session-list.empty': 'section',
+  'session-group.actions': 'action',
+  'session-group.badges': 'badge',
+  'session-group.menu': 'menu',
+  'session-list.row.actions': 'menu',
+  // a session
+  'session.header.actions': 'action',
+  'session.header.badges': 'badge',
+  'session-tabs.actions': 'action',
+  'session-tab.menu': 'menu',
+  'split-pane.actions': 'action',
+  'composer.before': 'section',
+  'composer.after': 'section',
+  'composer.status': 'section',
+  'message.actions': 'action',
+  'message.metadata': 'section',
+  'session.timeline.before': 'section',
+  'session.timeline.after': 'section',
+  // hosts, adopting, a new session, files
+  'host-list.toolbar': 'action',
+  'host-card.actions': 'action',
+  'host-card.badges': 'badge',
+  'host-detail.section': 'section',
+  'adopt-list.toolbar': 'action',
+  'adopt-list.row.actions': 'action',
+  'session-create.fields': 'section',
+  'session-create.summary': 'section',
+  'file-list.actions': 'action',
+  'file-row.actions': 'action',
+  'preview.toolbar': 'action',
+  // the whole app
+  'app.banner': 'section',
+  'session.banner': 'section',
+  'app.status.items': 'action',
+  'notification.items': 'data',
+  'settings.tabs': 'data',
+  'app.routes': 'data',
+} as const
+export type SlotName = keyof typeof SLOT_KIND
+export type SlotKind = (typeof SLOT_KIND)[SlotName]
+export const SLOTS = Object.keys(SLOT_KIND) as SlotName[]
 
 /** The page's own items of each slot, by id: what order, replace and hide may name (§7.1). */
 export const BUILTIN_IDS: Record<SlotName, readonly string[]> = {
@@ -22,6 +76,29 @@ export const BUILTIN_IDS: Record<SlotName, readonly string[]> = {
   'app.rail.items': ['logo', 'sidebar', 'new', 'search', 'usage', 'report', 'bell', 'settings', 'account'],
   // The app menu (the phone's ⋯, the PC's account button); the views only on a phone.
   'app.menu.items': ['new', 'new-group', 'view-group', 'view-recent', 'settings', 'report', 'account', 'logout'],
+  // The slots of REQ-F-865 start empty: what is added is all there is (order names other added items).
+  ...(Object.fromEntries(
+    Object.entries(SLOT_KIND)
+      .filter(([, k]) => k !== 'own')
+      .map(([n]) => [n, [] as readonly string[]]),
+  ) as Record<Exclude<SlotName, 'composer.actions' | 'session.menu' | 'session-list.row.badges' | 'settings.section' | 'app.rail.items' | 'app.menu.items'>, readonly string[]>),
+}
+
+/**
+ * An `action` or `menu` slot's item (REQ-F-865), the same shape as AppItem: data the page draws as a button or a
+ * menu row. `visible` decides per place (a row, a host) from the slot's context.
+ */
+export interface ActionItem<C = unknown> extends SlotItem {
+  label: string
+  icon: string
+  hint?: string
+  badge?: number | 'dot' | 'new' | null
+  active?: boolean
+  disabled?: boolean | string
+  busy?: boolean | number
+  danger?: boolean
+  visible?: (ctx: C) => boolean
+  run: (ctx: C) => void
 }
 
 /**
@@ -93,11 +170,30 @@ function put<T>(m: Map<SlotName, Reg<T>[]>, slot: SlotName, r: Reg<T>) {
   }
 }
 
+/** What an item of a REQ-F-865 slot must carry, said when it is registered rather than when it fails to draw. */
+function shapeOf(slot: SlotName, i: SlotItem) {
+  const fn = (k: string) => typeof i[k] === 'function'
+  const str = (k: string) => typeof i[k] === 'string' && !!i[k]
+  const need = (ok: boolean, what: string) => {
+    if (!ok) throw new Error(`${slot} 항목에는 ${what} 가 있어야 해요: ${i.id}`)
+  }
+  const kind = SLOT_KIND[slot]
+  if (kind === 'action' || kind === 'menu') need(str('label') && str('icon') && fn('run'), 'label·icon·run')
+  else if (kind === 'section' || kind === 'badge') need(fn('render'), 'render')
+  else if (slot === 'notification.items') need(str('title'), 'title')
+  else if (slot === 'settings.tabs' || slot === 'app.routes') {
+    need(str(slot === 'app.routes' ? 'title' : 'label') && fn('render'), slot === 'app.routes' ? 'title·render' : 'label·render')
+    // It is part of an address (/x/<ext>/<id>, /settings/x/<ext>.<id>).
+    need(/^[a-z0-9][a-z0-9-]{0,31}$/.test(i.id), 'id(영소문자·숫자·-, 32자까지)')
+  }
+}
+
 /** Adds an item. Its id must not be one of the page's or another added item's. */
 export function register(slot: SlotName, item: SlotItem, owner = '') {
   check(slot)
   if (!item || typeof item.id !== 'string' || !item.id) throw new Error('slot 항목에는 id 가 있어야 해요')
   if (BUILTIN_IDS[slot].includes(item.id) || (added.get(slot) ?? []).some((r) => r.v.id === item.id)) throw new Error(`${slot} 에 이미 있는 id 예요: ${item.id}`)
+  shapeOf(slot, item)
   // extId: whose item it is, for the error boundary that reports a failing render to its extension.
   return put(added, slot, { owner, v: owner ? { ...item, extId: owner } : item })
 }

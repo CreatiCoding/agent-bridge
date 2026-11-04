@@ -1,5 +1,7 @@
 // Start a session: which Mac, which folder (picked by browsing that Mac's folders), what to say first, and
 // optionally the model, effort and permission mode.
+import { ExtCreateFields, createFieldError } from '../components/create-fields'
+import { SlotSections } from '../components/slot-parts'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, errorText, get } from '../lib/api'
 import { defaultFolder, folderStamp } from '../lib/folder'
@@ -127,9 +129,15 @@ export function NewSessionPage() {
     setImages((now) => [...now, ...made.filter((x): x is { data: string; name: string } => !!x)].slice(0, 8))
   }
   const attached = images.length + videos.length > 0
+  // session-create.* (REQ-F-865): what the page is about to start (read only) and the extensions' own values.
+  const [extValues, setExtValues] = useState<Record<string, Record<string, unknown>>>({})
+  const draft = { hostId: host?.id ?? '', cwd: folder, runner, model, effort, mode: claude ? mode : codexAllow, group: group?.id ?? null, prompt }
 
   const start = async (retry = false) => {
     if (!host) return
+    // session-create.fields (REQ-F-865): an extension's field that says what is wrong stops the start, said why.
+    const wrong = createFieldError(extValues, draft)
+    if (wrong) return toast(wrong, { tone: 'bad' })
     // 전부 허용: allowed without asking from the first request on. Said before it starts, not after.
     if (!retry && !(await confirmLaunchMode(claude ? mode : codexAllow))) return
     // The default folder is always new: made without asking. A folder typed or picked is asked about.
@@ -140,7 +148,7 @@ export function NewSessionPage() {
       // the session's box sends one: videos up first, then words, pictures and videos together. The Mac holds a
       // message said while the session is still starting and hands it over once it is up.
       const first = attached ? { prompt: '', title: prompt } : { prompt }
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       if (claude) setPref('newAccount', account)
@@ -398,6 +406,8 @@ export function NewSessionPage() {
               모델 · effort · 권한 모드{chosen ? <span className="muted" style={{ fontWeight: 400 }}>{` — ${chosen}`}</span> : null}
             </Button>
           )}
+          <ExtCreateFields values={extValues} onChange={setExtValues} draft={draft} />
+          <SlotSections slot="session-create.summary" ctx={{ draft, ext: extValues }} />
           <Button tone="primary" size="lg" block busy={busy} onClick={() => start()}>
             시작
           </Button>

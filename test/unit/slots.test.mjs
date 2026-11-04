@@ -9,8 +9,8 @@ const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 const ids = (l) => l.map((x) => (typeof x === 'string' ? x : x.id))
 const plain = (slot, list) => resolve(slot, list, (b) => (typeof b === 'string' ? null : b), (i) => i)
 
-test('slot 6개와 내장 항목 id 가 설계(§7.1)와 같다', () => {
-  assert.deepEqual([...SLOTS], ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section', 'app.rail.items', 'app.menu.items'])
+test('slot 의 앞 6개와 내장 항목 id 가 설계(§7.1)와 같다', () => {
+  assert.deepEqual([...SLOTS].slice(0, 6), ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section', 'app.rail.items', 'app.menu.items'])
   assert.deepEqual([...BUILTIN_IDS['app.rail.items']], ['logo', 'sidebar', 'new', 'search', 'usage', 'report', 'bell', 'settings', 'account'])
   assert.deepEqual([...BUILTIN_IDS['app.menu.items']], ['new', 'new-group', 'view-group', 'view-recent', 'settings', 'report', 'account', 'logout'])
   assert.deepEqual([...BUILTIN_IDS['composer.actions']], ['attach', 'chips', 'mic', 'send'])

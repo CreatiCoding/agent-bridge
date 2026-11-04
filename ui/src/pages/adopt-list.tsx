@@ -1,6 +1,7 @@
 // The conversations a Mac already has that no bridge session holds (started in a terminal or by another tool):
 // pick one, or several, to carry them on here, each in its own folder, as the same conversation.
 // `/new?adopt=<id>,<id>…` opens this list with those already picked (a prepared move of many at once).
+import { SlotActions } from '../components/slot-parts'
 import { useEffect, useState } from 'react'
 import { errorText, get, getSealed, post } from '../lib/api'
 import { ago, bytes, shortPath } from '../lib/format'
@@ -57,6 +58,8 @@ export async function boundList(r: Listed): Promise<Listed & { dropped: number }
 
 /** The ids the address asked for. */
 export const presetAdopt = () => (/[?&]adopt=([\w,-]+)/.exec(location.search)?.[1] ?? '').split(',').filter((x) => /^[0-9a-f-]{36}$/.test(x))
+
+const convInfo = (c: Conversation) => ({ conv: c.conv, cwd: c.cwd, runner: (c as { runner?: string }).runner ?? 'claude', title: c.title || c.first, exists: c.exists })
 
 export function AdoptList({ hostId }: { hostId: string }) {
   const preset = presetAdopt()
@@ -224,6 +227,8 @@ export function AdoptList({ hostId }: { hostId: string }) {
         <Button size="sm" tone="ghost" onClick={() => setPicked(chosen.length === shown.filter((c) => c.exists).length ? new Set() : new Set(shown.filter((c) => c.exists).map((c) => c.conv)))}>
           {chosen.length && chosen.length === shown.filter((c) => c.exists).length ? '모두 풀기' : '모두 고르기'}
         </Button>
+        {/* adopt-list.* (REQ-F-865): the host, and what is shown and picked (each: conv, cwd, runner, title). */}
+        <SlotActions slot="adopt-list.toolbar" ctx={{ hostId, shown: shown.map(convInfo), picked: chosen.map(convInfo) }} />
       </div>
       {!shown.length ? (
         <Empty icon="search" title="이어 갈 대화가 없어요">
@@ -251,6 +256,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
               {mixed ? <Badge tone={c.runner === 'codex' ? 'blue' : undefined}>{c.runner === 'codex' ? 'Codex' : 'Claude Code'}</Badge> : null}
               {accountOf(c) ? <Badge>{accountOf(c)?.name}</Badge> : null}
               {!c.exists ? <Badge tone="red">폴더 없음</Badge> : c.active ? <Badge tone="amber">쓰는 중</Badge> : null}
+              <SlotActions slot="adopt-list.row.actions" ctx={{ hostId, conversation: convInfo(c) }} max={1} />
             </div>
           ))}
         </div>

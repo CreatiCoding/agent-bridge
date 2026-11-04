@@ -5,12 +5,10 @@ import { IconButton, type IconName } from '../kit'
 import type { MenuEntry, MenuItem } from '../kit/overlay'
 import { resolve, type AppCtx, type AppItem, type SlotItem } from '../lib/slots'
 import { slotFailed, useSlots } from '../lib/slot-view'
+import { badgeText, blocked, why } from './slot-parts'
 
 type Raw = { raw?: unknown }
 const isApp = (i: SlotItem): i is AppItem => typeof i.label === 'string' && typeof i.run === 'function'
-const badgeText = (b: AppItem['badge']) => (b === 'new' ? 'NEW' : typeof b === 'number' && b > 0 ? (b > 99 ? '99+' : String(b)) : '')
-const blocked = (i: AppItem) => !!i.disabled || (i.busy != null && i.busy !== false)
-const why = (i: AppItem) => (typeof i.disabled === 'string' ? i.disabled : i.busy != null && i.busy !== false ? (typeof i.busy === 'number' ? `진행 중 ${Math.round(i.busy * 100)}%` : '진행 중') : undefined)
 
 function run(i: AppItem, ctx: AppCtx) {
   if (blocked(i)) return

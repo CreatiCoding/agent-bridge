@@ -5,6 +5,9 @@ import { getAppSnooze, getPref, setAppSnooze, setPref } from './lib/local'
 import { APP_UPDATE_SNOOZE_MS, appVersion, TESTFLIGHT_URL, updateDue } from './lib/app-version'
 import { go, href, parseRoute, type Route, useRoute } from './lib/router'
 import { menuWithSlot, RailSlot, useMenuBadge } from './components/app-slots'
+import { SlotActions, SlotSections } from './components/slot-parts'
+import { AppBanner, ExtPage, StatusStrip, useExtNotices } from './components/ext-places'
+import { setListFilter, useListFilter } from './lib/list-filter'
 import { look } from './lib/sessions'
 import { featureOn } from './lib/features'
 import { getStore, linkWhy, onServerToast, reportFocus, useStore } from './lib/store'
@@ -82,7 +85,8 @@ function ConnBanner() {
 
 /** The bell: on a phone in the list's bar, on a PC at the foot of the app rail. Never floating over a page's bar. */
 function Bell({ onClick }: { onClick: () => void }) {
-  const notices = useStore((s) => s.state?.notices.length ?? 0)
+  // The server's notices and the ones extensions put in notification.items (REQ-F-865).
+  const notices = useStore((s) => s.state?.notices.length ?? 0) + useExtNotices().length
   return (
     <span className="relative">
       <IconButton icon="bell" label="알림" onClick={onClick} />
@@ -141,10 +145,11 @@ function MenuButton({ me }: { me: Me | null }) {
 
 // On a phone the list is its own screen: opening a session unmounts it, and coming back draws it anew. Where it was
 // scrolled to and what was typed in its search live here, outside it, so back lands where the person left.
-const listKept = { scroll: 0, filter: '' }
+const listKept = { scroll: 0 }
 
 function Sidebar({ route, me, onNotices }: { route: Route; me: Me | null; onNotices?: () => void }) {
-  const [filter, setFilter] = useState(listKept.filter)
+  // The search text lives outside the list (REQ-F-865 bridge.list): kept when a phone draws the list anew.
+  const filter = useListFilter()
   const search = useRef<HTMLInputElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -184,9 +189,11 @@ function Sidebar({ route, me, onNotices }: { route: Route; me: Me | null; onNoti
         </div>
       ) : null}
       <div className="list-tools">
-        <input ref={search} className="search" type="search" placeholder={wide ? '검색 (⌘K)' : '검색'} value={filter} onChange={(e) => setFilter((listKept.filter = e.target.value))} aria-label="이름·첫 메시지·폴더 검색" />
+        <input ref={search} className="search" type="search" placeholder={wide ? '검색 (⌘K)' : '검색'} value={filter} onChange={(e) => setListFilter(e.target.value)} aria-label="이름·첫 메시지·폴더 검색" />
+        <SlotActions slot="session-list.toolbar" ctx={{ filter, setFilter: setListFilter, wide }} />
         {wide ? <IconButton icon="plus" label="새 세션" onClick={() => go({ name: 'new' })} /> : null}
       </div>
+      <SlotSections slot="session-list.filters" ctx={{ filter, setFilter: setListFilter, wide }} className="slot-sections list-filters" />
       <div className="scroll" ref={scroller} onScroll={(e) => (listKept.scroll = e.currentTarget.scrollTop)}>
         <SessionList activeId={activeId} filter={filter} />
       </div>
@@ -230,7 +237,9 @@ function Main({ route, me }: { route: Route; me: Me | null }) {
     case 'report':
       return <ReportPage key={route.id} id={route.id} />
     case 'settings':
-      return <SettingsPage me={me} tab={route.tab ?? 'devices'} />
+      return <SettingsPage me={me} tab={route.tab ?? 'devices'} ext={route.ext} />
+    case 'ext':
+      return <ExtPage key={`${route.ext}/${route.page}`} ext={route.ext} page={route.page} />
     case 'guide':
       return <GuidePage me={me} path={route.path} />
     default:
@@ -482,6 +491,9 @@ export function App({ me }: { me: Me | null }) {
       ) : atHome ? (
         <aside className="side" style={{ width: '100%', borderRight: 0 }} aria-label="세션 목록">
           <ConnBanner />
+          {/* A phone's home is the list alone: app.banner and app.status.items show here too (REQ-F-865). */}
+          <AppBanner route="home" />
+          <StatusStrip route="home" />
           <Sidebar route={route} me={me} onNotices={() => setNotices(true)} />
           <button type="button" className="fab" aria-label="새 세션" onClick={() => go({ name: 'new' })}>
             <Icon name="plus" />
@@ -565,9 +577,12 @@ function AppRail({ me, route, collapsed, need, onToggle, onSearch, onNotices }: 
 }
 
 function ConnWrap({ children }: { children: React.ReactNode }) {
+  const route = useRoute()
   return (
     <div className="main" id="main" tabIndex={-1}>
       <ConnBanner />
+      <AppBanner route={route.name} />
+      <StatusStrip route={route.name} />
       {children}
     </div>
   )

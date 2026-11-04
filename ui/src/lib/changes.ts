@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.436',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '화면 전체의 익스텐션 slot 36개(모두 42개): 세션 목록(툴바·필터·빈 화면·그룹 버튼·배지·메뉴·행 메뉴), 세션 화면(상단 버튼·배지·배너·탭·분할 칸·입력칸 위아래·메시지별 버튼·메타·대화 앞뒤), 기기(목록·카드·상세), 가져오기, 새 세션(익스텐션 입력칸·요약), 파일·미리보기 버튼, 앱 배너·작업 상태 칩·알림·설정 탭·전용 화면(`/x/<익스텐션>/<id>`). 종류마다 같은 규칙(넘치면 ⋯, 배지·진행 중·이유, 오류는 그 항목만 빠짐). `bridge.version`·`slots.supported` 로 지원 slot 조회, `bridge.list` 로 목록 검색어, `bridge.routes`. 새 세션의 익스텐션 값은 훅에만 가고 서버로 가지 않음. `extensionApi` 1 그대로',
+        refs: ['REQ-F-865', 'REQ-F-824', 'REQ-F-825'],
+      },
+    ],
+  },
+  {
     version: '1.435',
     date: '2026-11-05',
+    commit: 'd2cbaca',
     changes: [
       {
         kind: 'security',

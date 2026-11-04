@@ -1,5 +1,6 @@
 // HTML in an answer (a ```html block, or an answer that is a whole document) drawn read-only: in a frame
 // with no scripts, no network, nothing from this site.
+import { SlotActions } from './slot-parts'
 import { useRef, useState } from 'react'
 import { around } from '../lib/actions'
 import { CodeBlock } from '../lib/markdown'
@@ -43,6 +44,7 @@ export function HtmlPreview({ html }: { html: string }) {
         <Button size="sm" tone="ghost" onClick={() => setCode(!code)}>
           {code ? '미리보기' : '코드 보기'}
         </Button>
+        <SlotActions slot="preview.toolbar" ctx={{ kind: 'html', html }} />
       </div>
       {code ? <CodeBlock code={html} lang="html" /> : <Frame html={html} />}
       <Sheet open={big} onClose={() => setBig(false)} title="HTML 미리보기" wide>

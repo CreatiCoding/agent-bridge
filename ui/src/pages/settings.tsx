@@ -22,6 +22,8 @@ import { resolve, type SlotItem } from '../lib/slots'
 import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
 import { ExtAdmin, ExtSettings } from '../components/ext-panels'
 import { DeviceBoard } from '../components/device-board'
+import { useAdded } from '../components/slot-parts'
+import type { IconName } from '../kit'
 
 export interface Plugin {
   id: string
@@ -694,9 +696,12 @@ function SettingsSlot({ me, tab }: { me: Me | null; tab: SettingsTab }) {
   )
 }
 
-export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
+export function SettingsPage({ me, tab, ext }: { me: Me | null; tab: SettingsTab; ext?: { ext: string; id: string } }) {
   const wide = useWide()
-  const at = TAB_OF[tab] ?? tab
+  // An extension's tab (settings.tabs, REQ-F-865) is open: none of the page's own is.
+  const at = (ext ? 'x' : (TAB_OF[tab] ?? tab)) as SettingsTab
+  const extTabs = useAdded<SlotItem & { label: string; icon?: string; render: () => ReactNode }>('settings.tabs')
+  const extTab = ext ? extTabs.find((t) => t.extId === ext.ext && t.id === ext.id) : undefined
   const hasExt = !!(me as { extensions?: unknown[] } | null)?.extensions?.length
   const [prompt, setPrompt] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -756,6 +761,16 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             )}
           </a>
         ))}
+        {extTabs.map((t) => {
+          const on = !!ext && t.extId === ext.ext && t.id === ext.id
+          const to = { name: 'settings', ext: { ext: String(t.extId ?? ''), id: t.id } } as const
+          return (
+            <a key={`${t.extId}/${t.id}`} role="tab" aria-selected={on} className={`page-tab${on ? ' on' : ''}`} href={href(to)} onClick={(e) => (e.preventDefault(), go(to, { replace: true }))}>
+              <Icon name={(t.icon ?? 'plugin') as IconName} />
+              <span>{t.label}</span>
+            </a>
+          )
+        })}
       </div>
       <div className="scroll">
         {!ready ? (
@@ -979,7 +994,19 @@ export function SettingsPage({ me, tab }: { me: Me | null; tab: SettingsTab }) {
             </section>
           ) : null}
           {tab === 'more' ? <DeleteAccount me={me} /> : null}
-          <SettingsSlot me={me} tab={tab === 'prompt' ? 'launch' : tab} />
+          {ext ? (
+            extTab ? (
+              <SlotContext.Provider value={{ user: me ? { uid: me.uid ?? '', login: me.user.login, provider: me.provider ?? 'github', admin: me.admin } : null, tab: ext.id }}>
+                <SlotRender render={extTab.render} owner={ext.ext} />
+              </SlotContext.Provider>
+            ) : (
+              <Empty icon="info" title="이 설정 탭을 찾지 못했어요">
+                익스텐션이 꺼져 있거나 아직 불러오는 중이에요.
+              </Empty>
+            )
+          ) : (
+            <SettingsSlot me={me} tab={tab === 'prompt' ? 'launch' : tab} />
+          )}
           {/* An extension's card for 프롬프트 (REQ-F-824) still shows where that tab went. */}
           {at === 'launch' ? <SettingsSlot me={me} tab="prompt" /> : null}
         </div>

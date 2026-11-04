@@ -23,6 +23,7 @@ import { openSession } from '../lib/builtin-actions'
 import { closeSession } from '../lib/builtin-actions'
 import { resolve, type SlotItem } from '../lib/slots'
 import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
+import { slotMenu, SlotActions, SlotBadges, SlotSections } from './slot-parts'
 
 function useSeen() {
   const [seen, setSeen] = useState(getSeen)
@@ -45,7 +46,8 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
   const swipe = useSwipeRow(144, !wide)
   const press = useRef<number | null>(null)
   const longPressed = useRef(false)
-  const menu = (at: HTMLElement | { x: number; y: number }) => openMenu(sessionMenu(s, { groups }), at, titleOf(s))
+  // session-list.row.actions (REQ-F-865): the row is a link, so an extension's actions for it go in its menu.
+  const menu = (at: HTMLElement | { x: number; y: number }) => openMenu([...sessionMenu(s, { groups }), ...slotMenu('session-list.row.actions', { session: s })], at, titleOf(s))
   const actions = s.closed
     ? [
         { label: '이어서 열기', tone: 'blue', run: () => resume(s) },
@@ -371,6 +373,8 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
             if (await confirmDialog(`'${g.name}' 그룹을 지울까요?`, { text: g.parent ? '안의 세션과 그룹은 한 단계 위 그룹으로 옮겨져요.' : '안의 세션과 그룹은 그룹 밖(맨 위)으로 나와요.', ok: '지우기', danger: true })) await act(() => post('/api/groups', { op: 'delete', id: g.id }))
           },
         },
+        // session-group.menu (REQ-F-865): what extensions add, after the page's own.
+        ...slotMenu('session-group.menu', groupCtx(g)),
       ],
       at,
       g.name,
@@ -411,6 +415,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
               <>
                 {g.name}
                 <span className="section-count">{awakeIn(id)}</span>
+                <SlotBadges slot="session-group.badges" ctx={groupCtx(g)} />
               </>
             }
             folded={folded}
@@ -420,6 +425,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
                 {/* The menu's first item, one tap away: a new session in this group (a PC's; a phone has it in ⋯). */}
                 {wide ? <IconButton icon="plus" label="이 그룹에 새 세션" onClick={() => navigate(`/new?group=${g.id}`)} /> : null}
                 {restButton(resting(g.sessions))}
+                <SlotActions slot="session-group.actions" ctx={groupCtx(g)} max={1} />
                 <IconButton icon="more" label="그룹 메뉴" onClick={(e) => groupMenu(g, e.currentTarget)} />
               </>
             }
@@ -439,6 +445,10 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
   }
 
   const empty = !live.length && !ended.length
+  // session-group.* (REQ-F-865): the group and what it holds.
+  function groupCtx(g: { id: string; name: string; parent?: string; sessions?: Session[] }) {
+    return { group: { id: g.id, name: g.name, parent: g.parent ?? null }, sessions: g.sessions ?? byGroup.get(g.id)?.sessions ?? [] }
+  }
   const looks = live.map((x) => look(x, hosts.get(x.hostId)))
   // 최신순: the favourites first, in a section of their own, then the rest; each by its last movement.
   const newest = live.filter(match).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0))
@@ -507,6 +517,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
             세션이 없어요
           </p>
           <div className="empty-text">새 세션을 시작해 보세요.</div>
+          <SlotSections slot="session-list.empty" ctx={{ filter }} />
         </div>
       ) : null}
       {view === 'recent' && live.length ? (

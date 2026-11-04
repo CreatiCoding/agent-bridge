@@ -4,6 +4,7 @@
 // the picture button, which is the only way on a phone) or dropped (8 at most). A line starting with / offers the session's skills and commands.
 // With 음성 입력 on (설정 → 음성), a microphone button turns 음성 모드 on: the box gives way to a panel that keeps
 // listening and gathers what is said, sent with one press (components/voice-mode.tsx); on a PC a key does the same.
+import { SlotSections } from './slot-parts'
 import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { get } from '../lib/api'
 import { shrinkImage } from '../lib/image'
@@ -470,6 +471,9 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
         void addFiles(e.dataTransfer.files)
       }}
     >
+      {/* composer.before·status·after (REQ-F-865): above and below the box, under its context; each is capped in
+          height (styles.css .slot-composer) so the box and its send button stay in view. */}
+      <SlotSections slot="composer.before" ctx={slotCtx} className="slot-sections slot-composer" />
       {matches.length ? (
         <div className="slash-menu" role="listbox">
           {matches.map((s, i) => (
@@ -572,6 +576,8 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
         </SlotContext.Provider>
       </div>
       )}
+      <SlotSections slot="composer.status" ctx={slotCtx} className="slot-sections slot-composer slot-status" />
+      <SlotSections slot="composer.after" ctx={slotCtx} className="slot-sections slot-composer" />
     </div>
   )
 })

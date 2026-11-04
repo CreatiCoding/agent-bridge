@@ -8,6 +8,8 @@ import { NONE, useStore } from '../lib/store'
 import { Icon } from '../kit'
 import { endSession } from './session-menu'
 import { openSession } from '../lib/builtin-actions'
+import { openMenu } from '../kit/overlay'
+import { slotMenu, SlotActions } from './slot-parts'
 
 /** The sessions that share this one's group, as tabs: also the phone's "같은 그룹 세션" menu (session-page). */
 export function useGroupTabs(id: string) {
@@ -80,6 +82,13 @@ export function SessionTabs({ id }: { id: string }) {
                 // A middle click closes, as in an editor (still asking first).
                 if (e.button === 1) (e.preventDefault(), void close(s.id))
               }}
+              onContextMenu={(e) => {
+                // session-tab.menu (REQ-F-865): a tab's own menu, only when an extension put something in it.
+                const items = slotMenu('session-tab.menu', { session: s, active: on, group: holder ? { id: holder.id, name: holder.name } : null }, false)
+                if (!items.length) return
+                e.preventDefault()
+                openMenu(items, { x: e.clientX, y: e.clientY }, titleOf(s))
+              }}
             >
               {resting ? (
                 <span className="srow-rest" aria-hidden>
@@ -102,6 +111,7 @@ export function SessionTabs({ id }: { id: string }) {
       <a className="stab-new" href={`/new?group=${holder!.id}`} aria-label={`${holder!.name} 그룹에 새 세션`} title="이 그룹에 새 세션">
         <Icon name="plus" />
       </a>
+      <SlotActions slot="session-tabs.actions" ctx={{ sid: id, tabs, group: holder ? { id: holder.id, name: holder.name } : null }} max={2} />
     </nav>
   )
 }

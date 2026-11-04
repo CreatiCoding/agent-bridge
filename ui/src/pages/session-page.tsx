@@ -20,6 +20,7 @@ import type { VoiceDraft } from '../components/voice-mode'
 import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodoPanelPref, SettingsSheet, TodoAskCard, todoAskOf, TodoPanel, todoPanelPref, Todos, useTodoHidden } from '../components/session-extras'
 import { act, askTodos as askSessionTodos, canSlack, command, inSlack, lightCopy, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked, trimLog } from '../components/session-menu'
 import { TimelineView, Writing } from '../components/timeline-view'
+import { SlotActions, SlotBadges, SlotSections } from '../components/slot-parts'
 import { DecisionCard } from '../components/decision-card'
 import { LockScreen, useUnlocked } from '../components/lock'
 import { SessionTabs, useGroupTabs } from '../components/session-tabs'
@@ -705,6 +706,8 @@ export function SessionPage({ id }: { id: string }) {
   const runTodos = (text: string) => void send(text).then((ok) => ok && toast(busy ? '지금 하던 일이 끝나면 이어서 해요' : '할 일을 시작했어요'))
   const copyPath = () => copyText(s.cwd, 'other').then((ok) => ok && toast('경로를 복사했어요'))
   const disabled = todoBlocked(s)
+  // session.header.*, session.banner, session.timeline.* (REQ-F-865): the session this page shows.
+  const slotCtx = { sid: s.id, session: s, wide, pane: inPane }
   return (
     <div className={`main sess${s.delegatedBy && !s.closed ? ' driven' : ''}`} ref={setPageEl}>
       {kbDebug ? <pre className="kbdebug">{kbText}</pre> : null}
@@ -744,12 +747,16 @@ export function SessionPage({ id }: { id: string }) {
                   </button>
                 </>
               ) : null}
+              <SlotBadges slot="session.header.badges" ctx={slotCtx} />
             </span>
           </div>
         </div>
         {/* A phone has 새로고침 in the ⋯ menu. */}
         {wide ? <IconButton icon="list" label="할 일" className="todo-toggle" active={todoShown} aria-pressed={todoShown} onClick={() => showTodos(!todoShown)} /> : null}
         {wide ? <IconButton icon="refresh" label="새로고침" title="대화 그대로 다시 열기" onClick={() => void refresh(s)} disabled={!!disabled || !s.state.alive} /> : null}
+        <SlotActions slot="session.header.actions" ctx={slotCtx} max={wide ? 3 : 1} />
+        {/* split-pane.actions (REQ-F-865): each pane of a split is this page in its own frame; its bar is the pane's. */}
+        {inPane ? <SlotActions slot="split-pane.actions" ctx={slotCtx} max={2} /> : null}
         <div className="glass-group">
           {featureOn('preview') ? <ServerButton s={s} onPreview={setServer} /> : null}
           <IconButton icon="more" label="세션 메뉴" onClick={(e) => openMenu(sessionMenu(s, { groups: groupTree(groups).map((t) => ({ id: t.group.id, name: t.path })), wide, page: { sheet: setSheet, askTodos: () => void askTodos(), copyPath: () => void copyPath(), group: { tabs: group.tabs, holder: group.holder ?? null, crumbs } } }), e.currentTarget, titleOf(s))} />
@@ -757,6 +764,7 @@ export function SessionPage({ id }: { id: string }) {
       </div>
       <DrivenBar s={s} />
       <DelegatesBar s={s} />
+      <SlotSections slot="session.banner" ctx={slotCtx} className="slot-sections slot-banner" />
       <div className="sess-body">
       <div className="convo" ref={scroller} onScroll={onScroll}>
         <div className="convo-in" ref={inner}>
@@ -783,6 +791,7 @@ export function SessionPage({ id }: { id: string }) {
               아래 입력칸에 첫 메시지를 보내면 여기에 대화가 쌓여요.
             </Empty>
           ) : null}
+          {log.loaded ? <SlotSections slot="session.timeline.before" ctx={slotCtx} /> : null}
           <TimelineView items={log.folded.items} session={s} onSend={(t) => void send(t)} onEdit={(t) => composer.current?.setText(t)} />
           {pending.map((p) => (
             <div key={p.key} className="msg-user">
@@ -815,6 +824,7 @@ export function SessionPage({ id }: { id: string }) {
               <LightNudge s={s} />
               <OfflineBanner s={s} />
               <ReturnedBanner s={s} />
+              <SlotSections slot="session.timeline.after" ctx={slotCtx} />
             </>
           ) : null}
         </div>

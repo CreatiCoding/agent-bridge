@@ -1,6 +1,7 @@
 // The web servers a session started on its Mac (npm run dev …): a computer button in the header opens one.
 // On that Mac itself, http://localhost:<port> in a new tab. Anywhere else, the same page inside this one, through the
 // site's preview origin (server/preview.mjs) and the Mac's bridge tab.
+import { SlotActions } from './slot-parts'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { agentInfo } from '../../../web/relay.js'
 import { errorText } from '../lib/api'
@@ -143,6 +144,7 @@ export function PreviewSheet({ s, server, onClose }: { s: Session; server: Serve
             처음부터 다시
           </Button>
           <span className="grow" />
+          <SlotActions slot="preview.toolbar" ctx={{ kind: 'server', sid: s.id, url }} />
           <Button size="sm" icon="link" disabled={!url} onClick={() => url && (openLink(url, 'preview'), toast('새 탭에서 열었어요'))}>
             새 탭으로
           </Button>

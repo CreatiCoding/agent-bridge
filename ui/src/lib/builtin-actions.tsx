@@ -53,7 +53,9 @@ export const composerCtx = (sid: string) => composers.get(sid)?.ctx() ?? null
 setDefault('composer.submit', ({ sid, text }) => composers.get(sid)?.submit(text) ?? { sent: false, reason: 'no-composer' })
 
 setDefault('permission.answer', ({ sid, card, option }) => post(`/api/sessions/${sid}/answer`, { card: card.id, n: option.n }))
-setDefault('session.create', async (body) => ({ sid: (await post<{ ok: true; id: string }>('/api/sessions', body)).id }))
+// `ext` (session-create.fields, REQ-F-865): what extensions asked for on the new session page, for their own
+// session.create hooks only. It never reaches the server, so it cannot stand in for the page's own fields.
+setDefault('session.create', async ({ ext: _ext, ...body }) => ({ sid: (await post<{ ok: true; id: string }>('/api/sessions', body)).id }))
 setDefault('session.close', ({ sid, kind }) => (kind === 'remove' ? del(`/api/sessions/${sid}`) : post(`/api/sessions/${sid}/${kind === 'trash' ? 'trash' : 'close'}`)))
 
 /** Sends a message to a session: `:` makes it a bridge command. */

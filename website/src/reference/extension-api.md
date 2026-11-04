@@ -131,7 +131,7 @@ bridge.actions.around('message.render', (a, next) => {
 
 ## slot
 
-화면의 정해진 자리 여섯에 항목을 더해요. `uses.slots` 에 적지 않은 slot 을 쓰면 예외가 나요.
+화면의 정해진 자리 42곳에 항목을 더해요. 아래 표의 여섯은 자기 방식으로 그려지고, 나머지 36곳은 [화면 전체의 slot](#화면-전체의-slot) 에 있어요. `uses.slots` 에 적지 않은 slot 을 쓰면 예외가 나요.
 
 | slot | 어디 | 항목 | 컨텍스트 |
 |---|---|---|---|
@@ -148,6 +148,7 @@ bridge.actions.around('message.render', (a, next) => {
 | `slots.replace(slot, id, orig => item)` | 페이지의 항목이나 더한 항목을 감싸거나 바꿔요. id 는 그대로예요 |
 | `slots.hide(slot, id)` | 항목을 숨겨요 |
 | `slots.update(slot, id, patch)` | 이 익스텐션이 더한 항목의 필드(배지·상태·라벨 등, `id`·`order` 제외)를 바꾸고 다시 그려요. 남의 항목이나 페이지 항목이면 예외예요 |
+| `slots.supported(slot)` | 이 화면에 그 slot 이 있는지예요. 오래된 화면에서는 없을 수 있어서, 등록 전에 확인하고 다른 길로 가요 |
 | `slots.useSlotContext()` | 항목의 `render` 안에서 그 slot 의 컨텍스트를 읽는 훅이에요 |
 
 `render` 는 컴포넌트로 그려져서 훅(`useSlotContext`, `data.shared`, `React.useState`)을 써도 돼요. `visible`·`checked`·`enabled`·`run` 은 컨텍스트를 받아요.
@@ -168,6 +169,68 @@ bridge.actions.around('message.render', (a, next) => {
 - `settings.section`: `tab` 의 기본은 `plugins` 예요. 탭 id 는 `launch`, `prompt`, `accounts`, `device`, `plugins`, `voice`, `admin`, `changes`, `more` 예요.
 - `replace` 가 던지면 그 바꾸기만 건너뛰어요. 항목을 그리다 오류가 나면 그 항목만 빠지고 화면은 남아요.
 :::
+
+## 화면 전체의 slot
+
+종류마다 같은 규칙으로 그려져요. 항목이 없으면 그 자리는 그려지지 않아요.
+
+| 종류 | 항목 | 그려지는 모양 |
+|---|---|---|
+| action | `{id, order?, label, icon, hint?, badge?, active?, disabled?, busy?, danger?, visible?(ctx), run(ctx)}` | 아이콘 버튼. 자리마다 정한 수를 넘으면 ⋯ 메뉴로 접혀요 |
+| menu | action 과 같아요 | 그 메뉴 끝에 구분선 뒤로 붙어요 |
+| section | `{id, order?, render}` | 세로로 쌓여요 |
+| badge | `{id, order?, render}` | 둘까지, 그 뒤는 `+n` |
+| data | slot 마다 달라요 | 페이지가 읽어서 그려요 |
+
+| slot | 종류 | 자리 | 컨텍스트 |
+|---|---|---|---|
+| `session-list.toolbar` | action | 목록 검색칸 옆 | `{filter, setFilter, wide}` |
+| `session-list.filters` | section | 검색칸 아래 | `{filter, setFilter, wide}` |
+| `session-list.empty` | section | 세션이 하나도 없을 때 | `{filter}` |
+| `session-group.actions` | action(1) | 그룹 머리 | `{group: {id, name, parent}, sessions}` |
+| `session-group.badges` | badge | 그룹 이름 뒤 | 위와 같아요 |
+| `session-group.menu` | menu | 그룹 메뉴 | 위와 같아요 |
+| `session-list.row.actions` | menu | 행의 우클릭·길게 누름 메뉴(행이 링크라 버튼은 없어요) | `{session}` |
+| `session.header.actions` | action(PC 3·폰 1) | 세션 상단 줄 ⋯ 앞 | `{sid, session, wide, pane}` |
+| `session.header.badges` | badge | 상단 줄의 상태 옆 | 위와 같아요 |
+| `session.banner` | section | 상단 줄 아래 | 위와 같아요 |
+| `session.timeline.before` · `after` | section | 대화 앞·끝 | 위와 같아요 |
+| `split-pane.actions` | action(2) | 분할 칸 안의 상단 줄 | 위와 같아요(`pane: true`) |
+| `session-tabs.actions` | action(2) | 세션 탭 줄 끝 | `{sid, tabs, group}` |
+| `session-tab.menu` | menu | 탭 우클릭(더한 것이 있을 때만) | `{session, active, group}` |
+| `composer.before` · `status` · `after` | section | 입력칸 위·아래(높이 30vh 까지) | `composer.actions` 와 같아요 |
+| `message.metadata` | section | 각 메시지 아래 | `{sid, session, message: {key, seq, at, id?, role, text}}` |
+| `message.actions` | action(3) | 각 메시지 아래 | 위와 같아요 |
+| `host-list.toolbar` | action | 기기 화면 상단 | `{hosts}` |
+| `host-card.actions` · `badges` | action(1) · badge | 기기 줄과 설정 → 기기 카드 | `{host}` |
+| `host-detail.section` | section | 기기 상세의 로그 위 | `{host, mine}` |
+| `adopt-list.toolbar` | action | 맥의 대화 이어 가기 검색칸 옆 | `{hostId, shown, picked}` |
+| `adopt-list.row.actions` | action(1) | 대화 한 줄 | `{hostId, conversation}` |
+| `session-create.fields` | section | 새 세션의 시작 버튼 위 | `{draft, values, set(name, value)}` |
+| `session-create.summary` | section | 시작 버튼 바로 위 | `{draft, ext}` |
+| `file-list.actions` | action | 디스크 관리의 폴더 줄 | `{hostId, path, items}` |
+| `file-row.actions` | action(1) | 파일·폴더 한 줄 | `{hostId, file}` |
+| `preview.toolbar` | action | HTML 미리보기 줄, 로컬 미리보기 아래 줄 | `{kind: 'html', html}` 또는 `{kind: 'server', sid, url}` |
+| `app.banner` | section | 모든 화면 맨 위 | `{route}` |
+| `app.status.items` | action(칩) | 모든 화면 맨 위의 작업 줄. `busy` 면 도는 표시와 %, `tone: 'ok'·'bad'` | `{route}` |
+| `notification.items` | data `{id, title, text?, tone?, at?, run?, onClose?}` | 알림 시트 맨 위, 종 숫자에 더해요 | — |
+| `settings.tabs` | data `{id, label, icon?, render}` | 설정 탭 줄 끝, `/settings/x/<익스텐션>/<id>` | `{user, tab}` |
+| `app.routes` | data `{id, title, render}` | `/x/<익스텐션>/<id>` 의 전용 화면(제목·뒤로 포함) | `{ext, page}` |
+
+::: details 화면 전체 slot 의 자세한 규칙
+- host 는 `{id, name, kind, online, runners}`, 대화는 `{conv, cwd, runner, title, exists}`, 파일은 `{path, name, kind, size}` 만 받아요. 키·인증·서명·승인 화면은 어느 slot 에도 넘기지 않고 slot 으로 바꿀 수 없어요.
+- 컨텍스트는 읽기 전용이에요. 무언가를 하려면 지금처럼 `actions.dispatch` 나 이 익스텐션의 서버 라우트를 써요.
+- 등록할 때 종류에 맞는 칸이 없으면 바로 예외가 나요. `settings.tabs`·`app.routes` 의 id 는 주소에 들어가서 영소문자·숫자·`-` 32자까지예요.
+- `visible`·`run`·`render`·`validate` 가 던지면 그 항목만 빠지고 운영 탭에 그 익스텐션의 오류로 남아요.
+- `session-create.fields`: 익스텐션마다 자기 `values` 만 보고 `set` 해요. `validate(values, draft)` 가 글을 돌려주면 시작하지 않고 그 글을 보여 줘요. 값은 `session.create` 훅의 `args.ext[<id>]` 로만 오고 서버로는 가지 않아서, 화면의 권한 모드·계정 같은 칸을 덮어쓸 수 없어요.
+- `notification.items` 의 × 는 이 화면에서 숨기고 `onClose` 를 불러요. 같은 id 라도 글이 바뀌면 다시 보여요.
+:::
+
+| 함수 | 하는 일 |
+|---|---|
+| `bridge.version` | `{extensionApi, slots: [{name, kind}]}`: 이 화면이 주는 것 |
+| `bridge.list` | `filter()`, `setFilter(text)`, `useFilter()`: 세션 목록의 검색어 |
+| `bridge.routes` | `href(id)`, `open(id)`: 이 익스텐션의 전용 화면(`app.routes`) |
 
 ## 짝지은 기기
 
@@ -323,7 +386,7 @@ extensionApi: 1
 entry: ./dist/index.js
 uses:
   actions: [composer.submit, renderer.block, session.done]
-  slots: [composer.actions, session.menu, session-list.row.badges, settings.section, app.rail.items, app.menu.items]
+  slots: [composer.actions, session.menu, session-list.row.badges, settings.section, app.rail.items, app.menu.items, session.header.actions, app.routes]
 messages:
   quiet:
     - suffix: "[조용히]"

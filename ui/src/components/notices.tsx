@@ -7,9 +7,11 @@ import { Sheet } from '../kit/overlay'
 import { act } from './session-menu'
 import { PushToggle } from './push'
 import { openSession } from '../lib/builtin-actions'
+import { ExtNoticeRows, useExtNotices } from './ext-places'
 
 export function NoticeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const notices = useStore((s) => s.state?.notices ?? NONE)
+  const extCount = useExtNotices().length
   return (
     <Sheet
       open={open}
@@ -27,7 +29,9 @@ export function NoticeSheet({ open, onClose }: { open: boolean; onClose: () => v
         </div>
       }
     >
-      {!notices.length ? (
+      {/* What extensions put in notification.items (REQ-F-865), above the server's. */}
+      <ExtNoticeRows ago={ago} />
+      {!notices.length && !extCount ? (
         <Empty icon="bell" title="새 알림이 없어요">
           결정이 필요하거나 백그라운드 작업이 끝나면 여기에 떠요.
         </Empty>

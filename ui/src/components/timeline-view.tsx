@@ -1,5 +1,6 @@
 // The conversation, drawn from the folded log. Tool calls in a row become one compact block; each can be
 // opened to see what it ran and what came back.
+import { SlotActions, SlotSections, useAdded } from './slot-parts'
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { clock, duration, oneLine, shortLabel } from '../lib/format'
@@ -102,6 +103,7 @@ function UserMsgView({ it, session, onImage, onEdit }: { it: Extract<Item, { t: 
           {it.text}
         </div>
       ) : null}
+      <MsgSlots session={session} message={{ key: it.key, seq: it.seq, at: it.at, id: it.id, role: 'user', text: it.text }} />
       <div className="user-meta">
         {held ? <Badge tone="amber">대기 중 · 도구가 끝나면 전달</Badge> : null}
         {dropped ? <Badge tone="red">취소됨</Badge> : null}
@@ -183,6 +185,23 @@ const TextMsg = memo(TextMsgView, (a, b) => a.it === b.it && a.last === b.last &
 type TextProps = { it: Extract<Item, { t: 'text' }>; session: Session; last: boolean; onSend: (text: string) => void; onImage: (s: string) => void }
 
 /**
+ * message.metadata and message.actions (REQ-F-865): what extensions show and offer for one message, under it.
+ * Nothing (no element) when no extension added any.
+ */
+function MsgSlots({ session, message }: { session: Session; message: { key: string; seq: number; at: number; id?: string; role: 'user' | 'assistant'; text: string } }) {
+  const ctx = useMemo(() => ({ sid: session.id, session, message }), [session, message.key, message.text])
+  const meta = useAdded('message.metadata').length
+  const acts = useAdded('message.actions').length
+  if (!meta && !acts) return null
+  return (
+    <div className={`msg-slots msg-slots-${message.role}`}>
+      <SlotSections slot="message.metadata" ctx={ctx} className="slot-sections msg-meta" />
+      <SlotActions slot="message.actions" ctx={ctx} max={3} />
+    </div>
+  )
+}
+
+/**
  * One of Claude's answers through message.render (REQ-F-850): an extension may fold or change it, the page keeps it
  * reachable. A fold is one line that opens; changed words say who changed them and offer the answer's own.
  */
@@ -212,6 +231,7 @@ function TextMsgView(p: TextProps) {
   return (
     <>
       <TextBody {...p} text={text} choices={!shown.folded} />
+      <MsgSlots session={session} message={{ key: it.key, seq: it.seq, at: it.at, role: 'assistant', text: it.text }} />
       {shown.folded || shown.changed ? (
         <div className="msg-changed muted">
           {shown.folded ? `조용히 접은 답${shown.by.length ? ` · ${shown.by.join(', ')}` : ''}` : `${shown.by.join(', ') || '익스텐션'} 이 바꿈`}

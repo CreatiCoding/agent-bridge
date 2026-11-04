@@ -1,6 +1,7 @@
 // 디스크 관리 (REQ-F-801): how full the host's disk is, the caches that can be cleared (each is made again by its own
 // tool), and its home folder by size, where an item can be moved to the Trash. The agent decides what each action may
 // touch; this page only names a cache id or a path inside the home folder. The host's owner only.
+import { SlotActions } from '../components/slot-parts'
 import { useState } from 'react'
 import { errorText, post } from '../lib/api'
 import { bytes, type SysUse } from '../lib/format'
@@ -59,6 +60,8 @@ function Bar({ pct, tone }: { pct: number; tone?: 'amber' | 'red' }) {
     </div>
   )
 }
+
+const fileInfo = (it: { path: string; name: string; kind: string; size?: number | null }) => ({ path: it.path, name: it.name, kind: it.kind, size: it.size ?? null })
 
 export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { hostId: string; online: boolean; sys?: SysUse | null; title?: string }) {
   const [info, setInfo] = useState<Info | null>(null)
@@ -259,6 +262,8 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
                 {scan.parent ? <IconButton icon="up" label="위 폴더로" disabled={!!busy} onClick={() => open(scan.parent!)} /> : null}
                 <code style={{ fontSize: 'var(--fs-small)', wordBreak: 'break-all' }}>{scan.path}</code>
                 {busy?.startsWith('scan:') ? <Spinner /> : null}
+                {/* file-list.* (REQ-F-865): which host and folder, and each item's path, kind and size; nothing to act with. */}
+                <SlotActions slot="file-list.actions" ctx={{ hostId, path: scan.path, items: scan.items.map(fileInfo) }} />
               </div>
               {!scan.parent ? <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-small)' }}>홈 바로 아래 폴더는 옮길 수 없어요. 폴더를 눌러 안으로 들어가 골라 주세요.</p> : null}
               {scan.items.map((it) => (
@@ -277,7 +282,12 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
                     </span>
                   }
                   onClick={it.kind === 'dir' && !it.guarded && !busy ? () => open(it.path) : undefined}
-                  right={it.trashable ? <IconButton icon="trash" label={`${it.name} 휴지통으로`} disabled={!!busy} onClick={(e) => (e.stopPropagation(), trash(it))} /> : null}
+                  right={
+                    <>
+                      <SlotActions slot="file-row.actions" ctx={{ hostId, file: fileInfo(it) }} max={1} />
+                      {it.trashable ? <IconButton icon="trash" label={`${it.name} 휴지통으로`} disabled={!!busy} onClick={(e) => (e.stopPropagation(), trash(it))} /> : null}
+                    </>
+                  }
                 />
               ))}
               {scan.count > scan.items.length ? <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-small)' }}>큰 것부터 {scan.items.length}개만 보여요(모두 {scan.count}개).</p> : null}

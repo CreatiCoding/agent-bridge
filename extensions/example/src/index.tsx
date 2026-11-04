@@ -3,6 +3,7 @@
 //  - session.menu + ui.sheet + storage.user: a note per session
 //  - session-list.row.badges + data.shared: a badge on the sessions that have a note
 //  - app.rail.items + app.menu.items + slots.update: the number of notes on the rail and in the phone's menu
+//  - session.header.actions + app.routes + bridge.version: a note button over a session, and a page of all notes
 //  - settings.section: a switch for the turn-end notice
 //  - session.done + events.claim: that notice, once per person however many pages are open
 //  - renderer.block: a ```checklist block drawn as check boxes
@@ -95,10 +96,43 @@ export default function setup(bridge: Bridge) {
       for (const slot of ['app.rail.items', 'app.menu.items'] as const) bridge.slots.update(slot, 'notes', { busy: false })
     }
   }
-  const showCount = () => void recount().then((n) => bridge.ui.toast(`${t('notes')}: ${n}`), (e) => bridge.ui.toast(String(e), { tone: 'bad' }))
+  // Counts again (busy meanwhile) and opens the page of all notes where the page has one, else says the number.
+  const showCount = () => {
+    const page = bridge.slots.supported('app.routes')
+    if (page) bridge.routes.open('notes')
+    void recount().then((n) => !page && bridge.ui.toast(`${t('notes')}: ${n}`), (e) => bridge.ui.toast(String(e), { tone: 'bad' }))
+  }
   bridge.slots.register('app.rail.items', { id: 'notes', order: { before: 'bell' }, label: t('notes'), icon: 'doc', run: showCount })
   bridge.slots.register('app.menu.items', { id: 'notes', order: { before: 'settings' }, label: t('notes'), icon: 'doc', run: showCount })
   void recount().catch(() => {})
+
+  // session.header.actions and app.routes (REQ-F-865), only on a page that has them (an older one does not).
+  if (bridge.slots.supported('session.header.actions'))
+    bridge.slots.register('session.header.actions', {
+      id: 'note',
+      label: t('note'),
+      icon: 'doc',
+      run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
+    })
+  function NotesPage() {
+    const keys = useNoted()
+    const sessions = bridge.useSessions()
+    return (
+      <div className="stack">
+        {keys.length ? null : <p className="muted">{t('notePlaceholder')}</p>}
+        {keys.map((k) => {
+          const sid = k.slice('note.'.length)
+          const s = sessions.find((x) => x.id === sid)
+          return (
+            <Button key={k} tone="ghost" onClick={() => bridge.ui.sheet.open(NoteSheet, { sid }, { title: s?.title || sid })}>
+              {s?.title || s?.cwd || sid}
+            </Button>
+          )
+        })}
+      </div>
+    )
+  }
+  if (bridge.slots.supported('app.routes')) bridge.slots.register('app.routes', { id: 'notes', title: t('notes'), render: () => <NotesPage /> })
 
   bridge.slots.register('session-list.row.badges', {
     id: 'note',

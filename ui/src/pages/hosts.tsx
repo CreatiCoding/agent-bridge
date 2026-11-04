@@ -1,4 +1,6 @@
 // The Macs: how to connect one, how each is doing (checks, link, agent), and its log.
+import { SlotActions, SlotBadges, SlotSections } from '../components/slot-parts'
+import { hostInfo } from '../lib/host-info'
 import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
 import { ago, batteryLine, batteryLow, bytes, hostBattery, clock, duration, shortPath, sysLine, type SysUse } from '../lib/format'
@@ -145,6 +147,7 @@ export function HostsPage({ me }: { me: Me | null }) {
         <div className="topbar-title">
           <b>기기</b>
         </div>
+        <SlotActions slot="host-list.toolbar" ctx={{ hosts: hosts.map(hostInfo) }} />
       </div>
       <div className="scroll">
         <div className="page stack">
@@ -169,7 +172,13 @@ export function HostsPage({ me }: { me: Me | null }) {
                       })()}
                     </>
                   }
-                  right={<span className={`dot dot-${h.online ? (h.stale || h.problems ? 'amber' : 'green') : 'grey'}`} />}
+                  right={
+                    <>
+                      <SlotBadges slot="host-card.badges" ctx={{ host: hostInfo(h) }} />
+                      <SlotActions slot="host-card.actions" ctx={{ host: hostInfo(h) }} max={1} />
+                      <span className={`dot dot-${h.online ? (h.stale || h.problems ? 'amber' : 'green') : 'grey'}`} />
+                    </>
+                  }
                   onClick={() => go({ name: 'host', id: h.id })}
                   chevron
                 />
@@ -764,6 +773,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   ))}
                 </section>
               ) : null}
+              {h ? <SlotSections slot="host-detail.section" ctx={{ host: hostInfo(h), mine: !others }} /> : null}
             </>
           ) : null}
           {/* The log waits for the status: drawn first, it would be pushed down when the status boxes arrive. */}

@@ -29,7 +29,7 @@ func TestExtExample(t *testing.T) {
 	eq(t, d.ID, "example")
 	eq(t, d.Entry, "dist/index.js")
 	eq(t, strings.Join(d.Actions, ","), "composer.submit,renderer.block,session.done")
-	eq(t, strings.Join(d.Slots, ","), "composer.actions,session.menu,session-list.row.badges,settings.section,app.rail.items,app.menu.items")
+	eq(t, strings.Join(d.Slots, ","), "composer.actions,session.menu,session-list.row.badges,settings.section,app.rail.items,app.menu.items,session.header.actions,app.routes")
 	for n := range d.Files {
 		ok(t, !strings.HasPrefix(n, "node_modules/") && !strings.HasPrefix(n, ".git/") && n != ".gitignore", n)
 	}

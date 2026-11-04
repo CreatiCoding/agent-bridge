@@ -82,10 +82,37 @@ export default function setup(bridge) {
                 bridge.slots.update(slot, 'notes', { busy: false });
         }
     };
-    const showCount = () => void recount().then((n) => bridge.ui.toast(`${t('notes')}: ${n}`), (e) => bridge.ui.toast(String(e), { tone: 'bad' }));
+    // Counts again (busy meanwhile) and opens the page of all notes where the page has one, else says the number.
+    const showCount = () => {
+        const page = bridge.slots.supported('app.routes');
+        if (page)
+            bridge.routes.open('notes');
+        void recount().then((n) => !page && bridge.ui.toast(`${t('notes')}: ${n}`), (e) => bridge.ui.toast(String(e), { tone: 'bad' }));
+    };
     bridge.slots.register('app.rail.items', { id: 'notes', order: { before: 'bell' }, label: t('notes'), icon: 'doc', run: showCount });
     bridge.slots.register('app.menu.items', { id: 'notes', order: { before: 'settings' }, label: t('notes'), icon: 'doc', run: showCount });
     void recount().catch(() => { });
+    // session.header.actions and app.routes (REQ-F-865), only on a page that has them (an older one does not).
+    if (bridge.slots.supported('session.header.actions'))
+        bridge.slots.register('session.header.actions', {
+            id: 'note',
+            label: t('note'),
+            icon: 'doc',
+            run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
+        });
+    function NotesPage() {
+        const keys = useNoted();
+        const sessions = bridge.useSessions();
+        return (h("div", { className: "stack" },
+            keys.length ? null : h("p", { className: "muted" }, t('notePlaceholder')),
+            keys.map((k) => {
+                const sid = k.slice('note.'.length);
+                const s = sessions.find((x) => x.id === sid);
+                return (h(Button, { key: k, tone: "ghost", onClick: () => bridge.ui.sheet.open(NoteSheet, { sid }, { title: s?.title || sid }) }, s?.title || s?.cwd || sid));
+            })));
+    }
+    if (bridge.slots.supported('app.routes'))
+        bridge.slots.register('app.routes', { id: 'notes', title: t('notes'), render: () => h(NotesPage, null) });
     bridge.slots.register('session-list.row.badges', {
         id: 'note',
         render: () => {

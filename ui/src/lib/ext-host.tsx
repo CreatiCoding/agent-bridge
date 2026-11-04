@@ -10,7 +10,8 @@ import { registerShortcut, type Shortcut } from './shortcuts'
 import { SlotContext, onSlotFailed } from './slot-view'
 import { isPrimary } from './primary'
 import { getStore, onExtMessage, onReconnect, useStore } from './store'
-import { parseRoute, useRoute } from './router'
+import { go, parseRoute, useRoute } from './router'
+import { getListFilter, setListFilter, useListFilter } from './list-filter'
 import { Markdown } from './markdown'
 import type { Me } from './types'
 import * as kitAll from '../kit'
@@ -229,6 +230,21 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
       hide: (slot: slots.SlotName, id: string) => (usesSlot(slot), slots.hide(slot, id, owner)),
       update: (slot: slots.SlotName, id: string, patch: Record<string, unknown>) => (usesSlot(slot), slots.update(slot, id, patch, owner)),
       useSlotContext: <C = unknown,>() => React.useContext(SlotContext) as C,
+      /** Whether this page has the slot (an older page may not): check before register to fall back. */
+      supported: (slot: string) => (slots.SLOTS as readonly string[]).includes(slot),
+    },
+    /** What this page gives (REQ-F-865): the API number and every slot with how it is drawn. */
+    version: { extensionApi: EXT_API, slots: slots.SLOTS.map((name) => ({ name, kind: slots.SLOT_KIND[name] })) },
+    /** The session list's search (REQ-F-865): read and change what the list is filtered by. */
+    list: {
+      filter: getListFilter,
+      setFilter: setListFilter,
+      useFilter: useListFilter,
+    },
+    /** This extension's pages (app.routes): the address of one, and going there. */
+    routes: {
+      href: (id: string) => `/x/${owner}/${id}`,
+      open: (id: string) => go({ name: 'ext', ext: owner, page: id }),
     },
     commands: { register: (s: Shortcut) => registerShortcut({ ...s, id: `${owner}.${s.id}` }, owner) },
     ui: {

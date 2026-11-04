@@ -187,8 +187,109 @@ export interface SlotContexts {
   'settings.section': { user: User | null; tab: SettingsTab }
   'app.rail.items': AppCtx
   'app.menu.items': AppCtx
+  // REQ-F-865
+  'session-list.toolbar': ListCtx
+  'session-list.filters': ListCtx
+  'session-list.empty': { filter: string }
+  'session-group.actions': GroupCtx
+  'session-group.badges': GroupCtx
+  'session-group.menu': GroupCtx
+  'session-list.row.actions': { session: Session }
+  'session.header.actions': SessionCtx
+  'session.header.badges': SessionCtx
+  'session-tabs.actions': { sid: string; tabs: Session[]; group: { id: string; name: string } | null }
+  'session-tab.menu': { session: Session; active: boolean; group: { id: string; name: string } | null }
+  'split-pane.actions': SessionCtx
+  'composer.before': ComposerCtx
+  'composer.after': ComposerCtx
+  'composer.status': ComposerCtx
+  'message.actions': MessageCtx
+  'message.metadata': MessageCtx
+  'session.timeline.before': SessionCtx
+  'session.timeline.after': SessionCtx
+  'host-list.toolbar': { hosts: HostInfo[] }
+  'host-card.actions': { host: HostInfo }
+  'host-card.badges': { host: HostInfo }
+  'host-detail.section': { host: HostInfo; mine: boolean }
+  'adopt-list.toolbar': { hostId: string; shown: ConvInfo[]; picked: ConvInfo[] }
+  'adopt-list.row.actions': { hostId: string; conversation: ConvInfo }
+  'session-create.fields': CreateFieldCtx
+  'session-create.summary': { draft: CreateDraft; ext: Record<string, Record<string, unknown>> }
+  'file-list.actions': { hostId: string; path: string; items: FileInfo[] }
+  'file-row.actions': { hostId: string; file: FileInfo }
+  'preview.toolbar': { kind: 'html'; html: string } | { kind: 'server'; sid: string; url: string | null }
+  'app.banner': { route: string }
+  'session.banner': SessionCtx
+  'app.status.items': { route: string }
+  'notification.items': Record<string, never>
+  'settings.tabs': { user: User | null; tab: string }
+  'app.routes': { ext: string; page: string }
 }
 export type SlotName = keyof SlotContexts
+/** How a slot's added items are drawn (bridge.version.slots): see SlotItems for each one's shape. */
+export type SlotKind = 'own' | 'action' | 'menu' | 'section' | 'badge' | 'data'
+
+/** What the slot contexts of REQ-F-865 carry. Read only: act through actions.dispatch and your own routes. */
+export interface ListCtx {
+  /** The list's search text, and changing it (also bridge.list). */
+  filter: string
+  setFilter: (text: string) => void
+  wide: boolean
+}
+export interface GroupCtx {
+  group: { id: string; name: string; parent: string | null }
+  sessions: Session[]
+}
+export interface SessionCtx {
+  sid: string
+  session: Session
+  wide: boolean
+  /** In a pane of a split screen (each pane is its own frame). */
+  pane: boolean
+}
+export interface MessageCtx {
+  sid: string
+  session: Session
+  message: { key: string; seq: number; at: number; id?: string; role: 'user' | 'assistant'; text: string }
+}
+/** A host as slot contexts show it: no keys, paths or logs. */
+export interface HostInfo {
+  id: string
+  name: string
+  kind: string
+  online: boolean
+  runners: string[]
+}
+export interface ConvInfo {
+  conv: string
+  cwd: string
+  runner: string
+  title: string
+  exists: boolean
+}
+export interface FileInfo {
+  path: string
+  name: string
+  kind: string
+  size: number | null
+}
+/** What the new session page is about to start (read only: the page's fields are the page's). */
+export interface CreateDraft {
+  hostId: string
+  cwd: string
+  runner: string
+  model: string
+  effort: string
+  mode: string
+  group: string | null
+  prompt: string
+}
+export interface CreateFieldCtx {
+  draft: CreateDraft
+  /** This extension's own values, reaching its session.create hooks as args.ext[<id>] (never the server). */
+  values: Record<string, unknown>
+  set: (name: string, value: unknown) => void
+}
 
 interface ItemBase {
   /** Unique in its slot, not one of the page's ids. */
@@ -251,6 +352,54 @@ export interface AppItem extends ItemBase {
   wide?: boolean
   run: (ctx: AppCtx) => void
 }
+/**
+ * An `action` or `menu` slot's item (REQ-F-865): data the page draws as a button (more than fit go into ⋯) or a
+ * menu row. Same fields as AppItem; `visible` decides per place from the slot's context.
+ */
+export interface ActionItem<C = unknown> extends ItemBase {
+  label: string
+  icon: IconName
+  hint?: string
+  badge?: number | 'dot' | 'new' | null
+  active?: boolean
+  disabled?: boolean | string
+  busy?: boolean | number
+  danger?: boolean
+  visible?: (ctx: C) => boolean
+  run: (ctx: C) => void
+}
+/** A `section` or `badge` slot's item: drawn as a component under the slot's context (useSlotContext). */
+export interface RenderItem extends ItemBase {
+  render: () => ReactNode
+}
+/** app.status.items: background work as a chip (busy: a spinner, tone: done or failed). */
+export interface StatusItem extends ActionItem<{ route: string }> {
+  tone?: 'ok' | 'bad'
+}
+/** session-create.fields: validate says what is wrong (the start waits and shows it), or nothing. */
+export interface CreateFieldItem extends RenderItem {
+  validate?: (values: Record<string, unknown>, draft: CreateDraft) => string | null | undefined
+}
+/** notification.items: listed above the server's notices and counted on the bell, until closed or taken away. */
+export interface NoticeItem extends ItemBase {
+  title: string
+  text?: string
+  tone?: 'ok' | 'fail' | 'info'
+  at?: number
+  run?: () => void
+  onClose?: () => void
+}
+/** settings.tabs: a tab of its own at /settings/x/<extension>/<id> (id: a-z, 0-9, -). */
+export interface SettingsTabItem extends ItemBase {
+  label: string
+  icon?: IconName
+  render: () => ReactNode
+}
+/** app.routes: a page of its own at /x/<extension>/<id> (bridge.routes.open), in the page's frame. */
+export interface RouteItem extends ItemBase {
+  title: string
+  render: () => ReactNode
+}
 export interface SlotItems {
   'composer.actions': ComposerItem
   'session.menu': SessionMenuItem
@@ -258,6 +407,42 @@ export interface SlotItems {
   'settings.section': SettingsItem
   'app.rail.items': AppItem
   'app.menu.items': AppItem
+  'session-list.toolbar': ActionItem<SlotContexts['session-list.toolbar']>
+  'session-list.filters': RenderItem
+  'session-list.empty': RenderItem
+  'session-group.actions': ActionItem<SlotContexts['session-group.actions']>
+  'session-group.badges': RenderItem
+  'session-group.menu': ActionItem<SlotContexts['session-group.menu']>
+  'session-list.row.actions': ActionItem<SlotContexts['session-list.row.actions']>
+  'session.header.actions': ActionItem<SlotContexts['session.header.actions']>
+  'session.header.badges': RenderItem
+  'session-tabs.actions': ActionItem<SlotContexts['session-tabs.actions']>
+  'session-tab.menu': ActionItem<SlotContexts['session-tab.menu']>
+  'split-pane.actions': ActionItem<SlotContexts['split-pane.actions']>
+  'composer.before': RenderItem
+  'composer.after': RenderItem
+  'composer.status': RenderItem
+  'message.actions': ActionItem<SlotContexts['message.actions']>
+  'message.metadata': RenderItem
+  'session.timeline.before': RenderItem
+  'session.timeline.after': RenderItem
+  'host-list.toolbar': ActionItem<SlotContexts['host-list.toolbar']>
+  'host-card.actions': ActionItem<SlotContexts['host-card.actions']>
+  'host-card.badges': RenderItem
+  'host-detail.section': RenderItem
+  'adopt-list.toolbar': ActionItem<SlotContexts['adopt-list.toolbar']>
+  'adopt-list.row.actions': ActionItem<SlotContexts['adopt-list.row.actions']>
+  'session-create.fields': CreateFieldItem
+  'session-create.summary': RenderItem
+  'file-list.actions': ActionItem<SlotContexts['file-list.actions']>
+  'file-row.actions': ActionItem<SlotContexts['file-row.actions']>
+  'preview.toolbar': ActionItem<SlotContexts['preview.toolbar']>
+  'app.banner': RenderItem
+  'session.banner': RenderItem
+  'app.status.items': StatusItem
+  'notification.items': NoticeItem
+  'settings.tabs': SettingsTabItem
+  'app.routes': RouteItem
 }
 
 /** The page's own items, which order, replace and hide may name. */
@@ -271,6 +456,42 @@ export interface BuiltinIds {
   'settings.section': never
   'app.rail.items': 'logo' | 'sidebar' | 'new' | 'search' | 'usage' | 'report' | 'bell' | 'settings' | 'account'
   'app.menu.items': 'new' | 'new-group' | 'view-group' | 'view-recent' | 'settings' | 'report' | 'account' | 'logout'
+  'session-list.toolbar': never
+  'session-list.filters': never
+  'session-list.empty': never
+  'session-group.actions': never
+  'session-group.badges': never
+  'session-group.menu': never
+  'session-list.row.actions': never
+  'session.header.actions': never
+  'session.header.badges': never
+  'session-tabs.actions': never
+  'session-tab.menu': never
+  'split-pane.actions': never
+  'composer.before': never
+  'composer.after': never
+  'composer.status': never
+  'message.actions': never
+  'message.metadata': never
+  'session.timeline.before': never
+  'session.timeline.after': never
+  'host-list.toolbar': never
+  'host-card.actions': never
+  'host-card.badges': never
+  'host-detail.section': never
+  'adopt-list.toolbar': never
+  'adopt-list.row.actions': never
+  'session-create.fields': never
+  'session-create.summary': never
+  'file-list.actions': never
+  'file-row.actions': never
+  'preview.toolbar': never
+  'app.banner': never
+  'session.banner': never
+  'app.status.items': never
+  'notification.items': never
+  'settings.tabs': never
+  'app.routes': never
 }
 
 // ---------- shortcuts ----------
@@ -374,7 +595,15 @@ export interface Bridge {
     update: <S extends SlotName>(slot: S, id: string, patch: Partial<Omit<SlotItems[S], 'id' | 'order'>>) => void
     /** Inside an item's render: the slot's context (SlotContexts). */
     useSlotContext: <C = unknown>() => C
+    /** Whether this page has the slot: an older page may not, so check before register to fall back. */
+    supported: (slot: string) => boolean
   }
+  /** What this page gives: the API number and every slot with how it is drawn. */
+  version: { extensionApi: number; slots: { name: SlotName; kind: SlotKind }[] }
+  /** The session list's search text. */
+  list: { filter: () => string; setFilter: (text: string) => void; useFilter: () => string }
+  /** This extension's pages (app.routes). */
+  routes: { href: (id: string) => string; open: (id: string) => void }
   commands: { register: (s: Shortcut) => () => void }
   ui: {
     /** A sheet with its own back-button entry: back (or an iOS swipe) closes it. Comp also gets close. */

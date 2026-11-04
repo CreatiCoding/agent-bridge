@@ -2,6 +2,8 @@
 // and disk bars, the battery, and 세션 정리 in a line. A card opens that host's box in 디스크 관리 (/disk?host=<id>),
 // where its disk and 세션 정리 are handled as before. An operator also sees everyone else's hosts below, in the same
 // cards, under the same rules as the disk menu (REQ-F-804: 세션 정리 only once the owner has granted it).
+import { SlotActions, SlotBadges } from './slot-parts'
+import { hostInfo } from '../lib/host-info'
 import { useEffect, useState } from 'react'
 import { get } from '../lib/api'
 import { boardOrder, meters, tidyCardText, type Meter } from '../lib/device-board'
@@ -80,6 +82,9 @@ function DeviceCard({ h, me }: { h: BoardHost; me: Me | null }) {
         <span className={`dot dot-${h.online ? 'green' : 'grey'}`} aria-hidden />
         <b className="dev-card-name">{label}</b>
         <span className="dev-card-state">{h.online ? '연결됨' : `끊김${h.lastSeen ? ` · ${ago(h.lastSeen)}` : ''}`}</span>
+        {/* host-card.* (REQ-F-865): the card is a link, so an action stops it from opening. */}
+        <SlotBadges slot="host-card.badges" ctx={{ host: hostInfo(h) }} />
+        <SlotActions slot="host-card.actions" ctx={{ host: hostInfo(h) }} max={1} />
         <span className="sr-only">· 디스크 관리·세션 정리 열기</span>
         <Icon name="forward" />
       </div>
