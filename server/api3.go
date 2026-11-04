@@ -629,6 +629,21 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 		noteAnswer(b["card"].(string), M{"n": n, "via": "card", "by": curBy()})
 		sessAfter("permission.answer", meta, kv{"card", card}, kv{"option", option})
 	case "setting":
+		// A codex session's sandbox and approval (REQ-F-854): kept here and on its Mac, taken when it opens next.
+		if b["kind"] == "codexMode" {
+			v := mustCodexMode(b["value"])
+			sessBefore("session.setting", meta, kv{"kind", "codexMode"}, kv{"value", v})
+			toHost(liveHost(meta), M{"t": "setting", "sid": meta.id(), "kind": "codexMode", "value": v})
+			if v == "" {
+				meta.del("codexMode")
+			} else {
+				meta.set("codexMode", v)
+			}
+			touch(meta)
+			broadcastState(meta.uid())
+			sessAfter("session.setting", meta, kv{"kind", "codexMode"}, kv{"value", v})
+			break
+		}
 		if !containsAny([]any{"model", "effort", "mode"}, b["kind"]) {
 			refuse(400, "없는 설정입니다")
 		}

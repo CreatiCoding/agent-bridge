@@ -64,6 +64,9 @@ description: 서버 설정 파일 bridge.yaml 이 받는 모든 키를 형식, �
 | 키 | 형식 | 기본값 | 뜻 |
 |---|---|---|---|
 | `features.permissionModes` | 모드 목록 | 여섯 모드 전부 | 고를 수 있는 권한 모드예요. 항목은 `default`·`acceptEdits`·`plan`·`auto`·`autoAllow`·`allowAll`(대소문자 그대로)이에요. `default` 는 적지 않아도 늘 들어 있어요. |
+| `features.codexSandboxes` | 목록 | `read-only`, `workspace-write` | Codex 세션에서 고를 수 있는 샌드박스예요. `danger-full-access` 는 받지 않아요. 고르지 않은 세션(Codex 기본값)은 늘 돼요. |
+| `features.codexApprovals` | 목록 | `on-request`, `never` | Codex 세션에서 고를 수 있는 승인 방식이에요. |
+| `features.codexNetwork` | true·false | true | Codex 세션의 workspace-write 샌드박스 안에서 네트워크를 허용할 수 있는지예요. |
 
 권한 모드의 키와 화면(새 세션, 세션 설정)의 이름은 이래요.
 

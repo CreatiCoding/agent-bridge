@@ -32,12 +32,38 @@ export function rolloutId(file) {
 export const CODEX_MODEL_RE = /^[\w.-]{1,60}$/
 
 /**
+ * The sandbox and approval mode a codex session starts with (REQ-F-854), as one string `<sandbox>:<approval>[:net]`.
+ * Either part may be empty: codex's own default (config.toml) for it, as before 1.414. '' is both defaults.
+ * danger-full-access and --dangerously-bypass-… are never taken. `:net` (network in the sandbox) only with workspace-write.
+ */
+export const CODEX_SANDBOXES = Object.freeze(['read-only', 'workspace-write'])
+// codex-cli 0.166 lists only these two for -a (`untrusted` is not one of its values any more).
+export const CODEX_APPROVALS = Object.freeze(['on-request', 'never'])
+
+/** The mode string read: { sandbox, approval, network }, or null when it is not one. */
+export function parseCodexMode(v) {
+  if (v == null || v === '') return { sandbox: '', approval: '', network: false }
+  if (typeof v !== 'string') return null
+  const m = /^([a-z-]*):([a-z-]*)(:net)?$/.exec(v)
+  if (!m) return null
+  const [, sandbox, approval, net] = m
+  if (sandbox && !CODEX_SANDBOXES.includes(sandbox)) return null
+  if (approval && !CODEX_APPROVALS.includes(approval)) return null
+  if (net && sandbox !== 'workspace-write') return null
+  return { sandbox, approval, network: !!net }
+}
+
+/** The mode as it is kept: '' for both defaults. */
+export const codexModeStr = (m) => (!m || (!m.sandbox && !m.approval) ? '' : `${m.sandbox}:${m.approval}${m.network && m.sandbox === 'workspace-write' ? ':net' : ''}`)
+
+/**
  * The arguments codex starts with. `resume`: the conversation id to go on with (`codex resume <id>`). The folder is the
  * terminal's (tmux -c), not an argument. Nothing here comes from the server unchecked: the id and the model are
- * checked by shape, the prompt is one argument, and nothing turns approvals or the sandbox off.
- * @param {{ resume?: string|null, model?: string, prompt?: string, instructions?: string }} o
+ * checked by shape, the prompt is one argument, and the sandbox and approval are only the ones parseCodexMode takes
+ * (never danger-full-access or the bypass flag).
+ * @param {{ resume?: string|null, model?: string, prompt?: string, instructions?: string, mode?: string }} o
  */
-export function codexArgs({ resume = null, model, prompt, instructions, cwd } = {}) {
+export function codexArgs({ resume = null, model, prompt, instructions, cwd, mode } = {}) {
   const out = []
   if (resume) {
     if (!CODEX_ID_RE.test(resume)) throw new Error('codex 대화 id 가 올바르지 않아요')
@@ -50,6 +76,15 @@ export function codexArgs({ resume = null, model, prompt, instructions, cwd } = 
   // trust is answered for a bridge session: its question comes seconds after the input box, and what is typed then is lost.
   if (cwd) out.push('-c', `projects.${JSON.stringify(String(cwd))}.trust_level="trusted"`)
   if (model && CODEX_MODEL_RE.test(model)) out.push('-m', model)
+  // The sandbox and approval asked for (REQ-F-854); none is codex's default. A resume takes them too, so a conversation
+  // another tool wrote as workspace-write opens in the mode chosen here, not codex's default.
+  if (mode) {
+    const m = parseCodexMode(mode)
+    if (!m) throw new Error('codex 샌드박스·승인 모드가 올바르지 않아요')
+    if (m.sandbox) out.push('-s', m.sandbox)
+    if (m.approval) out.push('-a', m.approval)
+    if (m.network) out.push('-c', 'sandbox_workspace_write.network_access=true')
+  }
   // The bridge's instructions to the model, as developer instructions for this run only (config.toml is not touched).
   if (instructions) out.push('-c', `developer_instructions=${JSON.stringify(String(instructions))}`)
   if (prompt) out.push(String(prompt))

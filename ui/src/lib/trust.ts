@@ -388,6 +388,8 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     if (body.chrome === false) i.chrome = false
     // The runner is signed too (REQ-F-851): a server cannot start another program than the one asked for.
     if (typeof body.runner === 'string' && body.runner && body.runner !== 'claude') i.runner = body.runner.slice(0, 16)
+    // A Codex session's sandbox and approval too (REQ-F-854): a server cannot loosen what was picked.
+    if (body.runner === 'codex' && typeof body.codexMode === 'string' && body.codexMode) i.codexMode = body.codexMode.slice(0, 60)
     return [{ h, t: 'new', i }]
   }
   const hm = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/([\w-]+)$/.exec(path)
@@ -396,7 +398,7 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     if (op === 'heal') return [{ h, t: 'heal', i: { action: body.action } }]
     // 맥의 대화 가져오기: the Mac checks that the conversation was written in the signed folder.
     // A Codex conversation's runner is signed with it (REQ-F-853).
-    if (op === 'adopt' && typeof body.conv === 'string') return [{ h, t: 'adopt', i: { conv: body.conv, cwd: str(body.cwd).slice(0, 1000), ...(body.runner === 'codex' ? { runner: 'codex' } : {}) } }]
+    if (op === 'adopt' && typeof body.conv === 'string') return [{ h, t: 'adopt', i: { conv: body.conv, cwd: str(body.cwd).slice(0, 1000), ...(body.runner === 'codex' ? { runner: 'codex', ...(typeof body.codexMode === 'string' && body.codexMode ? { codexMode: body.codexMode.slice(0, 60) } : {}) } : {}) } }]
     if (op === 'background') return [{ h, t: 'background', i: { on: body.on === true } }]
     if (op === 'awake') return [{ h, t: 'awake', i: { ...(typeof body.idle === 'boolean' ? { idle: body.idle } : {}), ...(typeof body.lid === 'boolean' ? { lid: body.lid } : {}) } }]
     if (op === 'compact') return [{ h, t: 'compact', i: { window: body.window ?? null } }]

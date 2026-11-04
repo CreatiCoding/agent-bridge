@@ -16,6 +16,7 @@ import { act, command, sessionPost } from './session-menu'
 import { AllowHint, confirmAllowAll } from './auto-allow-confirm'
 import { featureOn } from '../lib/features'
 import { openLink } from '../lib/builtin-actions'
+import { CodexModeFields } from './codex-mode'
 
 /** How a to-do's state reads at a glance (REQ-F-778). */
 const TODO_MARK: Record<string, string> = { completed: 'todoDone', in_progress: 'todoNow', pending: 'todo' }
@@ -378,7 +379,15 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
         <Spinner />
       ) : (
         <>
-          {runnerLabel(s) ? <p className="muted">{runnerLabel(s)} 세션이에요. 모델·생각 수준·권한 모드는 터미널의 {runnerLabel(s)} 에서 바꿔요.</p> : null}
+          {runnerLabel(s) ? <p className="muted">{runnerLabel(s)} 세션이에요. 모델·생각 수준은 터미널의 {runnerLabel(s)} 에서 바꿔요.</p> : null}
+          {s.runner === 'codex' ? (
+            <>
+              <p className="muted" style={{ fontSize: 'var(--fs-small)' }}>
+                샌드박스·승인 모드는 다음에 다시 열 때(codex resume) 적용돼요. 지금 도는 codex 는 그대로예요.
+              </p>
+              <CodexModeFields value={s.codexMode ?? ''} onChange={(v) => act(() => sessionPost(s, 'setting', { kind: 'codexMode', value: v }), '다음에 다시 열 때 이 모드로 떠요')} />
+            </>
+          ) : null}
           {runnerCan(s, 'model') ? (
           <Field label="모델" hint="Claude Code 가 이 맥의 기본값으로도 저장해요">
             <select className="input" value={opts.models.some((m) => m.value === model) ? model : ''} onChange={(e) => act(() => command(s, 'model', e.target.value), '모델을 바꿨어요')}>

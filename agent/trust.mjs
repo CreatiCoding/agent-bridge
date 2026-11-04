@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 7
+export const TRUST_VERSION = 8
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -111,12 +111,13 @@ export const TRUST_CLASS = {
   // the bridge MCP's attach (by the id the session made) and another Mac's read_session (refused while sealing)
   attachment: 'free', convread: 'free',
   // actions
-  new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner'], keep: ['sid', 'prompt'] },
+  // A codex session's sandbox and approval (REQ-F-854) are signed with it: a server cannot loosen them.
+  new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner', 'codexMode'], keep: ['sid', 'prompt'] },
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
   // 맥의 대화 가져오기: the conversation and its folder are signed; the Mac opens it only when its transcript was
   // written in that folder (agent.mjs adopt). The server's sysPrompt·routing are dropped, as for new.
   // A codex conversation names its runner, signed too (REQ-F-853).
-  adopt: { i: ['conv', 'cwd', 'runner'], keep: ['sid'] },
+  adopt: { i: ['conv', 'cwd', 'runner', 'codexMode'], keep: ['sid'] },
   send: { i: ['sid', 'textH', 'imgs'], keep: ['text', 'files', 'id'] },
   sendnow: { i: ['sid'] },
   esc: { i: ['sid'] },

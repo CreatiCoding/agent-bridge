@@ -72,6 +72,37 @@ func TestFeatureKeysRefuse(t *testing.T) {
 	}
 }
 
+// Codex sessions' sandbox and approval (REQ-F-854, AC-1598): shape errors are 400, what bridge.yaml leaves out is 403,
+// codex's own default is always allowed and full access is never a value.
+func TestCodexModes(t *testing.T) {
+	withCfg(t, "")
+	ok(t, reflect.DeepEqual(cfgGet("features.codexSandboxes"), CODEX_SANDBOXES) && reflect.DeepEqual(cfgGet("features.codexApprovals"), CODEX_APPROVALS) && cfgOn("features.codexNetwork"), "기본은 전부")
+	for in, want := range map[any]string{nil: "", "": "", ":": "", "workspace-write:on-request:net": "workspace-write:on-request:net", ":never": ":never", "read-only:": "read-only:"} {
+		s, code, _ := codexMode(in)
+		ok(t, code == 0 && s == want, jsString(in))
+	}
+	for _, bad := range []any{"danger-full-access:never", "read-only::net", ":untrusted", "x", 3, "workspace-write:never:net:x"} {
+		_, code, _ := codexMode(bad)
+		eq(t, code, 400, jsString(bad))
+	}
+	withCfg(t, "features:\n  codexSandboxes: [read-only]\n  codexApprovals: [on-request]\n  codexNetwork: false\n")
+	for _, off := range []string{"workspace-write:", ":never", "read-only:never"} {
+		_, code, why := codexMode(off)
+		ok(t, code == 403 && why == FEATURE_OFF, off)
+	}
+	s, code, _ := codexMode("read-only:on-request")
+	ok(t, code == 0 && s == "read-only:on-request")
+	_, code, _ = codexMode("")
+	eq(t, code, 0, "codex 기본값은 늘 됨")
+	withCfg(t, "features:\n  codexNetwork: false\n")
+	_, code, _ = codexMode("workspace-write:never:net")
+	eq(t, code, 403, "네트워크 끔")
+	for _, src := range []string{"features:\n  codexSandboxes: [danger-full-access]\n", "features:\n  codexApprovals: [untrusted]\n"} {
+		_, err := parseBridgeConfig("/x/bridge.yaml", []byte(src), envMap(nil))
+		ok(t, err != nil && strings.Contains(err.Error(), "모르는 값"), src)
+	}
+}
+
 // A mode outside permissionModes is lowered to default (asking), not refused; the defaults and the list follow.
 func TestPermissionModesLower(t *testing.T) {
 	withCfg(t, "features:\n  permissionModes: [plan]\n")
@@ -150,7 +181,7 @@ func TestFeaturesOffAtAPI(t *testing.T) {
 	withCfg(t, "features:\n  webpush: false\n  voice: false\n  skills: false\n  slack: false\n  reports: false\n  permissionModes: [plan]\n")
 	code, body := callAPI(t, "GET", "/api/me", "")
 	eq(t, code, 200)
-	jeq(t, oget(js(body), "features"), `{"background":true,"permissionModes":["default","plan"],"preview":true,"proxyLogin":false,"remoteKeys":true,"reports":false,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
+	jeq(t, oget(js(body), "features"), `{"background":true,"codexApprovals":["on-request","never"],"codexNetwork":true,"codexSandboxes":["read-only","workspace-write"],"permissionModes":["default","plan"],"preview":true,"proxyLogin":false,"remoteKeys":true,"reports":false,"sessionMove":true,"skills":false,"slack":false,"voice":false,"webpush":false}`, body)
 	// Who is signed in, and how (REQ-F-824: an extension's settings section gets them).
 	uid, _ := oget(js(body), "uid").(string)
 	ok(t, uid != "", body)

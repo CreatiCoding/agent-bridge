@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.414',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: 'Codex 세션의 샌드박스(read-only·workspace-write)·승인(on-request·never)을 새 세션·맥의 대화 이어 가기에서 고름. workspace-write 면 샌드박스 안 네트워크 허용도. 고르지 않으면 지금처럼 codex 기본값. danger-full-access 는 없음',
+        refs: ['REQ-F-854', 'REQ-F-851', 'REQ-F-853'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: 'Codex 세션 설정에서 샌드박스·승인을 바꾸면 다음에 다시 열 때(codex resume) 그 모드로 뜸',
+        refs: ['REQ-F-854'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: 'bridge.yaml features.codexSandboxes·codexApprovals·codexNetwork 로 고를 수 있는 Codex 모드를 제한. 밖의 값은 403',
+        refs: ['REQ-F-854', 'REQ-F-812'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'ui'],
+        text: 'Codex 모드(codexMode)를 new·adopt 서명 항목에 넣어 서버가 바꿔 넣지 못함. 서명 맥의 다시 열기는 맥의 기록만 씀. trust 판 8',
+        refs: ['REQ-F-854', 'REQ-S-091'],
+      },
+    ],
+  },
+  {
     version: '1.413',
     date: '2026-11-04',
+    commit: 'fedba92',
     changes: [
       {
         kind: 'added',

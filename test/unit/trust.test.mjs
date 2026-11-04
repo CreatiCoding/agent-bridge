@@ -287,7 +287,7 @@ test('agent adopt refuses a server sid that is a path or already open while trus
 
 test('adopt is signed by its conversation and folder; what the server adds is dropped (AC-1586)', () => {
   const rule = classOf({ t: 'adopt' })
-  assert.deepEqual(rule.i, ['conv', 'cwd', 'runner'], '1.413: codex 대화면 runner 도 서명')
+  assert.deepEqual(rule.i, ['conv', 'cwd', 'runner', 'codexMode'], '1.413: codex 대화면 runner 도, 1.414: 샌드박스·승인 모드도 서명')
   assert.deepEqual(rule.keep, ['sid'])
   const cmd = { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'server-conv', cwd: '/server', sysPrompt: 'evil', routing: { x: 1 }, autoPush: true }
   assert.deepEqual(rebuild(cmd, rule, { conv: 'c', cwd: '~/p' }), { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '~/p' })
@@ -303,7 +303,7 @@ test('agent adopt checks the signed folder and a live claude in every account fo
 
 test('a codex adopt carries its runner only when signed; the sealed list binds it (1.413, AC-1596)', async () => {
   const rule = classOf({ t: 'adopt' })
-  assert.deepEqual(rule.i, ['conv', 'cwd', 'runner'])
+  assert.deepEqual(rule.i, ['conv', 'cwd', 'runner', 'codexMode'])
   const cmd = { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '/evil', runner: 'codex', routing: { on: true } }
   assert.deepEqual(rebuild(cmd, rule, { conv: 'c', cwd: '~/p', runner: 'codex' }), { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '~/p', runner: 'codex' })
   assert.equal(rebuild(cmd, rule, { conv: 'c', cwd: '~/p' }).runner, undefined, '서명에 없는 runner 는 빠짐')
@@ -313,4 +313,13 @@ test('a codex adopt carries its runner only when signed; the sealed list binds i
   const r = sealOut({ t: 'recent', reqId: 'r', ok: true, home: '/Users/u', conversations: [{ conv, cwd: '/Users/u/p', title: '', first: '첫 글', last: '끝', mtime: 1, size: 2, active: false, exists: true, runner: 'codex' }] }, t.sealer())
   assert.deepEqual(JSON.parse(await pageOpen(k, 'host-a', r.conversations[0].bound)), { conv, cwd: '/Users/u/p', title: '', first: '첫 글', runner: 'codex' })
   assert.ok(TRUST_VERSION >= 7)
+})
+
+test('a codex session sandbox and approval is signed with new and adopt (1.414, AC-1599)', () => {
+  assert.ok(classOf({ t: 'new' }).i.includes('codexMode'))
+  const rule = classOf({ t: 'adopt' })
+  const cmd = { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '/p', runner: 'codex', codexMode: 'workspace-write:never:net' }
+  assert.equal(rebuild(cmd, rule, { conv: 'c', cwd: '/p', runner: 'codex' }).codexMode, undefined, '서명에 없는 모드는 빠짐(codex 기본값)')
+  assert.equal(rebuild(cmd, rule, { conv: 'c', cwd: '/p', runner: 'codex', codexMode: 'read-only:on-request' }).codexMode, 'read-only:on-request', '서명한 모드가 이김')
+  assert.ok(TRUST_VERSION >= 8)
 })

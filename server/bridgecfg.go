@@ -41,6 +41,10 @@ var CFG_KEYS = []cfgKey{
 	{"features.remoteKeys", "", "bool", true},
 	{"features.reports", "", "bool", true},
 	{"features.permissionModes", "", "modes", LAUNCH_MODES},
+	// Codex sessions' sandbox and approval (REQ-F-854): what may be chosen besides codex's own default.
+	{"features.codexSandboxes", "", "csandbox", CODEX_SANDBOXES},
+	{"features.codexApprovals", "", "capproval", CODEX_APPROVALS},
+	{"features.codexNetwork", "", "bool", true},
 	{"csp.frameSrc", "", "src", []string{}},
 	{"csp.imgSrc", "", "src", []string{}},
 	{"privacy.file", "", "path", ""},
@@ -541,6 +545,21 @@ func checkList(k cfgKey, line int, items []string, ref bool) (cfgVal, bool, erro
 		for _, m := range items {
 			if !contains(LAUNCH_MODES, m) {
 				return cfgVal{}, false, &yamlErr{line, k.key + " 의 " + m + " 는 모르는 모드입니다(받는 모드: " + strings.Join(LAUNCH_MODES, ", ") + ")"}
+			}
+			if !contains(out, m) {
+				out = append(out, m)
+			}
+		}
+		return cfgVal{out, ref}, true, nil
+	case "csandbox", "capproval":
+		known := CODEX_SANDBOXES
+		if k.kind == "capproval" {
+			known = CODEX_APPROVALS
+		}
+		out := []string{}
+		for _, m := range items {
+			if !contains(known, m) {
+				return cfgVal{}, false, &yamlErr{line, k.key + " 의 " + m + " 는 모르는 값입니다(받는 값: " + strings.Join(known, ", ") + ")"}
 			}
 			if !contains(out, m) {
 				out = append(out, m)

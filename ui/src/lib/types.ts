@@ -164,6 +164,8 @@ export interface Session {
   delegatedBy?: string
   /** The CLI it runs (REQ-F-851): none or 'claude' is Claude Code; another is one its Mac listed in `runners`. */
   runner?: string
+  /** A Codex session's sandbox and approval (REQ-F-854): `<sandbox>:<approval>[:net]`, none for codex's default. */
+  codexMode?: string
 }
 
 /** A Claude account on a Mac (설정 → Claude 계정). Each is a config folder of its own with its own sign-in. */
@@ -391,6 +393,10 @@ export interface Features {
   /** 1.406: false hides 문제 제보 (features.reports); an older server says nothing, which is on. */
   reports?: boolean
   permissionModes: string[]
+  /** 1.414 (REQ-F-854): the Codex sandboxes·approvals that may be picked, and whether network in the sandbox may be. */
+  codexSandboxes?: string[]
+  codexApprovals?: string[]
+  codexNetwork?: boolean
   background: boolean
   proxyLogin?: boolean
 }

@@ -10,6 +10,8 @@ import { NONE, useStore } from '../lib/store'
 import type { Options } from '../lib/types'
 import { Badge, Button, Empty, Field, Icon, IconButton, NO_AUTOFILL, Segmented, Spinner, Switch, useWide } from '../kit'
 import { AdoptList, presetAdopt } from './adopt-list'
+import { CodexModeFields } from '../components/codex-mode'
+import { codexAllowed } from '../lib/codex-mode'
 import { confirmLaunchMode } from '../components/auto-allow-confirm'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { confirmDialog, toast } from '../kit/overlay'
@@ -69,6 +71,9 @@ export function NewSessionPage() {
   const [runnerPick, setRunnerPick] = useState<string>(() => getPref('newRunner', 'claude'))
   const runner = runners.some((r) => r.id === runnerPick) ? runnerPick : 'claude'
   const claude = runner === 'claude'
+  // A Codex session's sandbox and approval (REQ-F-854); the last pick is kept, within what this server allows.
+  const [codexPick, setCodexPick] = useState<string>(() => getPref('newCodexMode', ''))
+  const codexMode = runner === 'codex' ? codexAllowed(codexPick) : ''
   const accountPicked = accounts.find((a) => a.id === accountPick && a.loggedIn !== false)?.id ?? ''
   const account = claude ? accountPicked : ''
 
@@ -131,11 +136,12 @@ export function NewSessionPage() {
       // the session's box sends one: videos up first, then words, pictures and videos together. The Mac holds a
       // message said while the session is still starting and hands it over once it is up.
       const first = attached ? { prompt: '', title: prompt } : { prompt }
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: '' }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: '', ...(codexMode ? { codexMode } : {}) }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       if (claude) setPref('newAccount', account)
       setPref('newRunner', runner)
+      if (runner === 'codex') setPref('newCodexMode', codexMode)
       if (!auto) setPref('newCwd', cwd)
       if (attached) {
         try {
@@ -208,6 +214,7 @@ export function NewSessionPage() {
               </div>
             </Field>
           ) : null}
+          {tab === 'new' && runner === 'codex' ? <CodexModeFields value={codexMode} onChange={setCodexPick} /> : null}
           {tab === 'new' && claude && accounts.length > 1 ? (
             <Field label="Claude 계정" hint="로그인이 필요한 계정은 설정 → Claude 계정에서 먼저 로그인해요">
               <div className="hstack" style={{ flexWrap: 'wrap' }}>

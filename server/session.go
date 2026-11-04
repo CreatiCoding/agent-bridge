@@ -104,8 +104,16 @@ func startSession(uid string, b M, req *Req) string {
 		title = jsSliceTo(collapse(prompt), 80)
 	}
 	meta := newMeta(uid, sid, hostID, M{"title": title})
+	// A codex session's sandbox and approval (REQ-F-854), checked before the session exists.
+	codexM := ""
+	if runner == "codex" {
+		codexM = mustCodexMode(b["codexMode"])
+	}
 	if runner != "" {
 		meta.set("runner", runner)
+	}
+	if codexM != "" {
+		meta.set("codexMode", codexM)
 	}
 	st := noState()
 	st["alive"] = true
@@ -176,6 +184,9 @@ func startSession(uid string, b M, req *Req) string {
 	}
 	if runner != "" {
 		cmd["runner"] = runner
+	}
+	if codexM != "" {
+		cmd["codexMode"] = codexM
 	}
 	// A folder made here for a hand-over (REQ-F-760): the Mac records it, with the base it must be under, so it can go.
 	if base, ok := b["dirBase"].(string); ok && base != "" && internal && cmd["create"] == true {
@@ -469,6 +480,10 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 	}
 	if r := runnerOf(meta); r != "" {
 		open["runner"] = r
+		// The mode chosen last (REQ-F-854): a trust Mac takes only its own record.
+		if r == "codex" {
+			open["codexMode"] = meta.str("codexMode")
+		}
 	}
 	if truthy(meta.get("mdFile")) {
 		open["mdFile"] = meta.get("mdFile")

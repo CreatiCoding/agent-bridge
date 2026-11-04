@@ -100,6 +100,10 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		// A codex conversation names its runner (REQ-F-853); none is Claude Code's.
 		runner := pickRunner(m[1], b["runner"])
+		codexM := ""
+		if runner == "codex" {
+			codexM = mustCodexMode(b["codexMode"])
+		}
 		for _, s := range sessions.Values() {
 			if s.uid() == uid && s.get("conv") == b["conv"] && !truthy(s.get("closed")) {
 				refuse(409, "이미 bridge 세션으로 열려 있는 대화입니다")
@@ -126,6 +130,9 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		if runner != "" {
 			meta.set("runner", runner)
 		}
+		if codexM != "" {
+			meta.set("codexMode", codexM)
+		}
 		st := noState()
 		st["alive"] = true
 		st["phase"] = "starting"
@@ -135,6 +142,9 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		if runner != "" {
 			cmd["runner"] = runner
 			delete(cmd, "routing")
+		}
+		if codexM != "" {
+			cmd["codexMode"] = codexM
 		}
 		r := ask(m[1], cmd, 90_000)
 		if !truthy(r["ok"]) {

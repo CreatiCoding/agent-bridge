@@ -10,6 +10,9 @@ import { confirmDialog, toast } from '../kit/overlay'
 import { openSession } from '../lib/builtin-actions'
 import { NONE, useStore } from '../lib/store'
 import { openSealed, openText, sealsTo } from '../lib/trust'
+import { getPref, setPref } from '../lib/local'
+import { CodexModeFields } from '../components/codex-mode'
+import { codexAllowed, codexModeLabel } from '../lib/codex-mode'
 
 interface Conversation {
   conv: string
@@ -75,7 +78,12 @@ export function AdoptList({ hostId }: { hostId: string }) {
 
   const nameOf = (c: Conversation) => c.title || c.first || '(제목 없음)'
   // The conversation's own title or first words; never the placeholder the list shows for one without either.
-  const adoptOne = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first, ...(c.runner === 'codex' ? { runner: 'codex' } : {}) })
+  // A Codex conversation opens in the sandbox and approval picked here (REQ-F-854), not codex's default alone: one
+  // another tool ran as workspace-write would otherwise come back read-only.
+  const [codexPick, setCodexPick] = useState<string>(() => getPref('newCodexMode', ''))
+  const codexMode = codexAllowed(codexPick)
+  const pickCodex = (v: string) => (setCodexPick(v), setPref('newCodexMode', v))
+  const adoptOne = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first, ...(c.runner === 'codex' ? { runner: 'codex', ...(codexMode ? { codexMode } : {}) } : {}) })
   const resumeOf = (c: Conversation) => (c.runner === 'codex' ? 'codex resume' : 'claude --resume')
 
   const adopt = async (c: Conversation) => {
@@ -171,6 +179,14 @@ export function AdoptList({ hostId }: { hostId: string }) {
           <Icon name="warn" />
           <div className="banner-body">봉인되지 않은 항목 {list.dropped}개는 뺐어요. 맥의 에이전트를 업데이트했는지 봐 주세요.</div>
         </div>
+      ) : null}
+      {mixed ? (
+        <details className="card" style={{ padding: 12 }}>
+          <summary>Codex 대화를 열 모드{` · ${codexModeLabel(codexMode) || 'Codex 기본값'}`}</summary>
+          <div style={{ marginTop: 12 }}>
+            <CodexModeFields value={codexMode} onChange={pickCodex} />
+          </div>
+        </details>
       ) : null}
       {missing.length ? (
         <div className="banner">

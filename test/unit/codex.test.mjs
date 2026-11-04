@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -48,6 +48,21 @@ test('codex starts with its own process, the folder trusted for this run, and no
   assert.deepEqual(codexArgs({ resume: ID }).slice(0, 2), ['resume', ID])
   assert.throws(() => codexArgs({ resume: '../../etc' }), /올바르지/)
   assert.ok(!codexArgs({ model: 'a b; rm' }).includes('-m'))
+})
+
+test('codex sandbox and approval: only the modes asked for, never full access or the bypass (1.414, AC-1597)', () => {
+  assert.deepEqual(parseCodexMode(''), { sandbox: '', approval: '', network: false })
+  assert.deepEqual(parseCodexMode('workspace-write:on-request:net'), { sandbox: 'workspace-write', approval: 'on-request', network: true })
+  assert.deepEqual(parseCodexMode(':never'), { sandbox: '', approval: 'never', network: false })
+  for (const bad of ['danger-full-access:never', 'read-only::net', ':untrusted', 'x', 'read-only', 'workspace-write:never:net:x', 1]) assert.equal(parseCodexMode(bad), null, String(bad))
+  assert.equal(codexModeStr(parseCodexMode(':')), '', '둘 다 기본이면 빈 값')
+  const a = codexArgs({ resume: ID, mode: 'workspace-write:never:net' })
+  assert.deepEqual(a.slice(0, 2), ['resume', ID])
+  const flat = a.join(' ')
+  assert.ok(flat.includes('-s workspace-write -a never -c sandbox_workspace_write.network_access=true'), flat)
+  assert.deepEqual(codexArgs({ mode: 'read-only:' }).slice(-2), ['-s', 'read-only'])
+  assert.ok(!codexArgs({}).includes('-s') && !codexArgs({}).includes('-a'), '고르지 않으면 codex 기본값')
+  assert.throws(() => codexArgs({ mode: 'danger-full-access:never' }), /모드/)
 })
 
 test('codex home: CODEX_HOME when it is absolute, else ~/.codex; rollout ids from file names', () => {

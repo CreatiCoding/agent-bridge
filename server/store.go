@@ -328,6 +328,10 @@ func featuresOf() M {
 		modes = append(modes, m)
 	}
 	out["permissionModes"] = modes
+	// What a codex session may be started with besides codex's default (REQ-F-854).
+	out["codexSandboxes"] = anyList(cfgGet("features.codexSandboxes").([]string))
+	out["codexApprovals"] = anyList(cfgGet("features.codexApprovals").([]string))
+	out["codexNetwork"] = cfgOn("features.codexNetwork")
 	return out
 }
 

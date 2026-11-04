@@ -17,5 +17,8 @@ export const featureOn = (name: Feature) => current?.[name] !== false
  * proxy through a visible window on the Mac (REQ-F-833). An older server said so with background false. */
 export const proxyLogin = () => current?.proxyLogin === true || current?.background === false
 
+/** What a Codex session may be started with besides codex's default (REQ-F-854); an older server says nothing (all). */
+export const codexFeatures = () => ({ sandboxes: current?.codexSandboxes, approvals: current?.codexApprovals, network: current?.codexNetwork })
+
 /** A permission mode this server lets people pick ("" is the Mac's own default, always allowed). */
 export const modeAllowed = (mode: string) => !mode || !current?.permissionModes || current.permissionModes.includes(mode)

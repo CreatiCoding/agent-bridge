@@ -86,6 +86,41 @@ func pickRunner(hostID string, v any) string {
 	return id
 }
 
+// Codex sessions' sandbox and approval (REQ-F-854, agent/codex.mjs parseCodexMode): one string
+// `<sandbox>:<approval>[:net]`, either part empty for codex's own default, "" for both. danger-full-access is never one.
+var CODEX_SANDBOXES = []string{"read-only", "workspace-write"}
+var CODEX_APPROVALS = []string{"on-request", "never"}
+var codexModeRe = regexp.MustCompile(`^([a-z-]*):([a-z-]*)(:net)?$`)
+
+// codexMode checks a requested mode: the kept string, or an error status and text. Shape errors are 400; a value
+// bridge.yaml (features.codexSandboxes·codexApprovals·codexNetwork) leaves out is 403. Codex's default is always allowed.
+func codexMode(v any) (string, int, string) {
+	s, ok := v.(string)
+	if v == nil || (ok && s == "") {
+		return "", 0, ""
+	}
+	m := codexModeRe.FindStringSubmatch(s)
+	if !ok || m == nil || (m[1] != "" && !contains(CODEX_SANDBOXES, m[1])) || (m[2] != "" && !contains(CODEX_APPROVALS, m[2])) || (m[3] != "" && m[1] != "workspace-write") {
+		return "", 400, "codex 샌드박스·승인 모드가 올바르지 않아요"
+	}
+	if (m[1] != "" && !contains(cfgGet("features.codexSandboxes").([]string), m[1])) || (m[2] != "" && !contains(cfgGet("features.codexApprovals").([]string), m[2])) || (m[3] != "" && !cfgOn("features.codexNetwork")) {
+		return "", 403, FEATURE_OFF
+	}
+	if m[1] == "" && m[2] == "" {
+		return "", 0, ""
+	}
+	return s, 0, ""
+}
+
+// mustCodexMode: codexMode, refusing the request when it is not one.
+func mustCodexMode(v any) string {
+	s, code, why := codexMode(v)
+	if code != 0 {
+		refuse(code, why)
+	}
+	return s
+}
+
 // runnerOps: what a session's page may ask that needs one of a runner's caps (sessionPost op → cap).
 var runnerOps = map[string]string{"setting": "model", "trimlog": "trim", "lightfork": "fork", "fork": "fork", "btw": "btw", "cwd": "move"}
 
@@ -102,6 +137,12 @@ func runnerGate(meta *Sess, op string, b M) {
 	cap := runnerOps[op]
 	if op == "setting" {
 		cap = strField(b, "kind")
+		if cap == "codexMode" {
+			if id != "codex" {
+				no()
+			}
+			cap = ""
+		}
 	}
 	if op == "do" {
 		cap = runnerDoCaps[strField(b, "cmd")]
