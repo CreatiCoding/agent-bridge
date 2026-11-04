@@ -798,6 +798,14 @@ setInterval(() => {
   trustShown = now
 }, 2000).unref()
 const trustOn = () => trustMode() !== 'off'
+/**
+ * While trust is on a copy (fork, lightfork) keeps the original's 전부 허용 when a signature turned it on there: the
+ * server's set for the copy would be unsigned and refused (REQ-F-860). With trust off the server sends that set.
+ */
+function keepSignedAllow(s, from) {
+  if (!trustOn() || !from.autoAllow || !from.autoAllowSigned) return
+  Object.assign(s, { autoAllow: true, autoAllowSigned: true, ...(from.allowAll ? { allowAll: true } : {}) })
+}
 /** Whether what leaves this Mac is sealed now (§6, 1.394): chosen at the terminal, a mode, and a device to read it. */
 const trustSealing = () => trust.sealing(trustMode()) && trustSeen.seal
 const trustInfo = () => trust.info(trustMode(), trustSeen.seal)
@@ -1079,7 +1087,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
 }
 
 // ---------- tmux sessions ----------
@@ -3266,6 +3274,64 @@ async function adoptCodex(reqId, sid, { conv, cwd, autoPush, sysPrompt, codexMod
   }
 }
 
+/** Start a session (the new command, before its 전부 허용). */
+async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing, base, runner, codexMode }) {
+  try {
+    // Claude Code unless the command names another runner this Mac has (REQ-F-851). Signed while trust is on.
+    const rid = pickRunner(runner, runnerIds())
+    if (!rid) throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
+    if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode })
+    // The server names the session: a name that is a path, or one already here, is not taken (REQ-S-092).
+    if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
+    if (prompt) prompt = trustText(prompt, sid)
+    if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
+    const want = expandHome(cwd || '~')
+    if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
+    if (!fs.existsSync(want) && create === true) {
+      fs.mkdirSync(want, { recursive: true })
+      // Made for a hand-over (REQ-F-760): recorded with its base, so it can be deleted when that session closes.
+      if (typeof base === 'string' && base) rememberMadeDir(sid, want, expandHome(base))
+    }
+    if (!fs.existsSync(want)) throw Object.assign(new Error(`이 맥에 그 폴더가 없습니다: ${want}`), { missing: true })
+    if (!fs.statSync(want).isDirectory()) throw new Error(`폴더가 아닙니다: ${want}`)
+    try {
+      fs.readdirSync(want)
+    } catch (e) {
+      throw new Error(`폴더를 읽을 권한이 없습니다: ${want} (${e.code}). 데스크탑·문서·다운로드 폴더라면 시스템 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서 에이전트를 켠 터미널 앱에 권한을 주세요`)
+    }
+    const dir = fs.realpathSync(want)
+    const s = { cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(/^[\w.[\]-]{1,60}$/.test(model || '') ? { model } : {}), ...(EFFORTS.includes(effort) ? { effort } : {}) }
+    if (['default', 'acceptEdits', 'plan', 'auto'].includes(mode)) s.mode = mode
+    if (chrome === false) s.chrome = false
+    if (account) s.account = account
+    if (cleanRouting(routing)) s.routing = cleanRouting(routing)
+    // In the map before claude starts: its first hooks (SessionStart, the first prompt) arrive while it launches.
+    resetRuntime(s)
+    sessions.set(sid, s)
+    // tmux refuses a command line much over 16 KB: a longer first prompt waits as a held message and is
+    // pasted when claude is up, like any other.
+    const onLine = !!prompt && Buffer.byteLength(prompt) <= FIRST_PROMPT_MAX
+    // Held before claude starts, so the release that follows its start (SessionStart) delivers it.
+    if (prompt && !onLine) Object.assign(s, { keepHeld: true, held: [{ id: crypto.randomUUID(), at: Date.now(), text: prompt }] })
+    try {
+      await launch(sid, s, ['--session-id', sid, ...settingsArgs(s), ...(onLine ? [prompt] : [])])
+    } catch (e) {
+      sessions.delete(sid)
+      throw e
+    } finally {
+      delete s.keepHeld
+    }
+    // The first prompt is on the command line: the turn it starts is this session's first.
+    if (onLine && !s.hooks) beginTurn(sid, s)
+    saveSessions()
+    emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: s.account ?? '' })
+    agentHook('session.create', sid, dir)
+  } catch (e) {
+    log('error', 'new', `세션을 시작하지 못함: ${e.message}`, sid)
+    emit({ t: 'opened', reqId, sid, ok: false, error: e.message, missing: !!e.missing })
+  }
+}
+
 const commands = {
   delegated({ areq, ok, result, error }) {
     delegating.get(areq)?.({ ok: ok === true, ...(ok ? { result } : { error: String(error ?? '실패했어요') }) })
@@ -3449,61 +3515,13 @@ const commands = {
     emit({ t: 'pong', ts })
   },
   rehello: hello,
-  async new({ reqId, sid, cwd, prompt, autoPush, model, effort, mode, create, sysPrompt, chrome, account, routing, base, runner, codexMode }) {
-    try {
-      // Claude Code unless the command names another runner this Mac has (REQ-F-851). Signed while trust is on.
-      const rid = pickRunner(runner, runnerIds())
-      if (!rid) throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
-      if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode })
-      // The server names the session: a name that is a path, or one already here, is not taken (REQ-S-092).
-      if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
-      if (prompt) prompt = trustText(prompt, sid)
-      if (!safeAccountId(account ?? '') || accountDir(account ?? '') === null) throw new Error('이 맥에 그 Claude 계정이 없어요')
-      const want = expandHome(cwd || '~')
-      if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
-      if (!fs.existsSync(want) && create === true) {
-        fs.mkdirSync(want, { recursive: true })
-        // Made for a hand-over (REQ-F-760): recorded with its base, so it can be deleted when that session closes.
-        if (typeof base === 'string' && base) rememberMadeDir(sid, want, expandHome(base))
-      }
-      if (!fs.existsSync(want)) throw Object.assign(new Error(`이 맥에 그 폴더가 없습니다: ${want}`), { missing: true })
-      if (!fs.statSync(want).isDirectory()) throw new Error(`폴더가 아닙니다: ${want}`)
-      try {
-        fs.readdirSync(want)
-      } catch (e) {
-        throw new Error(`폴더를 읽을 권한이 없습니다: ${want} (${e.code}). 데스크탑·문서·다운로드 폴더라면 시스템 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서 에이전트를 켠 터미널 앱에 권한을 주세요`)
-      }
-      const dir = fs.realpathSync(want)
-      const s = { cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(/^[\w.[\]-]{1,60}$/.test(model || '') ? { model } : {}), ...(EFFORTS.includes(effort) ? { effort } : {}) }
-      if (['default', 'acceptEdits', 'plan', 'auto'].includes(mode)) s.mode = mode
-      if (chrome === false) s.chrome = false
-      if (account) s.account = account
-      if (cleanRouting(routing)) s.routing = cleanRouting(routing)
-      // In the map before claude starts: its first hooks (SessionStart, the first prompt) arrive while it launches.
-      resetRuntime(s)
-      sessions.set(sid, s)
-      // tmux refuses a command line much over 16 KB: a longer first prompt waits as a held message and is
-      // pasted when claude is up, like any other.
-      const onLine = !!prompt && Buffer.byteLength(prompt) <= FIRST_PROMPT_MAX
-      // Held before claude starts, so the release that follows its start (SessionStart) delivers it.
-      if (prompt && !onLine) Object.assign(s, { keepHeld: true, held: [{ id: crypto.randomUUID(), at: Date.now(), text: prompt }] })
-      try {
-        await launch(sid, s, ['--session-id', sid, ...settingsArgs(s), ...(onLine ? [prompt] : [])])
-      } catch (e) {
-        sessions.delete(sid)
-        throw e
-      } finally {
-        delete s.keepHeld
-      }
-      // The first prompt is on the command line: the turn it starts is this session's first.
-      if (onLine && !s.hooks) beginTurn(sid, s)
-      saveSessions()
-      emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: s.account ?? '' })
-      agentHook('session.create', sid, dir)
-    } catch (e) {
-      log('error', 'new', `세션을 시작하지 못함: ${e.message}`, sid)
-      emit({ t: 'opened', reqId, sid, ok: false, error: e.message, missing: !!e.missing })
-    }
+  async new(cmd) {
+    const had = sessions.has(cmd.sid)
+    await newSession(cmd)
+    // 전부 허용 asked for at the start rides on new (REQ-F-860): signed with it while trust is on, so no unsigned
+    // set has to follow it. Only a session this new started: a new that named a session already here (and was
+    // refused) must not turn it on there.
+    if (cmd.autoAllow === true && !had && sessions.has(cmd.sid)) await commands.set({ sid: cmd.sid, autoAllow: true, allowAll: cmd.allowAll === true, signed: cmd.signed })
   },
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
   async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner, codexMode }) {
@@ -3847,6 +3865,7 @@ const commands = {
       for (let i = 0; i < 60 && from.refreshing; i++) await sleep(500)
       tail(sid, from)
       const s = { cwd: from.cwd, autoPush: from.autoPush, conv: newSid, sysPrompt: String(sysPrompt ?? from.sysPrompt ?? '').slice(0, 8000), ...(from.model ? { model: from.model } : {}), ...(from.effort ? { effort: from.effort } : {}), ...(from.mode ? { mode: from.mode } : {}), ...(from.chrome === false ? { chrome: false } : {}), ...(from.account ? { account: from.account } : {}), ...launchOver(defaults) }
+      keepSignedAllow(s, from)
       setRouting(s, routing === undefined ? from.routing : routing)
       // Copied while the original works: that work stays the original's, and the copy is told so (sessionPrompt).
       if (from.turn || from.running?.size) s.forkOf = sid.slice(0, 8)
@@ -3919,6 +3938,7 @@ const commands = {
       if (bytes > max) content = Buffer.from(content).subarray(0, max).toString('utf8').replace(/\uFFFD+$/, '')
       // The new session carries the work on, so the file goes with it; the original, if used again, gets its own.
       const s = { cwd: from.cwd, autoPush: from.autoPush, conv: newSid, mdFile: name, sysPrompt: String(sysPrompt ?? from.sysPrompt ?? '').slice(0, 8000), ...(from.model ? { model: from.model } : {}), ...(from.effort ? { effort: from.effort } : {}), ...(from.mode ? { mode: from.mode } : {}), ...(from.chrome === false ? { chrome: false } : {}), ...(from.account ? { account: from.account } : {}), ...launchOver(defaults) }
+      keepSignedAllow(s, from)
       setRouting(s, routing === undefined ? from.routing : routing)
       resetRuntime(s)
       sessions.set(newSid, s)

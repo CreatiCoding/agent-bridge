@@ -384,6 +384,8 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     const mode = str(body.mode)
     const i: Body = { cwd: (str(body.cwd) || '~').slice(0, 1000), promptH: await sha256Hex(str(body.prompt).slice(0, 100_000)), create: body.create === true, autoPush: true, mode: mode === 'autoAllow' || mode === 'allowAll' ? 'default' : mode }
     for (const k of ['model', 'effort'] as const) if (typeof body[k] === 'string') i[k] = str(body[k]).slice(0, k === 'model' ? 60 : 10)
+    // 전부 허용 rides on new (REQ-F-860): the Mac turns it on from this signature, with no set after it.
+    if (mode === 'autoAllow' || mode === 'allowAll') Object.assign(i, { autoAllow: true, allowAll: mode === 'allowAll' })
     if (typeof body.account === 'string' && body.account) i.account = body.account
     if (body.chrome === false) i.chrome = false
     // The runner is signed too (REQ-F-851): a server cannot start another program than the one asked for.

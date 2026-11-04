@@ -315,6 +315,19 @@ test('a codex adopt carries its runner only when signed; the sealed list binds i
   assert.ok(TRUST_VERSION >= 7)
 })
 
+test('전부 허용 at the start rides on new, signed: the server cannot turn it on or loosen it (1.429, AC-1616)', () => {
+  const rule = classOf({ t: 'new' })
+  assert.ok(rule.i.includes('autoAllow') && rule.i.includes('allowAll'))
+  const on = rebuild({ t: 'new', sid: 'abc12345', autoAllow: true, allowAll: true }, rule, { cwd: '/w', autoAllow: true, allowAll: false })
+  assert.equal(on.autoAllow, true)
+  assert.equal(on.allowAll, false, 'the signed safe one, not the server\'s allowAll')
+  const asks = rebuild({ t: 'new', sid: 'abc12345', autoAllow: true, allowAll: true }, rule, { cwd: '/w' })
+  assert.equal(asks.autoAllow, undefined, 'not signed: not turned on')
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(src, /caps: \['store', 'newAllow'\]/, 'the agent says it takes 전부 허용 with new')
+  assert.match(src, /if \(cmd\.autoAllow === true && !had && sessions\.has\(cmd\.sid\)\) await commands\.set\(\{ sid: cmd\.sid, autoAllow: true, allowAll: cmd\.allowAll === true, signed: cmd\.signed \}\)/)
+})
+
 test('a codex session sandbox and approval is signed with new and adopt (1.414, AC-1599)', () => {
   assert.ok(classOf({ t: 'new' }).i.includes('codexMode'))
   const rule = classOf({ t: 'adopt' })
