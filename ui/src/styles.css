@@ -1127,8 +1127,23 @@ select.input {
   display: grid;
   grid-template-columns: auto auto;
   justify-content: space-between;
-  gap: 2px 3px;
-  width: 38px;
+  align-items: baseline;
+  gap: 3px 3px;
+  width: 40px;
+}
+.rail-usage-v {
+  font-weight: 600;
+  color: var(--text);
+}
+.rail-usage-row.high .rail-usage-v {
+  color: var(--red);
+}
+/* Time until the limit fills again, under its bar. */
+.rail-usage-left {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 9px;
+  color: var(--faint);
 }
 .rail-usage-row .gauge-bar {
   grid-column: 1 / -1;

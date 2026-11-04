@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.427',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'PC 앱 레일의 Claude·Codex 사용량이 가끔 더 낮은 값으로 바뀌던 문제. 가장 최근에 바뀐 세션 하나의 (오래전에 잰 수도 있는) 값 대신, 현재 창(다시 차는 시각이 가장 늦은 것)에서 세션들이 알린 가장 높은 값을 씀',
+        refs: ['REQ-F-858'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '앱 레일 사용량 막대 아래에 다시 차기까지 남은 시간("3시간 뒤"·"2일 뒤")을 보이고 수치를 굵게',
+        refs: ['REQ-F-858'],
+      },
+    ],
+  },
+  {
     version: '1.426',
     date: '2026-11-04',
+    commit: 'd5145d8',
     changes: [
       {
         kind: 'fixed',
