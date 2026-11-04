@@ -329,7 +329,7 @@ export function GuidePage({ me, path }: { me: Me | null; path: Path }) {
                 <ol className="guide-list">
                   <li>기기 화면의 "QR 만들기" 를 폰 카메라로 찍으면 폰이 이 계정으로 로그인돼요.</li>
                   <li>폰 브라우저의 "홈 화면에 추가" 로 앱처럼 쓸 수 있어요.</li>
-                  <li>설정 → 이 기기 에서 알림을 켜면 권한 요청과 답이 폰으로 와요.</li>
+                  <li>설정 → 화면·알림 에서 알림을 켜면 권한 요청·질문처럼 답해야 세션이 움직일 때 폰으로 와요.</li>
                 </ol>
                 <div className="hstack" style={{ flexWrap: 'wrap' }}>
                   <Button size="sm" icon="qr" onClick={() => go({ name: 'hosts' })}>

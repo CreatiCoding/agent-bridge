@@ -92,6 +92,32 @@ function AppPushToggle() {
   )
 }
 
+/**
+ * When a push goes out (REQ-F-866), in the words the settings show under the switch. Kept here beside the switch so a
+ * change to the server's triggers (server/agentmsg.go, delegate.go, tidy.go, notices.go pushTo) is changed here too.
+ */
+export const PUSH_WHEN = [
+  '답해야 세션이 움직일 때: 권한 요청·질문·플랜 승인·터미널 확인. 5분 동안 답이 없으면 한 번 더(권한 요청은 10분에도)',
+  '관리자 비밀번호(sudo)가 필요할 때, 맥에 시스템 허락 창이 떴을 때',
+  '다른 맥에 일을 맡겼을 때, 세션 정리 예고와 하루 요약',
+] as const
+export const PUSH_NOT = '답을 마친 것은 알리지 않고, 백그라운드 작업이 끝난 것은 알림 목록에만 남아요. 그 대화를 열어 두었으면 알리지 않고, 이 페이지를 보고 있으면(45초 안) 푸시를 건너뛰어요. 권한 요청과 시스템 허락 창은 그래도 보내요.'
+
+/** The list under the switch in Settings → 화면·알림: what makes a push. */
+export function PushWhen() {
+  return (
+    <div className="muted" style={{ fontSize: 'var(--fs-small)' }}>
+      알림이 오는 때
+      <ul style={{ margin: '2px 0', paddingLeft: 18 }}>
+        {PUSH_WHEN.map((t) => (
+          <li key={t}>{t}</li>
+        ))}
+      </ul>
+      {PUSH_NOT}
+    </div>
+  )
+}
+
 export function PushToggle() {
   const [on, setOn] = useState<boolean | null>(null)
   useEffect(() => {

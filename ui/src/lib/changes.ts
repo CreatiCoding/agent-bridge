@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.437',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '설정 → 화면·알림의 알림 스위치 아래에 알림이 오는 때(답해야 세션이 움직일 때, sudo 비밀번호, 시스템 허락 창, 다른 맥에 맡기기, 세션 정리)와 오지 않는 때를 보임',
+        refs: ['REQ-F-866'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '가이드 "폰에서도 열기"가 답(턴 끝)도 폰으로 온다고 잘못 안내하던 것을 고침',
+        refs: ['REQ-F-866', 'REQ-F-688'],
+      },
+    ],
+  },
+  {
     version: '1.436',
     date: '2026-11-05',
+    commit: '9aa83cc',
     changes: [
       {
         kind: 'added',

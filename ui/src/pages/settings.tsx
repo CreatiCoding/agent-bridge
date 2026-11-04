@@ -11,7 +11,7 @@ import { chooseDialog, Sheet, toast } from '../kit/overlay'
 import { inHomeApp, safariHref } from '../lib/safari'
 import { appVersion } from '../lib/app-version'
 import { kbDebugOn, setKbDebug } from '../lib/kbdebug'
-import { PushToggle } from '../components/push'
+import { PushToggle, PushWhen } from '../components/push'
 import { TrustPanel } from '../components/trust-panel'
 import { SlackPlaces } from '../components/slack-places'
 import { AccountsPanel } from './accounts'
@@ -842,6 +842,7 @@ export function SettingsPage({ me, tab, ext }: { me: Me | null; tab: SettingsTab
           <section className="card-box">
             <div className="stack">
               <PushToggle />
+              <PushWhen />
               <div className="hstack">
                 <span style={{ fontSize: 'var(--fs-medium)' }}>화면</span>
                 <Segmented
