@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.424',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '제보 자동 대응 세션은 운영자 본인의 제보면 안전한 전부 허용 대신 전부 허용(allowAll)으로 띄움. 위험한 호출에서 아무도 답하지 않는 카드로 멈추던 것. 다른 사람의 제보는 그대로 명령마다 확인',
+        refs: ['REQ-F-738'],
+      },
+    ],
+  },
+  {
     version: '1.423',
     date: '2026-11-04',
+    commit: 'a3452ec',
     changes: [
       {
         kind: 'fixed',

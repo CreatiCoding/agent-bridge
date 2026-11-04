@@ -56,3 +56,11 @@ func TestInheritAllow(t *testing.T) {
 	cp.set("allowAll", true)
 	eq(t, allowModeOf(cp), "", "allowAll without autoAllow")
 }
+
+// 제보 고치기 세션의 모드 (REQ-F-738 rule 2, AC-1205): only the operator's own report under 자동 대응 is 전부 허용.
+func TestReportMode(t *testing.T) {
+	eq(t, reportMode(true, true), "allowAll", "operator's own report, 자동 대응")
+	eq(t, reportMode(true, false), "", "operator's own report, manual: their defaults")
+	eq(t, reportMode(false, true), "default", "someone else's report, 자동 대응")
+	eq(t, reportMode(false, false), "default", "someone else's report, manual")
+}

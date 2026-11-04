@@ -257,6 +257,20 @@ func typeOfExt(ext string) any {
 	return nil
 }
 
+// reportMode: the permission mode a fix session starts in (REQ-F-738 rule 2). Someone else's report becomes the
+// session's prompt, so it asks (R1-H1). The operator's own report under 자동 대응 runs unwatched, so it is 전부 허용
+// (allowAll, 1.424): 안전한 전부 허용 stopped on risky calls nobody was there to answer. Manual fixing of the
+// operator's own report keeps the person's defaults (""). startMode still lowers a mode outside permissionModes.
+func reportMode(trusted, auto bool) string {
+	if !trusted {
+		return "default"
+	}
+	if auto {
+		return "allowAll"
+	}
+	return ""
+}
+
 // fixReport starts a session on one of uid's connected Macs and sends it the report as its first message (R1-H1).
 func fixReport(r M, uid string, want any, cwd any, auto bool, req *Req) string {
 	mine := []string{}
@@ -285,12 +299,7 @@ func fixReport(r M, uid string, want any, cwd any, auto bool, req *Req) string {
 	}
 	said1 = jsTrim(collapse(said1))
 	trusted := mstr(r, "uid") == uid && isAdmin(uid)
-	var mode any
-	if !trusted {
-		mode = "default"
-	} else if auto {
-		mode = "autoAllow"
-	}
+	mode := reportMode(trusted, auto)
 	c := "~"
 	if truthy(cwd) {
 		c = jsString(cwd)
@@ -300,7 +309,7 @@ func fixReport(r M, uid string, want any, cwd any, auto bool, req *Req) string {
 		title = jsSliceTo(said1, 80)
 	}
 	opts := M{"hostId": hostID, "cwd": jsSliceTo(c, 1000), "create": true, "title": title, "prompt": "", "group": group, "from": startFrom("report")}
-	if mode != nil {
+	if mode != "" {
 		opts["mode"] = mode
 	}
 	if req == nil {
