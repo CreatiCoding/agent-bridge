@@ -41,7 +41,10 @@ const sameGroups = (a: { id: string; name: string }[], b: { id: string; name: st
 const SessionRow = memo(SessionRowView, (a, b) => a.s === b.s && a.host === b.host && a.active === b.active && a.unread === b.unread && a.dropBefore === b.dropBefore && a.multiHost === b.multiHost && !!a.onDragStart === !!b.onDragStart && sameGroups(a.groups, b.groups))
 function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefore, multiHost }: { s: Session; host?: Host; active: boolean; unread: boolean; groups: { id: string; name: string }[]; onDragStart?: (id: string) => void; dropBefore?: boolean; multiHost: boolean }) {
   const l = look(s, host)
-  const quiet = l.tone === 'green' || l.label === '휴면' || l.label === '끝남'
+  // A new answer not yet read (REQ-F-563) fills the dot blue where it would be a hollow ring: a finished session
+  // then stands out from the ones already read, not only by a slightly bolder title.
+  const fresh = unread && (l.tone === 'green' || l.label === '멈춤')
+  const quiet = !fresh && (l.tone === 'green' || l.label === '휴면' || l.label === '끝남')
   const wide = useWide()
   const swipe = useSwipeRow(144, !wide)
   const press = useRef<number | null>(null)
@@ -115,7 +118,7 @@ function SessionRowView({ s, host, active, unread, groups, onDragStart, dropBefo
         </span>
       ) : (
         // 전부 허용 that asks nothing (REQ-F-796): a red ring round the dot, whatever the dot says the session is doing.
-        <span className={`dot srow-dot dot-${l.tone}${l.pulse ? ' pulse' : ''}${quiet ? ' srow-dot-none' : ''}${s.state.autoAllow && s.state.allowAll ? ' srow-dot-allow-all' : ''}`} aria-hidden title={s.state.autoAllow && s.state.allowAll ? '전부 허용 중' : undefined} />
+        <span className={`dot srow-dot dot-${fresh ? 'blue' : l.tone}${l.pulse ? ' pulse' : ''}${quiet ? ' srow-dot-none' : ''}${s.state.autoAllow && s.state.allowAll ? ' srow-dot-allow-all' : ''}`} aria-hidden title={s.state.autoAllow && s.state.allowAll ? '전부 허용 중' : fresh ? '새 답' : undefined} />
       )}
       <span className="srow-main">
         {/* One line: the title, what needs the person (a badge), and when it last moved. No preview of the
@@ -239,7 +242,7 @@ export function SessionList({ activeId, filter }: { activeId: string | null; fil
   /** Every session a group and the groups inside it hold, ended ones too: what emptying it deletes. */
   const heldIn = (id: string): number => (state.groups.groups.find((g) => g.id === id)?.items.length ?? 0) + childrenOf(id).reduce((n, c) => n + heldIn(c), 0)
   const within = (id: string, of: string): boolean => id === of || (!!byGroup.get(id)?.parent && within(byGroup.get(id)!.parent!, of))
-  const unread = (s: Session) => s.id !== activeId && (s.lastQuiet ? s.loudSeq ?? 0 : s.seq) > (seen[s.id] ?? 0) && !(s as { lastMine?: boolean }).lastMine && (seen[s.id] ?? 0) > 0
+  const unread = (s: Session) => s.id !== activeId && (s.lastQuiet ? s.loudSeq ?? 0 : s.seq) > (seen[s.id] ?? 0) && !(s as { lastMine?: boolean }).lastMine && s.id in seen
 
   const drop = async (group: string | null, before: string | null) => {
     const id = dragId

@@ -2,6 +2,7 @@
 // Components read slices of it with useStore; nothing else holds a copy.
 import { useSyncExternalStore } from 'react'
 import { loadList, saveList } from './cache'
+import { baselineSeen } from './local'
 import type { Ev, State } from './types'
 import { sawBuild } from './fresh'
 import { openDeep } from './trust'
@@ -318,6 +319,7 @@ let inLine: Promise<unknown> = Promise.resolve()
 function handle(msg: { t: string; [k: string]: unknown }) {
   if (msg.t === 'state') {
     const { t: _t, ...state } = msg
+    baselineSeen((state as unknown as State).sessions ?? [], true)
     set({ state: state as unknown as State, served: true })
     saveList(state)
     sawBuild(state.ui)
@@ -338,6 +340,7 @@ function handle(msg: { t: string; [k: string]: unknown }) {
       ...(d.ui ? { ui: d.ui } : {}),
       sessions: order.map((id) => fresh.get(id) ?? old.get(id)).filter((r): r is State['sessions'][number] => !!r),
     }
+    if (store.served) baselineSeen(d.changed ?? [], false)
     set({ state: next })
     saveList(next as unknown as Record<string, unknown>)
     sawBuild(d.ui)

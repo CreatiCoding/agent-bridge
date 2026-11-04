@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.440',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '작업이 끝나 새 답이 온 세션은 목록에서 점을 파랗게 채우고 제목을 굵게 해 이미 읽은 세션과 구분함. 이 기기에서 연 적 없는 세션도 새 답이 오면 표시함',
+        refs: ['REQ-F-563', 'DM-049'],
+      },
+    ],
+  },
+  {
     version: '1.439',
     date: '2026-11-05',
+    commit: '3bca9b1',
     changes: [
       {
         kind: 'fixed',

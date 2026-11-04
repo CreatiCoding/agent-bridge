@@ -1453,7 +1453,7 @@ select.input {
   font-size: var(--fs-medium);
 }
 .srow.unread .srow-title {
-  font-weight: 600;
+  font-weight: 750;
 }
 /* A favourite (REQ-F-782): a filled star before the title. */
 .srow-star.inline-icon {

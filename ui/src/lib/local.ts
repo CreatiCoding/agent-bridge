@@ -38,6 +38,31 @@ export function markSeen(sid: string, seq: number) {
   write(SEEN, all)
   dispatchEvent(new Event('cb-seen'))
 }
+/**
+ * A session this browser has no record of is taken as read up to where it is now (REQ-F-563): without that, one
+ * never opened here (started on another device) could never show a new answer. `full` is the server's whole list,
+ * so records of sessions no longer in it go and the map does not grow forever.
+ */
+export function baselineSeen(rows: { id: string; seq: number }[], full: boolean) {
+  const all = getSeen()
+  let changed = false
+  for (const r of rows) {
+    if (r.id in all) continue
+    all[r.id] = r.seq ?? 0
+    changed = true
+  }
+  if (full) {
+    const ids = new Set(rows.map((r) => r.id))
+    for (const k of Object.keys(all)) {
+      if (ids.has(k)) continue
+      delete all[k]
+      changed = true
+    }
+  }
+  if (!changed) return
+  write(SEEN, all)
+  dispatchEvent(new Event('cb-seen'))
+}
 
 export type Theme = 'auto' | 'light' | 'dark'
 export const getTheme = () => read<Theme>('theme', 'auto')
