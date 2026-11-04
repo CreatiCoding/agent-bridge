@@ -3471,6 +3471,10 @@ li:hover > .todo-del,
 .adopt-item > .badge {
   margin-top: 12px;
 }
+.adopt-item > .adopt-codex {
+  flex: none;
+  margin-top: 6px;
+}
 .adopt-title {
   display: block;
   font-weight: 600;

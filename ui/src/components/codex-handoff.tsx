@@ -2,6 +2,9 @@
 // the same Mac. The Claude session writes the hand-over summary (it knows the whole conversation, compacted parts
 // too); the person reads and edits it, picks Codex's own sandbox and approval, and the Codex session starts with the
 // summary as its first message. The Claude conversation stays as it is, and the two sessions link each other.
+// 한 번에 넘기기 (REQ-F-861): opened with `auto` (a conversation brought over from the Mac's list with "Codex 로"),
+// the sheet asks for the summary as soon as the session rests and starts the Codex session as soon as a handoff
+// block comes back, so the whole move is one press. The person can still turn that off and read the summary first.
 import { useEffect, useRef, useState } from 'react'
 import { errorText, get } from '../lib/api'
 import { isCancel, dispatch } from '../lib/actions'
@@ -13,15 +16,19 @@ import { runnerOf } from '../lib/runner'
 import { titleOf } from '../lib/sessions'
 import { getStore, useStore } from '../lib/store'
 import type { EventsPage, Ev, Session } from '../lib/types'
-import { Button, Field, Spinner } from '../kit'
+import { Button, Field, Spinner, Switch } from '../kit'
 import { Sheet, toast } from '../kit/overlay'
 import { CodexAllowField, CodexModeFields } from './codex-mode'
 import { confirmLaunchMode } from './auto-allow-confirm'
 import { act, sessionPost } from './session-menu'
 import { HANDOFF_ASK, HANDOFF_HEAD, summaryAfterAsk } from '../lib/handoff'
 
-/** Opens the sheet for a session from anywhere (its ⋯ menu). */
-export const openHandoff = (s: Session) => dispatchEvent(new CustomEvent('cb-handoff', { detail: s.id }))
+/**
+ * Opens the sheet for a session from anywhere (its ⋯ menu). `auto` asks for the summary once the session rests and
+ * starts Codex when it comes (한 번에 넘기기); without it the person's last choice of the switch decides the start.
+ */
+export const openHandoff = (s: Session | string, opts: { auto?: boolean } = {}) =>
+  dispatchEvent(new CustomEvent('cb-handoff', { detail: { id: typeof s === 'string' ? s : s.id, auto: !!opts.auto } }))
 
 /** Why a session cannot be handed to Codex now, or null when it can (the menu item's hint). */
 export function handoffBlocked(s: Session): string | null {
@@ -57,8 +64,14 @@ type Step = 'ready' | 'asking' | 'edit'
 
 export function HandoffSheet() {
   const [sid, setSid] = useState<string | null>(null)
+  // Whether this opening was asked to go all the way by itself (read when the opening starts over below).
+  const openAuto = useRef(false)
   useEffect(() => {
-    const f = (e: Event) => setSid((e as CustomEvent<string>).detail)
+    const f = (e: Event) => {
+      const d = (e as CustomEvent<{ id: string; auto: boolean }>).detail
+      openAuto.current = d.auto
+      setSid(d.id)
+    }
     addEventListener('cb-handoff', f)
     return () => removeEventListener('cb-handoff', f)
   }, [])
@@ -70,6 +83,13 @@ export function HandoffSheet() {
   const [busy, setBusy] = useState(false)
   // Start the summary once Claude is done with what it is doing (끝나면 요약 만들기, 중단하고 진행).
   const [afterTurn, setAfterTurn] = useState(false)
+  // 한 번에 넘기기: start Codex as soon as a handoff block comes back (auto), ask once the session rests (autoAsk),
+  // and the start itself, run on the render after the summary is in (autoGo).
+  const [auto, setAuto] = useState(false)
+  const autoRef = useRef(false)
+  autoRef.current = auto
+  const [autoAsk, setAutoAsk] = useState(false)
+  const [autoGo, setAutoGo] = useState(false)
   // One key per opening: a second press, or a retry after a lost answer, gets the same Codex session (REQ-F-857).
   const key = useRef('')
   const asking = useRef(0)
@@ -88,6 +108,8 @@ export function HandoffSheet() {
     setSid(null)
     setBusy(false)
     setAfterTurn(false)
+    setAutoAsk(false)
+    setAutoGo(false)
   }
 
   // Each opening starts over, with the summary already written for this sheet if the conversation has one.
@@ -99,10 +121,19 @@ export function HandoffSheet() {
     setSummary('')
     setNote(null)
     setAfterTurn(false)
+    const all = openAuto.current
+    openAuto.current = false
+    const on = all || getPref<boolean>('handoffAuto', false) === true
+    setAuto(on)
+    autoRef.current = on
+    // The switch left on from the ⋯ menu goes all the way too: it asks as soon as the session rests.
+    setAutoAsk(on)
+    setAutoGo(false)
   }
   if (!s && opened) setOpened(null)
   useEffect(() => {
-    if (!opened) return
+    // A one-press move always asks afresh: an older summary may miss what was done in the terminal since.
+    if (!opened || autoAsk) return
     const n = asking.current
     get<EventsPage>(`/api/sessions/${opened}/events`).then(
       (p) => {
@@ -115,6 +146,7 @@ export function HandoffSheet() {
       },
       () => {},
     )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened])
 
   const phase = s?.state.phase
@@ -145,6 +177,9 @@ export function HandoffSheet() {
         if (got.asked && got.summary && now === 'idle' && (got.block || still >= 2)) {
           setSummary(got.summary)
           setStep('edit')
+          // Only a real handoff block starts Codex by itself; plain last words are shown to read first.
+          if (autoRef.current && got.block) setAutoGo(true)
+          else if (autoRef.current) setNote('요약이 정해진 모양이 아니라 바로 시작하지 않았어요. 읽어 보고 시작해 주세요.')
           return
         }
       }
@@ -164,15 +199,28 @@ export function HandoffSheet() {
   useEffect(() => {
     if (afterTurn && s && phase === 'idle' && step === 'ready') {
       setAfterTurn(false)
+      // One request only: a pending one-press ask is the same request.
+      setAutoAsk(false)
       void ask()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [afterTurn, phase, step])
 
+  // 한 번에 넘기기: the summary is asked once the session is up and resting (a conversation just brought over is
+  // still starting).
+  useEffect(() => {
+    if (autoAsk && !afterTurn && s?.state.alive && phase === 'idle' && step === 'ready') {
+      setAutoAsk(false)
+      void ask()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAsk, afterTurn, s?.state.alive, phase, step])
+
   const stop = async () => {
     if (!s) return
     const r = await act(() => sessionPost(s, 'esc'), '멈추라고 보냈어요 (Esc)')
-    if (r != null) setAfterTurn(true)
+    // A pending one-press ask already waits for the rest.
+    if (r != null && !autoAsk) setAfterTurn(true)
   }
 
   const start = async () => {
@@ -211,6 +259,30 @@ export function HandoffSheet() {
     }
   }
 
+  // ...and Codex starts on the render that has the summary, with the sandbox and approval shown in the sheet now.
+  useEffect(() => {
+    if (autoGo && step === 'edit') {
+      setAutoGo(false)
+      if (autoRef.current && !working) void start()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGo, step])
+
+  const pickAuto = (on: boolean) => {
+    setAuto(on)
+    // Off also stops the ask still waiting for the session: the person reads and asks themselves.
+    if (!on) setAutoAsk(false)
+    setPref('handoffAuto', on)
+  }
+
+  const modeFields = (
+    <>
+      <p className="muted">Codex 의 권한은 여기서 따로 골라요. Claude 세션의 권한 모드는 옮기지 않아요.</p>
+      <CodexModeFields value={codexMode} onChange={setModePick} />
+      {canAllow ? <CodexAllowField value={codexAllow} onChange={setAllowPick} /> : null}
+    </>
+  )
+
   const folder = s ? folderPath(s.cwd, s.home) : ''
   return (
     <Sheet
@@ -248,7 +320,11 @@ export function HandoffSheet() {
               <div className="grow">
                 {phase === 'waiting' ? 'Claude 가 답을 기다리고 있어요. 세션에서 답한 뒤 이어서 해요.' : 'Claude 가 지금 작업 중이에요. 두 에이전트가 같은 파일을 함께 고치지 않게, 끝나길 기다리거나 멈춘 뒤에 넘겨요.'}
                 <div className="choices">
-                  {afterTurn ? (
+                  {autoAsk ? (
+                    <span className="hstack muted">
+                      <Spinner size={12} /> 준비되면 요약을 만들어요
+                    </span>
+                  ) : afterTurn ? (
                     <span className="hstack muted">
                       <Spinner size={12} /> 끝나면 요약을 만들어요
                     </span>
@@ -271,7 +347,13 @@ export function HandoffSheet() {
               </div>
             </div>
           ) : null}
-          {step === 'ready' ? (
+          {step !== 'edit' ? (
+            <Switch label="요약이 오면 바로 Codex 세션 시작" checked={auto} onChange={pickAuto} />
+          ) : null}
+          {step === 'ready' && autoAsk ? (
+            <p className="muted">세션이 준비되면 요약을 만들고, 요약이 오면 아래 권한으로 바로 Codex 세션을 시작해요.</p>
+          ) : null}
+          {step === 'ready' && !autoAsk ? (
             <p className="muted">
               "요약 만들기"를 누르면 Claude 에게 목표·요구사항·결정 사항·변경 파일·검증 결과·남은 작업을 정리해 달라고 이 대화에 보내요. 받은 요약은 보내기 전에 고칠 수 있어요.{' '}
               <Button size="sm" tone="ghost" onClick={() => (setSummary(''), setStep('edit'))}>
@@ -285,6 +367,7 @@ export function HandoffSheet() {
               {phase === 'waiting' ? ' 권한을 묻고 있어요: 세션에서 답해 주세요.' : ''}
             </div>
           ) : null}
+          {step !== 'edit' && auto ? modeFields : null}
           {step === 'edit' ? (
             <>
               {note ? <p className="muted">{note}</p> : null}
@@ -296,9 +379,7 @@ export function HandoffSheet() {
                   요약 다시 만들기
                 </Button>
               </div>
-              <p className="muted">Codex 의 권한은 여기서 따로 골라요. Claude 세션의 권한 모드는 옮기지 않아요.</p>
-              <CodexModeFields value={codexMode} onChange={setModePick} />
-              {canAllow ? <CodexAllowField value={codexAllow} onChange={setAllowPick} /> : null}
+              {modeFields}
             </>
           ) : null}
         </>

@@ -13,6 +13,7 @@ import { openSealed, openText, sealsTo } from '../lib/trust'
 import { getPref, setPref } from '../lib/local'
 import { CodexModeFields } from '../components/codex-mode'
 import { codexAllowed, codexModeLabel } from '../lib/codex-mode'
+import { openHandoff } from '../components/codex-handoff'
 
 interface Conversation {
   conv: string
@@ -65,7 +66,10 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(preset))
   const [run, setRun] = useState<{ done: number; failed: { title: string; error: string }[]; total: number; now: string } | null>(null)
   const [reads, setReads] = useState(0)
-  const accounts = useStore((s) => s.state?.hosts ?? NONE).find((h) => h.id === hostId)?.accounts ?? NONE
+  const host = useStore((s) => s.state?.hosts ?? NONE).find((h) => h.id === hostId)
+  const accounts = host?.accounts ?? NONE
+  // 한 번에 넘기기 (REQ-F-861): a Claude Code conversation goes straight on in Codex where this Mac has it.
+  const hasCodex = !!host?.runners?.some((r) => r.id === 'codex')
   const accountOf = (c: Conversation) => (c.account ? (accounts.find((a) => a.id === c.account) ?? null) : null)
   useEffect(() => {
     setList(null)
@@ -97,6 +101,27 @@ export function AdoptList({ hostId }: { hostId: string }) {
     try {
       const r = await adoptOne(c)
       openSession(r.id, 'adopt', { replace: true })
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+      setRun(null)
+    }
+  }
+
+  // 한 번에 넘기기 (REQ-F-861): bring it over as a bridge session, then the Codex sheet asks it for the hand-over
+  // summary once it is up and starts the Codex session in the same folder when the summary comes. One press for what
+  // took 이어 가기 → ⋯ Codex 로 이어서 작업 → 요약 만들기 → Codex 세션 시작.
+  const toCodex = async (c: Conversation) => {
+    const ok = await confirmDialog('이 대화를 Codex 로 이어 갈까요?', {
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요.\n\n' : ''}claude --resume 으로 가져와 Claude 에게 인계 요약을 받고, 요약이 오면 같은 폴더에 Codex 세션을 바로 시작해요. Claude 대화도 bridge 세션으로 남아요.`,
+      ok: 'Codex 로 이어 가기',
+      danger: c.active,
+    })
+    if (!ok) return
+    setRun({ done: 0, failed: [], total: 1, now: nameOf(c) })
+    try {
+      const r = await adoptOne(c)
+      openSession(r.id, 'adopt', { replace: true })
+      openHandoff(r.id, { auto: true })
     } catch (e) {
       toast(errorText(e), { tone: 'bad' })
       setRun(null)
@@ -218,6 +243,11 @@ export function AdoptList({ hostId }: { hostId: string }) {
                 </span>
                 {c.last && c.last !== c.first ? <span className="adopt-sub">마지막: {c.last}</span> : null}
               </button>
+              {hasCodex && c.runner !== 'codex' && c.exists ? (
+                <Button size="sm" tone="ghost" icon="forward" className="adopt-codex" disabled={running} aria-label={`${nameOf(c)} 을 Codex 로 이어 가기`} onClick={() => toCodex(c)}>
+                  Codex 로
+                </Button>
+              ) : null}
               {mixed ? <Badge tone={c.runner === 'codex' ? 'blue' : undefined}>{c.runner === 'codex' ? 'Codex' : 'Claude Code'}</Badge> : null}
               {accountOf(c) ? <Badge>{accountOf(c)?.name}</Badge> : null}
               {!c.exists ? <Badge tone="red">폴더 없음</Badge> : c.active ? <Badge tone="amber">쓰는 중</Badge> : null}
@@ -231,7 +261,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
         </Button>
       ) : null}
       <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>
-        최근 80개(Codex 는 40개)까지 보여요. 이미 bridge 세션인 대화는 빠져 있어요. 줄을 누르면 하나만 바로 이어 가요.
+        최근 80개(Codex 는 40개)까지 보여요. 이미 bridge 세션인 대화는 빠져 있어요. 줄을 누르면 하나만 바로 이어 가요.{hasCodex ? ' "Codex 로"는 요약을 받아 같은 폴더의 Codex 세션으로 한 번에 넘겨요.' : ''}
       </p>
       <Button tone="ghost" size="sm" icon="refresh" onClick={() => setReads((n) => n + 1)}>
         다시 읽기

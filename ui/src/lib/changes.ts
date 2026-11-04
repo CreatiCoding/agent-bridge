@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.432',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '맥의 대화 이어 가기 목록의 Claude Code 대화에 "Codex 로" 버튼: 한 번 확인하면 대화를 가져와 인계 요약을 받고, 요약이 오면 같은 폴더의 Codex 세션을 바로 시작함(이어 가기 → Codex 로 이어서 작업 → 요약 만들기 → 시작을 한 번에)',
+        refs: ['REQ-F-861', 'REQ-F-857'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: 'Codex 로 이어서 작업 시트에 "요약이 오면 바로 Codex 세션 시작" 스위치(이 기기에 기억). 켜 두면 ⋯ 메뉴에서 열어도 요약 요청부터 시작까지 이어서 함',
+        refs: ['REQ-F-861'],
+      },
+    ],
+  },
+  {
     version: '1.431',
     date: '2026-11-05',
+    commit: 'a6f4238',
     changes: [
       {
         kind: 'changed',
