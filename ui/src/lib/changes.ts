@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.416',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: 'Codex 세션에도 컨텍스트·5시간·주간 사용량 게이지: codex 가 기록(rollout)에 남기는 token_count 에서 읽음',
+        refs: ['REQ-F-855'],
+      },
+    ],
+  },
+  {
     version: '1.415',
     date: '2026-11-04',
+    commit: 'e071b69',
     changes: [
       {
         kind: 'fixed',

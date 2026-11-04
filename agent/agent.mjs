@@ -1329,6 +1329,13 @@ function codexSync(sid, s) {
   if (!s.rolloutFile) return
   const r = syncMirror({ rollout: s.rolloutFile, mirror: mirrorPath(sid), sid, state: (s.mirror ??= {}) })
   if (r.missing) return void (s.rolloutFile = null)
+  // Codex has no status line: its token_count lines give the gauges Claude Code's give (REQ-F-855).
+  const u = s.mirror.st?.usage
+  if (u && JSON.stringify(u) !== JSON.stringify(s.usage)) {
+    s.usage = { ...u }
+    if (u.context != null) s.context = `${u.context}%`
+    publish(sid, s)
+  }
   for (const sig of r.signals) {
     s.activityAt = Date.now()
     if (sig === 'begin' && !s.turn) beginTurn(sid, s)

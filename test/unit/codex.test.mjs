@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -298,4 +298,22 @@ test('the Mac\'s codex conversations for 맥의 대화 가져오기: listed newe
   assert.deepEqual(a, { id: A, cwd: '/Users/u/p', user: true, first: '배포 고쳐 줘', last: '끝 말' })
   assert.equal(rolloutInfo(fb, fs.statSync(fb).size).user, false)
   assert.deepEqual(listRollouts(path.join(root, 'none')), [])
+})
+
+// REQ-F-855 (AC-1602): codex's token_count lines give the gauges Claude Code's status line gives.
+test('codex token_count → 컨텍스트·5시간·주간 게이지', () => {
+  const p = {
+    type: 'token_count',
+    info: { total_token_usage: { total_tokens: 16569 }, last_token_usage: { total_tokens: 25840 }, model_context_window: 258400 },
+    rate_limits: { primary: { used_percent: 1.0, window_minutes: 300, resets_at: 1766909198 }, secondary: { used_percent: 42.4, window_minutes: 10080, resets_at: 1767495998 }, plan_type: null },
+  }
+  const u = codexUsage(p)
+  assert.deepEqual(u, { context: 10, window: 258400, fiveHour: 1, week: 42, cost: null, fiveHourResetsAt: 1766909198000, weekResetsAt: 1767495998000 })
+  // rate_limits null (an older codex, or a call without them): the limits seen before are kept.
+  const v = codexUsage({ type: 'token_count', info: { last_token_usage: { total_tokens: 129200 }, model_context_window: 258400 }, rate_limits: null }, u)
+  assert.equal(v.context, 50)
+  assert.equal(v.week, 42)
+  const st = {}
+  convertLine({ type: 'event_msg', payload: p }, { sid: 's', off: 0, st })
+  assert.equal(st.usage.fiveHour, 1)
 })

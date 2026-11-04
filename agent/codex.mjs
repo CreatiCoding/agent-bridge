@@ -308,6 +308,33 @@ const outputOf = (o) => {
 }
 
 /**
+ * A token_count event → the session's usage, the shape Claude Code's status line gives (REQ-F-855): context from the
+ * last call's tokens over the model's window, the 5-hour and weekly limits from rate_limits (each told apart by its
+ * window_minutes; resets_at is in seconds). A part the event leaves out (rate_limits null) keeps what `prev` had.
+ */
+export function codexUsage(p, prev = null) {
+  const pct = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null)
+  const u = { context: null, window: null, fiveHour: null, week: null, cost: null, fiveHourResetsAt: null, weekResetsAt: null, ...(prev ?? {}) }
+  const info = p?.info
+  const win = Number(info?.model_context_window) || 0
+  const used = Number(info?.last_token_usage?.total_tokens)
+  if (win > 0) u.window = win
+  if (win > 0 && Number.isFinite(used) && used >= 0) u.context = Math.min(100, Math.round((used / win) * 100))
+  const rl = p?.rate_limits
+  if (rl && typeof rl === 'object') {
+    for (const [k, l] of [['primary', rl.primary], ['secondary', rl.secondary]]) {
+      if (!l || typeof l !== 'object' || pct(l.used_percent) == null) continue
+      const m = Number(l.window_minutes)
+      const week = m ? m >= 24 * 60 : k === 'secondary'
+      const at = Number(l.resets_at) * 1000 || null
+      if (week) Object.assign(u, { week: pct(l.used_percent), weekResetsAt: at })
+      else Object.assign(u, { fiveHour: pct(l.used_percent), fiveHourResetsAt: at })
+    }
+  }
+  return u
+}
+
+/**
  * One rollout line → what it gives: Claude Code transcript lines (objects) and turn signals ('begin', 'end').
  * `st` carries what earlier lines said (the model in use) and is changed in place.
  * @param {object} o the parsed rollout line
@@ -326,6 +353,7 @@ export function convertLine(o, { sid, off, st }) {
     if (p.type === 'task_started' || p.type === 'turn_started') signals.push('begin')
     else if (p.type === 'task_complete' || p.type === 'turn_complete') signals.push('end')
     else if (p.type === 'turn_aborted') signals.push('aborted')
+    else if (p.type === 'token_count') st.usage = codexUsage(p, st.usage)
     else if (p.type === 'error' && typeof p.message === 'string') assistant([{ type: 'text', text: `⚠️ codex: ${p.message.slice(0, 2000)}` }], '<synthetic>')
   }
   if (o?.type === 'response_item') {
