@@ -64,3 +64,42 @@ func TestReportMode(t *testing.T) {
 	eq(t, reportMode(false, true), "default", "someone else's report, 자동 대응")
 	eq(t, reportMode(false, false), "default", "someone else's report, manual")
 }
+
+// A Mac that signs (trust warn·enforce) and takes 전부 허용 with new (REQ-F-860, AC-1616): a copy keeps only the
+// original's, which the Mac keeps itself, and the person's defaults are not turned on by an unsigned set.
+func TestInheritAllowSigningHost(t *testing.T) {
+	uid := "allow-sign-user"
+	was := hosts
+	defer func() { hosts = was }()
+	hosts = newOMap[M]()
+	host := "allow-sign-host"
+	hosts.Set(host, M{"uid": uid, "trust": M{"mode": "enforce"}})
+	defer delete(liveStatus, host)
+	live(host)["caps"] = []any{"store", "newAllow"}
+	defer delete(prefsCache, uid)
+	ok(t, hostSigns(host), "enforce signs")
+	ok(t, hostHasCap(host, "newAllow"), "cap")
+	orig := newMeta(uid, "allow-sorig", host, M{})
+	defer sessions.Delete("allow-sorig")
+	mk := func(id string) *Sess {
+		t.Cleanup(func() { sessions.Delete(id) })
+		return newMeta(uid, id, host, M{})
+	}
+	orig.set("autoAllow", true)
+	orig.set("allowAll", true)
+	cp := mk("allow-scp1")
+	inheritAllow(cp, orig, uid)
+	eq(t, allowModeOf(cp), "allowAll", "the original's, kept by the Mac")
+
+	orig.set("autoAllow", false)
+	prefsOf(uid)["launch"] = M{"mode": "allowAll"}
+	cp = mk("allow-scp2")
+	inheritAllow(cp, orig, uid)
+	eq(t, allowModeOf(cp), "", "defaults are not turned on unsigned")
+
+	hosts.Val(host)["trust"] = M{"mode": "off"}
+	ok(t, !hostSigns(host), "off does not sign")
+	cp = mk("allow-scp3")
+	inheritAllow(cp, orig, uid)
+	eq(t, allowModeOf(cp), "allowAll", "trust off: defaults as before")
+}

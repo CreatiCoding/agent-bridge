@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.430',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui', 'server', 'agent'],
+        text: '서명 필수 맥에서 전부 허용으로 새 세션을 만들 때마다 뜨던 "set 거부 (서명 없음)" 알림: 전부 허용을 new 의 서명에 실어 맥이 바로 켜고, 서버는 서명 없는 set 을 따로 보내지 않음. 복제도 원본의 서명된 전부 허용을 맥이 그대로 옮김',
+        refs: ['REQ-F-860'],
+      },
+    ],
+  },
+  {
     version: '1.429',
     date: '2026-11-04',
+    commit: '141f723',
     changes: [
       {
         kind: 'changed',
