@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.418',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: 'Codex 세션에도 권한 모드(묻기·안전한 전부 허용·전부 허용): 켜면 맥이 codex 승인 창을 한 번 허용으로 대신 답하고, 안전한 전부 허용은 위험한 명령과 질문 줄이 화면 밖으로 밀린 창만 카드로 물음. 세션 설정과 새 세션에서 고름',
+        refs: ['REQ-F-856', 'REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.417',
     date: '2026-11-04',
+    commit: '90d44f1',
     changes: [
       {
         kind: 'fixed',

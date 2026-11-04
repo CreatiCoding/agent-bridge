@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -22,7 +22,7 @@ test('a session with no runner, or claude, is Claude Code and can do everything'
 test('another runner can do only what it says, and nothing once its Mac no longer has it', () => {
   const runners = { codex: CODEX }
   assert.ok(can({ runner: 'codex' }, 'cards', runners))
-  for (const cap of ['fork', 'model', 'move', 'compact', 'trim', 'autoAllow', 'bridgeTools', 'btw', 'skills']) assert.equal(can({ runner: 'codex' }, cap, runners), false, cap)
+  for (const cap of ['fork', 'model', 'mode', 'move', 'compact', 'trim', 'bridgeTools', 'btw', 'skills']) assert.equal(can({ runner: 'codex' }, cap, runners), false, cap)
   assert.equal(can({ runner: 'codex' }, 'cards', {}), false)
   for (const cap of CODEX.caps) assert.ok(CAPS.includes(cap), cap)
 })
@@ -34,7 +34,7 @@ test('a new session names a runner this Mac has, or gets Claude Code', () => {
   assert.equal(pickRunner('codex', ['claude']), null)
   assert.equal(pickRunner('../x', ['claude', '../x']), null)
   assert.equal(pickRunner({}, ['claude']), null)
-  assert.deepEqual(runnerBrief(CODEX, '0.166.0'), { id: 'codex', name: 'Codex', version: '0.166.0', caps: ['cards'] })
+  assert.deepEqual(runnerBrief(CODEX, '0.166.0'), { id: 'codex', name: 'Codex', version: '0.166.0', caps: ['cards', 'autoAllow'] })
   assert.equal('version' in runnerBrief(CLAUDE), false)
 })
 
@@ -356,4 +356,19 @@ test('codex token_count → 컨텍스트·5시간·주간 게이지', () => {
   const st = {}
   convertLine({ type: 'event_msg', payload: p }, { sid: 's', off: 0, st })
   assert.equal(st.usage.fiveHour, 1)
+})
+
+// REQ-F-856 (AC-1604): 전부 허용 answers codex's approval with "yes, once", and the risk check reads its command.
+test('codex 승인 창에 전부 허용이 고르는 답과 위험 판정에 넘기는 명령', () => {
+  assert.ok(can({ runner: 'codex' }, 'autoAllow', { codex: CODEX }))
+  const a = parseApproval(APPROVAL)
+  const r = codexAutoAnswer(a)
+  assert.equal(r.option.key, 'y')
+  assert.deepEqual(r.tool, { name: 'Bash', input: { command: 'echo hello-from-fake > out.txt' } })
+  // Only a "don't ask again" yes, or no yes at all: nothing is answered.
+  assert.equal(codexAutoAnswer({ question: 'Allow?', context: '', options: [{ n: 1, label: "Yes, and don't ask again", key: 'a' }, { n: 2, label: 'No', key: 'Escape' }] }), null)
+  // No "$ " line (edits): the whole question goes to the risk check.
+  const e = codexAutoAnswer({ question: 'Would you like to make the following edits?', context: '.env', options: [{ n: 1, label: 'Yes, proceed', key: 'y' }] })
+  assert.match(e.tool.input.command, /\.env/)
+  assert.equal(codexAutoAnswer(null), null)
 })

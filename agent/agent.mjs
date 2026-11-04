@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, APPROVAL_UNKNOWN, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -1365,6 +1365,7 @@ async function watchCodex(sid, s, screen) {
     if (s.card?.open && s.card.sig === sig) return void (s.gone = 0)
     if (s.answered?.sig === sig && Date.now() - s.answered.at < 3000) return
     if (s.card?.open) foldCard(sid, s, '다른 확인 창으로 넘어감')
+    if (s.autoAllow && (await autoAllowCodex(sid, s, a, sig))) return
     openCard(sid, s, { kind: 'permission', sig, title: a.question, context: a.context, options: a.options.map((o) => ({ n: o.n, label: o.label, kind: /^No\b/i.test(o.label) ? 'deny' : /don'?t ask again|always/i.test(o.label) ? 'allow-always' : /session/i.test(o.label) ? 'allow-session' : 'allow-once' })) })
     return
   }
@@ -1372,6 +1373,32 @@ async function watchCodex(sid, s, screen) {
   if (s.wait && !s.card?.open) s.wait = null
   // A turn codex never closed (its process ended mid-turn): an idle box for a minute with a quiet mirror.
   if (s.turn && idle && Date.now() - s.activityAt >= TURN_STALE_MS && transcriptQuietMs(mirrorPath(sid)) >= TURN_STALE_MS) endTurn(sid, s, 'codex: 화면이 쉬고 있어 턴을 닫음')
+}
+
+/**
+ * 전부 허용 on a codex terminal (REQ-F-856): its approval is answered "yes, once" here, as the PermissionRequest hook
+ * does for Claude Code (autoAllowAnswer). A risky call (안전한 전부 허용), or a Mac-terminal-only one (전부 허용), is
+ * left to the card, said once per question.
+ */
+async function autoAllowCodex(sid, s, a, sig) {
+  const pick = codexAutoAnswer(a)
+  if (!pick) return false
+  // Its question pushed off the screen (a long command): what it runs cannot all be read, so the safe one asks.
+  const unseen = !s.allowAll && a.question === APPROVAL_UNKNOWN ? '화면에 다 보이지 않는 명령' : null
+  const risk = unseen ?? (s.allowAll ? bridgeSelfCall(pick.tool) : riskyCall(pick.tool, { cwd: s.cwd, home: os.homedir() }))
+  if (risk) {
+    if (s.guarded?.sig !== sig) {
+      s.guarded = { reason: risk, at: Date.now(), sig }
+      log('info', 'dialog', `전부 허용이지만 ${risk} 는 물어봄: codex`, sid)
+      note(sid, `⚠️ *${s.allowAll ? '전부 허용' : '안전한 전부 허용'}*이라 ${risk}는 물어봐요.`, 'warn')
+    }
+    return false
+  }
+  await term.sendKeys(pane(s), [pick.option.key])
+  s.answered = { sig, at: Date.now() }
+  emit({ t: 'card', sid, card: { id: crypto.randomUUID(), kind: 'permission', open: false, auto: true, at: Date.now(), title: a.question, tool: pick.tool, result: '자동 허용' } })
+  log('info', 'dialog', `전부 허용: codex 승인을 ${pick.option.key} 로 허용`, sid)
+  return true
 }
 
 /** A card's answer on a codex terminal: the key the option names, once the same question is still on screen. */
@@ -3682,7 +3709,7 @@ const commands = {
     if (autoAllow === true && !can(s, 'autoAllow', RUNNERS)) return void cannot(sid, s, '전부 허용')
     if (typeof autoAllow === 'boolean' || typeof allowAll === 'boolean') s.autoAllowSigned = !!signed && autoAllow === true
     if (typeof autoPush === 'boolean') Object.assign(s, { autoPush, folderAt: 0 })
-    if (autoAllow === true && (await alive(s))) {
+    if (autoAllow === true && isClaude(s) && (await alive(s))) {
       // Allowing everything here only means something while the terminal itself asks: in another mode Claude
       // Code decides on its own, and what it refuses there never reaches the agent.
       const read = await cycleToMode(s, 'default')

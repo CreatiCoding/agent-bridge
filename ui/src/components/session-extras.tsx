@@ -16,7 +16,7 @@ import { act, command, sessionPost } from './session-menu'
 import { AllowHint, confirmAllowAll } from './auto-allow-confirm'
 import { featureOn } from '../lib/features'
 import { openLink } from '../lib/builtin-actions'
-import { CodexModeFields } from './codex-mode'
+import { CodexAllowField, CodexModeFields } from './codex-mode'
 
 /** How a to-do's state reads at a glance (REQ-F-778). */
 const TODO_MARK: Record<string, string> = { completed: 'todoDone', in_progress: 'todoNow', pending: 'todo' }
@@ -366,6 +366,12 @@ async function setMode(s: Session, mode: string) {
   await act(() => command(s, 'mode', mode), '권한 모드를 바꿨어요')
 }
 
+/** 전부 허용 alone, for a runner without Claude Code's permission modes (REQ-F-856): "" turns it off. */
+async function setAllowOnly(s: Session, mode: string) {
+  if (mode === 'allowAll' && !(await confirmAllowAll(false))) return
+  await act(() => (mode ? command(s, 'mode', mode) : command(s, 'auto', 'off')), mode ? '권한 모드를 바꿨어요' : '전부 허용을 껐어요')
+}
+
 export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean; onClose: () => void }) {
   const [opts, setOpts] = useState<Options | null>(null)
   useEffect(() => {
@@ -388,6 +394,7 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
               <CodexModeFields value={s.codexMode ?? ''} onChange={(v) => act(() => sessionPost(s, 'setting', { kind: 'codexMode', value: v }), '다음에 다시 열 때 이 모드로 떠요')} />
             </>
           ) : null}
+          {!runnerCan(s, 'mode') && runnerCan(s, 'autoAllow') ? <CodexAllowField value={s.state.autoAllow ? mode : ''} onChange={(v) => void setAllowOnly(s, v)} /> : null}
           {runnerCan(s, 'model') ? (
           <Field label="모델" hint="Claude Code 가 이 맥의 기본값으로도 저장해요">
             <select className="input" value={opts.models.some((m) => m.value === model) ? model : ''} onChange={(e) => act(() => command(s, 'model', e.target.value), '모델을 바꿨어요')}>

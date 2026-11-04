@@ -171,8 +171,10 @@ func startSession(uid string, b M, req *Req) string {
 	}
 	mode, autoAllow := startMode(jsSliceTo(orStr(b["mode"]), 20))
 	// Another runner takes none of Claude Code's launch settings (the person's defaults are Claude's).
+	// 전부 허용, asked for this session, stays for a runner that can do it (REQ-F-856).
 	if runner != "" {
-		mode, autoAllow = "", false
+		r := hostRunner(hostID, runner)
+		mode, autoAllow = "", autoAllow && r != nil && containsAny(asArr(r["caps"]), "autoAllow")
 		b["model"], b["effort"] = "", ""
 	}
 	cmd := M{"t": "new", "sid": sid, "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "create": b["create"] == true, "cwd": jsSliceTo(cwd, 1000), "prompt": prompt, "autoPush": true, "model": jsSliceTo(orStr(b["model"]), 60), "effort": jsSliceTo(orStr(b["effort"]), 10), "mode": mode}

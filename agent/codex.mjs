@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
-export const CODEX = Object.freeze({ id: 'codex', name: 'Codex', caps: Object.freeze(['cards']) })
+export const CODEX = Object.freeze({ id: 'codex', name: 'Codex', caps: Object.freeze(['cards', 'autoAllow']) })
 
 /** Where codex keeps its conversations: $CODEX_HOME (as the agent was started with), else ~/.codex. */
 export const codexHome = (env = process.env, home = os.homedir()) => (env.CODEX_HOME && path.isAbsolute(env.CODEX_HOME) ? env.CODEX_HOME : path.join(home, '.codex'))
@@ -587,3 +587,19 @@ export function parseApproval(screen) {
 export const APPROVAL_UNKNOWN = 'Codex 가 터미널에서 승인을 기다려요'
 /** How many lines above the options the card shows as context when the question line is not on screen. */
 const APPROVAL_CONTEXT_LINES = 30
+
+/**
+ * What 전부 허용 answers a codex approval with (REQ-F-856): the option that allows this once ("Yes, proceed"), never
+ * one that allows from then on ("don't ask again") nor a refusal; null when there is none. `tool` is the call as the
+ * risk check (guard.mjs riskyCall) reads it: the command after "$ " with its lines, or for edits and the rest the
+ * whole question as a command, so a risky word in it is still asked about.
+ */
+export function codexAutoAnswer(a) {
+  if (!a) return null
+  const yes = a.options.find((o) => o.key !== 'Escape' && /^yes\b/i.test(o.label) && !/don'?t ask|always|session/i.test(o.label))
+  if (!yes) return null
+  const lines = a.context.split('\n')
+  const at = lines.findIndex((l) => l.startsWith('$ '))
+  const command = at >= 0 ? lines.slice(at).join('\n').slice(2) : `${a.question}\n${a.context}`
+  return { option: yes, tool: { name: 'Bash', input: { command } } }
+}

@@ -1,5 +1,24 @@
 import { Field, Switch } from '../kit'
 import { codexModeParts, codexModeOf, codexOptions } from '../lib/codex-mode'
+import { AllowHint } from './auto-allow-confirm'
+
+/**
+ * A Codex session's 전부 허용 (REQ-F-856): "" leaves codex's approvals to the person as cards; 안전한 전부 허용 has the
+ * Mac answer them except risky calls; 전부 허용 answers them all. Claude Code's other permission modes are not codex's.
+ */
+export function CodexAllowField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <Field label="권한 모드" hint={value ? <AllowHint mode={value} /> : 'Codex 의 승인 창을 권한 카드로 물어요'}>
+      <select className={`input${value === 'allowAll' ? ' input-allow-all' : ''}`} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">묻기 (권한 카드)</option>
+        <option value="autoAllow">안전한 전부 허용</option>
+        <option value="allowAll" className="opt-allow-all">
+          전부 허용
+        </option>
+      </select>
+    </Field>
+  )
+}
 
 /**
  * A Codex session's sandbox and approval (REQ-F-854), picked like Claude Code's permission mode. "" in either is

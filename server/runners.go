@@ -145,7 +145,12 @@ func runnerGate(meta *Sess, op string, b M) {
 		}
 	}
 	if op == "do" {
-		cap = runnerDoCaps[strField(b, "cmd")]
+		cmd := strField(b, "cmd")
+		cap = runnerDoCaps[cmd]
+		// `:mode autoAllow|allowAll` turns 전부 허용 on, not a Claude Code permission mode (REQ-F-856).
+		if a := strField(b, "arg"); cmd == "mode" && (a == "autoAllow" || a == "allowAll") {
+			cap = "autoAllow"
+		}
 	}
 	if op == "move" {
 		h, _ := b["hostId"].(string)
