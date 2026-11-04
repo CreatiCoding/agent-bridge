@@ -1120,6 +1120,13 @@ select.input {
   gap: 3px;
 }
 /* Activity rings around the runner's mark: weekly outside, 5-hour inside. */
+/* The status colors pulled about a quarter of the way toward the neutral text gray (in oklab, so the hue holds):
+   at full strength three rings in a 52 px rail glare, and much further they turn muddy. */
+.rail-usage {
+  --ring-ok: color-mix(in oklab, var(--green) 74%, var(--muted));
+  --ring-mid: color-mix(in oklab, var(--amber) 74%, var(--muted));
+  --ring-high: color-mix(in oklab, var(--red) 78%, var(--muted));
+}
 .rail-ring {
   display: block;
 }
@@ -1130,14 +1137,14 @@ select.input {
   stroke: var(--line);
 }
 .rail-ring-fill {
-  stroke: var(--green);
+  stroke: var(--ring-ok);
   stroke-linecap: round;
 }
 .rail-ring-fill.mid {
-  stroke: var(--amber);
+  stroke: var(--ring-mid);
 }
 .rail-ring-fill.high {
-  stroke: var(--red);
+  stroke: var(--ring-high);
 }
 .rail-ring-mark {
   fill: none;
@@ -1152,9 +1159,9 @@ select.input {
 .app-rail .rail-usage-row {
   display: grid;
   grid-template-columns: auto auto;
-  justify-content: space-between;
+  justify-content: center;
   align-items: baseline;
-  gap: 1px 3px;
+  gap: 1px 4px;
   width: 40px;
   font-variant-numeric: tabular-nums;
 }
@@ -1163,7 +1170,7 @@ select.input {
   color: var(--text);
 }
 .rail-usage-row.high .rail-usage-v {
-  color: var(--red);
+  color: var(--ring-high);
 }
 /* Time until the limit fills again, under its value. */
 .rail-usage-left {

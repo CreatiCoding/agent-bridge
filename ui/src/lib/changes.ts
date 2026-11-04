@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.429',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'PC 앱 레일 사용량 링의 색을 한 톤 낮추고(상태색을 회색 쪽으로 약 1/4 섞음), "주"와 퍼센트를 양 끝으로 벌리던 것을 가운데로 모음',
+        refs: ['REQ-F-858'],
+      },
+    ],
+  },
+  {
     version: '1.428',
     date: '2026-11-04',
+    commit: 'e1dbfa1',
     changes: [
       {
         kind: 'changed',
