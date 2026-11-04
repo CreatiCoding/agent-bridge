@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // Codex 로 이어서 작업 (REQ-F-857): a Claude Code session's work goes on in a new Codex session in the same folder of
 // the same Mac. The page writes the summary (asked of the Claude session) and starts the Codex session with it as the
@@ -42,7 +45,50 @@ func handoffSource(uid, hostID, runner string, b M) *Sess {
 	if truthy(src.get("lock")) {
 		refuse(409, "잠긴 세션은 이어서 작업할 수 없어요")
 	}
+	handoffReady(src, handoffCwd(b))
 	return src
+}
+
+// handoffCwd: the folder the new session asks for, as startSession reads it.
+func handoffCwd(b M) string {
+	if truthy(b["cwd"]) {
+		return jsString(b["cwd"])
+	}
+	return "~"
+}
+
+// handoffReady refuses a hand-over the source session is not safe to give now: Claude is working, asking, starting,
+// has messages waiting to go in, or is being moved, or the new session would start in another folder. Called when the
+// start is checked and again right before the Mac is told to start Codex: the server's lock is let go while it waits
+// (hooks, the Mac), so the source's state may change in between.
+func handoffReady(src *Sess, cwd string) {
+	st := src.state()
+	if truthy(st["alive"]) {
+		switch mstr(st, "phase") {
+		case "busy", "starting":
+			refuse(409, "Claude 가 지금 작업 중이에요. 끝나거나 멈춘 뒤에 Codex 로 이어서 작업해요")
+		case "waiting":
+			refuse(409, "Claude 가 답을 기다리고 있어요. 세션에서 답한 뒤 Codex 로 이어서 작업해요")
+		}
+		if len(asArr(st["held"])) > 0 {
+			refuse(409, "Claude 세션에 보낼 글이 남아 있어요. 처리된 뒤 Codex 로 이어서 작업해요")
+		}
+	}
+	if truthy(src.get("moving")) {
+		refuse(409, "옮기는 중인 세션은 이어서 작업할 수 없어요")
+	}
+	if d := handoffDir(src.str("cwd")); d == "" || d != handoffDir(cwd) {
+		refuse(409, "Codex 는 원래 세션과 같은 폴더에서만 이어서 작업할 수 있어요")
+	}
+}
+
+// handoffDir: a folder as the two sessions' folders are compared, without a trailing slash.
+func handoffDir(p string) string {
+	p = jsTrim(p)
+	for len(p) > 1 && strings.HasSuffix(p, "/") {
+		p = p[:len(p)-1]
+	}
+	return p
 }
 
 // handoffClaim takes a hand-over's key for this start. It returns the session already made with that key (the

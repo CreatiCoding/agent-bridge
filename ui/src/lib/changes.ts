@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.422',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: 'Codex 로 이어서 작업을 서버가 원본 Claude 세션이 쉬는 중이고(작업·답 기다림·시작 중·남은 글·옮기는 중이면 409) 새 세션이 원본과 같은 폴더일 때만 시작함. 맥에 보내기 바로 앞에서 한 번 더 확인',
+        refs: ['REQ-F-857'],
+      },
+    ],
+  },
+  {
     version: '1.421',
     date: '2026-11-04',
+    commit: 'e904dd7',
     changes: [
       {
         kind: 'added',

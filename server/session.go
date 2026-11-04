@@ -235,8 +235,7 @@ func startSession(uid string, b M, req *Req) string {
 	if base, ok := b["dirBase"].(string); ok && base != "" && internal && cmd["create"] == true {
 		cmd["base"] = jsSliceTo(base, 200)
 	}
-	r := ask(hostID, cmd, 60_000)
-	if !truthy(r["ok"]) {
+	undo := func() {
 		sessions.Delete(sid)
 		dirty.Delete(sid)
 		_ = os.RemoveAll(sessionDir(meta))
@@ -245,6 +244,18 @@ func startSession(uid string, b M, req *Req) string {
 			savePrefs(uid)
 		}
 		broadcastState(uid)
+	}
+	// A hand-over is checked again right before the Mac starts Codex (REQ-F-857): the source may have started working
+	// or moved since it was first checked.
+	if src != nil {
+		if err := try(func() { handoffReady(src, cwd) }); err != nil {
+			undo()
+			panic(err)
+		}
+	}
+	r := ask(hostID, cmd, 60_000)
+	if !truthy(r["ok"]) {
+		undo()
 		record(uid, hostID, M{"level": "error", "area": "new", "sid": sid, "text": "세션을 시작하지 못함: " + jsStringU(r["error"])})
 		status := 502
 		extra := M{}
