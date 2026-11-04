@@ -346,12 +346,31 @@ func needFeature(name string) {
 }
 
 func turnOnAutoAllow(meta *Sess, all bool) {
+	if markAutoAllow(meta, all) {
+		toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoAllow": true, "allowAll": all})
+	}
+}
+
+// markAutoAllow: the server's record of 전부 허용, for a Mac that turns it on by itself (REQ-F-860).
+func markAutoAllow(meta *Sess, all bool) bool {
 	if !modeOk(allowMode(all)) {
-		return // outside permissionModes: lowered to default, which asks (REQ-F-812)
+		return false // outside permissionModes: lowered to default, which asks (REQ-F-812)
 	}
 	meta.set("autoAllow", true)
 	meta.set("allowAll", all)
-	toHost(meta.host(), M{"t": "set", "sid": meta.id(), "autoAllow": true, "allowAll": all})
+	return true
+}
+
+// hostHasCap: the Mac's agent said it can do this in its hello (caps).
+func hostHasCap(hostID, c string) bool {
+	return containsAny(asArr(live(hostID)["caps"]), c)
+}
+
+// hostSigns: the Mac takes only commands its paired devices signed (trust warn or enforce), so an unsigned set the
+// server makes up on its own is refused there (REQ-F-860).
+func hostSigns(hostID string) bool {
+	m := mstr(mget(hosts.Val(hostID), "trust"), "mode")
+	return m != "" && m != "off"
 }
 
 // allowModeOf: a session's permission policy as a launch mode ("" when it asks as the terminal does).
@@ -368,6 +387,14 @@ func allowModeOf(meta *Sess) string {
 // inheritAllow: a copy keeps the original's 전부 허용 as it is (REQ-F-796); an original that asks leaves it to the
 // person's defaults.
 func inheritAllow(cp, from *Sess, uid string) {
+	// A Mac that signs keeps the original's signed 전부 허용 in the copy itself (agent keepSignedAllow); the person's
+	// defaults are not the server's to turn on there.
+	if hostSigns(cp.host()) && hostHasCap(cp.host(), "newAllow") {
+		if m := allowModeOf(from); m != "" {
+			markAutoAllow(cp, m == "allowAll")
+		}
+		return
+	}
 	if m := allowModeOf(from); m != "" {
 		turnOnAutoAllow(cp, m == "allowAll")
 	} else if launchAutoAllow(uid) {

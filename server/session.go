@@ -222,6 +222,11 @@ func startSession(uid string, b M, req *Req) string {
 	if b["chrome"] == false {
 		cmd["chrome"] = false
 	}
+	// 전부 허용 rides on new for a Mac that takes it there (REQ-F-860): signed with it while trust is on.
+	allowAll := jsSliceTo(orStr(b["mode"]), 20) == "allowAll"
+	if autoAllow {
+		cmd["autoAllow"], cmd["allowAll"] = true, allowAll
+	}
 	if account != "" && runner == "" {
 		cmd["account"] = account
 	}
@@ -279,7 +284,11 @@ func startSession(uid string, b M, req *Req) string {
 		meta.set("launchModel", jsSliceTo(jsString(b["model"]), 60))
 	}
 	if autoAllow {
-		turnOnAutoAllow(meta, jsSliceTo(orStr(b["mode"]), 20) == "allowAll")
+		if hostHasCap(hostID, "newAllow") {
+			markAutoAllow(meta, allowAll) // the Mac turned it on with new: no unsigned set after it
+		} else {
+			turnOnAutoAllow(meta, allowAll)
+		}
 	}
 	touch(meta)
 	// Anything it said before this point may have been said to nobody: have it say where it stands.
