@@ -4,7 +4,7 @@
 import { SlotActions } from '../components/slot-parts'
 import { useEffect, useRef, useState } from 'react'
 import { errorText, get, getSealed, post } from '../lib/api'
-import { ADOPT_WAIT_MS, adoptWhenFree, AdoptWaitStopped, type AdoptWait } from '../lib/adopt-wait'
+import { ADOPT_WAIT_MS, adoptControl, adoptEach, AdoptLeft, AdoptWaitStopped, type AdoptControl, type AdoptWait } from '../lib/adopt-wait'
 import { ago, bytes, shortPath } from '../lib/format'
 import { go } from '../lib/router'
 import { Badge, Button, Empty, Icon, Spinner } from '../kit'
@@ -94,18 +94,27 @@ export function AdoptList({ hostId }: { hostId: string }) {
   // 쓰는 중이면 기다렸다 가져오기 (REQ-F-867): a conversation another tool is still using is tried again until it is
   // free (at most ADOPT_WAIT_MS), with a banner and a stop button, instead of a toast that sends the person back.
   const [wait, setWait] = useState<AdoptWait | null>(null)
-  const stop = useRef(false)
-  useEffect(() => () => void (stop.current = true), [])
+  // 기다리지 않기 skips the one being waited on; leaving the page ends the whole run (kept apart, never reset).
+  // Made in the effect so StrictMode's trial unmount cannot leave a stopped one behind; each run holds its own.
+  const ctlRef = useRef(adoptControl())
+  useEffect(() => {
+    const c = (ctlRef.current = adoptControl())
+    return () => c.leave()
+  }, [])
   const postAdopt = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first, ...(c.runner === 'codex' ? { runner: 'codex', ...(codexMode ? { codexMode } : {}) } : {}) })
-  const adoptOne = async (c: Conversation) => {
-    stop.current = false
+  const adoptOne = async (c: Conversation, ctl: AdoptControl) => {
     try {
-      return await adoptWhenFree(() => postAdopt(c), { message: errorText, onWait: setWait, stopped: () => stop.current })
+      return await ctl.one(() => postAdopt(c), { message: errorText, onWait: (w) => void (ctl.left() || setWait(w)) })
     } finally {
-      setWait(null)
+      if (!ctl.left()) setWait(null)
     }
   }
-  const failed = (e: unknown) => (e instanceof AdoptWaitStopped ? toast('가져오기를 멈췄어요') : toast(errorText(e), { tone: 'bad' }), setRun(null))
+  const failed = (e: unknown) => {
+    if (e instanceof AdoptLeft) return
+    if (e instanceof AdoptWaitStopped) toast('가져오기를 멈췄어요')
+    else toast(errorText(e), { tone: 'bad' })
+    setRun(null)
+  }
   const resumeOf = (c: Conversation) => (c.runner === 'codex' ? 'codex resume' : 'claude --resume')
   const busyNote = `다른 터미널이나 도구에서 아직 쓰는 중이면 그쪽이 끝날 때까지 기다렸다가(최대 ${ADOPT_WAIT_MS / 60_000}분) 가져와요. 그쪽을 닫으면 더 빨라요.`
 
@@ -118,7 +127,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
     if (!ok) return
     setRun({ done: 0, failed: [], total: 1, now: nameOf(c) })
     try {
-      const r = await adoptOne(c)
+      const r = await adoptOne(c, ctlRef.current)
       openSession(r.id, 'adopt', { replace: true })
     } catch (e) {
       failed(e)
@@ -137,7 +146,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
     if (!ok) return
     setRun({ done: 0, failed: [], total: 1, now: nameOf(c) })
     try {
-      const r = await adoptOne(c)
+      const r = await adoptOne(c, ctlRef.current)
       openSession(r.id, 'adopt', { replace: true })
       openHandoff(r.id, { auto: true })
     } catch (e) {
@@ -154,15 +163,12 @@ export function AdoptList({ hostId }: { hostId: string }) {
       danger: active > 0,
     })
     if (!ok) return
-    const failed: { title: string; error: string }[] = []
-    for (const [i, c] of items.entries()) {
-      setRun({ done: i, failed: [...failed], total: items.length, now: nameOf(c) })
-      try {
-        await adoptOne(c)
-      } catch (e) {
-        failed.push({ title: nameOf(c), error: e instanceof AdoptWaitStopped ? '기다리기를 멈췄어요' : errorText(e) })
-      }
-    }
+    const note = (f: { item: Conversation; error: unknown }[]) => f.map(({ item, error }) => ({ title: nameOf(item), error: error instanceof AdoptWaitStopped ? '기다리기를 멈췄어요' : errorText(error) }))
+    const ctl = ctlRef.current
+    const r = await adoptEach(items, ctl, (c) => adoptOne(c, ctl), (i, f) => setRun({ done: i, failed: note(f), total: items.length, now: nameOf(items[i]) }))
+    // Left the list page: the run is over and the page is gone, so nothing more is shown or sent.
+    if (r.left) return
+    const failed = note(r.failed)
     setRun({ done: items.length, failed, total: items.length, now: '' })
     setPicked(new Set(failed.length ? items.filter((c) => failed.some((f) => f.title === nameOf(c))).map((c) => c.conv) : []))
     toast(failed.length ? `${items.length - failed.length}개를 가져왔고 ${failed.length}개는 못 가져왔어요` : `${items.length}개를 모두 가져왔어요`, { tone: failed.length ? 'bad' : 'ok' })
@@ -203,7 +209,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
                       다른 도구(터미널 등)가 이 대화를 아직 쓰고 있어요. 끝나면 바로 가져와요 · {wait.tries}번 확인함 · 최대 {Math.ceil(wait.leftMs / 60_000)}분 더 기다려요
                     </div>
                     <div className="banner-actions">
-                      <Button size="sm" onClick={() => (stop.current = true)}>
+                      <Button size="sm" onClick={() => ctlRef.current.skip()}>
                         기다리지 않기
                       </Button>
                     </div>

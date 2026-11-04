@@ -55,3 +55,60 @@ export async function adoptWhenFree<T>(
     }
   }
 }
+
+/** Thrown when the page that ran the adopt is gone: the whole run ends, nothing after it is sent. */
+export class AdoptLeft extends Error {
+  constructor() {
+    super('목록 화면을 떠나 가져오기를 멈췄어요')
+  }
+}
+
+/**
+ * The two ways a run stops, kept apart (REQ-F-867 rule 2): `skip` (기다리지 않기) gives up only the conversation being
+ * waited on and the run goes on to the next; `leave` (the list page unmounted) ends the whole run and is never undone,
+ * so no later conversation and no retry is sent after it.
+ */
+export function adoptControl() {
+  let skipped = false
+  let gone = false
+  return {
+    skip: () => void (skipped = true),
+    leave: () => void (gone = true),
+    left: () => gone,
+    /** One conversation: `adoptWhenFree` that hears both stops. A skip only lasts for this conversation. */
+    async one<T>(once: () => Promise<T>, opts: Omit<Parameters<typeof adoptWhenFree<T>>[1], 'stopped'>): Promise<T> {
+      if (gone) throw new AdoptLeft()
+      skipped = false
+      try {
+        return await adoptWhenFree(() => (gone ? Promise.reject(new AdoptLeft()) : once()), { ...opts, stopped: () => skipped || gone })
+      } catch (e) {
+        throw gone ? new AdoptLeft() : e
+      }
+    },
+  }
+}
+export type AdoptControl = ReturnType<typeof adoptControl>
+
+/**
+ * Several, one after another. A failure (or a skip) is noted and the run goes on; leaving the page ends it at once
+ * with `left: true`, and the caller must not touch the page after that.
+ */
+export async function adoptEach<C>(
+  items: C[],
+  ctl: AdoptControl,
+  adopt: (c: C) => Promise<unknown>,
+  onItem?: (i: number, failed: { item: C; error: unknown }[]) => void,
+): Promise<{ failed: { item: C; error: unknown }[]; left: boolean }> {
+  const failed: { item: C; error: unknown }[] = []
+  for (const [i, c] of items.entries()) {
+    if (ctl.left()) return { failed, left: true }
+    onItem?.(i, [...failed])
+    try {
+      await adopt(c)
+    } catch (e) {
+      if (e instanceof AdoptLeft || ctl.left()) return { failed, left: true }
+      failed.push({ item: c, error: e })
+    }
+  }
+  return { failed, left: ctl.left() }
+}

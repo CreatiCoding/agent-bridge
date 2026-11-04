@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.439',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '여러 대화 가져오기 중 목록 화면을 떠나면 남은 대화의 가져오기·다시 시도를 보내지 않고 일괄 작업을 끝냄("기다리지 않기"는 지금 대화만 건너뜀)',
+        refs: ['REQ-F-867'],
+      },
+    ],
+  },
+  {
     version: '1.438',
     date: '2026-11-05',
+    commit: '58430ab',
     changes: [
       {
         kind: 'changed',
