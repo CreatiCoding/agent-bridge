@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.420',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: 'Codex 안전한 전부 허용이 파일 수정 승인을 대상 파일로 판정. ~/.zshrc 같은 셸 시작 파일·비밀 파일 수정은 카드로 묻고, 대상 파일이나 승인 종류를 알 수 없으면 자동 승인하지 않음',
+        refs: ['REQ-F-856'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 전부 허용이 키를 보내기 직전에 지금 모드로 다시 판정. 그사이 자동 허용을 껐거나 안전한 전부 허용으로 바꿨으면 앞 판단으로 승인하지 않음',
+        refs: ['REQ-F-856'],
+      },
+    ],
+  },
+  {
     version: '1.419',
     date: '2026-11-04',
+    commit: 'efc1ac0',
     changes: [
       {
         kind: 'fixed',

@@ -9,6 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { riskyCall, bridgeSelfCall } from './guard.mjs'
 
 export const CODEX = Object.freeze({ id: 'codex', name: 'Codex', caps: Object.freeze(['cards', 'autoAllow']) })
 
@@ -590,9 +591,10 @@ const APPROVAL_CONTEXT_LINES = 30
 
 /**
  * What 전부 허용 answers a codex approval with (REQ-F-856): the option that allows this once ("Yes, proceed"), never
- * one that allows from then on ("don't ask again") nor a refusal; null when there is none. `tool` is the call as the
- * risk check (guard.mjs riskyCall) reads it: the command after "$ " with its lines, or for edits and the rest the
- * whole question as a command, so a risky word in it is still asked about.
+ * one that allows from then on ("don't ask again") nor a refusal; null when there is none. `tools` are the calls the
+ * risk check (guard.mjs riskyCall) reads: a command is the one after "$ " with its lines; an edit is every file it names
+ * as an Edit (so a shell start file or a secret is judged as the file it is, 1.420) plus the whole text as a command.
+ * `unknown` says why the kind or the targets could not be read for sure: 안전한 전부 허용 then asks (1.420).
  */
 export function codexAutoAnswer(a) {
   if (!a) return null
@@ -600,8 +602,45 @@ export function codexAutoAnswer(a) {
   if (!yes) return null
   const lines = a.context.split('\n')
   const at = lines.findIndex((l) => l.startsWith('$ '))
-  const command = at >= 0 ? lines.slice(at).join('\n').slice(2) : `${a.question}\n${a.context}`
-  return { option: yes, tool: { name: 'Bash', input: { command } } }
+  const whole = { name: 'Bash', input: { command: `${a.question}\n${a.context}` } }
+  if (at >= 0) {
+    const tool = { name: 'Bash', input: { command: lines.slice(at).join('\n').slice(2) } }
+    return { option: yes, tool, tools: [tool], unknown: null }
+  }
+  if (/\bedits?\b|\bpatch\b/i.test(a.question)) {
+    const files = codexEditFiles(a.context)
+    const tools = [whole, ...files.map((f) => ({ name: 'Edit', input: { file_path: f } }))]
+    return { option: yes, tool: whole, tools, unknown: files.length ? null : '대상 파일을 알 수 없는 수정' }
+  }
+  return { option: yes, tool: whole, tools: [whole], unknown: '종류를 알 수 없는 승인' }
+}
+
+/**
+ * Every word of an edit approval that may be a file: one with a "/", a dot file (".zshrc") or a name with an
+ * extension. Words of the diff itself may come along too; they only make the check ask more, never less.
+ */
+export function codexEditFiles(text) {
+  const out = new Set()
+  for (let w of String(text ?? '').split(/[\s'"`()[\]{},;]+/)) {
+    w = w.replace(/^[+\-*•└├│>]+/, '').replace(/[:.]+$/, '')
+    if (!w || /^[a-z][a-z0-9+.-]*:\/\//i.test(w)) continue
+    if (w.includes('/') || /^\.[\w-][\w.-]*$/.test(w) || /^[\w@+-]+(\.[\w-]+)+$/.test(w)) out.add(w)
+  }
+  return [...out]
+}
+
+/**
+ * Why 전부 허용 must ask about this approval in the mode the session is in now, or null to answer it (REQ-F-856):
+ * 전부 허용 asks only for what is the Mac terminal's own (bridgeSelfCall); 안전한 전부 허용 also for a question pushed
+ * off the screen, an approval whose kind or files are not known, and a risky call. 'off' when 전부 허용 is not on.
+ * Judged again right before the key, with the mode as it is then (1.420).
+ */
+export function codexAutoRisk(a, pick, { autoAllow, allowAll, cwd = '', home = '' }) {
+  if (!autoAllow) return 'off'
+  const first = (f) => pick.tools.map(f).find(Boolean) ?? null
+  if (allowAll) return first(bridgeSelfCall)
+  if (a.question === APPROVAL_UNKNOWN) return '화면에 다 보이지 않는 명령'
+  return pick.unknown ?? first((t) => riskyCall(t, { cwd, home }))
 }
 
 /**

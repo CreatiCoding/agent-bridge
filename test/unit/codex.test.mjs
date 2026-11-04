@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexApprovalSig, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexApprovalSig, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -367,9 +367,10 @@ test('codex 승인 창에 전부 허용이 고르는 답과 위험 판정에 넘
   assert.deepEqual(r.tool, { name: 'Bash', input: { command: 'echo hello-from-fake > out.txt' } })
   // Only a "don't ask again" yes, or no yes at all: nothing is answered.
   assert.equal(codexAutoAnswer({ question: 'Allow?', context: '', options: [{ n: 1, label: "Yes, and don't ask again", key: 'a' }, { n: 2, label: 'No', key: 'Escape' }] }), null)
-  // No "$ " line (edits): the whole question goes to the risk check.
+  // No "$ " line (edits): the whole question goes to the risk check, and every file it names as an Edit.
   const e = codexAutoAnswer({ question: 'Would you like to make the following edits?', context: '.env', options: [{ n: 1, label: 'Yes, proceed', key: 'y' }] })
   assert.match(e.tool.input.command, /\.env/)
+  assert.ok(e.tools.some((t) => t.name === 'Edit' && t.input.file_path === '.env'))
   assert.equal(codexAutoAnswer(null), null)
 })
 
@@ -380,4 +381,44 @@ test('codex 승인 창의 sig 는 같은 창일 때만 같다', () => {
   assert.notEqual(codexApprovalSig({ ...a, context: a.context.replace('hello-from-fake', 'rm -rf ~') }), codexApprovalSig(a))
   assert.notEqual(codexApprovalSig({ ...a, options: a.options.slice(1) }), codexApprovalSig(a))
   assert.equal(codexApprovalSig(null), null)
+})
+
+// REQ-F-856 rule 7 (AC-1606, 1.420): an edit is judged as edits of the files it names, and what is not known asks.
+test('codex 수정 승인은 대상 파일로 판정하고, 모르면 묻는다', () => {
+  const opts = [{ n: 1, label: 'Yes, proceed', key: 'y' }, { n: 2, label: 'No', key: 'Escape' }]
+  const safe = { autoAllow: true, allowAll: false, cwd: '/Users/example/proj', home: '/Users/example' }
+  const rc = { question: 'Would you like to make the following edits?', context: '/Users/example/.zshrc (+1 -0)\n1 +echo startup-hook', options: opts }
+  const pick = codexAutoAnswer(rc)
+  assert.ok(pick.tools.some((t) => t.name === 'Edit' && t.input.file_path === '/Users/example/.zshrc'))
+  assert.equal(codexAutoRisk(rc, pick, safe), '셸 시작 파일 바꾸기')
+  // Relative, with tree marks around it.
+  assert.deepEqual(codexEditFiles('└ .zshrc (+1 -0)'), ['.zshrc'])
+  // A file of the session: answered.
+  const ok = { ...rc, context: 'src/app.ts (+2 -1)\n3 +const x = 1' }
+  assert.equal(codexAutoRisk(ok, codexAutoAnswer(ok), safe), null)
+  // No file to be seen: not answered under 안전한 전부 허용.
+  const blind = { ...rc, context: '1 +echo startup-hook' }
+  assert.equal(codexAutoRisk(blind, codexAutoAnswer(blind), safe), '대상 파일을 알 수 없는 수정')
+  // Neither a command nor an edit: asked.
+  const other = { question: 'Allow Codex to do something?', context: 'something', options: opts }
+  assert.equal(codexAutoRisk(other, codexAutoAnswer(other), safe), '종류를 알 수 없는 승인')
+})
+
+// REQ-F-856 rule 6 (AC-1606, 1.420): the mode is judged again right before the key, as it is then.
+test('codex 전부 허용은 키 직전의 모드로 다시 판정한다', () => {
+  const opts = [{ n: 1, label: 'Yes, proceed', key: 'y' }]
+  const rc = { question: 'Would you like to make the following edits?', context: '~/.zshrc (+1 -0)', options: opts }
+  const pick = codexAutoAnswer(rc)
+  // 전부 허용 answers it; switched to 안전한 전부 허용 it asks; turned off nothing is sent.
+  assert.equal(codexAutoRisk(rc, pick, { autoAllow: true, allowAll: true }), null)
+  assert.equal(codexAutoRisk(rc, pick, { autoAllow: true, allowAll: false }), '셸 시작 파일 바꾸기')
+  assert.equal(codexAutoRisk(rc, pick, { autoAllow: false, allowAll: false }), 'off')
+  const cmd = codexAutoAnswer(parseApproval(APPROVAL))
+  assert.equal(codexAutoRisk(parseApproval(APPROVAL), cmd, { autoAllow: false, allowAll: true }), 'off')
+  // autoAllowCodex asks codexAutoRisk again after it reads the screen and before it sends the key.
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const body = src.slice(src.indexOf('async function autoAllowCodex('), src.indexOf('/** A card\'s answer on a codex terminal'))
+  const cap = body.indexOf('term.capture(')
+  const again = body.indexOf('judge()', cap)
+  assert.ok(cap > 0 && again > cap && again < body.indexOf('term.sendKeys('))
 })

@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexApprovalSig, APPROVAL_UNKNOWN, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -1383,22 +1383,29 @@ async function watchCodex(sid, s, screen) {
 async function autoAllowCodex(sid, s, a, sig) {
   const pick = codexAutoAnswer(a)
   if (!pick) return false
-  // Its question pushed off the screen (a long command): what it runs cannot all be read, so the safe one asks.
-  const unseen = !s.allowAll && a.question === APPROVAL_UNKNOWN ? '화면에 다 보이지 않는 명령' : null
-  const risk = unseen ?? (s.allowAll ? bridgeSelfCall(pick.tool) : riskyCall(pick.tool, { cwd: s.cwd, home: os.homedir() }))
-  if (risk) {
-    if (s.guarded?.sig !== sig) {
+  const judge = () => codexAutoRisk(a, pick, { autoAllow: s.autoAllow, allowAll: s.allowAll, cwd: s.cwd, home: os.homedir() })
+  const ask = (risk) => {
+    if (risk !== 'off' && s.guarded?.sig !== sig) {
       s.guarded = { reason: risk, at: Date.now(), sig }
       log('info', 'dialog', `전부 허용이지만 ${risk} 는 물어봄: codex`, sid)
       note(sid, `⚠️ *${s.allowAll ? '전부 허용' : '안전한 전부 허용'}*이라 ${risk}는 물어봐요.`, 'warn')
     }
     return false
   }
+  const risk = judge()
+  if (risk) return ask(risk)
   // Read the screen again right before the key: "y" goes only to the very question, command and options judged
   // above. If it changed or closed meanwhile nothing is sent; the next look judges what is there now.
   if (codexApprovalSig(parseApproval(await term.capture(pane(s)))) !== sig) {
     log('info', 'dialog', '전부 허용: codex 승인 창이 바뀌어 보내지 않음', sid)
     return true
+  }
+  // The mode may have changed while the screen was read (turned off, or 전부 허용 → 안전한 전부 허용): judged again
+  // as it is now, so a key goes only if the mode at this moment would send it too (1.420). Off → the card asks.
+  const now = judge()
+  if (now) {
+    log('info', 'dialog', `전부 허용: 보내기 직전 모드가 바뀌어 보내지 않음(${now})`, sid)
+    return ask(now)
   }
   await term.sendKeys(pane(s), [pick.option.key])
   s.answered = { sig, at: Date.now() }
