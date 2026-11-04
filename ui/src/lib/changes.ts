@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.438',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '맥의 대화 이어 가기에서 다른 도구(터미널 등)가 그 대화를 쓰는 중이면 실패로 끝내지 않고 15초마다 다시 확인해 비면 저절로 가져옴(최대 10분, "기다리지 않기"로 멈춤)',
+        refs: ['REQ-F-867', 'REQ-F-048', 'REQ-F-853'],
+      },
+    ],
+  },
+  {
     version: '1.437',
     date: '2026-11-05',
+    commit: 'a830b96',
     changes: [
       {
         kind: 'added',

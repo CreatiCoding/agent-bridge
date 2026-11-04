@@ -2,8 +2,9 @@
 // pick one, or several, to carry them on here, each in its own folder, as the same conversation.
 // `/new?adopt=<id>,<id>…` opens this list with those already picked (a prepared move of many at once).
 import { SlotActions } from '../components/slot-parts'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorText, get, getSealed, post } from '../lib/api'
+import { ADOPT_WAIT_MS, adoptWhenFree, AdoptWaitStopped, type AdoptWait } from '../lib/adopt-wait'
 import { ago, bytes, shortPath } from '../lib/format'
 import { go } from '../lib/router'
 import { Badge, Button, Empty, Icon, Spinner } from '../kit'
@@ -90,12 +91,27 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const [codexPick, setCodexPick] = useState<string>(() => getPref('newCodexMode', ''))
   const codexMode = codexAllowed(codexPick)
   const pickCodex = (v: string) => (setCodexPick(v), setPref('newCodexMode', v))
-  const adoptOne = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first, ...(c.runner === 'codex' ? { runner: 'codex', ...(codexMode ? { codexMode } : {}) } : {}) })
+  // 쓰는 중이면 기다렸다 가져오기 (REQ-F-867): a conversation another tool is still using is tried again until it is
+  // free (at most ADOPT_WAIT_MS), with a banner and a stop button, instead of a toast that sends the person back.
+  const [wait, setWait] = useState<AdoptWait | null>(null)
+  const stop = useRef(false)
+  useEffect(() => () => void (stop.current = true), [])
+  const postAdopt = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first, ...(c.runner === 'codex' ? { runner: 'codex', ...(codexMode ? { codexMode } : {}) } : {}) })
+  const adoptOne = async (c: Conversation) => {
+    stop.current = false
+    try {
+      return await adoptWhenFree(() => postAdopt(c), { message: errorText, onWait: setWait, stopped: () => stop.current })
+    } finally {
+      setWait(null)
+    }
+  }
+  const failed = (e: unknown) => (e instanceof AdoptWaitStopped ? toast('가져오기를 멈췄어요') : toast(errorText(e), { tone: 'bad' }), setRun(null))
   const resumeOf = (c: Conversation) => (c.runner === 'codex' ? 'codex resume' : 'claude --resume')
+  const busyNote = `다른 터미널이나 도구에서 아직 쓰는 중이면 그쪽이 끝날 때까지 기다렸다가(최대 ${ADOPT_WAIT_MS / 60_000}분) 가져와요. 그쪽을 닫으면 더 빨라요.`
 
   const adopt = async (c: Conversation) => {
     const ok = await confirmDialog('이 대화를 bridge 에서 이어 갈까요?', {
-      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요. 같은 대화를 둘이 쓰면 기록이 엇갈려요.\n\n' : ''}그 폴더에서 ${resumeOf(c)} 으로 열어요. 지금까지의 대화도 함께 보여요.`,
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? `1분 안에 이 대화에 쓰인 기록이 있어요. ${busyNote} 같은 대화를 둘이 쓰면 기록이 엇갈려요.\n\n` : ''}그 폴더에서 ${resumeOf(c)} 으로 열어요. 지금까지의 대화도 함께 보여요.`,
       ok: '이어 가기',
       danger: c.active,
     })
@@ -105,8 +121,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
       const r = await adoptOne(c)
       openSession(r.id, 'adopt', { replace: true })
     } catch (e) {
-      toast(errorText(e), { tone: 'bad' })
-      setRun(null)
+      failed(e)
     }
   }
 
@@ -115,7 +130,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
   // took 이어 가기 → ⋯ Codex 로 이어서 작업 → 요약 만들기 → Codex 세션 시작.
   const toCodex = async (c: Conversation) => {
     const ok = await confirmDialog('이 대화를 Codex 로 이어 갈까요?', {
-      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요.\n\n' : ''}claude --resume 으로 가져와 Claude 에게 인계 요약을 받고, 요약이 오면 같은 폴더에 Codex 세션을 바로 시작해요. Claude 대화도 bridge 세션으로 남아요.`,
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? `1분 안에 이 대화에 쓰인 기록이 있어요. ${busyNote}\n\n` : ''}claude --resume 으로 가져와 Claude 에게 인계 요약을 받고, 요약이 오면 같은 폴더에 Codex 세션을 바로 시작해요. Claude 대화도 bridge 세션으로 남아요.`,
       ok: 'Codex 로 이어 가기',
       danger: c.active,
     })
@@ -126,8 +141,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
       openSession(r.id, 'adopt', { replace: true })
       openHandoff(r.id, { auto: true })
     } catch (e) {
-      toast(errorText(e), { tone: 'bad' })
-      setRun(null)
+      failed(e)
     }
   }
 
@@ -135,7 +149,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const adoptPicked = async (items: Conversation[]) => {
     const active = items.filter((c) => c.active).length
     const ok = await confirmDialog(`${items.length}개 대화를 bridge 에서 이어 갈까요?`, {
-      text: `하나씩 차례로 그 폴더에서 ${items.some((c) => c.runner === 'codex') ? '실행기에 맞게 claude --resume 또는 codex resume' : 'claude --resume'} 으로 열어요.${active ? `\n\n${active}개는 1분 안에 쓰인 기록이 있어요. 다른 곳에서 쓰는 중이면 그쪽을 먼저 끝내세요.` : ''}`,
+      text: `하나씩 차례로 그 폴더에서 ${items.some((c) => c.runner === 'codex') ? '실행기에 맞게 claude --resume 또는 codex resume' : 'claude --resume'} 으로 열어요.${active ? `\n\n${active}개는 1분 안에 쓰인 기록이 있어요. ${busyNote}` : ''}`,
       ok: `${items.length}개 이어 가기`,
       danger: active > 0,
     })
@@ -146,7 +160,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
       try {
         await adoptOne(c)
       } catch (e) {
-        failed.push({ title: nameOf(c), error: errorText(e) })
+        failed.push({ title: nameOf(c), error: e instanceof AdoptWaitStopped ? '기다리기를 멈췄어요' : errorText(e) })
       }
     }
     setRun({ done: items.length, failed, total: items.length, now: '' })
@@ -183,6 +197,18 @@ export function AdoptList({ hostId }: { hostId: string }) {
             {run.done < run.total ? (
               <>
                 {run.done + 1}/{run.total} 가져오는 중 · {run.now}
+                {wait ? (
+                  <>
+                    <div style={{ fontSize: 'var(--fs-small)' }}>
+                      다른 도구(터미널 등)가 이 대화를 아직 쓰고 있어요. 끝나면 바로 가져와요 · {wait.tries}번 확인함 · 최대 {Math.ceil(wait.leftMs / 60_000)}분 더 기다려요
+                    </div>
+                    <div className="banner-actions">
+                      <Button size="sm" onClick={() => (stop.current = true)}>
+                        기다리지 않기
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
               </>
             ) : (
               <>
