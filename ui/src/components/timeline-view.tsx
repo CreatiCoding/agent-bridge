@@ -12,6 +12,8 @@ import { DecisionCard } from './decision-card'
 import { HtmlPreview, isHtmlDocument } from './html-preview'
 import { act, command, sessionPost } from './session-menu'
 import { TodoAskCard, todoAskOf } from './session-extras'
+import { ToolDetail } from './tool-detail'
+import { toolFace } from '../lib/tool-view'
 import { copyText, openSession } from '../lib/builtin-actions'
 import { errorText, get } from '../lib/api'
 import { actionsVersion, watchActions } from '../lib/actions'
@@ -133,8 +135,7 @@ function ToolRow({ it, onImage }: { it: Tool; onImage: (s: string) => void }) {
               <Icon name="shield" /> 전부 허용으로 자동 허용됨 · {it.auto}
             </span>
           ) : null}
-          {it.detail ? <pre>{it.detail}</pre> : it.input && it.input !== '{}' ? <pre>{it.input}</pre> : null}
-          {it.output ? <pre className={it.error ? 'err' : undefined}>{it.output}</pre> : it.done ? null : <span className="muted" style={{ fontSize: 'var(--fs-small)' }}>도는 중…</span>}
+          <ToolDetail it={it} />
           {it.images?.length ? <Thumbs ids={it.images} onOpen={onImage} /> : null}
         </div>
       </Collapse>
@@ -389,10 +390,12 @@ function AttachCard({ session, file, onImage }: { session: Session; file: Attach
  * call's own input (its file, or its command's first line), then shortened.
  */
 function labelOf(t: Tool) {
-  if (t.label.endsWith('…') && t.input) {
+  // A sealed label too long to come whole arrives as 🔒… (server sealedShort): the opened input still tells.
+  if ((t.label.endsWith('…') || t.label.startsWith('🔒')) && t.input) {
     try {
       const i = JSON.parse(t.input) as Record<string, unknown>
-      const whole = typeof i.file_path === 'string' ? i.file_path : typeof i.command === 'string' ? i.command.split('\n')[0] : ''
+      const first = Object.values(i).find((v): v is string => typeof v === 'string' && !!v.trim() && !v.startsWith('🔒'))
+      const whole = typeof i.file_path === 'string' ? i.file_path : typeof i.command === 'string' ? i.command.split('\n')[0] : first ? oneLine(first.split('\n').find((l) => l.trim()) ?? '', 110) : ''
       if (whole) return shortLabel(whole)
     } catch {}
   }
@@ -493,7 +496,9 @@ function blocks(items: Item[]): Block[] {
     if (used.has(i)) continue
     const prev = out.at(-1)
     if (it.t === 'tool') {
-      const t: Tool = auto.has(i) ? { ...it, auto: auto.get(i) } : it
+      // Codex's exec program is drawn as what it does (REQ-F-862).
+      const f = toolFace(it)
+      const t: Tool = auto.has(i) ? { ...f, auto: auto.get(i) } : f
       if (prev?.t === 'tools') prev.items.push(t)
       else out.push({ t: 'tools', key: `g${it.key}`, items: [t] })
       // An attached file is shown where it was attached, outside the tools (which fold away).

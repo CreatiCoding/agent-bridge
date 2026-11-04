@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.433',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'Codex 의 `exec` 도구가 JS 원문(`text(await tools.exec_command(…))`)과 이스케이프된 JSON 답으로만 보이던 것: 셸 명령이면 Bash(명령·이유·작업 폴더), 패치면 Edit(파일·diff)로 그리고, 답은 명령 출력과 `exit 0 · 0.04 s` 로 보임(0 이 아닌 exit 는 실패 표시). 봉인 맥에서 `🔒…` 로 잘린 도구 줄 라벨은 열린 입력의 명령·파일로 다시 만듦',
+        refs: ['REQ-F-862', 'REQ-S-099'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '펼친 도구 칸을 종류별 상자(제목·복사 버튼)로: 명령은 `$ 셸` 상자에 명령어·옵션·문자열·연산자 색, 패치·Edit 은 diff 색, 입력 객체와 JSON 결과는 들여 정렬하고 키·값 색, 결과 상자에 exit·시간',
+        refs: ['REQ-F-862', 'REQ-F-703'],
+      },
+    ],
+  },
+  {
     version: '1.432',
     date: '2026-11-05',
+    commit: 'c288f4b',
     changes: [
       {
         kind: 'added',

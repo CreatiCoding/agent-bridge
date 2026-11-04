@@ -5,7 +5,7 @@ import type { Card, Ev, Todo } from './types'
 export type Item =
   | { t: 'user'; key: string; seq: number; at: number; id: string; text: string; images: string[]; via?: string; command?: boolean; marks: string[] }
   | { t: 'text'; key: string; seq: number; at: number; text: string; choices?: string[]; quiet?: string }
-  | { t: 'tool'; key: string; seq: number; at: number; id: string; name: string; label: string; detail?: string; input?: string; done: boolean; error?: boolean; output?: string; images?: string[] }
+  | { t: 'tool'; key: string; seq: number; at: number; id: string; name: string; label: string; detail?: string; input?: string; done: boolean; error?: boolean; output?: string; images?: string[]; lang?: string; exec?: true; meta?: string }
   | { t: 'card'; key: string; seq: number; at: number; card: Card; result?: string; closed: boolean }
   | { t: 'held'; key: string; seq: number; at: number; id: string; n: number }
   | { t: 'side'; key: string; seq: number; at: number; id: string; q: string; answer?: string; error?: string }
