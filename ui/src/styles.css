@@ -1117,19 +1117,46 @@ select.input {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
-.rail-usage-name {
-  font-weight: 600;
-  color: var(--muted);
+/* Activity rings around the runner's mark: weekly outside, 5-hour inside. */
+.rail-ring {
+  display: block;
+}
+.rail-ring circle {
+  fill: none;
+}
+.rail-ring-track {
+  stroke: var(--line);
+}
+.rail-ring-fill {
+  stroke: var(--green);
+  stroke-linecap: round;
+}
+.rail-ring-fill.mid {
+  stroke: var(--amber);
+}
+.rail-ring-fill.high {
+  stroke: var(--red);
+}
+.rail-ring-mark {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.rail-ring.claude .rail-ring-mark {
+  stroke: var(--accent);
 }
 .app-rail .rail-usage-row {
   display: grid;
   grid-template-columns: auto auto;
   justify-content: space-between;
   align-items: baseline;
-  gap: 3px 3px;
+  gap: 1px 3px;
   width: 40px;
+  font-variant-numeric: tabular-nums;
 }
 .rail-usage-v {
   font-weight: 600;
@@ -1138,17 +1165,12 @@ select.input {
 .rail-usage-row.high .rail-usage-v {
   color: var(--red);
 }
-/* Time until the limit fills again, under its bar. */
+/* Time until the limit fills again, under its value. */
 .rail-usage-left {
   grid-column: 1 / -1;
   text-align: center;
   font-size: 9px;
   color: var(--faint);
-}
-.rail-usage-row .gauge-bar {
-  grid-column: 1 / -1;
-  width: 100%;
-  height: 4px;
 }
 .rail-usage-k {
   color: var(--muted);

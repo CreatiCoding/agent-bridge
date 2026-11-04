@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.428',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'PC 앱 레일 사용량을 막대 대신 시계 링처럼: 실행기 표시를 감싼 바깥 링이 주간, 안쪽 링이 5시간 사용량. 아래 수치·남은 시간은 그대로',
+        refs: ['REQ-F-858'],
+      },
+    ],
+  },
+  {
     version: '1.427',
     date: '2026-11-04',
+    commit: 'e4abde3',
     changes: [
       {
         kind: 'fixed',
