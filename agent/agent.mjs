@@ -3515,13 +3515,13 @@ const commands = {
     emit({ t: 'pong', ts })
   },
   rehello: hello,
-  async new(cmd) {
+  async new({ routing, autoAllow, allowAll, signed, ...cmd }) {
     const had = sessions.has(cmd.sid)
-    await newSession(cmd)
+    await newSession({ ...cmd, routing })
     // 전부 허용 asked for at the start rides on new (REQ-F-860): signed with it while trust is on, so no unsigned
     // set has to follow it. Only a session this new started: a new that named a session already here (and was
     // refused) must not turn it on there.
-    if (cmd.autoAllow === true && !had && sessions.has(cmd.sid)) await commands.set({ sid: cmd.sid, autoAllow: true, allowAll: cmd.allowAll === true, signed: cmd.signed })
+    if (autoAllow === true && !had && sessions.has(cmd.sid)) await commands.set({ sid: cmd.sid, autoAllow: true, allowAll: allowAll === true, signed })
   },
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
   async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner, codexMode }) {

@@ -325,7 +325,7 @@ test('전부 허용 at the start rides on new, signed: the server cannot turn it
   assert.equal(asks.autoAllow, undefined, 'not signed: not turned on')
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(src, /caps: \['store', 'newAllow'\]/, 'the agent says it takes 전부 허용 with new')
-  assert.match(src, /if \(cmd\.autoAllow === true && !had && sessions\.has\(cmd\.sid\)\) await commands\.set\(\{ sid: cmd\.sid, autoAllow: true, allowAll: cmd\.allowAll === true, signed: cmd\.signed \}\)/)
+  assert.match(src, /if \(autoAllow === true && !had && sessions\.has\(cmd\.sid\)\) await commands\.set\(\{ sid: cmd\.sid, autoAllow: true, allowAll: allowAll === true, signed \}\)/)
 })
 
 test('a codex session sandbox and approval is signed with new and adopt (1.414, AC-1599)', () => {
