@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -214,6 +214,46 @@ test("codex's approval question is read with its options and the key each one ta
   assert.equal(codexIdle(APPROVAL), null)
   // Without its footer it is the conversation, not a question.
   assert.equal(parseApproval(APPROVAL.replace('Press enter to confirm or esc to cancel', '')), null)
+})
+
+test('a multi-line command (heredoc) still makes an approval card, and a question pushed off the screen too (1.417, AC-1603)', () => {
+  const script = Array.from({ length: 14 }, (_, i) => `  const step${i} = await page.run(${i})`).join('\n')
+  const long = `› 링크의 대화를 확인해 줘
+
+• Explored
+
+  Would you like to run the following command?
+
+  Environment: local
+
+  Reason: 샌드박스에서 브라우저 실행이 차단됐어요. 브라우저 실행을 허용할까요?
+
+  $ ego-browser nodejs <<'EOF'
+${script}
+  EOF
+
+
+› 1. Yes, proceed (y)
+  2. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel
+`
+  const a = parseApproval(long)
+  assert.equal(a.question, 'Would you like to run the following command?')
+  assert.match(a.context, /^Environment: local/)
+  assert.match(a.context, /step13/)
+  assert.deepEqual(a.options.map((o) => o.key), ['y', 'Escape'])
+  assert.equal(codexIdle(long), null)
+  // The command scrolled the question off the top: still a card, titled as a wait, with what is left on screen.
+  const cut = long.split('\n').slice(10).join('\n')
+  const b = parseApproval(cut)
+  assert.equal(b.question, APPROVAL_UNKNOWN)
+  assert.match(b.context, /EOF/)
+  assert.deepEqual(b.options.map((o) => o.key), ['y', 'Escape'])
+  // Same screen, same card (the answer checks the question and context again).
+  assert.deepEqual(parseApproval(cut), b)
+  // Nothing from before the last thing typed joins the context.
+  assert.doesNotMatch(parseApproval(`› 이전 요청\n${cut}`).context, /이전 요청/)
 })
 
 test('the screen: idle with an empty box, working, the folder trust question, text left in the box', () => {

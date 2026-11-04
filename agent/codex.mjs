@@ -557,10 +557,24 @@ export function parseApproval(screen) {
     } else if (opts.length && lines[i].trim()) break
   }
   if (!opts.length) return null
-  const q = lines.slice(Math.max(0, first - 12), first).findLastIndex((l) => /^\s*(Would you like|Do you want|Allow)\b.*\?\s*$/.test(l))
-  if (q < 0) return null
-  const top = Math.max(0, first - 12) + q
-  const question = lines[top].trim()
+  // The question sits above the command, which can run to any length (a heredoc script): look up to the last thing
+  // the person typed into the history ("› …"), not a fixed number of lines.
+  let q = -1
+  let typed = -1
+  for (let i = first - 1; i >= 0; i--) {
+    if (/^\s*(Would you like|Do you want|Allow)\b.*\?\s*$/.test(lines[i])) {
+      q = i
+      break
+    }
+    if (/^\s*›\s/.test(lines[i])) {
+      typed = i
+      break
+    }
+  }
+  // A command too long for the screen pushes the question off its top: the footer and the keyed options are enough
+  // to know codex waits for an answer, so the card says so and shows what is still on screen.
+  const top = q >= 0 ? q : Math.max(typed, first - APPROVAL_CONTEXT_LINES - 1, -1)
+  const question = q >= 0 ? lines[q].trim() : APPROVAL_UNKNOWN
   const context = lines
     .slice(top + 1, first)
     .map((l) => l.trim())
@@ -568,3 +582,8 @@ export function parseApproval(screen) {
     .join('\n')
   return { question, context, options: opts }
 }
+
+/** The card's title when codex's question line is not on screen (a command longer than the terminal). */
+export const APPROVAL_UNKNOWN = 'Codex 가 터미널에서 승인을 기다려요'
+/** How many lines above the options the card shows as context when the question line is not on screen. */
+const APPROVAL_CONTEXT_LINES = 30

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.417',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 가 여러 줄 명령(heredoc 스크립트)의 실행 승인을 물으면 권한 카드가 뜨지 않고 "생각하는 중"으로만 보이던 것: 질문 줄을 선택지 위 12줄 안에서만 찾던 것을 마지막 입력 줄까지 찾게 하고, 질문 줄이 화면 밖으로 밀렸어도 "Codex 가 터미널에서 승인을 기다려요" 카드를 띄움',
+        refs: ['REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.416',
     date: '2026-11-04',
+    commit: 'da70e1a',
     changes: [
       {
         kind: 'added',
