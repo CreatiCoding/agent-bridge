@@ -1103,6 +1103,41 @@ select.input {
 .app-rail .rail-count {
   background: var(--amber);
 }
+/* Claude's and Codex's plan limits, stacked above the report, bell and settings buttons (REQ-F-858). */
+.rail-usage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.rail-usage-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.rail-usage-name {
+  font-weight: 600;
+  color: var(--muted);
+}
+.app-rail .rail-usage-row {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: space-between;
+  gap: 2px 3px;
+  width: 38px;
+}
+.rail-usage-row .gauge-bar {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 4px;
+}
+.rail-usage-k {
+  color: var(--muted);
+}
 @media (prefers-reduced-motion: reduce) {
   .side {
     transition: none;

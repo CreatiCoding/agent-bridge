@@ -19,6 +19,7 @@ import { CwdSheet } from './components/cwd-sheet'
 import { HandoffSheet } from './components/codex-handoff'
 import { listView, newGroup, SessionList, setListView } from './components/session-list'
 import { useRelay } from './components/relay-status'
+import { RailUsage } from './components/rail-usage'
 import { SessionPage } from './pages/session-page'
 import { StateWait, useStateLoaded } from './components/state-wait'
 import { SessionPicker, SplitView } from './components/split-view'
@@ -516,6 +517,7 @@ function AppRail({ me, route, collapsed, need, onToggle, onSearch, onNotices }: 
       {collapsed && <IconButton icon="plus" label="새 세션" onClick={() => go({ name: 'new' })} active={route.name === 'new'} />}
       {collapsed && <IconButton icon="search" label="검색 (⌘K)" onClick={onSearch} />}
       <span className="grow" />
+      <RailUsage />
       {featureOn('reports') && <IconButton icon="support" label="문제 제보" onClick={openReport} />}
       <Bell onClick={onNotices} />
       <IconButton icon="settings" label="설정" onClick={() => go({ name: 'settings' })} active={route.name === 'settings'} />

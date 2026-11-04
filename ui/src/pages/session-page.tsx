@@ -838,7 +838,7 @@ export function SessionPage({ id }: { id: string }) {
           <div className="composer-in composer-extra">
             {log.folded.todos ? <Todos items={todoItems} onRemove={todoHidden.remove} /> : null}
             {/* Held messages are said by their card in the conversation (with 지금 보내기), not again here. */}
-            {wide || dock ? <Gauges s={s} fold={wide} onOpenMd={() => setSheet('sessionmd')} onOpenCache={() => setSheet('cache')} /> : null}
+            {wide || dock ? <Gauges s={s} fold={wide} noLimits={wide && !inPane} onOpenMd={() => setSheet('sessionmd')} onOpenCache={() => setSheet('cache')} /> : null}
           </div>
         ) : null}
         <Composer

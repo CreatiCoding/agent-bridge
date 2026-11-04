@@ -315,8 +315,9 @@ const CACHE_WARN = 90
 const CACHE_BAD = 75
 const CACHE_JUDGED = 5
 
-/** `fold`: only the context and the gauges past their first line show; the calm rest are behind one +N button. */
-export function Gauges({ s, onOpenMd, onOpenCache, fold }: { s: Session; onOpenMd?: () => void; onOpenCache?: () => void; fold?: boolean }) {
+/** `fold`: only the context and the gauges past their first line show; the calm rest are behind one +N button.
+ * `noLimits`: the 5-hour and weekly limits are left out (a PC shows them on the app rail, REQ-F-858). */
+export function Gauges({ s, onOpenMd, onOpenCache, fold, noLimits }: { s: Session; onOpenMd?: () => void; onOpenCache?: () => void; fold?: boolean; noLimits?: boolean }) {
   const [all, setAll] = useState(false)
   const u = s.state.usage
   const ctx = contextPct(s)
@@ -324,8 +325,8 @@ export function Gauges({ s, onOpenMd, onOpenCache, fold }: { s: Session; onOpenM
   if (ctx != null && !Number.isNaN(ctx)) parts.push({ key: 'c', label: '컨텍스트', pct: ctx })
   const c = s.state.cache
   if (c) parts.push({ key: 'k', label: '캐시', pct: c.hit, low: true, warn: c.calls >= CACHE_JUDGED ? CACHE_WARN : 0, bad: c.calls >= CACHE_JUDGED ? CACHE_BAD : 0, value: `${Math.round(c.hit)}%`, title: `컨텍스트의 ${c.hit}% 를 캐시에서 읽었어요 · 마지막 컨텍스트 ${tokens(c.ctx)} · 누르면 자세히`, onClick: onOpenCache })
-  if (u?.fiveHour != null) parts.push({ key: '5', label: '5시간', pct: u.fiveHour, title: u.fiveHourResetsAt ? `${clock(u.fiveHourResetsAt)} 에 다시 차요` : undefined })
-  if (u?.week != null) parts.push({ key: 'w', label: '주간', pct: u.week, title: u.weekResetsAt ? `${clock(u.weekResetsAt)} 에 다시 차요` : undefined })
+  if (!noLimits && u?.fiveHour != null) parts.push({ key: '5', label: '5시간', pct: u.fiveHour, title: u.fiveHourResetsAt ? `${clock(u.fiveHourResetsAt)} 에 다시 차요` : undefined })
+  if (!noLimits && u?.week != null) parts.push({ key: 'w', label: '주간', pct: u.week, title: u.weekResetsAt ? `${clock(u.weekResetsAt)} 에 다시 차요` : undefined })
   // The conversation's size (its .jsonl): from 50MB a light copy is worth it, at 100MB input is refused.
   if (s.state.size) parts.push({ key: 't', label: '대화 기록', pct: (s.state.size / (100 * 1024 * 1024)) * 100, warn: 50, bad: 90, value: bytes(s.state.size), title: `대화 기록(.jsonl) ${bytes(s.state.size)} · 50MB 부터 가벼운 복제를 권해요, 100MB 에서 입력을 막아요` })
   // The session's own hand-over file (kept up to date at each compaction); a light copy hands over up to mdMax

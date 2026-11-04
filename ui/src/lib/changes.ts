@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.425',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'PC 에서 Claude·Codex 의 5시간·주간 사용량을 왼쪽 레일의 문제 제보·알림·설정 버튼 위에 세로로 보임. 실행기마다 가장 최근 세션의 값. 대화 화면의 게이지 줄에서는 뺌(휴대폰·분할 화면은 그대로)',
+        refs: ['REQ-F-858', 'REQ-F-149'],
+      },
+    ],
+  },
+  {
     version: '1.424',
     date: '2026-11-04',
+    commit: '295ce18',
     changes: [
       {
         kind: 'changed',
