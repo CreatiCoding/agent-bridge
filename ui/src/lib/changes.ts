@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.426',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 의 MCP 도구 호출이 승인(mcp_tool_call_approval)을 기다릴 때 카드가 뜨지 않던 문제. MCP 승인 창을 명령 승인과 따로 읽어 허용·세션 동안 허용·항상 허용·취소를 카드로 보이고 대기 상태를 표시. 전부 허용이어도 MCP 승인은 카드로 물음',
+        refs: ['REQ-F-859'],
+      },
+    ],
+  },
+  {
     version: '1.425',
     date: '2026-11-04',
+    commit: '89ea5b2',
     changes: [
       {
         kind: 'changed',

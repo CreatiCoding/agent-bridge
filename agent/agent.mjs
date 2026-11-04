@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -1359,14 +1359,15 @@ async function watchCodex(sid, s, screen) {
   const idle = codexIdle(screen)
   if (s.starting && idle && Date.now() - s.launchedAt >= 7000) (s.starting = false), clearTimeout(s.slowStart), releaseHeld(sid, s, 'started')
   if (CODEX_WORKING_RE.test(screen)) s.activityAt = Date.now()
-  const a = parseApproval(screen)
+  // A command or edit approval, or an MCP tool call waiting for its approval (REQ-F-859): both become a card.
+  const a = codexQuestion(screen)
   if (a) {
     const sig = codexApprovalSig(a)
     if (s.card?.open && s.card.sig === sig) return void (s.gone = 0)
     if (s.answered?.sig === sig && Date.now() - s.answered.at < 3000) return
     if (s.card?.open) foldCard(sid, s, '다른 확인 창으로 넘어감')
     if (s.autoAllow && (await autoAllowCodex(sid, s, a, sig))) return
-    openCard(sid, s, { kind: 'permission', sig, title: a.question, context: a.context, options: a.options.map((o) => ({ n: o.n, label: o.label, kind: /^No\b/i.test(o.label) ? 'deny' : /don'?t ask again|always/i.test(o.label) ? 'allow-always' : /session/i.test(o.label) ? 'allow-session' : 'allow-once' })) })
+    openCard(sid, s, { kind: 'permission', sig, title: a.question, context: a.context, options: a.options.map((o) => ({ n: o.n, label: o.label, ...(o.description ? { description: o.description } : {}), kind: codexOptionKind(o.label) })) })
     return
   }
   if (s.card?.open && s.card.kind !== 'stuck' && ++s.gone >= 2) foldCard(sid, s, '터미널에서 답함')
@@ -1396,7 +1397,7 @@ async function autoAllowCodex(sid, s, a, sig) {
   if (risk) return ask(risk)
   // Read the screen again right before the key: "y" goes only to the very question, command and options judged
   // above. If it changed or closed meanwhile nothing is sent; the next look judges what is there now.
-  if (codexApprovalSig(parseApproval(await term.capture(pane(s)))) !== sig) {
+  if (codexApprovalSig(codexQuestion(await term.capture(pane(s)))) !== sig) {
     log('info', 'dialog', '전부 허용: codex 승인 창이 바뀌어 보내지 않음', sid)
     return true
   }
@@ -1416,7 +1417,7 @@ async function autoAllowCodex(sid, s, a, sig) {
 
 /** A card's answer on a codex terminal: the key the option names, once the same question is still on screen. */
 async function answerCodex(sid, s, card, n, label) {
-  const now = parseApproval(await term.capture(pane(s)))
+  const now = codexQuestion(await term.capture(pane(s)))
   const flat = (t) => String(t ?? '').replace(/\s+/g, ' ').trim()
   if (!now) return void (foldCard(sid, s, '이미 닫힌 창'), toast(sid, '이미 닫힌 창이에요'))
   if (flat(now.question) !== flat(card.title) || flat(now.context) !== flat(card.context)) return toast(sid, '이미 다른 질문으로 바뀌었어요. 지금 화면을 확인해 주세요')
@@ -2110,7 +2111,7 @@ async function verifyCodex(sid, s, check, screen, head) {
   }
   tail(sid, s)
   if (transcriptHasPrompt(mirrorPath(sid), check.text, check.at - 1000)) return
-  if (CODEX_WORKING_RE.test(screen) || parseApproval(screen)) return
+  if (CODEX_WORKING_RE.test(screen) || codexQuestion(screen)) return
   if (s.turn && codexIdle(screen) && !transcriptHasPrompt(mirrorPath(sid), check.text, check.at - 1000)) {
     // Not seen in the rollout yet: one more look later, then say so.
     if (check.attempts < 2) return watchInjected(sid, s, check.text, check.attempts + 1, check.at)

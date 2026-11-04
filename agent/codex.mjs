@@ -461,7 +461,7 @@ const EMPTY_BOX_RE = /^\s*›\s*(Ask Codex to do anything|Implement \{feature\}|
 
 /** 'idle' when codex waits with nothing typed and nothing running; null otherwise. */
 export function codexIdle(screen) {
-  return EMPTY_BOX_RE.test(screen) && !CODEX_WORKING_RE.test(screen) && !parseApproval(screen) && !trustDialog(screen) ? 'idle' : null
+  return EMPTY_BOX_RE.test(screen) && !CODEX_WORKING_RE.test(screen) && !codexQuestion(screen) && !trustDialog(screen) ? 'idle' : null
 }
 
 /** The folder trust question codex asks the first time it runs in a folder. */
@@ -523,7 +523,7 @@ export function codexPager(screen) {
 
 /** A picker codex opened in place of the input box (/model, /permissions …): its lines up to a wide gap. */
 export function codexPicker(screen) {
-  if (parseApproval(screen) || trustDialog(screen)) return null
+  if (codexQuestion(screen) || trustDialog(screen)) return null
   const lines = screen.split('\n')
   const foot = footer(lines, 2)
   if (!foot.some((l) => /\benter (?:to )?select\b/i.test(l) || /\besc (?:to )?(?:go )?back\b/i.test(l))) return null
@@ -598,6 +598,59 @@ export function parseApproval(screen) {
   return { question, context, options: opts }
 }
 
+/**
+ * Codex's MCP elicitation form, its own window apart from the command approval (REQ-F-859): an MCP tool call waiting
+ * for `mcp_tool_call_approval` ("Allow the x MCP server to run tool "y"?" with "1. Allow  Run the tool and continue",
+ * "… Cancel  Cancel this tool call"), or a server's own question. It has no "(y)" keys: a digit picks an option and
+ * sends it, esc cancels. Its footer is "enter to submit | esc to cancel" and a "Field 1/1" line heads it. An option is
+ * its label and, after a wide gap, what it does. A field to type into (no options) is still a question waiting: its only
+ * option is to cancel. Null when no such form is on screen.
+ */
+export function parseMcpApproval(screen) {
+  const lines = screen.split('\n')
+  const foot = lines.findLastIndex((l) => /\benter to submit \| esc to cancel\s*$/i.test(l))
+  if (foot < 0) return null
+  const head = lines.slice(0, foot).findLastIndex((l) => /^\s*Field \d+\/\d+\b/.test(l))
+  if (head < 0) return null
+  const groups = []
+  for (let i = head + 1; i < foot; i++) {
+    const m = /^\s*(›\s*)?(\d+)\.\s+(.*)$/.exec(lines[i])
+    if (m) groups.push({ at: i, n: Number(m[2]), text: m[3].trim(), selected: !!m[1] })
+    // A description too long for its line goes on under it; a blank line ends the list.
+    else if (groups.length && !lines[i].trim()) break
+    else if (groups.length) groups[groups.length - 1].text += ` ${lines[i].trim()}`
+  }
+  const first = groups.length ? groups[0].at : foot
+  // The box a typed field shows ("› Type your answer") is not part of the question.
+  const body = lines
+    .slice(head + 1, first)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^›/.test(l))
+  const question = body.shift() ?? MCP_APPROVAL_UNKNOWN
+  const options = groups.map(({ n, text, selected }) => {
+    const [label, ...rest] = text.split(/\s{2,}/)
+    return { n, label: label.trim(), description: rest.join(' ').trim(), key: String(n), selected }
+  })
+  // Digits pick only options 1-9; esc cancels any form, a typed one too.
+  if (options.some((o) => o.n < 1 || o.n > 9)) return null
+  if (!options.some((o) => /^cancel\b/i.test(o.label))) options.push({ n: options.length + 1, label: 'Cancel', description: '이 요청을 취소', key: 'Escape', selected: false })
+  return { kind: 'mcp', question, context: body.join('\n'), options }
+}
+
+/** The card's title when an MCP form's question is not on screen. */
+export const MCP_APPROVAL_UNKNOWN = 'Codex 가 MCP 승인을 기다려요'
+
+/** Either window codex asks in: a command or edit approval, or an MCP elicitation (REQ-F-859). */
+export const codexQuestion = (screen) => parseApproval(screen) ?? parseMcpApproval(screen)
+
+/** The card's kind of an option of codex's question, by its label. */
+export function codexOptionKind(label) {
+  if (/^(no|deny|cancel|false|decline)\b/i.test(label)) return 'deny'
+  if (/don'?t ask again|always/i.test(label)) return 'allow-always'
+  if (/session/i.test(label)) return 'allow-session'
+  return 'allow-once'
+}
+
 /** The card's title when codex's question line is not on screen (a command longer than the terminal). */
 export const APPROVAL_UNKNOWN = 'Codex 가 터미널에서 승인을 기다려요'
 /** How many lines above the options the card shows as context when the question line is not on screen. */
@@ -613,7 +666,8 @@ const APPROVAL_OPTION_LINES = 40
  * `unknown` says why the kind or the targets could not be read for sure: 안전한 전부 허용 then asks (1.420).
  */
 export function codexAutoAnswer(a) {
-  if (!a) return null
+  // An MCP tool call's approval is always left to the card (REQ-F-859): what the tool does is not on screen to judge.
+  if (!a || a.kind === 'mcp') return null
   const yes = a.options.find((o) => o.key !== 'Escape' && /^yes\b/i.test(o.label) && !/don'?t ask|always|session/i.test(o.label))
   if (!yes) return null
   const lines = a.context.split('\n')

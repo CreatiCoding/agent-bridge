@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexApprovalSig, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -214,6 +214,61 @@ test("codex's approval question is read with its options and the key each one ta
   assert.equal(codexIdle(APPROVAL), null)
   // Without its footer it is the conversation, not a question.
   assert.equal(parseApproval(APPROVAL.replace('Press enter to confirm or esc to cancel', '')), null)
+})
+
+// Codex 0.166's MCP elicitation form (tui mcp_server_elicitation snapshots) for an mcp_tool_call_approval.
+const MCP_APPROVAL = `› 캘린더에 일정 넣어 줘
+
+• Calling calendar.create_event
+
+  Field 1/1
+  Allow the calendar MCP server to run tool "create_event"?
+
+  Calendar: primary
+  Title: Roadmap review
+
+  › 1. Allow                   Run the tool and continue
+    2. Allow for this session  Run the tool and remember this choice for this session
+    3. Always allow            Run the tool and remember this choice for future tool calls
+    4. Cancel                  Cancel this tool call
+
+
+
+  enter to submit | esc to cancel
+`
+
+test("an MCP tool call's approval (mcp_tool_call_approval) is read apart from the command approval (REQ-F-859)", () => {
+  assert.equal(parseApproval(MCP_APPROVAL), null)
+  const a = parseMcpApproval(MCP_APPROVAL)
+  assert.equal(a.kind, 'mcp')
+  assert.equal(a.question, 'Allow the calendar MCP server to run tool "create_event"?')
+  assert.equal(a.context, 'Calendar: primary\nTitle: Roadmap review')
+  assert.deepEqual(a.options.map((o) => [o.n, o.label, o.key, o.selected]), [[1, 'Allow', '1', true], [2, 'Allow for this session', '2', false], [3, 'Always allow', '3', false], [4, 'Cancel', '4', false]])
+  assert.equal(a.options[0].description, 'Run the tool and continue')
+  assert.deepEqual(a.options.map((o) => codexOptionKind(o.label)), ['allow-once', 'allow-session', 'allow-always', 'deny'])
+  assert.deepEqual(codexQuestion(MCP_APPROVAL), a)
+  assert.deepEqual(codexQuestion(APPROVAL), parseApproval(APPROVAL))
+  // Waiting for it is not idle, nor a picker; 전부 허용 never answers it.
+  assert.equal(codexIdle(`${MCP_APPROVAL}\n›`), null)
+  assert.equal(codexPicker(MCP_APPROVAL), null)
+  assert.equal(codexAutoAnswer(a), null)
+  // Without its footer or its "Field" line it is the conversation.
+  assert.equal(parseMcpApproval(MCP_APPROVAL.replace('enter to submit | esc to cancel', '')), null)
+  assert.equal(parseMcpApproval(MCP_APPROVAL.replace('Field 1/1', '')), null)
+})
+
+test('an MCP form without a cancel option gets esc as its cancel, and a field to type into still waits (REQ-F-859)', () => {
+  const bool = `  Field 1/1 (1 required unanswered)\n  Allow this request?\n\n  Confirm\n  Approve the pending action.\n  › 1. True\n    2. False\n\n  enter to submit | esc to cancel\n`
+  const b = parseMcpApproval(bool)
+  assert.equal(b.question, 'Allow this request?')
+  assert.deepEqual(b.options.map((o) => [o.label, o.key, codexOptionKind(o.label)]), [['True', '1', 'allow-once'], ['False', '2', 'deny'], ['Cancel', 'Escape', 'deny']])
+  const typed = `  Field 1/1 (1 required unanswered)\n  Enter a name\n\n  Name\n\n  › Type your answer\n\n  ⌃x enter to submit | esc to cancel\n`
+  const t = parseMcpApproval(typed)
+  assert.equal(t.question, 'Enter a name')
+  assert.equal(t.context, 'Name')
+  assert.deepEqual(t.options.map((o) => o.key), ['Escape'])
+  const blank = parseMcpApproval(`  Field 1/1\n\n  › 1. Allow   Run\n\n  enter to submit | esc to cancel\n`)
+  assert.equal(blank.question, MCP_APPROVAL_UNKNOWN)
 })
 
 test('a multi-line command (heredoc) still makes an approval card, and a question pushed off the screen too (1.417, AC-1603)', () => {
