@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.431',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'PC 앱 레일 사용량을 알림·설정 버튼 폭(36 px)에 맞춰 줄이고(링 40→36 px, 글자 10→9 px), "주"와 퍼센트 사이를 4→2 px, Codex 표시를 흰색 대신 아이콘 회색으로',
+        refs: ['REQ-F-858'],
+      },
+    ],
+  },
+  {
     version: '1.430',
     date: '2026-11-04',
+    commit: '7ffdc6d',
     changes: [
       {
         kind: 'fixed',

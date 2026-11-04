@@ -17,13 +17,16 @@ const MARK: Record<RunnerUsage['id'], string> = {
   codex: 'M6.5 4.5h11a3.5 3.5 0 0 1 3.5 3.5v8a3.5 3.5 0 0 1 -3.5 3.5h-11a3.5 3.5 0 0 1 -3.5 -3.5v-8a3.5 3.5 0 0 1 3.5 -3.5zM7.5 9.5l2.5 2.5l-2.5 2.5M12.5 14.5h4',
 }
 
-const SIZE = 40
+/** As wide as the rail's 36 px buttons below it, so the ring lines up with the bell and settings icons. */
+const SIZE = 36
 const C = SIZE / 2
 /** Outer (weekly) and inner (5-hour) rings: radius and stroke. */
 const RINGS = [
-  { r: 17, w: 4 },
-  { r: 11.5, w: 3 },
+  { r: 15.5, w: 3.5 },
+  { r: 10.5, w: 2.5 },
 ] as const
+/** The runner's mark in the middle, in px. */
+const MARK_PX = 12
 
 function Ring({ r, w, l }: { r: number; w: number; l: Limit }) {
   const len = 2 * Math.PI * r
@@ -72,7 +75,7 @@ export function RailUsage() {
               {rings.map((l, i) => (
                 <Ring key={i} r={RINGS[i].r} w={RINGS[i].w} l={l} />
               ))}
-              <path className="rail-ring-mark" d={MARK[r.id]} transform={`translate(${C - 7} ${C - 7}) scale(${14 / 24})`} />
+              <path className="rail-ring-mark" d={MARK[r.id]} transform={`translate(${C - MARK_PX / 2} ${C - MARK_PX / 2}) scale(${MARK_PX / 24})`} />
             </svg>
             {r.week ? <Row k="주" label={`${r.name} 주간`} l={r.week} now={now} /> : null}
             {r.fiveHour ? <Row k="5h" label={`${r.name} 5시간`} l={r.fiveHour} now={now} /> : null}

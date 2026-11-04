@@ -1108,9 +1108,9 @@ select.input {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 6px;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.2;
 }
 .rail-usage-group {
@@ -1156,13 +1156,17 @@ select.input {
 .rail-ring.claude .rail-ring-mark {
   stroke: var(--accent);
 }
+/* Codex's prompt box is a heavy closed shape; in full text white it outshone Claude's burst, so it takes the icon gray. */
+.rail-ring.codex .rail-ring-mark {
+  stroke: var(--muted);
+}
 .app-rail .rail-usage-row {
   display: grid;
   grid-template-columns: auto auto;
   justify-content: center;
   align-items: baseline;
-  gap: 1px 4px;
-  width: 40px;
+  gap: 1px 2px;
+  width: 36px;
   font-variant-numeric: tabular-nums;
 }
 .rail-usage-v {
@@ -1176,7 +1180,7 @@ select.input {
 .rail-usage-left {
   grid-column: 1 / -1;
   text-align: center;
-  font-size: 9px;
+  font-size: 8.5px;
   color: var(--faint);
 }
 .rail-usage-k {
