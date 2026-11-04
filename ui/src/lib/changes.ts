@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.423',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 승인 창에서 화면 폭에 줄바꿈된 선택지("Yes, and don\'t ask again …")를 읽지 못해 권한 카드에 거절만 보이던 문제. 번호 줄부터 키 `(p)` 가 있는 줄까지 한 선택지로 읽고, 12줄 제한을 40줄 덩어리로 바꿈. 화면 위로 잘린 선택지는 추측하지 않음',
+        refs: ['REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.422',
     date: '2026-11-04',
+    commit: 'fe19e17',
     changes: [
       {
         kind: 'fixed',

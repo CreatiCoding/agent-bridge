@@ -548,14 +548,28 @@ export function parseApproval(screen) {
   const lines = screen.split('\n')
   const foot = lines.findLastIndex((l) => /Press enter to confirm or esc to cancel/i.test(l))
   if (foot < 0) return null
+  // The options are the block of lines right above the footer. A long option ("Yes, and don't ask again for commands
+  // that start with `…`") wraps, so its key "(p)" sits on a line without a number: an option runs from its number to
+  // the line its key ends, however many lines that is. Lines above the first number (an option cut by the screen's
+  // top) are left out rather than guessed.
+  let end = foot - 1
+  while (end >= 0 && !lines[end].trim()) end--
+  let start = end
+  while (start > 0 && start > end - APPROVAL_OPTION_LINES && lines[start - 1].trim()) start--
+  const groups = []
+  for (let i = start; i <= end; i++) {
+    const m = /^\s*(›\s*)?(\d+)\.\s+(.*)$/.exec(lines[i])
+    if (m) groups.push({ at: i, n: Number(m[2]), text: m[3].trim(), selected: !!m[1] })
+    else if (groups.length) groups[groups.length - 1].text += ` ${lines[i].trim()}`
+  }
   const opts = []
   let first = -1
-  for (let i = foot - 1; i >= 0 && i >= foot - 12; i--) {
-    const m = /^\s*(›\s*)?(\d+)\.\s+(.*?)\s*\(([a-z]|esc)\)\s*$/i.exec(lines[i])
-    if (m) {
-      opts.unshift({ n: Number(m[2]), label: m[3], key: m[4].toLowerCase() === 'esc' ? 'Escape' : m[4].toLowerCase(), selected: !!m[1] })
-      first = i
-    } else if (opts.length && lines[i].trim()) break
+  for (let g = groups.length - 1; g >= 0; g--) {
+    const m = /^(.*?)\s*\(([a-z]|esc)\)$/i.exec(groups[g].text)
+    if (!m) break
+    const { at, n, selected } = groups[g]
+    opts.unshift({ n, label: m[1], key: m[2].toLowerCase() === 'esc' ? 'Escape' : m[2].toLowerCase(), selected })
+    first = at
   }
   if (!opts.length) return null
   // The question sits above the command, which can run to any length (a heredoc script): look up to the last thing
@@ -588,6 +602,8 @@ export function parseApproval(screen) {
 export const APPROVAL_UNKNOWN = 'Codex 가 터미널에서 승인을 기다려요'
 /** How many lines above the options the card shows as context when the question line is not on screen. */
 const APPROVAL_CONTEXT_LINES = 30
+/** How many lines above the footer the options (wrapped ones included) may take. */
+const APPROVAL_OPTION_LINES = 40
 
 /**
  * What 전부 허용 answers a codex approval with (REQ-F-856): the option that allows this once ("Yes, proceed"), never

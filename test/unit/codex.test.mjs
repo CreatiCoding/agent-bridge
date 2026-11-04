@@ -256,6 +256,33 @@ ${script}
   assert.doesNotMatch(parseApproval(`› 이전 요청\n${cut}`).context, /이전 요청/)
 })
 
+test('an option wrapped over several lines keeps every option, and one cut by the top is not guessed (1.423, AC-1611)', () => {
+  const head = `  Would you like to run the following command?\n\n  $ rg -n 'x' /private/tmp/a\n\n\n`
+  const foot = `\n  Press enter to confirm or esc to cancel\n`
+  const wrapped = `${head}› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with \`rg -n 'x'
+     /private/tmp/a\` (p)
+  3. No, and tell Codex what to do differently (esc)
+${foot}`
+  const a = parseApproval(wrapped)
+  assert.deepEqual(a.options.map((o) => [o.n, o.key, o.selected]), [[1, 'y', true], [2, 'p', false], [3, 'Escape', false]])
+  assert.equal(a.options[1].label, "Yes, and don't ask again for commands that start with `rg -n 'x' /private/tmp/a`")
+  assert.equal(a.question, 'Would you like to run the following command?')
+  assert.doesNotMatch(a.context, /Yes, proceed/)
+  // 전부 허용 still picks the one-time yes, never the wrapped "don't ask again".
+  assert.equal(codexAutoAnswer(a).option.key, 'y')
+  // Only the key on the next line.
+  const keyAlone = `${head}› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for commands that start with \`rg\`\n     (p)\n  3. No (esc)\n${foot}`
+  assert.deepEqual(parseApproval(keyAlone).options.map((o) => o.key), ['y', 'p', 'Escape'])
+  // More than 12 lines of options.
+  const tall = Array.from({ length: 14 }, (_, i) => `     /private/tmp/part${i}`).join('\n')
+  const big = `${head}› 1. Yes, proceed (y)\n  2. Yes, and don't ask again for commands that start with \`rg\n${tall}\` (p)\n  3. No (esc)\n${foot}`
+  assert.deepEqual(parseApproval(big).options.map((o) => o.key), ['y', 'p', 'Escape'])
+  // The screen's top cut option 1 in the middle: what is left of it is not made into an option.
+  const cut = `     proceed (y)\n  2. Yes, and don't ask again for commands that start with \`rg\`\n     (p)\n  3. No (esc)\n${foot}`
+  assert.deepEqual(parseApproval(cut).options.map((o) => [o.n, o.key]), [[2, 'p'], [3, 'Escape']])
+})
+
 test('the screen: idle with an empty box, working, the folder trust question, text left in the box', () => {
   const idle = '› 안녕\n• echo: 안녕\n  Worked for <1s • 1:13 AM\n› Ask Codex to do anything\n  fake-model default · ~/w\n'
   assert.equal(codexIdle(idle), 'idle')
