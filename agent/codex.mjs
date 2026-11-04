@@ -82,7 +82,8 @@ export function rolloutMeta(file) {
   let fd
   try {
     fd = fs.openSync(file, 'r')
-    const buf = Buffer.alloc(64 * 1024)
+    // session_meta carries codex's base instructions: it can be well past 64 KB.
+    const buf = Buffer.alloc(512 * 1024)
     const n = fs.readSync(fd, buf, 0, buf.length, 0)
     const end = buf.subarray(0, n).indexOf(0x0a)
     const o = JSON.parse(buf.subarray(0, end < 0 ? n : end).toString('utf8'))
@@ -141,6 +142,71 @@ export function findRollout(root, id) {
   }
   return null
 }
+/**
+ * Every rollout on this Mac (the 맥의 대화 가져오기 list, REQ-F-853): { id, file, mtime, size }, newest written first.
+ * Only names and stat are read here; a resumed conversation keeps writing its first day's file, so every day is looked at.
+ */
+export function listRollouts(root) {
+  const out = []
+  for (const y of safeList(root).filter((x) => /^\d{4}$/.test(x)))
+    for (const m of safeList(path.join(root, y)).filter((x) => /^\d{2}$/.test(x)))
+      for (const d of safeList(path.join(root, y, m)).filter((x) => /^\d{2}$/.test(x)))
+        for (const n of safeList(path.join(root, y, m, d))) {
+          const id = rolloutId(n)
+          if (!id) continue
+          const file = path.join(root, y, m, d, n)
+          try {
+            const st = fs.statSync(file)
+            if (st.isFile() && st.size > 0) out.push({ id, file, mtime: st.mtimeMs, size: st.size })
+          } catch {}
+        }
+  return out.sort((a, b) => b.mtime - a.mtime)
+}
+
+/**
+ * What the list shows of a rollout: its folder (session_meta), and the first and last thing the person said. Only the
+ * start and the end of the file are read. `user`: a conversation a person had (not a thread codex started for itself).
+ */
+export function rolloutInfo(file, size) {
+  const meta = rolloutMeta(file)
+  const read = (from, len) => {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const buf = Buffer.alloc(Math.max(0, Math.min(len, size - from)))
+      const n = fs.readSync(fd, buf, 0, buf.length, from)
+      return buf.subarray(0, n).toString('utf8').split('\n')
+    } finally {
+      fs.closeSync(fd)
+    }
+  }
+  const said = (l) => {
+    let o
+    try {
+      o = JSON.parse(l)
+    } catch {
+      return ''
+    }
+    const p = o?.payload
+    if (o?.type !== 'response_item' || p?.type !== 'message' || p.role !== 'user') return ''
+    const t = textOf(p.content, 'input_text')
+    return !t.trim() || hiddenUserText(t) ? '' : t.replace(/\s+/g, ' ').trim().slice(0, 160)
+  }
+  let head = []
+  let tail = []
+  try {
+    head = read(0, 512 * 1024)
+    tail = size > 512 * 1024 ? read(size - 65536, 65536).slice(1) : []
+  } catch {}
+  const all = [...head, ...tail]
+  return {
+    id: meta?.id ?? '',
+    cwd: meta?.cwd ?? '',
+    user: !!meta && meta.threadSource === 'user',
+    first: head.map(said).find(Boolean) ?? '',
+    last: [...all].reverse().map(said).find(Boolean) ?? '',
+  }
+}
+
 const safeList = (dir) => {
   try {
     return fs.readdirSync(dir)

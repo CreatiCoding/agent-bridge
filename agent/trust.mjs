@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 6
+export const TRUST_VERSION = 7
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -115,7 +115,8 @@ export const TRUST_CLASS = {
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
   // 맥의 대화 가져오기: the conversation and its folder are signed; the Mac opens it only when its transcript was
   // written in that folder (agent.mjs adopt). The server's sysPrompt·routing are dropped, as for new.
-  adopt: { i: ['conv', 'cwd'], keep: ['sid'] },
+  // A codex conversation names its runner, signed too (REQ-F-853).
+  adopt: { i: ['conv', 'cwd', 'runner'], keep: ['sid'] },
   send: { i: ['sid', 'textH', 'imgs'], keep: ['text', 'files', 'id'] },
   sendnow: { i: ['sid'] },
   esc: { i: ['sid'] },
@@ -661,7 +662,7 @@ export function sealOut(msg, seal) {
     case 'recent':
       // bound (1.412): the conversation id, its folder and the words the person picks it by, in one piece, so a server
       // cannot show one conversation's title on another's id or folder (the page uses only what this piece says).
-      if (Array.isArray(m.conversations)) m.conversations = m.conversations.map((c) => (c && typeof c === 'object' ? { ...c, title: S(c.title), first: S(c.first), last: S(c.last), bound: S(JSON.stringify({ conv: c.conv, cwd: c.cwd, title: c.title ?? '', first: c.first ?? '' })) } : c))
+      if (Array.isArray(m.conversations)) m.conversations = m.conversations.map((c) => (c && typeof c === 'object' ? { ...c, title: S(c.title), first: S(c.first), last: S(c.last), bound: S(JSON.stringify({ conv: c.conv, cwd: c.cwd, title: c.title ?? '', first: c.first ?? '', ...(c.runner ? { runner: c.runner } : {}) })) } : c))
       break
     case 'folder':
     case 'flushed':

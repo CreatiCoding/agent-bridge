@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.413',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server', 'ui'],
+        text: '이 맥의 대화 이어 가기에 맥의 Codex 대화(~/.codex/sessions)도 보이고, 고르면 그 폴더에서 codex resume 으로 이어 엶. 목록 줄마다 실행기(Claude Code / Codex) 배지',
+        refs: ['REQ-F-853', 'REQ-F-048'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'ui'],
+        text: 'Codex 대화 가져오기는 고른 폴더가 rollout 첫 줄의 폴더와 같을 때만, 그 대화를 연 codex 가 살아 있거나 1분 안에 쓰였으면 거절. 실행기도 서명·봉인 조각에 넣음. trust 판 7',
+        refs: ['REQ-F-853', 'REQ-S-091', 'REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.412',
     date: '2026-11-04',
+    commit: '07694a5',
     changes: [
       {
         kind: 'security',

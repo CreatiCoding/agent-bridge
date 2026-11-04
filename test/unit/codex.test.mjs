@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, codexBoxHas, codexHome, codexIdle, convertLine, findNewRollout, findRollout, hiddenUserText, parseApproval, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -259,4 +259,28 @@ test('a slash command: what codex printed under its echo, and the pager or picke
   assert.equal(codexPicker(APPROVAL), null)
   // A long page is cut, so the note keeps its closing fence.
   assert.ok(slashOutput(`/x\n${'y'.repeat(5000)}\n› \n`, '/x').length <= 1602)
+})
+
+test('the Mac\'s codex conversations for 맥의 대화 가져오기: listed newest first, read for folder and words (1.413, AC-1595)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-adopt-'))
+  const day = path.join(root, '2026', '11', '03')
+  fs.mkdirSync(day, { recursive: true })
+  const A = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a50'
+  const B = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a51'
+  const C = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a52'
+  const meta = (id, src) => JSON.stringify({ timestamp: '2026-11-03T01:00:00Z', type: 'session_meta', payload: { id, cwd: '/Users/u/p', timestamp: '2026-11-03T01:00:00Z', originator: 'codex_vscode', thread_source: src, base_instructions: { text: 'x'.repeat(100_000) } } })
+  const msg = (role, kind, text) => JSON.stringify({ timestamp: '2026-11-03T01:00:01Z', type: 'response_item', payload: { type: 'message', role, content: [{ type: kind, text }] } })
+  const fa = path.join(day, `rollout-2026-11-03T01-00-00-${A}.jsonl`)
+  const fb = path.join(day, `rollout-2026-11-03T02-00-00-${B}.jsonl`)
+  fs.writeFileSync(fa, [meta(A, 'user'), msg('user', 'input_text', '<environment_context>x</environment_context>'), msg('user', 'input_text', '배포  고쳐 줘'), msg('assistant', 'output_text', '네'), msg('user', 'input_text', '끝 말')].join('\n') + '\n')
+  fs.writeFileSync(fb, [meta(B, 'subagent'), msg('user', 'input_text', '안쪽')].join('\n') + '\n')
+  fs.writeFileSync(path.join(day, `rollout-2026-11-03T03-00-00-${C}.jsonl`), '')
+  fs.utimesSync(fa, new Date(2_000_000_000_000), new Date(2_000_000_000_000))
+  fs.utimesSync(fb, new Date(1_000_000_000_000), new Date(1_000_000_000_000))
+  const list = listRollouts(root)
+  assert.deepEqual(list.map((r) => r.id), [A, B], '크기 0 은 빠지고 최신순')
+  const a = rolloutInfo(fa, fs.statSync(fa).size)
+  assert.deepEqual(a, { id: A, cwd: '/Users/u/p', user: true, first: '배포 고쳐 줘', last: '끝 말' })
+  assert.equal(rolloutInfo(fb, fs.statSync(fb).size).user, false)
+  assert.deepEqual(listRollouts(path.join(root, 'none')), [])
 })

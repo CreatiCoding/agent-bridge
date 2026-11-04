@@ -98,6 +98,8 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		if !safeId(b["conv"]) {
 			refuse(400, "대화 id 가 올바르지 않습니다")
 		}
+		// A codex conversation names its runner (REQ-F-853); none is Claude Code's.
+		runner := pickRunner(m[1], b["runner"])
 		for _, s := range sessions.Values() {
 			if s.uid() == uid && s.get("conv") == b["conv"] && !truthy(s.get("closed")) {
 				refuse(409, "이미 bridge 세션으로 열려 있는 대화입니다")
@@ -121,12 +123,20 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		sid := uuidv4()
 		meta := newMeta(uid, sid, m[1], M{"conv": b["conv"], "cwd": jsSliceTo(cwd, 1000), "title": jsSliceTo(wsRun.ReplaceAllString(title, " "), 80)})
+		if runner != "" {
+			meta.set("runner", runner)
+		}
 		st := noState()
 		st["alive"] = true
 		st["phase"] = "starting"
 		meta.set("state", st)
 		broadcastState(uid)
-		r := ask(m[1], M{"t": "adopt", "sid": sid, "conv": b["conv"], "cwd": meta.get("cwd"), "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "autoPush": true}, 90_000)
+		cmd := M{"t": "adopt", "sid": sid, "conv": b["conv"], "cwd": meta.get("cwd"), "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "autoPush": true}
+		if runner != "" {
+			cmd["runner"] = runner
+			delete(cmd, "routing")
+		}
+		r := ask(m[1], cmd, 90_000)
 		if !truthy(r["ok"]) {
 			sessions.Delete(sid)
 			dirty.Delete(sid)

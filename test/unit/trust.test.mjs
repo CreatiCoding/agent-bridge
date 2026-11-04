@@ -287,7 +287,7 @@ test('agent adopt refuses a server sid that is a path or already open while trus
 
 test('adopt is signed by its conversation and folder; what the server adds is dropped (AC-1586)', () => {
   const rule = classOf({ t: 'adopt' })
-  assert.deepEqual(rule.i, ['conv', 'cwd'])
+  assert.deepEqual(rule.i, ['conv', 'cwd', 'runner'], '1.413: codex 대화면 runner 도 서명')
   assert.deepEqual(rule.keep, ['sid'])
   const cmd = { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'server-conv', cwd: '/server', sysPrompt: 'evil', routing: { x: 1 }, autoPush: true }
   assert.deepEqual(rebuild(cmd, rule, { conv: 'c', cwd: '~/p' }), { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '~/p' })
@@ -299,4 +299,18 @@ test('agent adopt checks the signed folder and a live claude in every account fo
   assert.match(body, /\bsigned\b[\s\S]*conversationInfo\(file[\s\S]*realpathSync/, '서명된 가져오기는 기록의 cwd 와 맞춰 봄')
   assert.match(body, /convLive\(dir, conv\)/)
   assert.doesNotMatch(body, /isLinked\(account\) && \(convLive/, '연결한 폴더만이 아니라 모든 폴더에서 검사')
+})
+
+test('a codex adopt carries its runner only when signed; the sealed list binds it (1.413, AC-1596)', async () => {
+  const rule = classOf({ t: 'adopt' })
+  assert.deepEqual(rule.i, ['conv', 'cwd', 'runner'])
+  const cmd = { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '/evil', runner: 'codex', routing: { on: true } }
+  assert.deepEqual(rebuild(cmd, rule, { conv: 'c', cwd: '~/p', runner: 'codex' }), { t: 'adopt', reqId: 'r1', sid: 's1', conv: 'c', cwd: '~/p', runner: 'codex' })
+  assert.equal(rebuild(cmd, rule, { conv: 'c', cwd: '~/p' }).runner, undefined, '서명에 없는 runner 는 빠짐')
+  const t = open(tmp())
+  const { k } = await pair(t, await device())
+  const conv = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
+  const r = sealOut({ t: 'recent', reqId: 'r', ok: true, home: '/Users/u', conversations: [{ conv, cwd: '/Users/u/p', title: '', first: '첫 글', last: '끝', mtime: 1, size: 2, active: false, exists: true, runner: 'codex' }] }, t.sealer())
+  assert.deepEqual(JSON.parse(await pageOpen(k, 'host-a', r.conversations[0].bound)), { conv, cwd: '/Users/u/p', title: '', first: '첫 글', runner: 'codex' })
+  assert.ok(TRUST_VERSION >= 7)
 })

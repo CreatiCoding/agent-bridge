@@ -23,8 +23,10 @@ interface Conversation {
   exists: boolean
   /** The Claude account whose folder has it ('' the main one); a linked folder's are taken in that folder. */
   account?: string
-  /** A sealing Mac's {conv, cwd, title, first} in one sealed piece (1.412). */
+  /** A sealing Mac's {conv, cwd, title, first, runner?} in one sealed piece (1.412). */
   bound?: string
+  /** 'codex' for a Codex conversation (REQ-F-853); none for Claude Code's. */
+  runner?: string
 }
 
 type Listed = { ok: true; home: string; conversations: Conversation[] }
@@ -38,12 +40,13 @@ export async function boundList(r: Listed): Promise<Listed & { dropped: number }
   const out: Conversation[] = []
   for (const c of r.conversations ?? []) {
     const b = await openSealed(c.bound)
-    let w: { conv?: unknown; cwd?: unknown; title?: unknown; first?: unknown } | null = null
+    let w: { conv?: unknown; cwd?: unknown; title?: unknown; first?: unknown; runner?: unknown } | null = null
     try {
       w = b ? JSON.parse(b) : null
     } catch {}
     if (!w || typeof w.conv !== 'string' || !/^[0-9a-f-]{36}$/.test(w.conv) || typeof w.cwd !== 'string') continue
-    out.push({ ...c, conv: w.conv, cwd: w.cwd, title: String(w.title ?? ''), first: String(w.first ?? ''), last: await openText(String(c.last ?? '')) })
+    // The runner is the sealed piece's too: a server cannot make a Claude Code conversation a Codex one or back.
+    out.push({ ...c, conv: w.conv, cwd: w.cwd, title: String(w.title ?? ''), first: String(w.first ?? ''), runner: w.runner === 'codex' ? 'codex' : undefined, last: await openText(String(c.last ?? '')) })
   }
   return { ...r, conversations: out, dropped: (r.conversations?.length ?? 0) - out.length }
 }
@@ -72,11 +75,12 @@ export function AdoptList({ hostId }: { hostId: string }) {
 
   const nameOf = (c: Conversation) => c.title || c.first || '(제목 없음)'
   // The conversation's own title or first words; never the placeholder the list shows for one without either.
-  const adoptOne = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first })
+  const adoptOne = (c: Conversation) => post<{ ok: true; id: string }>(`/api/hosts/${hostId}/adopt`, { conv: c.conv, cwd: c.cwd, title: c.title || c.first, ...(c.runner === 'codex' ? { runner: 'codex' } : {}) })
+  const resumeOf = (c: Conversation) => (c.runner === 'codex' ? 'codex resume' : 'claude --resume')
 
   const adopt = async (c: Conversation) => {
     const ok = await confirmDialog('이 대화를 bridge 에서 이어 갈까요?', {
-      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요. 같은 대화를 둘이 쓰면 기록이 엇갈려요.\n\n' : ''}그 폴더에서 claude --resume 으로 열어요. 지금까지의 대화도 함께 보여요.`,
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? '1분 안에 이 대화에 쓰인 기록이 있어요. 다른 터미널이나 도구에서 아직 쓰는 중이라면 그쪽을 먼저 끝내세요. 같은 대화를 둘이 쓰면 기록이 엇갈려요.\n\n' : ''}그 폴더에서 ${resumeOf(c)} 으로 열어요. 지금까지의 대화도 함께 보여요.`,
       ok: '이어 가기',
       danger: c.active,
     })
@@ -95,7 +99,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const adoptPicked = async (items: Conversation[]) => {
     const active = items.filter((c) => c.active).length
     const ok = await confirmDialog(`${items.length}개 대화를 bridge 에서 이어 갈까요?`, {
-      text: `하나씩 차례로 그 폴더에서 claude --resume 으로 열어요.${active ? `\n\n${active}개는 1분 안에 쓰인 기록이 있어요. 다른 곳에서 쓰는 중이면 그쪽을 먼저 끝내세요.` : ''}`,
+      text: `하나씩 차례로 그 폴더에서 ${items.some((c) => c.runner === 'codex') ? '실행기에 맞게 claude --resume 또는 codex resume' : 'claude --resume'} 으로 열어요.${active ? `\n\n${active}개는 1분 안에 쓰인 기록이 있어요. 다른 곳에서 쓰는 중이면 그쪽을 먼저 끝내세요.` : ''}`,
       ok: `${items.length}개 이어 가기`,
       danger: active > 0,
     })
@@ -131,6 +135,8 @@ export function AdoptList({ hostId }: { hostId: string }) {
   const chosen = ordered.filter((c) => picked.has(c.conv) && c.exists)
   const toggle = (id: string) => setPicked((p) => (p.has(id) ? (p.delete(id), new Set(p)) : new Set(p.add(id))))
   const running = !!run && run.done < run.total
+  // Which program each conversation is in, once the list has more than Claude Code's.
+  const mixed = list.conversations.some((c) => c.runner === 'codex')
 
   return (
     <div className="stack">
@@ -180,7 +186,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
       </div>
       {!shown.length ? (
         <Empty icon="search" title="이어 갈 대화가 없어요">
-          bridge 밖에서 시작한 Claude Code 대화가 여기에 보여요.
+          bridge 밖에서 시작한 Claude Code·Codex 대화가 여기에 보여요.
         </Empty>
       ) : (
         <div className="folder-list" style={{ maxHeight: 'none' }}>
@@ -196,6 +202,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
                 </span>
                 {c.last && c.last !== c.first ? <span className="adopt-sub">마지막: {c.last}</span> : null}
               </button>
+              {mixed ? <Badge tone={c.runner === 'codex' ? 'blue' : undefined}>{c.runner === 'codex' ? 'Codex' : 'Claude Code'}</Badge> : null}
               {accountOf(c) ? <Badge>{accountOf(c)?.name}</Badge> : null}
               {!c.exists ? <Badge tone="red">폴더 없음</Badge> : c.active ? <Badge tone="amber">쓰는 중</Badge> : null}
             </div>
@@ -208,7 +215,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
         </Button>
       ) : null}
       <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>
-        최근 80개까지 보여요. 이미 bridge 세션인 대화는 빠져 있어요. 줄을 누르면 하나만 바로 이어 가요.
+        최근 80개(Codex 는 40개)까지 보여요. 이미 bridge 세션인 대화는 빠져 있어요. 줄을 누르면 하나만 바로 이어 가요.
       </p>
       <Button tone="ghost" size="sm" icon="refresh" onClick={() => setReads((n) => n + 1)}>
         다시 읽기

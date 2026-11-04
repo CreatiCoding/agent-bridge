@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, sessionsRoot, findRollout, findNewRollout, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -3163,6 +3163,54 @@ async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysProm
   }
 }
 
+/**
+ * 맥의 대화 가져오기 for a codex conversation (REQ-F-853): `codex resume <id>` in the folder its rollout was written
+ * in. Always checked, signed or not: the folder named must be the rollout's own (session_meta cwd), and a conversation
+ * another codex is writing (the file open in a process, or written within a minute) is not taken.
+ */
+async function adoptCodex(reqId, sid, { conv, cwd, autoPush, sysPrompt }) {
+  try {
+    if (!codexVersion) throw new Error('이 맥에서 codex 를 쓸 수 없어요 (설치돼 있지 않거나 응답하지 않아요)')
+    if (!CODEX_ID_RE.test(String(conv))) throw new Error('대화 id 가 올바르지 않습니다')
+    if ([...sessions.values()].some((x) => x.conv === conv || x.rollout === conv)) throw new Error('이미 bridge 세션으로 열려 있는 대화입니다')
+    const want = expandHome(String(cwd || ''))
+    if (!want || !path.isAbsolute(want) || !fs.existsSync(want) || !fs.statSync(want).isDirectory()) throw new Error(`이 대화의 폴더가 이 맥에 없습니다: ${cwd}`)
+    const file = findRollout(codexRoot(), conv)
+    if (!file) throw new Error('이 맥에서 그 codex 대화의 기록을 찾지 못했습니다')
+    const meta = rolloutMeta(file)
+    if (!meta || meta.id !== conv) throw new Error('codex 대화 기록의 첫 줄(session_meta)을 읽지 못했어요')
+    let same = false
+    try {
+      same = !!meta.cwd && fs.realpathSync(meta.cwd) === fs.realpathSync(want)
+    } catch {}
+    if (!same) throw new Error('고른 폴더와 codex 대화 기록의 폴더가 달라요. 목록을 새로 고쳐 다시 가져와 주세요')
+    // Two codex on one rollout split the conversation: the codex (terminal, editor) that has it open is still running.
+    const holders = await run('lsof', ['-t', '--', file], { timeout: 10_000 })
+    if (/\d/.test(holders.out) || Date.now() - fs.statSync(file).mtimeMs < 60_000) throw new Error('다른 도구(터미널 등)의 codex 가 이 대화를 지금 쓰는 중이에요. 그쪽 codex 를 끝낸 뒤(1분 뒤) 다시 가져와 주세요')
+    const dir = fs.realpathSync(want)
+    const s = { runner: 'codex', cwd: dir, autoPush: autoPush !== false, conv, rollout: conv, rolloutFile: file, sysPrompt: String(sysPrompt ?? '').slice(0, 8000) }
+    // The whole conversation so far, made from the rollout: the server reads it from the first line.
+    s.mirror = {}
+    syncMirror({ rollout: file, mirror: mirrorPath(sid), sid, state: s.mirror })
+    Object.assign(s, { offset: 0, lineNo: 0, skip: 0, lineBase: 0 })
+    resetRuntime(s)
+    sessions.set(sid, s)
+    try {
+      await launch(sid, s, {})
+    } catch (e) {
+      sessions.delete(sid)
+      throw e
+    }
+    saveSessions()
+    log('info', 'adopt', `폴더(${dir.length}자)의 codex 대화 ${conv.slice(0, 8)} 를 이어서 엶`, sid)
+    emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: '' })
+    agentHook('session.create', sid, dir)
+  } catch (e) {
+    log('error', 'adopt', `codex 대화를 가져오지 못함: ${e.message}`, sid)
+    emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
+  }
+}
+
 const commands = {
   delegated({ areq, ok, result, error }) {
     delegating.get(areq)?.({ ok: ok === true, ...(ok ? { result } : { error: String(error ?? '실패했어요') }) })
@@ -4273,17 +4321,34 @@ const commands = {
         if (!info.cwd) continue
         list.push({ conv: f.conv, cwd: info.cwd, title: info.title, first: info.first, last: info.last, mtime: f.mtime, size: f.size, active: Date.now() - f.mtime < 60_000, exists: fs.existsSync(info.cwd), account: f.account })
       }
+      // Codex's conversations too (REQ-F-853), once codex can be run here: taken with `codex resume`.
+      if (codexVersion) {
+        const held = new Set([...skip, ...[...sessions.values()].map((s) => s.rollout).filter(Boolean)])
+        const rolls = listRollouts(codexRoot()).filter((r) => !held.has(r.id))
+        let shown = 0
+        for (const r of rolls) {
+          if (shown >= 40 && !wanted.has(r.id)) continue
+          const info = rolloutInfo(r.file, r.size)
+          if (info.id !== r.id || !info.cwd || !info.user || !info.first) continue
+          shown++
+          list.push({ conv: r.id, cwd: info.cwd, title: '', first: info.first, last: info.last, mtime: r.mtime, size: r.size, active: Date.now() - r.mtime < 60_000, exists: fs.existsSync(info.cwd), account: '', runner: 'codex' })
+        }
+        list.sort((a, b) => b.mtime - a.mtime)
+      }
       emit({ t: 'recent', reqId, ok: true, home: HOME, conversations: list })
     } catch (e) {
       emit({ t: 'recent', reqId, ok: false, error: e.code === 'ENOENT' ? '이 맥에 Claude Code 대화 기록이 없어요' : e.message })
     }
   },
   /** Take a conversation this Mac already has into a bridge session: `claude --resume` in its own folder. */
-  async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt, routing, signed }) {
+  async adopt({ reqId, sid, conv, cwd, autoPush, sysPrompt, routing, signed, runner }) {
     try {
       // The server names the session and the signature does not cover it: one that is a path, or one already here, is
       // not taken, as for new and open (REQ-S-092, 1.412).
       if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
+      // A codex conversation (REQ-F-853): the runner is signed with the conversation and its folder.
+      if (runner === 'codex') return await adoptCodex(reqId, sid, { conv, cwd, autoPush, sysPrompt })
+      if (runner !== undefined && runner !== 'claude') throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
       if (!/^[0-9a-f-]{36}$/.test(String(conv))) throw new Error('대화 id 가 올바르지 않습니다')
       if ([...sessions.values()].some((x) => x.conv === conv)) throw new Error('이미 bridge 세션으로 열려 있는 대화입니다')
       const want = expandHome(String(cwd || ''))
