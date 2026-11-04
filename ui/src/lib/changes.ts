@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.435',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: '맥과 짝지은 기기에서 익스텐션을 기기별로 켬: 설정 → 플러그인에서 동의한 익스텐션마다 "이 기기에서도 켜기"(서명 키를 쓸 수 있다는 경고 창을 거침). 이 브라우저의 localStorage 에 그 익스텐션 해시로만 저장해 서버가 켤 수 없고, 파일이 바뀌면 다시 꺼짐. 기본은 지금처럼 꺼짐',
+        refs: ['REQ-F-864', 'REQ-S-091'],
+      },
+    ],
+  },
+  {
     version: '1.434',
     date: '2026-11-05',
+    commit: 'ce8fd10',
     changes: [
       {
         kind: 'added',

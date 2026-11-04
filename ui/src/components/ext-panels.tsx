@@ -3,13 +3,26 @@
 import { useEffect, useState } from 'react'
 import { Button, CardHead, Switch } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
-import { askConsent, cleanLeftover, ConsentText, extLeftovers, listExtensions, revokeConsent, type ExtInfo } from '../lib/ext-host'
+import { allowOnPaired, askConsent, cleanLeftover, ConsentText, extLeftovers, listExtensions, pairedAllowed, revokeConsent, type ExtInfo } from '../lib/ext-host'
+import { loadTrust, onTrustChange, pairedHosts } from '../lib/trust'
 import { clock } from '../lib/format'
+
+/** Whether this device is paired with a Mac (then an extension also needs turning on here, REQ-F-864). */
+function usePaired() {
+  const [paired, setPaired] = useState(() => pairedHosts().length > 0)
+  useEffect(() => {
+    const f = () => setPaired(pairedHosts().length > 0)
+    void loadTrust().then(f)
+    return onTrustChange(f)
+  }, [])
+  return paired
+}
 
 export function ExtSettings() {
   const [list, setList] = useState<ExtInfo[] | null>(null)
   const load = () => listExtensions().then(setList, () => setList([]))
   useEffect(() => void load(), [])
+  const paired = usePaired()
   if (!list?.length) return null
   return (
     <section className="card-box">
@@ -20,6 +33,18 @@ export function ExtSettings() {
             <div className="grow">
               <ConsentText x={x} />
               {x.loadError ? <div className="muted">불러오지 못했어요: {x.loadError}</div> : null}
+              {paired && x.consented && !x.loadError ? (
+                <div className="hstack" style={{ marginTop: 8, gap: 12 }}>
+                  <div className="grow muted">이 기기는 맥과 짝지어져 있어서, 이 기기에서 따로 켜야 돌아요. 켜면 이 기기의 서명 키를 쓸 수 있어요.</div>
+                  <Switch
+                    checked={pairedAllowed(x)}
+                    label={`${x.name} 이 기기에서도 켜기`}
+                    onChange={async (on) => {
+                      if (await allowOnPaired(x, on)) location.reload()
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
             <Switch
               checked={x.consented}

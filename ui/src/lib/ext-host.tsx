@@ -317,12 +317,52 @@ async function localeOf(x: ExtInfo) {
   return {}
 }
 
+// ---------- on a paired device (REQ-F-864) ----------
+
+// A device paired with a Mac runs an extension only when the person turned it on here, on this device, for this
+// hash: its code runs in this page and can sign with this device's keys. Kept in this browser only, so the server
+// cannot turn it on; new files (another hash) are off again until turned on again.
+const pairedKey = (id: string) => `cb-ext-paired-${id}`
+export function pairedAllowed(x: ExtInfo) {
+  try {
+    return localStorage.getItem(pairedKey(x.id)) === x.hash
+  } catch {
+    return false
+  }
+}
+export async function allowOnPaired(x: ExtInfo, on: boolean) {
+  if (on) {
+    const sure = await confirmDialog('이 기기에서도 켤까요?', {
+      text: (
+        <div className="stack" style={{ gap: 8 }}>
+          <div>
+            이 기기는 맥과 짝지어져 있어요. <b>{x.name}</b> 을(를) 켜면 그 코드가 이 화면 안에서 돌아서 <b>이 기기의 서명 키로 맥에 명령을 보내고, 봉인이 풀린 대화를 읽을 수 있어요.</b>
+          </div>
+          <div className="muted">직접 만들었거나 코드를 확인한 익스텐션만 켜 주세요. 이 기기에만 저장되고, 익스텐션 파일이 바뀌면 다시 꺼져요.</div>
+        </div>
+      ),
+      ok: '이 기기에서 켜기',
+      cancel: '켜지 않기',
+      danger: true,
+    })
+    if (!sure) return false
+  }
+  try {
+    if (on) localStorage.setItem(pairedKey(x.id), x.hash)
+    else localStorage.removeItem(pairedKey(x.id))
+  } catch {
+    toast('이 브라우저에 저장하지 못했어요', { tone: 'bad' })
+    return false
+  }
+  return true
+}
+
 const loaded = new Set<string>()
 async function loadOne(x: ExtInfo, me: Me) {
   if (loaded.has(x.id) || x.loadError || !x.consented) return
-  // A device paired with a Mac runs no extension: its code would act with this device's keys (REQ-S-091).
+  // A device paired with a Mac runs an extension only when turned on here (REQ-S-091, REQ-F-864).
   await loadTrust()
-  if (pairedHosts().length) return report(x.id, 'load', new Error('맥과 짝지은 기기에서는 확장을 띄우지 않아요'))
+  if (pairedHosts().length && !pairedAllowed(x)) return report(x.id, 'load', new Error('맥과 짝지은 기기라 띄우지 않았어요 · 설정 → 플러그인에서 이 기기에서도 켤 수 있어요'))
   if (x.extensionApi > EXT_API) return report(x.id, 'load', new Error(`extensionApi ${x.extensionApi} 를 이 화면이 몰라요`))
   loaded.add(x.id)
   try {
