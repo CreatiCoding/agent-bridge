@@ -227,6 +227,7 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
       register: (slot: slots.SlotName, item: { id: string; order?: slots.SlotItem['order'] }) => (usesSlot(slot), slots.register(slot, item as slots.SlotItem, owner)),
       replace: (slot: slots.SlotName, id: string, f: (orig: never) => { id: string }) => (usesSlot(slot), slots.replace(slot, id, f as unknown as (o: slots.SlotItem) => slots.SlotItem, owner)),
       hide: (slot: slots.SlotName, id: string) => (usesSlot(slot), slots.hide(slot, id, owner)),
+      update: (slot: slots.SlotName, id: string, patch: Record<string, unknown>) => (usesSlot(slot), slots.update(slot, id, patch, owner)),
       useSlotContext: <C = unknown,>() => React.useContext(SlotContext) as C,
     },
     commands: { register: (s: Shortcut) => registerShortcut({ ...s, id: `${owner}.${s.id}` }, owner) },

@@ -50,6 +50,7 @@ export default function setup(bridge) {
             else
                 await notes.delete(noteKey(sid));
             bridge.ui.toast(t('saved'), { tone: 'ok' });
+            void recount().catch(() => { });
             close();
         };
         return (h(Fragment, null,
@@ -64,6 +65,27 @@ export default function setup(bridge) {
         icon: 'doc',
         run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
     });
+    // app.rail.items + app.menu.items + slots.update: one action on the PC's rail and in the phone's menu, its badge
+    // the number of notes. Pressing it counts again (busy meanwhile, so it does not run twice).
+    const count = async () => (await notes.list('note.')).length;
+    const recount = async () => {
+        for (const slot of ['app.rail.items', 'app.menu.items'])
+            bridge.slots.update(slot, 'notes', { busy: true });
+        try {
+            const n = await count();
+            for (const slot of ['app.rail.items', 'app.menu.items'])
+                bridge.slots.update(slot, 'notes', { badge: n || null });
+            return n;
+        }
+        finally {
+            for (const slot of ['app.rail.items', 'app.menu.items'])
+                bridge.slots.update(slot, 'notes', { busy: false });
+        }
+    };
+    const showCount = () => void recount().then((n) => bridge.ui.toast(`${t('notes')}: ${n}`), (e) => bridge.ui.toast(String(e), { tone: 'bad' }));
+    bridge.slots.register('app.rail.items', { id: 'notes', order: { before: 'bell' }, label: t('notes'), icon: 'doc', run: showCount });
+    bridge.slots.register('app.menu.items', { id: 'notes', order: { before: 'settings' }, label: t('notes'), icon: 'doc', run: showCount });
+    void recount().catch(() => { });
     bridge.slots.register('session-list.row.badges', {
         id: 'note',
         render: () => {

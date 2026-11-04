@@ -3,7 +3,8 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 're
 import { post } from './lib/api'
 import { getAppSnooze, getPref, setAppSnooze, setPref } from './lib/local'
 import { APP_UPDATE_SNOOZE_MS, appVersion, TESTFLIGHT_URL, updateDue } from './lib/app-version'
-import { go, href, type Route, useRoute } from './lib/router'
+import { go, href, parseRoute, type Route, useRoute } from './lib/router'
+import { menuWithSlot, RailSlot, useMenuBadge } from './components/app-slots'
 import { look } from './lib/sessions'
 import { featureOn } from './lib/features'
 import { getStore, linkWhy, onServerToast, reportFocus, useStore } from './lib/store'
@@ -93,31 +94,48 @@ function Bell({ onClick }: { onClick: () => void }) {
 // Short on purpose: what to make, the settings (which lead to every other page: 기기, 통계, 스킬, 가이드, 운영,
 // 화면 테마, 예전 화면), and who is signed in.
 // A phone also switches the list's view here (a PC has 그룹 / 최신순 on the list itself).
+// Every entry has its id in the app.menu.items slot (REQ-F-863), so an extension can put its own around them.
 function appMenu(at: HTMLElement, me: Me | null, phone = false) {
   const view = listView()
+  const r = parseRoute(location.pathname + location.search)
   openMenu(
-    [
-      { label: '새 세션', icon: 'plus', onSelect: () => go({ name: 'new' }) },
-      { label: '새 그룹', icon: 'group', onSelect: newGroup },
-      'sep',
-      ...(phone
-        ? ([
-            { label: '그룹으로 보기', icon: 'group', checked: view === 'group', onSelect: () => setListView('group') },
-            { label: '최신순으로 보기', icon: 'clock', checked: view === 'recent', onSelect: () => setListView('recent') },
-            'sep',
-          ] as MenuEntry[])
-        : []),
-      { label: '설정', icon: 'settings', hint: '기기 · 세션 · 화면 · 더 보기', onSelect: () => go({ name: 'settings' }) },
-      ...(featureOn('reports') ? [{ label: '문제 제보', icon: 'support', onSelect: openReport } as MenuEntry] : []),
-      'sep',
-      { header: me ? `${shownName(me)}${me.admin ? ' · 운영자' : ''}` : '' },
-      {
-        label: '로그아웃',
-        icon: 'logout',
-        onSelect: () => appPushOff().finally(() => post('/api/auth/logout', {}).finally(() => location.reload())),
-      },
-    ],
+    menuWithSlot(
+      [
+        { id: 'new', label: '새 세션', icon: 'plus', onSelect: () => go({ name: 'new' }) },
+        { id: 'new-group', label: '새 그룹', icon: 'group', onSelect: newGroup },
+        'sep',
+        ...(phone
+          ? ([
+              { id: 'view-group', label: '그룹으로 보기', icon: 'group', checked: view === 'group', onSelect: () => setListView('group') },
+              { id: 'view-recent', label: '최신순으로 보기', icon: 'clock', checked: view === 'recent', onSelect: () => setListView('recent') },
+              'sep',
+            ] as MenuEntry[])
+          : []),
+        { id: 'settings', label: '설정', icon: 'settings', hint: '기기 · 세션 · 화면 · 더 보기', onSelect: () => go({ name: 'settings' }) },
+        ...(featureOn('reports') ? [{ id: 'report', label: '문제 제보', icon: 'support', onSelect: openReport } as MenuEntry] : []),
+        'sep',
+        { id: 'account', header: me ? `${shownName(me)}${me.admin ? ' · 운영자' : ''}` : '' },
+        {
+          id: 'logout',
+          label: '로그아웃',
+          icon: 'logout',
+          onSelect: () => appPushOff().finally(() => post('/api/auth/logout', {}).finally(() => location.reload())),
+        },
+      ],
+      { route: r.name, ...(r.name === 'session' ? { sid: r.id } : {}), wide: !phone },
+    ),
     at,
+  )
+}
+
+/** The phone's ⋯: a dot when an item an extension put in the app menu has a badge (REQ-F-863). */
+function MenuButton({ me }: { me: Me | null }) {
+  const badge = useMenuBadge()
+  return (
+    <span className="relative">
+      <IconButton icon="more" label={badge ? '메뉴 · 새 소식' : '메뉴'} onClick={(e) => appMenu(e.currentTarget, me, true)} />
+      {badge ? <span className="count count-dot" aria-hidden /> : null}
+    </span>
   )
 }
 
@@ -162,7 +180,7 @@ function Sidebar({ route, me, onNotices }: { route: Route; me: Me | null; onNoti
             <span>Agent Bridge</span>
           </a>
           {onNotices ? <Bell onClick={onNotices} /> : null}
-          <IconButton icon="more" label="메뉴" onClick={(e) => appMenu(e.currentTarget, me, true)} />
+          <MenuButton me={me} />
         </div>
       ) : null}
       <div className="list-tools">
@@ -506,22 +524,42 @@ export function App({ me }: { me: Me | null }) {
 function AppRail({ me, route, collapsed, need, onToggle, onSearch, onNotices }: { me: Me | null; route: Route; collapsed: boolean; need: number; onToggle: () => void; onSearch: () => void; onNotices: () => void }) {
   return (
     <nav className="app-rail" aria-label="앱">
-      <a className="rail-logo" href={href({ name: 'home' })} title="Agent Bridge" aria-label="Agent Bridge 홈">
-        <Logo size={22} />
-      </a>
-      <span className="relative">
-        <IconButton icon="sidebar" label={collapsed ? '목록 열기 (⌘\\)' : '목록 접기 (⌘\\)'} onClick={onToggle} active={!collapsed} />
-        {collapsed && need ? <span className="count rail-count" title={`확인이 필요한 세션 ${need}개`}>{need > 9 ? '9+' : need}</span> : null}
-      </span>
-      {/* The open list already has its own search box and + at the top; the rail repeats them only while it is folded. */}
-      {collapsed && <IconButton icon="plus" label="새 세션" onClick={() => go({ name: 'new' })} active={route.name === 'new'} />}
-      {collapsed && <IconButton icon="search" label="검색 (⌘K)" onClick={onSearch} />}
-      <span className="grow" />
-      <RailUsage />
-      {featureOn('reports') && <IconButton icon="support" label="문제 제보" onClick={openReport} />}
-      <Bell onClick={onNotices} />
-      <IconButton icon="settings" label="설정" onClick={() => go({ name: 'settings' })} active={route.name === 'settings'} />
-      <IconButton icon="user" label={me ? `${shownName(me)} · 메뉴` : '메뉴'} onClick={(e) => appMenu(e.currentTarget, me)} />
+      {/* Each button under its id in the app.rail.items slot (REQ-F-863); `grow` parts the top from the foot. */}
+      <RailSlot
+        ctx={{ route: route.name, ...(route.name === 'session' ? { sid: route.id } : {}), wide: true }}
+        entries={[
+          {
+            id: 'logo',
+            node: (
+              <a className="rail-logo" href={href({ name: 'home' })} title="Agent Bridge" aria-label="Agent Bridge 홈">
+                <Logo size={22} />
+              </a>
+            ),
+          },
+          {
+            id: 'sidebar',
+            node: (
+              <span className="relative">
+                <IconButton icon="sidebar" label={collapsed ? '목록 열기 (⌘\\)' : '목록 접기 (⌘\\)'} onClick={onToggle} active={!collapsed} />
+                {collapsed && need ? <span className="count rail-count" title={`확인이 필요한 세션 ${need}개`}>{need > 9 ? '9+' : need}</span> : null}
+              </span>
+            ),
+          },
+          // The open list already has its own search box and + at the top; the rail repeats them only while it is folded.
+          ...(collapsed
+            ? [
+                { id: 'new', node: <IconButton icon="plus" label="새 세션" onClick={() => go({ name: 'new' })} active={route.name === 'new'} /> },
+                { id: 'search', node: <IconButton icon="search" label="검색 (⌘K)" onClick={onSearch} /> },
+              ]
+            : []),
+          'grow',
+          { id: 'usage', node: <RailUsage /> },
+          ...(featureOn('reports') ? [{ id: 'report', node: <IconButton icon="support" label="문제 제보" onClick={openReport} /> }] : []),
+          { id: 'bell', node: <Bell onClick={onNotices} /> },
+          { id: 'settings', node: <IconButton icon="settings" label="설정" onClick={() => go({ name: 'settings' })} active={route.name === 'settings'} /> },
+          { id: 'account', node: <IconButton icon="user" label={me ? `${shownName(me)} · 메뉴` : '메뉴'} onClick={(e) => appMenu(e.currentTarget, me)} /> },
+        ]}
+      />
     </nav>
   )
 }

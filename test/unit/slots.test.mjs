@@ -2,15 +2,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { BUILTIN_IDS, hide, register, replace, resolve, SLOTS } from '../../ui/src/lib/slots.ts'
+import { BUILTIN_IDS, hide, register, replace, resolve, SLOTS, update } from '../../ui/src/lib/slots.ts'
 import { keyOf, normKey, registerShortcut, runShortcut, setMac, shortcuts } from '../../ui/src/lib/shortcuts.ts'
 
 const read = (p) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8')
 const ids = (l) => l.map((x) => (typeof x === 'string' ? x : x.id))
 const plain = (slot, list) => resolve(slot, list, (b) => (typeof b === 'string' ? null : b), (i) => i)
 
-test('slot 4개와 내장 항목 id 가 설계(§7.1)와 같다', () => {
-  assert.deepEqual([...SLOTS], ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section'])
+test('slot 6개와 내장 항목 id 가 설계(§7.1)와 같다', () => {
+  assert.deepEqual([...SLOTS], ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section', 'app.rail.items', 'app.menu.items'])
+  assert.deepEqual([...BUILTIN_IDS['app.rail.items']], ['logo', 'sidebar', 'new', 'search', 'usage', 'report', 'bell', 'settings', 'account'])
+  assert.deepEqual([...BUILTIN_IDS['app.menu.items']], ['new', 'new-group', 'view-group', 'view-recent', 'settings', 'report', 'account', 'logout'])
   assert.deepEqual([...BUILTIN_IDS['composer.actions']], ['attach', 'chips', 'mic', 'send'])
   assert.deepEqual([...BUILTIN_IDS['session-list.row.badges']], ['state', 'slack', 'delegated', 'runner'])
   for (const id of ['place', 'resume', 'rename', 'remove', 'group', 'refresh', 'todos', 'compact', 'fork', 'lightfork', 'trim-log', 'move-host', 'move-account', 'move-cwd', 'lock', 'favorite', 'rest', 'log', 'end', 'trash', 'split', 'screen', 'doc'])
@@ -66,6 +68,31 @@ test('입력칸·행 배지·설정 탭이 slot 을 지난다', () => {
   assert.match(c, /useMedia\('\(max-width: 479px\)'\)/)
   assert.match(read('ui/src/components/session-list.tsx'), /resolve<RowBadge>\('session-list\.row\.badges'/)
   assert.match(read('ui/src/pages/settings.tsx'), /resolve<SettingsItem>\('settings\.section'.*\(i\.tab \?\? 'plugins'\) === tab/)
+})
+
+test('update 는 자기가 더한 항목의 필드만 바꾸고(id·order 는 그대로), 남의 것·화면 것은 거절 (REQ-F-863)', () => {
+  const off = register('app.rail.items', { id: 'upd', order: { before: 'bell' }, label: '업데이트', icon: 'refresh', run() {} }, 'ext-a')
+  const list = () => plain('app.rail.items', [{ id: 'usage' }, { id: 'bell' }])
+  update('app.rail.items', 'upd', { badge: 'new', busy: 0.5, id: 'other', order: { after: 'bell' } }, 'ext-a')
+  const got = list().find((x) => x.id === 'upd')
+  assert.equal(got.badge, 'new')
+  assert.equal(got.busy, 0.5)
+  assert.deepEqual(ids(list()), ['usage', 'upd', 'bell'])
+  assert.throws(() => update('app.rail.items', 'upd', { badge: 1 }, 'ext-b'), /더한 upd 가 없어요/)
+  assert.throws(() => update('app.rail.items', 'bell', { badge: 1 }, 'ext-a'), /더한 bell 가 없어요/)
+  off()
+  assert.throws(() => update('app.rail.items', 'upd', { badge: 1 }, 'ext-a'), /없어요/)
+})
+
+test('앱 레일·앱 메뉴가 slot 을 지난다 (REQ-F-863)', () => {
+  const app = read('ui/src/app.tsx')
+  for (const id of BUILTIN_IDS['app.rail.items']) assert.match(app, new RegExp(`id: '${id}',\\s*node:`), id)
+  for (const id of BUILTIN_IDS['app.menu.items']) assert.match(app, new RegExp(`id: '${id}',`), id)
+  assert.match(app, /<RailSlot/)
+  assert.match(app, /menuWithSlot\(/)
+  const v = read('ui/src/components/app-slots.tsx')
+  assert.match(v, /resolve<.*>\(\s*'app\.rail\.items'/)
+  assert.match(v, /'app\.menu\.items'/)
 })
 
 test('단축키: 키 표기 하나로, 내장 키는 먼저 잡혀 있어 겹치면 거절', () => {

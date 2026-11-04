@@ -7,5 +7,6 @@
   "saved": "Note saved",
   "notifyDone": "Tell me when a turn ends",
   "notifyHint": "When on, this browser tells you once when a session's turn ends",
-  "done": "Turn ended"
+  "done": "Turn ended",
+  "notes": "Sessions with a note"
 }

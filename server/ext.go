@@ -32,7 +32,7 @@ var (
 	extPathRe = regexp.MustCompile(`^/([A-Za-z0-9._~-]+/)*$`)
 	// What the page's actions and the events it hears are called (uses.actions): lib/actions plus the events.
 	EXT_ACTIONS = []string{"composer.submit", "message.send", "permission.answer", "session.open", "session.create", "session.close", "link.open", "clipboard.copy", "renderer.block", "message.render", "notify.show", "session.done", "decision.waiting", "decision.answered"}
-	EXT_SLOTS   = []string{"composer.actions", "session.menu", "session-list.row.badges", "settings.section"}
+	EXT_SLOTS   = []string{"composer.actions", "session.menu", "session-list.row.badges", "settings.section", "app.rail.items", "app.menu.items"}
 	// What /ext/ serves; anything else (HTML, SVG) is 404 so nothing in the folder opens as a page of this origin.
 	EXT_FILE_TYPES = map[string]string{".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2"}
 	// Headers a route may not set: the server's own and what the transport owns.

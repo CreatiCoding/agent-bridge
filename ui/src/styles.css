@@ -3464,6 +3464,40 @@ li:hover > .todo-del,
   place-items: center;
   padding: 0 4px;
 }
+/* An extension's app item (REQ-F-863): a dot or NEW instead of a count. */
+.count-dot {
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  top: 5px;
+  right: 5px;
+}
+.count-new {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 9px;
+}
+.menu-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--red);
+  color: #fff;
+  font-size: var(--fs-xsmall);
+  font-weight: 600;
+  vertical-align: middle;
+}
+.menu-dot {
+  min-width: 8px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+}
 .relative {
   position: relative;
 }

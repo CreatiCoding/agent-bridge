@@ -131,7 +131,7 @@ bridge.actions.around('message.render', (a, next) => {
 
 ## slot
 
-화면의 정해진 자리 넷에 항목을 더해요. `uses.slots` 에 적지 않은 slot 을 쓰면 예외가 나요.
+화면의 정해진 자리 여섯에 항목을 더해요. `uses.slots` 에 적지 않은 slot 을 쓰면 예외가 나요.
 
 | slot | 어디 | 항목 | 컨텍스트 |
 |---|---|---|---|
@@ -139,12 +139,15 @@ bridge.actions.around('message.render', (a, next) => {
 | `session.menu` | 세션 메뉴(목록과 세션 화면) | `{id, order?, label, icon?, hint?, danger?, sep?, header?, visible?, checked?, enabled?, run?, items?}` | `{sid, session, closed, alive, away, hostConnected, canMoveHost, slackOn, phase, wide, todoBlocked, place: 'page'\|'list'}` |
 | `session-list.row.badges` | 세션 목록 행의 배지 | `{id, order?, render}` | `{session}` |
 | `settings.section` | 설정 탭의 카드 아래 | `{id, order?, tab?, render}` | `{user, tab}` |
+| `app.rail.items` | PC 왼쪽 앱 레일 | `{id, order?, label, icon, hint?, badge?, active?, disabled?, busy?, run}` | `{place: 'rail', route, sid?, wide}` |
+| `app.menu.items` | 앱 메뉴(휴대폰 ⋯, `wide` 면 PC 계정 메뉴에도) | 위와 같고 `wide?` | `{place: 'menu', route, sid?, wide}` |
 
 | 함수 | 하는 일 |
 |---|---|
 | `slots.register(slot, item)` | 항목을 더해요. `order: {before?: id, after?: id}` 로 자리를 잡고, 그 id 가 없으면 끝에 놓아요 |
 | `slots.replace(slot, id, orig => item)` | 페이지의 항목이나 더한 항목을 감싸거나 바꿔요. id 는 그대로예요 |
 | `slots.hide(slot, id)` | 항목을 숨겨요 |
+| `slots.update(slot, id, patch)` | 이 익스텐션이 더한 항목의 필드(배지·상태·라벨 등, `id`·`order` 제외)를 바꾸고 다시 그려요. 남의 항목이나 페이지 항목이면 예외예요 |
 | `slots.useSlotContext()` | 항목의 `render` 안에서 그 slot 의 컨텍스트를 읽는 훅이에요 |
 
 `render` 는 컴포넌트로 그려져서 훅(`useSlotContext`, `data.shared`, `React.useState`)을 써도 돼요. `visible`·`checked`·`enabled`·`run` 은 컨텍스트를 받아요.
@@ -156,6 +159,9 @@ bridge.actions.around('message.render', (a, next) => {
   - `session-list.row.badges`: `state`, `slack`, `delegated`, `runner`
   - `session.menu`: `split`, `split-add`, `split-full`, `split-leave`, `same-group`, `copy-path`, `screen`, `todos`, `doc`, `place`, `resume`, `rename`, `remove`, `group`, `refresh`, `compact`, `fork`, `lightfork`, `trim-log`, `move-host`, `move-account`, `move-cwd`, `lock`, `favorite`, `rest`, `log`, `end`, `trash`
   - `settings.section`: 없음
+  - `app.rail.items`: `logo`, `sidebar`, `new`, `search`(이 둘은 목록을 접었을 때만), `usage`, `report`, `bell`, `settings`, `account`. `sidebar` 와 `usage` 사이의 빈 칸이 위·아래를 갈라요. 아래쪽 도구 줄에 두려면 `order: {before: 'bell'}` 처럼 써요
+  - `app.menu.items`: `new`, `new-group`, `view-group`, `view-recent`(이 둘은 휴대폰만), `settings`, `report`, `account`(제목), `logout`
+- `app.rail.items`·`app.menu.items` 의 항목은 그림이 아니라 데이터예요. 같은 `id` 를 두 slot 에 더하면 PC 레일과 휴대폰 메뉴에서 같은 동작이 돼요. `badge` 는 0 보다 큰 수(99 넘으면 `99+`), `'dot'`, `'new'` 이고 `null`·`0` 은 없음이에요. `disabled`(글이면 그 이유)나 `busy`(`true` 또는 진행률 0..1)인 동안은 눌리지 않아서 같은 작업이 두 번 돌지 않아요. 바꿀 때는 `slots.update` 를 써요. 메뉴에 배지 있는 항목이 있으면 휴대폰 ⋯ 버튼에 점이 붙어요. `app.menu.items` 항목은 `wide: true` 가 아니면 PC 계정 메뉴에는 나오지 않아요(PC 는 레일에 있으니까요).
 - `session.menu` 의 순서는 공개하지 않아요. 구분선은 `{id, sep: true}`, 제목은 `{id, header}` 예요. 하위 메뉴 `items` 는 항목만 받아요. 목록의 스와이프 동작은 slot 이 아니에요.
 - `composer.actions`: 화면 너비 480px 미만이면 더한 항목은 첫 하나만 보이고 나머지는 ⋯ 메뉴로 접혀요. 접혔을 때 쓰는 것이 `menu: {label, icon?, enabled?(ctx), run(ctx)}` 예요. 음성 모드일 때는 이 줄이 없어요. `attachments[]` 는 `{kind: 'image'|'video'|'file', name, pct?}` 예요.
 - `session-list.row.badges`: 행이 링크라서 누를 수 있는 것은 넣지 않아요. 더한 배지는 둘까지 보이고 나머지는 `+n` 이에요.
@@ -313,7 +319,7 @@ extensionApi: 1
 entry: ./dist/index.js
 uses:
   actions: [composer.submit, renderer.block, session.done]
-  slots: [composer.actions, session.menu, session-list.row.badges, settings.section]
+  slots: [composer.actions, session.menu, session-list.row.badges, settings.section, app.rail.items, app.menu.items]
 messages:
   quiet:
     - suffix: "[조용히]"

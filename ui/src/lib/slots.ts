@@ -2,7 +2,7 @@
 // items sit in the same slot under their ids (the built-in items, listed where each slot is drawn); what is added
 // here goes before or after one of them. Nothing here knows about React: each place draws what resolve() gives.
 
-export const SLOTS = ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section'] as const
+export const SLOTS = ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section', 'app.rail.items', 'app.menu.items'] as const
 export type SlotName = (typeof SLOTS)[number]
 
 /** The page's own items of each slot, by id: what order, replace and hide may name (§7.1). */
@@ -18,6 +18,36 @@ export const BUILTIN_IDS: Record<SlotName, readonly string[]> = {
   ],
   'session-list.row.badges': ['state', 'slack', 'delegated', 'runner'],
   'settings.section': [],
+  // The rail (PC): the brand and the list above, the tools at the foot; new and search only while the list is folded.
+  'app.rail.items': ['logo', 'sidebar', 'new', 'search', 'usage', 'report', 'bell', 'settings', 'account'],
+  // The app menu (the phone's ⋯, the PC's account button); the views only on a phone.
+  'app.menu.items': ['new', 'new-group', 'view-group', 'view-recent', 'settings', 'report', 'account', 'logout'],
+}
+
+/**
+ * The item of app.rail.items and app.menu.items (REQ-F-863): data, not a drawing, so the page draws it the same way
+ * in both places and an extension changes it with update() (a badge, busy, disabled) without drawing anything.
+ */
+export interface AppItem extends SlotItem {
+  label: string
+  icon: string
+  hint?: string
+  /** A count, a dot or NEW; nothing when null. */
+  badge?: number | 'dot' | 'new' | null
+  active?: boolean
+  /** Not pressable; a string says why (shown as its hint). */
+  disabled?: boolean | string
+  /** Working: not pressable again until it is cleared. A number 0..1 is how far. */
+  busy?: boolean | number
+  /** app.menu.items: also in the PC's account menu (by default only where the rail is not shown). */
+  wide?: boolean
+  run: (ctx: AppCtx) => void
+}
+export interface AppCtx {
+  place: 'rail' | 'menu'
+  route: string
+  sid?: string
+  wide: boolean
 }
 
 export interface SlotItem {
@@ -79,6 +109,20 @@ export function replace(slot: SlotName, id: string, f: Replace, owner = '') {
 export function hide(slot: SlotName, id: string, owner = '') {
   check(slot)
   return put(hidden, slot, { owner, v: id })
+}
+/**
+ * Changes fields of an item this owner added (a badge, busy, a label) and draws the slot again. id and order stay.
+ * Another owner's item or the page's own is refused: replace() is for those.
+ */
+export function update(slot: SlotName, id: string, patch: Record<string, unknown>, owner = '') {
+  check(slot)
+  const list = added.get(slot) ?? []
+  const r = list.find((x) => x.v.id === id)
+  if (!r || r.owner !== owner) throw new Error(`${slot} 에 이 익스텐션이 더한 ${id} 가 없어요`)
+  const { id: _id, order: _order, extId: _ext, ...rest } = patch ?? {}
+  void _id, _order, _ext
+  r.v = { ...r.v, ...rest }
+  changed()
 }
 
 /**

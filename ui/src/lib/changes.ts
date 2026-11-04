@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.434',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '익스텐션 slot `app.rail.items`(PC 앱 레일)·`app.menu.items`(휴대폰 ⋯ 메뉴): 항목은 데이터 `{label, icon, badge(수·dot·new), active, disabled, busy, run}` 라 레일과 메뉴가 같은 동작·배지를 보임. 새 `slots.update(slot, id, patch)` 로 자기 항목의 배지·상태를 바꿈(busy·disabled 면 눌리지 않아 두 번 돌지 않음). 메뉴에 배지 있는 항목이 있으면 휴대폰 ⋯ 버튼에 점. `extensionApi` 1 그대로, 짝지은 기기의 익스텐션 차단은 그대로',
+        refs: ['REQ-F-863', 'REQ-F-824', 'REQ-F-825'],
+      },
+    ],
+  },
+  {
     version: '1.433',
     date: '2026-11-05',
+    commit: '5135fed',
     changes: [
       {
         kind: 'fixed',

@@ -185,6 +185,8 @@ export interface SlotContexts {
   'session.menu': SessionMenuCtx
   'session-list.row.badges': { session: Session }
   'settings.section': { user: User | null; tab: SettingsTab }
+  'app.rail.items': AppCtx
+  'app.menu.items': AppCtx
 }
 export type SlotName = keyof SlotContexts
 
@@ -223,11 +225,39 @@ export interface SettingsItem extends ItemBase {
   tab?: SettingsTab
   render: () => ReactNode
 }
+/** Where an app item was pressed (REQ-F-863). */
+export interface AppCtx {
+  place: 'rail' | 'menu'
+  route: string
+  sid?: string
+  wide: boolean
+}
+/**
+ * app.rail.items (the PC's rail) and app.menu.items (the phone's ⋯ menu): data the page draws, the same in both.
+ * Register the same id in both slots for one action everywhere; change it later with slots.update (badge, busy, ...).
+ */
+export interface AppItem extends ItemBase {
+  label: string
+  icon: IconName
+  hint?: string
+  /** A count (over 0), a dot or NEW; null or 0 shows nothing. */
+  badge?: number | 'dot' | 'new' | null
+  active?: boolean
+  /** Not pressable; a string says why. */
+  disabled?: boolean | string
+  /** Working: not pressable until cleared, so it does not run twice. A number 0..1 is how far. */
+  busy?: boolean | number
+  /** app.menu.items only: also in the PC's account menu (by default only where the rail is not shown). */
+  wide?: boolean
+  run: (ctx: AppCtx) => void
+}
 export interface SlotItems {
   'composer.actions': ComposerItem
   'session.menu': SessionMenuItem
   'session-list.row.badges': BadgeItem
   'settings.section': SettingsItem
+  'app.rail.items': AppItem
+  'app.menu.items': AppItem
 }
 
 /** The page's own items, which order, replace and hide may name. */
@@ -237,8 +267,10 @@ export interface BuiltinIds {
     | 'split' | 'split-add' | 'split-full' | 'split-leave' | 'same-group' | 'copy-path' | 'screen' | 'todos' | 'doc'
     | 'place' | 'resume' | 'rename' | 'remove'
     | 'group' | 'refresh' | 'compact' | 'fork' | 'lightfork' | 'trim-log' | 'move-host' | 'move-account' | 'move-cwd' | 'lock' | 'favorite' | 'rest' | 'log' | 'end' | 'trash'
-  'session-list.row.badges': 'state' | 'slack' | 'delegated'
+  'session-list.row.badges': 'state' | 'slack' | 'delegated' | 'runner'
   'settings.section': never
+  'app.rail.items': 'logo' | 'sidebar' | 'new' | 'search' | 'usage' | 'report' | 'bell' | 'settings' | 'account'
+  'app.menu.items': 'new' | 'new-group' | 'view-group' | 'view-recent' | 'settings' | 'report' | 'account' | 'logout'
 }
 
 // ---------- shortcuts ----------
@@ -338,6 +370,8 @@ export interface Bridge {
     /** Wraps or replaces an item (the page's or an added one); the id stays. */
     replace: <S extends SlotName>(slot: S, id: string, f: (orig: SlotItems[S]) => SlotItems[S]) => () => void
     hide: <S extends SlotName>(slot: S, id: string) => () => void
+    /** Changes fields of an item this extension added (not id or order) and draws it again. */
+    update: <S extends SlotName>(slot: S, id: string, patch: Partial<Omit<SlotItems[S], 'id' | 'order'>>) => void
     /** Inside an item's render: the slot's context (SlotContexts). */
     useSlotContext: <C = unknown>() => C
   }

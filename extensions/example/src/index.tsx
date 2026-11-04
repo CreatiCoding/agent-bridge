@@ -2,6 +2,7 @@
 //  - composer.actions: a "? 붙여 보내기" button (and Alt+Shift+Q) that sends the box's text with a "?" added
 //  - session.menu + ui.sheet + storage.user: a note per session
 //  - session-list.row.badges + data.shared: a badge on the sessions that have a note
+//  - app.rail.items + app.menu.items + slots.update: the number of notes on the rail and in the phone's menu
 //  - settings.section: a switch for the turn-end notice
 //  - session.done + events.claim: that notice, once per person however many pages are open
 //  - renderer.block: a ```checklist block drawn as check boxes
@@ -60,6 +61,7 @@ export default function setup(bridge: Bridge) {
       if (text.trim()) await notes.set(noteKey(sid), text, version === undefined ? {} : { ifVersion: version })
       else await notes.delete(noteKey(sid))
       bridge.ui.toast(t('saved'), { tone: 'ok' })
+      void recount().catch(() => {})
       close()
     }
     return (
@@ -80,6 +82,24 @@ export default function setup(bridge: Bridge) {
     icon: 'doc',
     run: (ctx: SessionMenuCtx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
   })
+  // app.rail.items + app.menu.items + slots.update: one action on the PC's rail and in the phone's menu, its badge
+  // the number of notes. Pressing it counts again (busy meanwhile, so it does not run twice).
+  const count = async () => (await notes.list('note.')).length
+  const recount = async () => {
+    for (const slot of ['app.rail.items', 'app.menu.items'] as const) bridge.slots.update(slot, 'notes', { busy: true })
+    try {
+      const n = await count()
+      for (const slot of ['app.rail.items', 'app.menu.items'] as const) bridge.slots.update(slot, 'notes', { badge: n || null })
+      return n
+    } finally {
+      for (const slot of ['app.rail.items', 'app.menu.items'] as const) bridge.slots.update(slot, 'notes', { busy: false })
+    }
+  }
+  const showCount = () => void recount().then((n) => bridge.ui.toast(`${t('notes')}: ${n}`), (e) => bridge.ui.toast(String(e), { tone: 'bad' }))
+  bridge.slots.register('app.rail.items', { id: 'notes', order: { before: 'bell' }, label: t('notes'), icon: 'doc', run: showCount })
+  bridge.slots.register('app.menu.items', { id: 'notes', order: { before: 'settings' }, label: t('notes'), icon: 'doc', run: showCount })
+  void recount().catch(() => {})
+
   bridge.slots.register('session-list.row.badges', {
     id: 'note',
     render: () => {
