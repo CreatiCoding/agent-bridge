@@ -526,7 +526,14 @@ func linesFromAgent(uid, hostID string, msg M) {
 				break
 			}
 		}
-		meta.set("title", jsSliceTo(collapse(t), 80))
+		title := sealedShort(collapse(t), 80, jsSliceTo)
+		// Too big to keep whole: 🔒 alone told sessions apart by nothing, so its folder goes with it (REQ-S-099).
+		if title == "🔒" {
+			if cwd := strOr(meta.get("cwd"), ""); cwd != "" && !hasSeal(cwd) {
+				title = "🔒 " + filepath.Base(cwd)
+			}
+		}
+		meta.set("title", title)
 	}
 	touch(meta)
 	logEvents(meta, events)

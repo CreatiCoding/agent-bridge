@@ -52,6 +52,12 @@ export function shortPath(p: string, home?: string, keep = 3) {
   return s
 }
 
+/** Words on one line (white space collapsed), at most n characters with … when cut. */
+export function oneLine(s: string, n: number) {
+  const t = s.replace(/\s+/g, ' ').trim()
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t
+}
+
 /**
  * A tool line's paths, the short way (REQ-F-703): a Claude Code scratch folder → `scratch/`, a git worktree →
  * `wt:<name>/`, a home folder → `~/`. Only the one-line label: the opened row keeps the full text.

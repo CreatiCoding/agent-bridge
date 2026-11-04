@@ -69,3 +69,29 @@ func TestTrustSealReported(t *testing.T) {
 		t.Fatal("참 말고는 false")
 	}
 }
+
+// REQ-S-099 (AC-1601): a short field (a title, a tool's line) keeps a piece whole so the paired device opens it;
+// a piece too big for SEAL_KEEP_MAX is cut to 🔒 as before, and plain text is cut as before.
+func TestSealedShortKeepsThePiece(t *testing.T) {
+	piece := "⟦bt1:0a1b2c3d:" + strings.Repeat("A", 200) + "⟧"
+	if got := sealedShort(piece, 80, jsSliceTo); got != piece {
+		t.Fatalf("제목: %q", got)
+	}
+	if got := sealedShort(piece+" 뒤 글", 110, truncate); got != piece {
+		t.Fatalf("도구 줄: %q", got)
+	}
+	if got := sealedShort("앞 "+piece, 80, jsSliceTo); got != "앞 "+piece {
+		t.Fatalf("앞 글과 조각: %q", got)
+	}
+	long := strings.Repeat("가", 90) + piece
+	if got := sealedShort(long, 80, jsSliceTo); got != jsSliceTo(long, 80) {
+		t.Fatalf("자르는 자리가 조각 앞: %q", got)
+	}
+	big := "⟦bt1:0a1b2c3d:" + strings.Repeat("A", SEAL_KEEP_MAX) + "⟧"
+	if got := sealedShort(big, 80, jsSliceTo); got != "🔒" {
+		t.Fatalf("너무 큰 조각: %q", got)
+	}
+	if got := sealedShort(strings.Repeat("a", 100), 80, jsSliceTo); got != strings.Repeat("a", 80) {
+		t.Fatalf("봉인 없는 글: %q", got)
+	}
+}

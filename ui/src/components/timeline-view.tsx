@@ -2,7 +2,7 @@
 // opened to see what it ran and what came back.
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { clock, duration, shortLabel } from '../lib/format'
+import { clock, duration, oneLine, shortLabel } from '../lib/format'
 import { Markdown, MarkdownContext } from '../lib/markdown'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
@@ -389,7 +389,8 @@ function labelOf(t: Tool) {
       if (whole) return shortLabel(whole)
     } catch {}
   }
-  return shortLabel(t.label)
+  // A sealed label comes whole and opened (REQ-S-099): its words can be many lines, so its first line, shortened.
+  return shortLabel(oneLine(t.label.split('\n')[0], 110))
 }
 
 /** The small shield beside a tool's name: 전부 허용 answered its permission request. */

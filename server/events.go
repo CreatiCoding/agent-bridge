@@ -370,7 +370,7 @@ func toolSummary(name string, input any, keys []string, ctx toolCtx) orderedObj 
 		label = strings.Split(label, "\n")[0]
 	}
 	detail = jsTrim(detail)
-	out := orderedObj{{"label", truncate(strings.ReplaceAll(label, "`", "'"), 110)}}
+	out := orderedObj{{"label", sealedShort(strings.ReplaceAll(label, "`", "'"), 110, truncate)}}
 	if strings.Contains(detail, "\n") || jsLen(detail) > 80 {
 		out = append(out, kv{"detail", truncate(detail, 1500)})
 	}

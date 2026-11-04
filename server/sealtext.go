@@ -29,6 +29,27 @@ func sealSafeEnd(s string) string {
 	return s
 }
 
+// SEAL_KEEP_MAX: how far (bytes) a sealed piece may run past a short field's cut and still be kept whole (REQ-S-099).
+const SEAL_KEEP_MAX = 2048
+
+// sealedShort is cut(s, n) for a short field (a session title, a tool's line). A sealed piece is always longer than
+// such a field, so the cut made it 🔒 on every device: a piece the cut would split is kept whole (what follows it is
+// dropped) when it ends within SEAL_KEEP_MAX, and the page that opens it shortens the words itself (REQ-S-099).
+func sealedShort(s string, n int, cut func(string, int) string) string {
+	if !hasSeal(s) || jsLen(s) <= n {
+		return cut(s, n)
+	}
+	i := strings.Index(s, sealOpen)
+	if jsLen(s[:i]) >= n {
+		return cut(s, n)
+	}
+	j := strings.Index(s[i:], "⟧")
+	if j < 0 || i+j+len("⟧") > SEAL_KEEP_MAX {
+		return cut(s, n)
+	}
+	return s[:i+j+len("⟧")]
+}
+
 // maskSeals: every piece (and a cut one) as 🔒, for text that leaves for something that is not the page.
 func maskSeals(s string) string {
 	if !strings.Contains(s, "⟦bt") {

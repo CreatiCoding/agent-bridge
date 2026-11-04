@@ -1,6 +1,7 @@
 // What a session row says about where a session stands, in one place so the list, the header and the
 // notifications agree.
 import type { Group, Host, Session } from './types'
+import { oneLine } from './format'
 
 export type Look = { label: string; tone: 'grey' | 'blue' | 'green' | 'red' | 'amber' | 'violet'; pulse?: boolean; need?: boolean }
 
@@ -19,7 +20,8 @@ export function look(s: Session, host?: Host): Look {
   return { label: '대기', tone: 'green' }
 }
 
-export const titleOf = (s: Session) => s.title || s.preview || '새 세션'
+// A sealed title comes whole and is opened here (REQ-S-099): its words are shortened like the server's 80.
+export const titleOf = (s: Session) => oneLine(s.title || s.preview || '', 80) || '새 세션'
 
 export const KINDS: Record<string, string> = { imac: '아이맥', macbook: '맥북', macmini: '맥 미니', macstudio: '맥 스튜디오', server: '서버', other: '기타' }
 export const hostIcon = (kind: string) => (kind === 'macbook' ? 'laptop' : 'desktop')

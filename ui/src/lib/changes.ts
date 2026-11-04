@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.415',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server', 'ui'],
+        text: '봉인(trust seal on)한 맥의 세션 제목과 도구 줄이 짝지은 기기에서도 🔒 로만 보이던 것: 서버가 짧은 칸에서 봉인 조각을 자르지 않고 통째로 넘겨 화면이 열어 보여 줌. 너무 큰 조각의 제목은 🔒 <폴더 이름>',
+        refs: ['REQ-S-099', 'REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.414',
     date: '2026-11-04',
+    commit: '0589a7f',
     changes: [
       {
         kind: 'added',
