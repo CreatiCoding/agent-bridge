@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexApprovalSig, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -371,4 +371,13 @@ test('codex 승인 창에 전부 허용이 고르는 답과 위험 판정에 넘
   const e = codexAutoAnswer({ question: 'Would you like to make the following edits?', context: '.env', options: [{ n: 1, label: 'Yes, proceed', key: 'y' }] })
   assert.match(e.tool.input.command, /\.env/)
   assert.equal(codexAutoAnswer(null), null)
+})
+
+// REQ-F-856 rule 6 (AC-1605): 전부 허용 sends its key only while the very same window is still on screen.
+test('codex 승인 창의 sig 는 같은 창일 때만 같다', () => {
+  const a = parseApproval(APPROVAL)
+  assert.equal(codexApprovalSig(parseApproval(APPROVAL)), codexApprovalSig(a))
+  assert.notEqual(codexApprovalSig({ ...a, context: a.context.replace('hello-from-fake', 'rm -rf ~') }), codexApprovalSig(a))
+  assert.notEqual(codexApprovalSig({ ...a, options: a.options.slice(1) }), codexApprovalSig(a))
+  assert.equal(codexApprovalSig(null), null)
 })

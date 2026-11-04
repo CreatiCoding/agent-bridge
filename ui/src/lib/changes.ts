@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.419',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 전부 허용이 승인 키를 보내기 직전에 화면을 다시 읽어, 판정한 질문·명령·선택지와 같을 때만 허용. 그사이 바뀐 다른 승인 창에는 보내지 않고 다시 판정',
+        refs: ['REQ-F-856'],
+      },
+    ],
+  },
+  {
     version: '1.418',
     date: '2026-11-04',
+    commit: '71097f7',
     changes: [
       {
         kind: 'added',

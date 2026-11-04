@@ -603,3 +603,9 @@ export function codexAutoAnswer(a) {
   const command = at >= 0 ? lines.slice(at).join('\n').slice(2) : `${a.question}\n${a.context}`
   return { option: yes, tool: { name: 'Bash', input: { command } } }
 }
+
+/**
+ * One approval as a whole (question, context, option labels): the same string only while the very same window is on
+ * screen. 전부 허용 compares it again right before it sends its key (REQ-F-856 rule 6); null for no approval.
+ */
+export const codexApprovalSig = (a) => (a ? `codex|${a.question}|${a.context}|${a.options.map((o) => o.label).join('|')}` : null)

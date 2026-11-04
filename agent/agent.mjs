@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, APPROVAL_UNKNOWN, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexApprovalSig, APPROVAL_UNKNOWN, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, parseApproval, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -1361,7 +1361,7 @@ async function watchCodex(sid, s, screen) {
   if (CODEX_WORKING_RE.test(screen)) s.activityAt = Date.now()
   const a = parseApproval(screen)
   if (a) {
-    const sig = `codex|${a.question}|${a.context}|${a.options.map((o) => o.label).join('|')}`
+    const sig = codexApprovalSig(a)
     if (s.card?.open && s.card.sig === sig) return void (s.gone = 0)
     if (s.answered?.sig === sig && Date.now() - s.answered.at < 3000) return
     if (s.card?.open) foldCard(sid, s, '다른 확인 창으로 넘어감')
@@ -1393,6 +1393,12 @@ async function autoAllowCodex(sid, s, a, sig) {
       note(sid, `⚠️ *${s.allowAll ? '전부 허용' : '안전한 전부 허용'}*이라 ${risk}는 물어봐요.`, 'warn')
     }
     return false
+  }
+  // Read the screen again right before the key: "y" goes only to the very question, command and options judged
+  // above. If it changed or closed meanwhile nothing is sent; the next look judges what is there now.
+  if (codexApprovalSig(parseApproval(await term.capture(pane(s)))) !== sig) {
+    log('info', 'dialog', '전부 허용: codex 승인 창이 바뀌어 보내지 않음', sid)
+    return true
   }
   await term.sendKeys(pane(s), [pick.option.key])
   s.answered = { sig, at: Date.now() }
