@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.421',
+    date: '2026-11-04',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: 'Claude Code 세션 ⋯ 메뉴의 "Codex 로 이어서 작업": Claude 가 쓴 인계 요약(목표·요구사항·결정 사항·변경 파일·검증 결과·남은 작업)을 고친 뒤, 같은 폴더에 Codex 세션을 띄워 첫 메시지로 넘김. 샌드박스·승인은 따로 고르고, 작업 중이면 기다리거나 멈춘 뒤 넘기며, 두 세션에 서로 여는 버튼이 남음. 같은 요청을 두 번 눌러도 세션은 하나',
+        refs: ['REQ-F-857', 'IF-016'],
+      },
+    ],
+  },
+  {
     version: '1.420',
     date: '2026-11-04',
+    commit: 'c894941',
     changes: [
       {
         kind: 'security',

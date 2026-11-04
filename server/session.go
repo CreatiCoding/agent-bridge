@@ -96,6 +96,28 @@ func startSession(uid string, b M, req *Req) string {
 	}
 	// Claude Code unless the request names another runner this Mac has (REQ-F-851).
 	runner := pickRunner(hostID, b["runner"])
+	// Codex 로 이어서 작업 (REQ-F-857): checked first; a second press with the same key gets the session the first made.
+	src := handoffSource(uid, hostID, runner, b)
+	hkey := ""
+	settled := false
+	if src != nil {
+		hkey, _ = b["handoffKey"].(string)
+		if made := handoffClaim(uid, hkey); made != "" {
+			return made
+		}
+		defer func() {
+			if !settled {
+				handoffSettle(uid, hkey, "")
+			}
+		}()
+		if orStr(b["title"]) == "" {
+			t := src.str("title")
+			if t == "" {
+				t = "이어서 작업"
+			}
+			b["title"] = "↪ Codex · " + t
+		}
+	}
 	sid := uuidv4()
 	prompt := jsSliceTo(orStr(b["prompt"]), 100_000)
 	// The session exists from here on, as "starting".
@@ -138,6 +160,25 @@ func startSession(uid string, b M, req *Req) string {
 	}
 	if into != nil && !containsAny(asArr(into["items"]), sid) {
 		into["items"] = append(asArr(into["items"]), sid)
+	}
+	// A hand-over's Codex session sits right after the Claude Code session it came from, in its group.
+	if into == nil && src != nil {
+		for _, x := range groupsList(prefsOf(uid)) {
+			items := asArr(x["items"])
+			for i, it := range items {
+				if it == src.id() {
+					x["items"] = append(append(append([]any{}, items[:i+1]...), sid), items[i+1:]...)
+					into = x
+					break
+				}
+			}
+			if into != nil {
+				break
+			}
+		}
+	}
+	if src != nil {
+		logEvents(meta, []any{handoffNotice(HANDOFF_FROM, src.id(), "Claude 세션 열기")})
 	}
 	// The first prompt is said now, before claude starts: its echo in the transcript must find it already logged.
 	if jsTrim(prompt) != "" {
@@ -236,6 +277,13 @@ func startSession(uid string, b M, req *Req) string {
 		withBy("system", func() { createdAfter(meta, from, mode) }) // the server opens it for a report: told only
 	} else {
 		createdAfter(meta, from, mode)
+	}
+	if src != nil {
+		if _, ok := sessions.Get(src.id()); ok {
+			logEvents(src, []any{handoffNotice(HANDOFF_TO, sid, "Codex 세션 열기")})
+		}
+		settled = true
+		handoffSettle(uid, hkey, sid)
 	}
 	return sid
 }

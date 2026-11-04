@@ -12,7 +12,7 @@ import { DecisionCard } from './decision-card'
 import { HtmlPreview, isHtmlDocument } from './html-preview'
 import { act, command, sessionPost } from './session-menu'
 import { TodoAskCard, todoAskOf } from './session-extras'
-import { copyText } from '../lib/builtin-actions'
+import { copyText, openSession } from '../lib/builtin-actions'
 import { errorText, get } from '../lib/api'
 import { actionsVersion, watchActions } from '../lib/actions'
 import { messageShown, quietFor } from '../lib/quiet'
@@ -164,6 +164,13 @@ function NoteView({ it, session }: { it: Extract<Item, { t: 'note' }>; session: 
                 {a.label}
               </Button>
             ))}
+          </div>
+        ) : null}
+        {it.open ? (
+          <div className="choices">
+            <Button size="sm" icon="forward" onClick={() => void openSession(it.open!.sid, 'notice')}>
+              {it.open.label}
+            </Button>
           </div>
         ) : null}
       </div>

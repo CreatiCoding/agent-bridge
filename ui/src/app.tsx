@@ -16,6 +16,7 @@ import { NoticeSheet } from './components/notices'
 import { appPushOff } from './components/push'
 import { openReport, ReportSheet } from './components/report-sheet'
 import { CwdSheet } from './components/cwd-sheet'
+import { HandoffSheet } from './components/codex-handoff'
 import { listView, newGroup, SessionList, setListView } from './components/session-list'
 import { useRelay } from './components/relay-status'
 import { SessionPage } from './pages/session-page'
@@ -489,6 +490,7 @@ export function App({ me }: { me: Me | null }) {
       <NoticeSheet open={notices} onClose={() => setNotices(false)} />
       <ReportSheet open={reporting} onClose={() => setReporting(false)} sid={sid} />
       <CwdSheet />
+      <HandoffSheet />
       <OverlayHost />
     </div>
     </>

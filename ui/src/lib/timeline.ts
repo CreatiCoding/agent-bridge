@@ -9,7 +9,7 @@ export type Item =
   | { t: 'card'; key: string; seq: number; at: number; card: Card; result?: string; closed: boolean }
   | { t: 'held'; key: string; seq: number; at: number; id: string; n: number }
   | { t: 'side'; key: string; seq: number; at: number; id: string; q: string; answer?: string; error?: string }
-  | { t: 'note'; key: string; seq: number; at: number; text: string; tone: 'info' | 'warn' | 'error' | 'end' | 'local'; error?: boolean; actions?: NoteAction[] }
+  | { t: 'note'; key: string; seq: number; at: number; text: string; tone: 'info' | 'warn' | 'error' | 'end' | 'local'; error?: boolean; actions?: NoteAction[]; open?: { sid: string; label: string } }
 
 /** A button the server put on a line (as a block of buttons): its value is `<pid>:<command> [argument]`. */
 export interface NoteAction {
@@ -137,7 +137,8 @@ export function fold(prev: Folded, events: Ev[]): Folded {
         add({ t: 'note', key: `n:${e.seq}`, ...base, text: e.text, tone: 'local', error: e.error })
         break
       case 'notice':
-        add({ t: 'note', key: `n:${e.seq}`, ...base, text: e.text, tone: e.tone === 'warn' ? 'warn' : 'info' })
+        // A notice that links another session (Codex 로 이어서 작업, REQ-F-857) carries a button that opens it.
+        add({ t: 'note', key: `n:${e.seq}`, ...base, text: e.text, tone: e.tone === 'warn' ? 'warn' : 'info', ...(e.open ? { open: { sid: e.open, label: e.openLabel || '세션 열기' } } : {}) })
         break
       case 'line':
         add({ t: 'note', key: `n:${e.seq}`, ...base, text: e.text, tone: 'info', actions: actionsOf(e.blocks) })

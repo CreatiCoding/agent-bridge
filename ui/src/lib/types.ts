@@ -324,7 +324,7 @@ export type Ev = { seq: number; at: number } & (
   | { k: 'tool_end'; tool: string; error?: boolean; text?: string; images?: string[] }
   | { k: 'todos'; items: Todo[] }
   | { k: 'local'; text: string; error?: boolean }
-  | { k: 'notice'; text: string; tone?: string; icon?: string }
+  | { k: 'notice'; text: string; tone?: string; icon?: string; open?: string; openLabel?: string }
   | { k: 'line'; text: string; blocks?: unknown }
   | { k: 'title'; title: string }
   | { k: 'model'; model: string }
