@@ -1242,8 +1242,6 @@ function trackBackgroundLine(meta, line) {
     const id = pick('tool-use-id')
     const task = (meta.bg ?? []).find((t) => t.toolUseId === id) ?? (meta.bg ?? []).find((t) => t.id && t.id === pick('task-id'))
     meta.bg = (meta.bg ?? []).filter((t) => t !== task)
-    const ok = status === 'completed'
-    addNotice(meta.uid, { sid: meta.id, key: `${id ?? pick('task-id') ?? m.index}|${status}`, title: meta.title || '세션', text: pick('summary') || `백그라운드 작업이 끝났어요 (${status})`, tone: ok ? 'ok' : 'fail', push: true })
   }
   if (!Array.isArray(content)) return
   for (const c of content) {
@@ -3232,7 +3230,6 @@ async function runDelegate(uid, hostId, msg) {
     parent.delegates = [...(parent.delegates ?? []).filter((id) => sessions.has(id)), sid]
     logEvents(c, [{ k: 'notice', tone: 'info', text: `↪ ${from} 의 세션 "${parent.title || parent.id.slice(0, 8)}" 이 맡긴 일이에요. 허용 정책은 그 세션을 따라가요.` }])
     logEvents(parent, [{ k: 'notice', tone: 'info', text: `↪ ${h.name} 에 일을 맡겼어요: ${task.replace(/\s+/g, ' ').slice(0, 120)}` }])
-    addNotice(uid, { sid, key: `delegate-${sid}`, title: '다른 맥에 일을 맡겼어요', text: `${from} → ${h.name}: ${task.replace(/\s+/g, ' ').slice(0, 100)}`, tone: 'info', push: true })
     record(uid, target, { level: 'info', area: 'delegate', sid, text: `${from} 의 세션이 일을 맡김` })
     touch(c)
     touch(parent)

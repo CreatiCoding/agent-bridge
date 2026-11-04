@@ -697,30 +697,7 @@ func trackBackgroundLine(meta *Sess, line string) {
 				}
 			}
 			meta.set("bg", bg)
-			ok := status == "completed"
-			key := ""
-			switch {
-			case hasID:
-				key = id
-			case hasTask:
-				key = taskID
-			default:
-				key = itoa(jsLen(text[:mi[0]]))
-			}
-			title := meta.str("title")
-			if !truthy(meta.get("title")) {
-				title = "세션"
-			}
-			summary, _ := pickTag("summary", inner)
-			if summary == "" {
-				summary = "백그라운드 작업이 끝났어요 (" + status + ")"
-			}
-			tone := "fail"
-			if ok {
-				tone = "ok"
-			}
-			// Kept in the notice list only: a finished job is no reason to buzz a phone (REQ-F-519, REQ-F-795).
-			addNotice(meta.uid(), M{"sid": meta.id(), "key": key + "|" + status, "title": title, "text": summary, "tone": tone})
+			// A finished job leaves no notice (REQ-F-519, 1.441): the session shows it, the notice list stays for what needs a person.
 		}
 	}
 	list, ok := content.([]any)

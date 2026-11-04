@@ -648,7 +648,6 @@ func runDelegate(uid, hostID string, msg M) any {
 		}
 		logEvents(c, []any{M{"k": "notice", "tone": "info", "text": "↪ " + from + " 의 세션 \"" + pt + "\" 이 맡긴 일이에요. 허용 정책은 그 세션을 따라가요. " + usedText}})
 		logEvents(parent, []any{M{"k": "notice", "tone": "info", "text": "↪ " + hn + " 에 일을 맡겼어요 (" + usedText + "): " + jsSliceTo(collapse(task), 120)}})
-		addNotice(uid, M{"sid": sid, "key": "delegate-" + sid, "title": "다른 맥에 일을 맡겼어요", "text": from + " → " + hn + ": " + jsSliceTo(collapse(task), 100), "tone": "info", "push": true})
 		record(uid, target, M{"level": "info", "area": "delegate", "sid": sid, "text": from + " 의 세션이 일을 맡김"})
 		touch(c)
 		touch(parent)

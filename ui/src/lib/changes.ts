@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.441',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'removed',
+        scope: ['server', 'ui'],
+        text: '알림 두 가지를 없앰: 백그라운드 작업이 끝났을 때 알림 목록에 남던 알림, 다른 맥에 일을 맡겼을 때 오던 알림과 푸시. 세션 안의 안내 줄은 그대로. 설정 → 화면·알림의 설명도 맞춤',
+        refs: ['REQ-F-519', 'REQ-F-760', 'REQ-F-866'],
+      },
+    ],
+  },
+  {
     version: '1.440',
     date: '2026-11-05',
+    commit: '2b32924',
     changes: [
       {
         kind: 'fixed',
