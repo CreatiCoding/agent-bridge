@@ -22,7 +22,7 @@ const SIZE = 36
 const C = SIZE / 2
 /** Outer (weekly) and inner (5-hour) rings: radius and stroke. */
 const RINGS = [
-  { r: 15.5, w: 3.5 },
+  { r: 14, w: 2 },
   { r: 10.5, w: 2.5 },
 ] as const
 /** The runner's mark in the middle, in px. */

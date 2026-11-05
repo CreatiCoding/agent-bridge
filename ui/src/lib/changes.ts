@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.442',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '앱 레일 사용량: 바깥 링을 가늘게(반지름 14·두께 2), 값 숫자 폭 맞춤을 끄고, "주 15%" 와 남은 시간을 링 가운데에 맞춤',
+        refs: ['REQ-F-858'],
+      },
+    ],
+  },
+  {
     version: '1.441',
     date: '2026-11-05',
+    commit: 'df96540',
     changes: [
       {
         kind: 'removed',

@@ -1160,14 +1160,15 @@ select.input {
 .rail-ring.codex .rail-ring-mark {
   stroke: var(--muted);
 }
+/* Each line centred on its own: in a two-column grid the wider "N일 뒤" line under the value widened both columns and
+   pushed "주 15%" off the ring's centre. */
 .app-rail .rail-usage-row {
-  display: grid;
-  grid-template-columns: auto auto;
+  display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: baseline;
   gap: 1px 2px;
   width: 36px;
-  font-variant-numeric: tabular-nums;
 }
 .rail-usage-v {
   font-weight: 600;
@@ -1178,7 +1179,7 @@ select.input {
 }
 /* Time until the limit fills again, under its value. */
 .rail-usage-left {
-  grid-column: 1 / -1;
+  flex-basis: 100%;
   text-align: center;
   font-size: 8.5px;
   color: var(--faint);
