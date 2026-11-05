@@ -57,9 +57,16 @@ function merge(sid: string, incoming: Ev[]) {
   }
 }
 
+/** A page of events, its list checked: a list that is not there is a failed read (REQ-F-859), never a crash in fold. */
+async function getPage(path: string) {
+  const page = await get<EventsPage>(path)
+  if (!Array.isArray(page?.events)) throw new Error('대화 기록을 읽지 못했어요. 다시 시도해 주세요')
+  return page
+}
+
 async function firstPage(sid: string) {
   set(sid, { loading: true, error: null })
-  const page = await get<EventsPage>(`/api/sessions/${sid}/events`)
+  const page = await getPage(`/api/sessions/${sid}/events`)
   const events = page.events
   set(sid, { events, folded: fold(emptyFold(), events), older: page.more, loading: false, loaded: true, cached: false, card: page.card, offline: false })
   // Live events that arrived while the first page loaded.
@@ -99,7 +106,7 @@ async function afterLoop(sid: string) {
   for (let i = 0; i < 20; i++) {
     const log = logs.get(sid) ?? empty
     const last = log.events.at(-1)?.seq ?? 0
-    const page = await get<EventsPage>(`/api/sessions/${sid}/events?after=${last}`)
+    const page = await getPage(`/api/sessions/${sid}/events?after=${last}`)
     // The server has less than this browser kept (its copy was replaced): start from the server's.
     if (page.last < last) {
       void dropLog(sid)
@@ -117,7 +124,7 @@ export async function loadOlder(sid: string) {
   if (!log || !log.older || log.loading) return
   set(sid, { loading: true })
   try {
-    const page = await get<EventsPage>(`/api/sessions/${sid}/events?before=${log.events[0]?.seq ?? 0}`)
+    const page = await getPage(`/api/sessions/${sid}/events?before=${log.events[0]?.seq ?? 0}`)
     set(sid, { loading: false, older: page.more })
     merge(sid, page.events)
   } catch (e) {

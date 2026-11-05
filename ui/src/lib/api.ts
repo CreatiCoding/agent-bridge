@@ -38,7 +38,11 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
     throw new ApiError(401, '로그인이 필요해요')
   }
   const type = res.headers.get('content-type') ?? ''
-  const rawBody = type.includes('application/json') ? await res.json().catch(() => ({})) : {}
+  // A JSON answer that cannot be read (cut off on a weak link) is a failure, not an empty answer:
+  // an empty object here reached callers as missing fields (REQ-F-859).
+  const unread = Symbol()
+  const rawBody = type.includes('application/json') ? await res.json().catch(() => unread) : {}
+  if (rawBody === unread) throw new ApiError(res.ok ? 0 : res.status, '서버 답을 다 받지 못했어요. 다시 시도해 주세요')
   // A sealing Mac's words come back as pieces: opened here for every caller (REQ-S-095).
   // A caller that must tell a sealed piece from plain text (getSealed) opens what it needs itself.
   const data = !raw && JSON.stringify(rawBody).includes('⟦bt') ? await openDeep(rawBody).catch(() => rawBody) : rawBody

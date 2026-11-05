@@ -458,6 +458,9 @@ func sessionEvents(res *Res, u *url.URL, meta *Sess) {
 		}
 		more = len(older) > len(page)
 	}
+	if page == nil {
+		page = []any{} // a session with no events yet answers [], not null (REQ-F-859)
+	}
 	jsonRes(res, 200, extra(orderedObj{{"events", page}, {"more", more}}))
 }
 

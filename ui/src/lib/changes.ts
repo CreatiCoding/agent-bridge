@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.443',
+    date: '2026-11-05',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui', 'server'],
+        text: "세션 대화를 읽다 답이 끊기면 \"undefined is not an object (evaluating 'u of t')\" 대신 다시 시도할 수 있는 문구로 실패. 빈 기록은 null 대신 [] 로 보냄",
+        refs: ['REQ-F-868'],
+      },
+    ],
+  },
+  {
     version: '1.442',
     date: '2026-11-05',
+    commit: '9ec654b',
     changes: [
       {
         kind: 'changed',
