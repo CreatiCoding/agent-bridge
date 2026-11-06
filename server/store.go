@@ -286,6 +286,29 @@ func sysPromptOf(uid string) string {
 	return BUILTIN_DEFAULT_PROMPT
 }
 
+// MSG_PREFIX_MAX: the longest 메시지 앞에 붙일 글 kept (REQ-F-869).
+const MSG_PREFIX_MAX = 2000
+
+// msgPrefixOf: what is put before every message a person sends (REQ-F-869), "" when none.
+func msgPrefixOf(uid string) string {
+	return jsTrim(strOr(prefsOf(uid)["msgPrefix"], ""))
+}
+
+// withMsgPrefix: text as the session gets it (REQ-F-869 rule 2). A command (/, :, !) and an empty text stay as they
+// are. A Mac with trust on gets the text as signed: a changed text would fail its signature, and such a Mac takes no
+// instructions from the server (it drops the default prompt too).
+func withMsgPrefix(uid, hostID, text string) string {
+	p := msgPrefixOf(uid)
+	t := jsTrim(text)
+	if p == "" || t == "" || strings.HasPrefix(t, "!") || slashColonRe.MatchString(t) {
+		return text
+	}
+	if hostSigns(hostID) {
+		return text
+	}
+	return p + "\n\n" + text
+}
+
 var LAUNCH_EFFORTS = []string{"low", "medium", "high", "xhigh", "max"}
 var LAUNCH_MODES = []string{"default", "acceptEdits", "plan", "auto", "autoAllow", "allowAll"}
 

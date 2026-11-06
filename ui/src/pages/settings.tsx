@@ -696,7 +696,48 @@ function SettingsSlot({ me, tab }: { me: Me | null; tab: SettingsTab }) {
   )
 }
 
-export function SettingsPage({ me, tab, ext }: { me: Me | null; tab: SettingsTab; ext?: { ext: string; id: string } }) {
+/**
+ * 메시지 앞에 붙일 글 (REQ-F-869): put before every message sent from here, so a rule like "한국어로 답해" holds
+ * for the whole conversation, not only from the start as the default prompt does.
+ */
+function MsgPrefixSettings() {
+  const [text, setText] = useState<string | null>(null)
+  const [err, setErr] = useState<unknown>(undefined)
+  const [saving, setSaving] = useState(false)
+  const load = () => {
+    setErr(undefined)
+    get<{ text: string }>('/api/prefs/prefix').then((r) => setText(r.text ?? ''), (e) => setErr(e ?? true))
+  }
+  useEffect(load, [])
+  if (err) return <LoadError what="저장된 글을" error={err} onRetry={load} />
+  if (text == null) return <Spinner />
+  return (
+    <>
+      <textarea className="input" {...NO_AUTOFILL} rows={3} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder="예: 한국어로 답해 줘." />
+      <div className="hstack" style={{ marginTop: 8, justifyContent: 'flex-end' }}>
+        <Button
+          tone="primary"
+          busy={saving}
+          onClick={async () => {
+            setSaving(true)
+            try {
+              const r = await post<{ ok: true; text: string; note: string }>('/api/prefs/prefix', { text })
+              setText(r.text)
+              toast(r.note)
+            } catch (e) {
+              toast(errorText(e), { tone: 'bad' })
+            }
+            setSaving(false)
+          }}
+        >
+          저장
+        </Button>
+      </div>
+    </>
+  )
+}
+
+export function SettingsPage({ me, tab, ext }:{ me: Me | null; tab: SettingsTab; ext?: { ext: string; id: string } }) {
   const wide = useWide()
   // An extension's tab (settings.tabs, REQ-F-865) is open: none of the page's own is.
   const at = (ext ? 'x' : (TAB_OF[tab] ?? tab)) as SettingsTab
@@ -835,6 +876,12 @@ export function SettingsPage({ me, tab, ext }: { me: Me | null; tab: SettingsTab
                 </div>
               </>
             )}
+          </section>
+          ) : null}
+          {at === 'launch' ? (
+          <section className="card-box" id="settings-prefix">
+            <CardHead title="메시지 앞에 붙일 글" help="보내는 글마다 맨 앞에 이 글을 붙여 세션에 전해요. 기본 프롬프트는 대화가 길어지면 덜 지켜질 수 있어, 매번 지킬 규칙(예: 한국어로 답하기)을 여기에 넣어요. 화면의 내 글에는 보이지 않고, / ! 로 시작하는 명령과 서명(신뢰 기기)을 켠 맥에는 붙이지 않아요." />
+            <MsgPrefixSettings />
           </section>
           ) : null}
           {at === 'accounts' ? <AccountsPanel /> : null}

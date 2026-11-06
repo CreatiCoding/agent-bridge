@@ -877,6 +877,23 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		jsonRes(res, 200, M{"ok": true, "note": w + ". " + said})
 		return true
+	case "/api/prefs/prefix":
+		if get {
+			jsonRes(res, 200, M{"text": msgPrefixOf(uid)})
+			return true
+		}
+		if !post {
+			refuse(405, "지원하지 않는 요청입니다")
+		}
+		text := jsSliceTo(jsTrim(strOr(body(req, 16*1024)["text"], "")), MSG_PREFIX_MAX)
+		prefsOf(uid)["msgPrefix"] = text
+		savePrefs(uid)
+		note := "비웠어요. 보내는 글에 아무것도 붙이지 않아요."
+		if text != "" {
+			note = "저장했어요. 다음에 보내는 글부터 앞에 붙여요."
+		}
+		jsonRes(res, 200, M{"ok": true, "text": text, "note": note})
+		return true
 	}
 	return false
 }

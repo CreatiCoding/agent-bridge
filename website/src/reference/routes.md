@@ -85,6 +85,7 @@ description: Agent Bridge 서버의 사용자 페이지 주소, 로그인 없이
 | GET | `/api/me` | 로그인한 사용자 정보예요(`uid` 포함). |
 | POST | `/api/qr` | 다른 기기 로그인용 QR 코드를 만들어요. `{"headless":true}` 면 화면 없는 기기의 헤드리스 브라우저만 쓰는 로그인 주소(5분, 한 번)를 만들어요. |
 | GET·POST | `/api/prefs/prompt` | 기본 프롬프트를 읽고 바꿔요. |
+| GET·POST | `/api/prefs/prefix` | 보내는 글마다 앞에 붙일 글을 읽고 바꿔요. |
 | GET·POST | `/api/prefs/launch` | 새 세션의 처음 모델·effort·권한 모드를 읽고 바꿔요. |
 | GET·POST | `/api/prefs/routing` | 모델 라우팅(켜기, 일꾼별 모델·effort, 서브에이전트 기본 모델)을 읽고 바꿔요. |
 | GET·POST | `/api/prefs/icons` | 아이콘 설정이에요. |

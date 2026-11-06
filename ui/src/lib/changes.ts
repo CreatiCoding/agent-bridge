@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.444',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '설정 → 세션에 "메시지 앞에 붙일 글". 보내는 글마다 앞에 붙여 세션에 전해, 대화가 길어져도 "한국어로 답해" 같은 규칙이 지켜짐. 화면의 내 글은 그대로, / : ! 명령과 trust 를 켠 맥에는 붙이지 않음',
+        refs: ['REQ-F-869', 'IF-273', 'IF-274'],
+      },
+    ],
+  },
+  {
     version: '1.443',
     date: '2026-11-05',
+    commit: '90df521',
     changes: [
       {
         kind: 'fixed',

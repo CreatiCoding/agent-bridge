@@ -608,8 +608,8 @@ type demoRule struct {
 
 var DEMO_ALLOW = []demoRule{
 	{"GET", regexp.MustCompile(`^/api/(me|classic/stream|classic/poll|options|notices|groups|stats|quality|plugins)$`)},
-	{"GET", regexp.MustCompile(`^/api/prefs/(launch|voice|voice/hosts|icons|prompt|splits)$`)},
-	{"POST", regexp.MustCompile(`^/api/prefs/(launch|voice|voice/hosts|icons|prompt|splits)$`)},
+	{"GET", regexp.MustCompile(`^/api/prefs/(launch|voice|voice/hosts|icons|prompt|prefix|splits)$`)},
+	{"POST", regexp.MustCompile(`^/api/prefs/(launch|voice|voice/hosts|icons|prompt|prefix|splits)$`)},
 	{"GET", regexp.MustCompile(`^/api/img/[0-9a-f]{40}\.(png|jpg|gif|webp)$`)},
 	{"POST", regexp.MustCompile(`^/api/(notices/dismiss|groups|focus|sessions|account/delete)$`)},
 	{"GET", regexp.MustCompile(`^/api/sessions/S/(events|links|skills|screen)$`)},

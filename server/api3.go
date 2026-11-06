@@ -1124,7 +1124,13 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 		}
 		sentUploads[id] = list
 	}
-	cmd := M{"t": "send", "sid": meta.id(), "id": id, "text": jsSliceTo(text, 100_000)}
+	// 메시지 앞에 붙일 글 (REQ-F-869): the session gets it, the page shows what was typed. The transcript's line still
+	// matches the logged one (isEcho looks for the typed text inside it).
+	sent := text
+	if via == "web" || via == "slack" {
+		sent = withMsgPrefix(uid, hostID, text)
+	}
+	cmd := M{"t": "send", "sid": meta.id(), "id": id, "text": jsSliceTo(sent, 100_000)}
 	if len(files) > 0 {
 		fl := []any{}
 		for _, f := range files {
