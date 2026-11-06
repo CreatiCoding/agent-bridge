@@ -1254,8 +1254,12 @@ const runnerIds = () => runnerList().map((r) => r.id)
 const MIRROR_DIR = path.join(STATE_DIR, 'runners')
 const mirrorPath = (sid) => path.join(MIRROR_DIR, `${sid}.jsonl`)
 const codexRoot = () => sessionsRoot(process.env, HOME)
-/** What the bridge tells codex (developer instructions): the choices block; codex has no bridge tools. */
-const CODEX_PROMPT = 'This session is also read and driven from a web page (claude-bridge), often on a phone. When you want the person to pick between a few short options, end your answer with a fenced block tagged `choices`, one option per line, at most 6; the page shows them as buttons. Do not use it for anything else.'
+/**
+ * What the bridge tells codex (developer instructions): the choices block, and how to show a picture. Codex has no
+ * bridge tools, so asked to attach a picture it wrote a fake attach line the page cannot draw: a picture's absolute
+ * path in the answer is what the page shows (readimage, only from the session's folder or a temporary folder).
+ */
+const CODEX_PROMPT = 'This session is also read and driven from a web page (claude-bridge), often on a phone. When you want the person to pick between a few short options, end your answer with a fenced block tagged `choices`, one option per line, at most 6; the page shows them as buttons. Do not use it for anything else. You cannot attach files to the conversation. To show the person a picture (png, jpg, gif, webp, up to 8 MB), write its absolute path, with no spaces, in your answer, for example `/tmp/shot.png`; the page shows it as a picture. Only a picture inside this session\'s folder or a temporary folder (/tmp) is shown, so copy one from elsewhere into /tmp first.'
 /** What a runner that cannot do something says when it is asked. */
 const cannot = (sid, s, what) => (toast(sid, `${RUNNERS[s.runner]?.name ?? s.runner} 세션에서는 ${what} 을(를) 쓸 수 없어요`), true)
 

@@ -43,11 +43,47 @@ function Thumbs({ ids, onOpen }: { ids: string[]; onOpen: (src: string) => void 
   return (
     <div className="thumbs">
       {ids.map((id) => (
-        <img key={id} className="thumb" src={img(id)} alt="첨부한 그림" loading="lazy" onClick={() => onOpen(img(id))} />
+        <Thumb key={id} id={id} onOpen={onOpen} />
       ))}
     </div>
   )
 }
+
+/**
+ * A picture sent in the conversation, fetched from the Macs. One that does not come (a Mac whose link dropped for a
+ * moment, or no Mac has it) is asked again once after a few seconds, then drawn as a tile that says so and asks
+ * again when pressed, never as the browser's broken picture.
+ */
+function Thumb({ id, onOpen }: { id: string; onOpen: (src: string) => void }) {
+  const [tries, setTries] = useState(0)
+  const [gone, setGone] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
+  // A new query each try: the browser does not hand back the answer that failed.
+  const src = tries ? `${img(id)}?r=${tries}` : img(id)
+  if (gone)
+    return (
+      <button type="button" className="thumb thumb-gone" title="그림을 다시 불러와요" onClick={() => (setGone(false), setTries((t) => t + 1))}>
+        <Icon name="image" />
+        <span>그림을 불러오지 못했어요</span>
+        <span className="thumb-again">다시</span>
+      </button>
+    )
+  return (
+    <img
+      className="thumb"
+      src={src}
+      alt="첨부한 그림"
+      loading="lazy"
+      onClick={() => onOpen(src)}
+      onError={() => {
+        if (tries === 0) timer.current = setTimeout(() => setTries(1), THUMB_RETRY_MS)
+        else setGone(true)
+      }}
+    />
+  )
+}
+const THUMB_RETRY_MS = 3000
 
 // A picture on the Mac that an answer names by its path (a screenshot it took): `/…/a.png`, `~/…/a.jpg`.
 const LOCAL_IMG_RE = /(?:^|[\s`'"(<\[:=*])((?:~|\/)[^\s`'"()<>\[\]*]*\.(?:png|jpe?g|gif|webp))(?=$|[\s`'")>\],.;:!?*])/gi

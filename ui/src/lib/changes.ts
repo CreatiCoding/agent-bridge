@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.448',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 세션에서 그림을 보여 달라고 하면 실행 로그나 `[bridge-attach]` 글만 남던 것: Codex 에게 그림은 절대 경로를 답에 쓰면 페이지가 그림으로 보인다고 알림(세션 폴더·/tmp 안의 그림)',
+        refs: ['REQ-F-872'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화에서 보낸 그림이 오지 않으면 깨진 그림 대신 3초 뒤 한 번 다시 묻고, 그래도 안 오면 "그림을 불러오지 못했어요 · 다시" 칸을 보임',
+        refs: ['REQ-F-872'],
+      },
+    ],
+  },
+  {
     version: '1.447',
     date: '2026-11-06',
+    commit: '8350291',
     changes: [
       {
         kind: 'changed',
