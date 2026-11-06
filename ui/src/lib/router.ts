@@ -13,7 +13,7 @@ export type Route =
   | { name: 'hosts' }
   | { name: 'disk'; host?: string }
   | { name: 'report'; id: string }
-  | { name: 'settings'; tab?: SettingsTab; ext?: { ext: string; id: string } }
+  | { name: 'settings'; tab?: SettingsTab; ext?: { ext: string; id: string }; host?: string }
   | { name: 'ext'; ext: string; page: string }
   | { name: 'guide'; path: GuidePath }
   | { name: 'split'; ids: string[] }
@@ -24,7 +24,7 @@ export type GuidePath = 'start' | 'accounts'
 /** The settings page's tabs; the first is what /settings opens. */
 // 'prompt' and 'changes' have no tab of their own any more (REQ-F-842): their addresses still open, inside 세션 and
 // 더 보기, so links and bookmarks keep working.
-export const SETTINGS_TABS = ['devices', 'launch', 'prompt', 'accounts', 'device', 'plugins', 'voice', 'admin', 'changes', 'more'] as const
+export const SETTINGS_TABS = ['devices', 'tidy', 'launch', 'prompt', 'accounts', 'device', 'plugins', 'voice', 'admin', 'changes', 'more'] as const
 export type SettingsTab = (typeof SETTINGS_TABS)[number]
 
 /** The route a path (with its query) names, or null when it is not one of this page's (/recovery, /guide/mcp, …). */
@@ -58,7 +58,11 @@ export function matchRoute(url: string): Route | null {
   // An extension's page and settings tab (REQ-F-865): /x/<ext>/<page>, /settings/x/<ext>/<tab>.
   if ((m = /^\/x\/([a-z][a-z0-9-]{1,31})\/([a-z0-9][a-z0-9-]{0,31})$/.exec(p))) return { name: 'ext', ext: m[1], page: m[2] }
   if ((m = /^\/settings\/x\/([a-z][a-z0-9-]{1,31})\/([a-z0-9][a-z0-9-]{0,31})$/.exec(p))) return { name: 'settings', ext: { ext: m[1], id: m[2] } }
-  if ((m = /^\/settings\/([a-z]+)$/.exec(p)) && (SETTINGS_TABS as readonly string[]).includes(m[1])) return { name: 'settings', tab: m[1] as SettingsTab }
+  if ((m = /^\/settings\/([a-z]+)$/.exec(p)) && (SETTINGS_TABS as readonly string[]).includes(m[1])) {
+    // 세션 정리 (REQ-F-839): /settings/tidy?host=<id> brings that host's box into view.
+    const host = m[1] === 'tidy' ? /(?:^|&)host=([\w-]+)/.exec(q)?.[1] : undefined
+    return { name: 'settings', tab: m[1] as SettingsTab, ...(host ? { host } : {}) }
+  }
   if (p === '/guide') return { name: 'guide', path: 'start' }
   if (p === '/guide/accounts') return { name: 'guide', path: 'accounts' }
   // A link from when the guide had a third way: it opens the first one.
@@ -69,7 +73,7 @@ export function matchRoute(url: string): Route | null {
 export const parseRoute = (url: string): Route => matchRoute(url) ?? { name: 'home' }
 
 export const href = (r: Route) =>
-  ({ home: '/', session: `/s/${(r as { id?: string }).id}`, new: '/new', stats: '/stats', quality: '/quality', host: `/hosts/${(r as { id?: string }).id}${(r as { sid?: string }).sid ? `?sid=${(r as { sid?: string }).sid}` : ''}`, hosts: '/hosts', disk: `/disk${(r as { host?: string }).host ? `?host=${(r as { host?: string }).host}` : ''}`, report: `/admin/reports/${(r as { id?: string }).id}`, settings: (r as { ext?: { ext: string; id: string } }).ext ? `/settings/x/${(r as { ext: { ext: string } }).ext.ext}/${(r as { ext: { id: string } }).ext.id}` : `/settings${(r as { tab?: string }).tab && (r as { tab?: string }).tab !== 'devices' ? `/${(r as { tab?: string }).tab}` : ''}`, ext: `/x/${(r as { ext?: string }).ext}/${(r as { page?: string }).page}`, split: `/split?s=${((r as { ids?: string[] }).ids ?? []).join(',')}`, guide: `/guide${(r as { path?: string }).path && (r as { path?: string }).path !== 'start' ? `/${(r as { path?: string }).path}` : ''}` })[r.name]
+  ({ home: '/', session: `/s/${(r as { id?: string }).id}`, new: '/new', stats: '/stats', quality: '/quality', host: `/hosts/${(r as { id?: string }).id}${(r as { sid?: string }).sid ? `?sid=${(r as { sid?: string }).sid}` : ''}`, hosts: '/hosts', disk: `/disk${(r as { host?: string }).host ? `?host=${(r as { host?: string }).host}` : ''}`, report: `/admin/reports/${(r as { id?: string }).id}`, settings: (r as { ext?: { ext: string; id: string } }).ext ? `/settings/x/${(r as { ext: { ext: string } }).ext.ext}/${(r as { ext: { id: string } }).ext.id}` : `/settings${(r as { tab?: string }).tab && (r as { tab?: string }).tab !== 'devices' ? `/${(r as { tab?: string }).tab}` : ''}${(r as { host?: string }).host ? `?host=${(r as { host?: string }).host}` : ''}`, ext: `/x/${(r as { ext?: string }).ext}/${(r as { page?: string }).page}`, split: `/split?s=${((r as { ids?: string[] }).ids ?? []).join(',')}`, guide: `/guide${(r as { path?: string }).path && (r as { path?: string }).path !== 'start' ? `/${(r as { path?: string }).path}` : ''}` })[r.name]
 
 const ROUTE_EVENT = 'cb-route'
 

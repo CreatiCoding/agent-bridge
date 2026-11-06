@@ -321,7 +321,10 @@ func tidyView(hostID string) any {
 	for _, row := range asArr(r["sessions"]) {
 		x := shallow(asM(row))
 		if meta, ok := sessions.Get(jsString(x["sid"])); ok && meta.host() == hostID && !truthy(meta.get("closed")) {
-			x["title"] = sessionTitle(meta)
+			// No name yet: the page names the row by its folder rather than by the id sessionTitle falls back to.
+			if meta.str("title") != "" || truthy(meta.get("lock")) {
+				x["title"] = sessionTitle(meta)
+			}
 			x["keepAlive"] = truthy(meta.get("keepAlive"))
 			x["favorite"] = truthy(meta.get("favorite"))
 			if truthy(x["favorite"]) {
@@ -329,10 +332,42 @@ func tidyView(hostID string) any {
 				x["act"], x["why"], x["stopAt"], x["rest"], x["close"] = nil, TIDY_FAVORITE_WHY, nil, false, false
 			}
 			x["resting"] = truthy(meta.get("resting"))
+			x["cwd"] = meta.get("cwd")
 			rows = append(rows, x)
 		}
 	}
 	out["sessions"] = rows
+	// 세션 정리 페이지 (REQ-F-839 rule 3): a folder or transcript row carries the name of the session that used it,
+	// the newest one the server still knows on this host, so the page names it as the person does.
+	named := func(list any, match func(meta *Sess, row M) bool) []any {
+		got := []any{}
+		for _, row := range asArr(list) {
+			x := shallow(asM(row))
+			var best *Sess
+			for _, meta := range sessions.Values() {
+				if meta.host() != hostID || !match(meta, x) {
+					continue
+				}
+				if best == nil || numOr0(meta.get("createdAt")) > numOr0(best.get("createdAt")) {
+					best = meta
+				}
+			}
+			if best != nil && (best.str("title") != "" || truthy(best.get("lock"))) {
+				x["name"] = sessionTitle(best)
+				x["sid"] = best.id()
+			}
+			got = append(got, x)
+		}
+		return got
+	}
+	out["folders"] = named(r["folders"], func(meta *Sess, row M) bool {
+		c := meta.str("cwd")
+		return c != "" && (c == jsString(row["dir"]) || c == jsString(row["path"]))
+	})
+	out["transcripts"] = named(r["transcripts"], func(meta *Sess, row M) bool {
+		conv := jsString(row["conv"])
+		return conv != "" && (meta.str("conv") == conv || meta.id() == conv)
+	})
 	return out
 }
 

@@ -65,7 +65,7 @@ try {
   await p.waitForSelector('#dev-others', { timeout: 15000 })
   ok((await p.locator('.page-tab.on').innerText()).trim() === '기기', '/settings 는 기기 탭')
   const tabs = (await p.locator('.page-tab').allInnerTexts()).map((t) => t.trim())
-  ok(JSON.stringify(tabs.slice(0, 3)) === JSON.stringify(['기기', '세션', '계정']), `탭 줄 앞 셋: ${tabs.slice(0, 3).join(', ')}`)
+  ok(JSON.stringify(tabs.slice(0, 4)) === JSON.stringify(['기기', '정리', '세션', '계정']), `탭 줄 앞 넷: ${tabs.slice(0, 4).join(', ')}`)
   ok(!tabs.includes('프롬프트') && !tabs.includes('변경 기록'), '프롬프트·변경 기록 탭은 없음')
   const mine = p.locator('section[aria-labelledby="dev-mine"] .dev-card')
   ok((await mine.count()) === 3, '내 기기 카드 3장')
@@ -94,7 +94,7 @@ try {
   await p.waitForURL(`**/disk?host=${ID(1)}`, { timeout: 10000 })
   await p.waitForSelector(`#disk-${ID(1)} .row`, { timeout: 10000 })
   ok(await p.getByText('Studio 디스크').first().isVisible(), '그 기기의 디스크 관리 칸이 펼쳐짐')
-  ok((await p.locator('#disk-' + ID(1)).innerText()).includes('세션 정리'), '그 기기의 세션 정리 절도 함께')
+  ok((await p.locator('#disk-' + ID(1)).innerText()).includes('세션 정리 열기'), '그 기기의 세션 정리는 설정 → 세션 정리로 가는 줄')
   await p.screenshot({ path: `${shots}/devices-phone-disk.png` })
 
   step('예전 주소')

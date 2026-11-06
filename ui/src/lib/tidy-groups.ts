@@ -26,3 +26,33 @@ export function tidyBriefText(b: { stop: number; rest: number; files: number }) 
   if (!b.stop && !b.rest && !b.files) return '세션 정리: 정리할 것 없음'
   return `내릴 세션 ${b.stop} · 휴면·끝내기 제안 ${b.rest} · 폴더·기록 제안 ${b.files}`
 }
+
+/** A path cut to its last `n` parts (`…/works/app`), for the small grey line under a name. */
+export function shortPath(p: string | null | undefined, n = 2) {
+  if (!p) return ''
+  const parts = p.replace(/\/+$/, '').split('/').filter(Boolean)
+  if (parts.length <= n) return p
+  return `…/${parts.slice(-n).join('/')}`
+}
+
+/**
+ * 세션 정리 페이지 (REQ-F-839 rule 3): what a row is called. A session by its name (the one the person gave or the
+ * automatic one; one with no name yet by its folder's name); a folder or transcript by the name of the session that
+ * used it, else the folder's own name or the transcript's file without `.jsonl`. The id or path is only the small line under it (`tidyRowSub`).
+ */
+export function tidyRowName(r: { title?: string | null; name?: string | null; cwd?: string | null; path?: string | null; sid?: string | null }) {
+  const n = (r.title ?? r.name ?? '').trim()
+  if (n) return n
+  // A session with no name yet: its folder's name, never its id.
+  const place = r.cwd || r.path
+  if (place) {
+    const last = place.replace(/\/+$/, '').split('/').pop() ?? place
+    return last.replace(/\.jsonl$/, '') || place
+  }
+  return r.sid ? r.sid.slice(0, 8) : ''
+}
+
+/** The small line under a row's name: where it lives and its short id. */
+export function tidyRowSub(r: { cwd?: string | null; path?: string | null; sid?: string | null }) {
+  return [shortPath(r.cwd ?? r.path, 3), r.sid ? r.sid.slice(0, 8) : ''].filter(Boolean).join(' · ')
+}

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.450',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'server'],
+        text: '세션 정리를 설정 안의 독립 탭 "세션 정리"(/settings/tidy)로 옮김: 기기마다 카드 한 장에 방식·기준값, 숫자 세 칸(내릴 세션·휴면·끝내기 제안·폴더·기록 제안), 세 목록. 줄은 세션 이름으로 보이고(이름 없는 세션은 폴더 이름) 경로·id 는 작게 아래에. 폴더·대화 기록 줄도 그 폴더를 쓴 세션 이름으로. 디스크 관리와 기기 카드에는 숫자 요약과 "세션 정리 열기" 링크만',
+        refs: ['REQ-F-839', 'REQ-F-711', 'REQ-F-803', 'REQ-F-842'],
+      },
+    ],
+  },
+  {
     version: '1.449',
     date: '2026-11-06',
+    commit: '55f5a5e',
     changes: [
       {
         kind: 'fixed',

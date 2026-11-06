@@ -22,6 +22,7 @@ import { resolve, type SlotItem } from '../lib/slots'
 import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
 import { ExtAdmin, ExtSettings } from '../components/ext-panels'
 import { DeviceBoard } from '../components/device-board'
+import { TidyBoard } from './host-tidy'
 import { useAdded } from '../components/slot-parts'
 import type { IconName } from '../kit'
 
@@ -664,6 +665,8 @@ const AdminPanel = lazy(() => import('./admin').then((m) => ({ default: m.AdminP
 // addresses (/settings/prompt, /settings/changes) still open (TAB_OF).
 const TABS: { id: SettingsTab; label: string; short?: string; icon: string; admin?: true; feature?: Feature }[] = [
   { id: 'devices', label: '기기', icon: 'laptop' },
+  // 세션 정리 (REQ-F-839): its own tab, one card per host; 디스크 관리 and the 기기 cards only count and link here.
+  { id: 'tidy', label: '세션 정리', short: '정리', icon: 'moon' },
   { id: 'launch', label: '세션', icon: 'plus' },
   { id: 'accounts', label: 'Claude 계정', short: '계정', icon: 'user' },
   { id: 'device', label: '화면·알림', short: '화면', icon: 'phone' },
@@ -737,7 +740,7 @@ function MsgPrefixSettings() {
   )
 }
 
-export function SettingsPage({ me, tab, ext }:{ me: Me | null; tab: SettingsTab; ext?: { ext: string; id: string } }) {
+export function SettingsPage({ me, tab, ext, host }:{ me: Me | null; tab: SettingsTab; ext?: { ext: string; id: string }; host?: string }) {
   const wide = useWide()
   // An extension's tab (settings.tabs, REQ-F-865) is open: none of the page's own is.
   const at = (ext ? 'x' : (TAB_OF[tab] ?? tab)) as SettingsTab
@@ -772,7 +775,7 @@ export function SettingsPage({ me, tab, ext }:{ me: Me | null; tab: SettingsTab;
   // Drawn once everything has arrived (or failed): drawn piece by piece, each card grew as its part came in and
   // pushed the cards below it down (a layout shift of 0.44 on a phone).
   // 기기 reads the state everyone already has, so it does not wait for the rest.
-  const ready = at === 'devices' || ((prompt != null || !!errs.prompt) && (plugins != null || !!errs.plugins) && (opts !== undefined || !!errs.opts) && (launch != null || !!errs.launch))
+  const ready = at === 'devices' || at === 'tidy' || ((prompt != null || !!errs.prompt) && (plugins != null || !!errs.plugins) && (opts !== undefined || !!errs.opts) && (launch != null || !!errs.launch))
   // /settings/prompt: the 세션 tab, scrolled to 기본 프롬프트.
   useEffect(() => {
     if (ready && tab === 'prompt') requestAnimationFrame(() => document.getElementById('settings-prompt')?.scrollIntoView({ block: 'start' }))
@@ -821,12 +824,14 @@ export function SettingsPage({ me, tab, ext }:{ me: Me | null; tab: SettingsTab;
         ) : (
         <div className={`page stack${at === 'devices' ? ' page-board' : ''}`}>
           {at === 'devices' ? <DeviceBoard me={me} /> : null}
+          {at === 'tidy' ? <TidyBoard me={me} host={host} /> : null}
           {at === 'devices' ? (
             <LinkCard
               label="기기 관리 화면"
               wide={wide}
               items={[
-                { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더·세션 정리', to: href({ name: 'disk' }) },
+                { icon: 'moon', label: '세션 정리', hint: '기기별 내릴 세션·휴면 제안·폴더 정리', to: href({ name: 'settings', tab: 'tidy' }) },
+                { icon: 'folder', label: '디스크 관리', hint: '기기별 캐시·worktree·큰 폴더', to: href({ name: 'disk' }) },
                 { icon: 'laptop', label: '기기 화면', hint: '맥 연결·상태·로그·다시 시작', to: href({ name: 'hosts' }) },
               ]}
             />

@@ -253,3 +253,47 @@ func TestTidyFavorite(t *testing.T) {
 		ok(t, meta.get("humanAt") == nil, "빼도 쉰 기간은 마지막 사람 입력부터")
 	})
 }
+
+// AC-1634: the 세션 정리 page names every row by its session: a session row carries its folder, a folder row the name
+// of the newest session that worked there, a transcript row the session whose conversation it is. Rows no session
+// on this host matches keep no name (the page falls back to the folder's name).
+func TestTidyViewNames(t *testing.T) {
+	hostID, uid := "tidy-host-n", "tidy-name-user"
+	wasData, wasHosts := DATA, hosts
+	DATA, hosts = t.TempDir(), newOMap[M]()
+	defer func() { DATA, hosts = wasData, wasHosts }()
+	defer delete(tidyReports, hostID)
+	hosts.Set(hostID, M{"uid": uid, "name": "맥"})
+	hosts.Set("other-host", M{"uid": uid, "name": "다른 맥"})
+	now := float64(nowMs())
+	mk := func(id string, f M) *Sess {
+		t.Cleanup(func() { sessions.Delete(id) })
+		return newMeta(uid, id, hostID, f)
+	}
+	mk("tidy-n1", M{"title": "결제 화면 고치기", "cwd": "/Users/u/works/a", "createdAt": now - 1000})
+	old := mk("tidy-n2", M{"title": "옛 이름", "cwd": "/Users/u/works/b", "createdAt": now - 9000})
+	old.set("closed", true)
+	mk("tidy-n3", M{"title": "새 이름", "cwd": "/Users/u/works/b", "createdAt": now - 100})
+	mk("tidy-n4", M{"title": "기록 주인", "cwd": "/Users/u/x", "conv": "conv-abc"})
+	mk("tidy-n5", M{"title": "다른 기기", "cwd": "/Users/u/works/c"}).set("hostId", "other-host")
+	tidyReports[hostID] = M{"at": now, "sessions": []any{M{"sid": "tidy-n1", "alive": true, "act": "suggest"}},
+		"folders": []any{
+			M{"dir": "/Users/u/works/b", "path": "~/works/b"},
+			M{"dir": "/Users/u/works/c", "path": "~/works/c"},
+		},
+		"transcripts": []any{M{"path": "~/.claude/projects/x/conv-abc.jsonl", "conv": "conv-abc"}}}
+	withLock(func() {
+		v := asM(tidyView(hostID))
+		s := asM(asArr(v["sessions"])[0])
+		eq(t, s["title"], any("결제 화면 고치기"))
+		eq(t, s["cwd"], any("/Users/u/works/a"))
+		f := asArr(v["folders"])
+		eq(t, mget(f[0], "name"), any("새 이름"), "그 폴더의 가장 최근 세션 이름")
+		eq(t, mget(f[0], "sid"), any("tidy-n3"))
+		ok(t, mget(f[1], "name") == nil, "다른 기기의 세션 이름은 붙이지 않음")
+		eq(t, mget(asArr(v["transcripts"])[0], "name"), any("기록 주인"))
+		mk("tidy-n6", M{"cwd": "/Users/u/works/d"})
+		tidyReports[hostID]["sessions"] = []any{M{"sid": "tidy-n6", "alive": true, "act": "suggest"}}
+		ok(t, asM(asArr(asM(tidyView(hostID))["sessions"])[0])["title"] == nil, "이름 없는 세션은 id 를 제목으로 주지 않음(화면이 폴더 이름)")
+	})
+}

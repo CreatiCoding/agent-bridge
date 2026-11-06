@@ -1,18 +1,18 @@
 // 디스크 관리 메뉴 (REQ-F-803): every host of this person in one list, each with how full its disk is, opening into
-// the same disk box as before (caches, merged worktrees, big folders) without going to each host's page.
+// the same disk box as before (caches, merged worktrees, big folders) without going to each host's page. 세션 정리
+// lives on its own page (설정 → 세션 정리); a host here shows its counts and a link there.
 // 디스크 정리 도움 (REQ-F-804): an owner answers an operator's request here, and an operator sees everyone else's
 // hosts, asks for one, and manages it once granted.
 import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
 import { ago, bytes, clock, type SysUse } from '../lib/format'
-import { back } from '../lib/router'
+import { back, go } from '../lib/router'
 import { useStore } from '../lib/store'
 import type { DiskHelp, Me, TidyBrief } from '../lib/types'
 import { Button, Empty, Icon, IconButton, Row, useWide } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { DiskBox } from './host-disk'
-import { TidyBox } from './host-tidy'
 import { tidyBriefText } from '../lib/tidy-groups'
 
 // A grant names the operator it is for (the one shown), so another operator's request in between is not granted.
@@ -158,12 +158,26 @@ function OthersSection({ me, focus }: { me: Me; focus?: string }) {
               }
               onClick={can ? () => setOpen(shown ? null : h.id) : undefined}
             />
-            {shown ? <TidyBox key={`tidy-${h.id}`} hostId={h.id} online={h.online} onChange={() => void load()} /> : null}
+            {shown ? <TidyLink host={h.id} /> : null}
             {shown ? <DiskBox key={h.id} hostId={h.id} online={h.online} sys={h.sys} title={`${h.login} · ${h.name} 디스크`} /> : null}
           </div>
         )
       })}
     </>
+  )
+}
+
+/** 세션 정리 has its own page (설정 → 세션 정리, REQ-F-839): the open box only points there, at this host. */
+function TidyLink({ host }: { host: string }) {
+  const to = { name: 'settings' as const, tab: 'tidy' as const, host }
+  return (
+    <Row
+      left={<Icon name="moon" />}
+      title="세션 정리 열기"
+      sub="내릴 세션·휴면 제안·폴더 정리는 설정 → 세션 정리에서"
+      onClick={() => go(to)}
+      chevron
+    />
   )
 }
 
@@ -213,7 +227,7 @@ export function DiskPage({ me, host }: { me: Me | null; host?: string }) {
                   onClick={() => setOpen(shown ? null : h.id)}
                 />
                 {h.diskHelp ? <HelpBanner hostId={h.id} help={h.diskHelp} /> : null}
-                {shown ? <TidyBox key={`tidy-${h.id}`} hostId={h.id} online={h.online} /> : null}
+                {shown ? <TidyLink host={h.id} /> : null}
                 {shown ? <DiskBox key={h.id} hostId={h.id} online={h.online} sys={h.sys} title={`${h.name} 디스크`} /> : null}
               </div>
             )

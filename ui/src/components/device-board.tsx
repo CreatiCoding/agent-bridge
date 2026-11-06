@@ -85,7 +85,7 @@ function DeviceCard({ h, me }: { h: BoardHost; me: Me | null }) {
         {/* host-card.* (REQ-F-865): the card is a link, so an action stops it from opening. */}
         <SlotBadges slot="host-card.badges" ctx={{ host: hostInfo(h) }} />
         <SlotActions slot="host-card.actions" ctx={{ host: hostInfo(h) }} max={1} />
-        <span className="sr-only">· 디스크 관리·세션 정리 열기</span>
+        <span className="sr-only">· 디스크 관리 열기</span>
         <Icon name="forward" />
       </div>
       {bars.length ? (

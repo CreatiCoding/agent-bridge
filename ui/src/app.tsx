@@ -244,7 +244,7 @@ function Main({ route, me }: { route: Route; me: Me | null }) {
     case 'report':
       return <ReportPage key={route.id} id={route.id} />
     case 'settings':
-      return <SettingsPage me={me} tab={route.tab ?? 'devices'} ext={route.ext} />
+      return <SettingsPage me={me} tab={route.tab ?? 'devices'} ext={route.ext} host={route.host} />
     case 'ext':
       return <ExtPage key={`${route.ext}/${route.page}`} ext={route.ext} page={route.page} />
     case 'guide':
