@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.453',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'iPhone 에서 설정 탭 이름의 아랫부분이 잘리던 것: 탭 줄이 세로로 1 px 스크롤되는 상자라 탭을 끌면 탭이 줄 안에서 아래로 밀린 채 남았다. 줄 아래 선을 안쪽 그림자로 바꿔 넘침을 없애고, 탭 줄은 위아래로 스크롤되지 않게(폰은 스크롤 상자가 아님)',
+        refs: ['REQ-F-711'],
+      },
+    ],
+  },
+  {
     version: '1.452',
     date: '2026-11-06',
+    commit: 'b637258',
     changes: [
       {
         kind: 'fixed',
