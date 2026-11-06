@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.447',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'iOS 앱에서는 퀵 제보가 "붙여넣기" 말풍선 없이 바로 보냄: 앱이 클립보드(UIPasteboard)를 직접 읽어 페이지에 넘김. iOS 가 처음 한 번 붙여넣기 허용을 물을 수 있음(설정 → Agent Bridge → 다른 앱에서 붙여넣기 → 허용이면 묻지 않음). 새 TestFlight 빌드부터',
+        refs: ['REQ-F-870'],
+      },
+    ],
+  },
+  {
     version: '1.446',
     date: '2026-11-06',
+    commit: 'fc3459c',
     changes: [
       {
         kind: 'fixed',

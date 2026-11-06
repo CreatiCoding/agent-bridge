@@ -38,6 +38,8 @@ struct Web: UIViewRepresentable {
     c.userContentController.add(context.coordinator, name: "appleSignIn")
     // 앱 알림 (REQ-F-774): the settings switch asks for the system's permission and the APNs token through this.
     c.userContentController.add(context.coordinator, name: "push")
+    // 퀵 제보 (REQ-F-870): the page reads the clipboard through the app, so WebKit's 붙여넣기 bubble does not come first.
+    c.userContentController.add(context.coordinator, name: "clipboard")
     // The page reads the app's version from here to show it in 설정 → 이 기기 (REQ-F-765). Appended, so the
     // default "Mobile/…" that sites look for stays.
     let info = Bundle.main.infoDictionary
@@ -77,6 +79,7 @@ struct Web: UIViewRepresentable {
       if m.name == "push", let action = body["action"] as? String, let id = body["id"] as? Int {
         return Push.shared.ask(action, id: id)
       }
+      if m.name == "clipboard", let id = body["id"] as? Int { return readClipboard(id) }
       guard m.name == "appleSignIn", let nonce = body["nonce"] as? String else { return }
       let request = ASAuthorizationAppleIDProvider().createRequest()
       request.requestedScopes = [.fullName, .email]
@@ -85,6 +88,36 @@ struct Web: UIViewRepresentable {
       controller.delegate = self
       controller.presentationContextProvider = self
       controller.performRequests()
+    }
+
+    /**
+     * 퀵 제보 (REQ-F-870): the text and up to 8 pictures on the clipboard, read by the app and handed to the page as
+     * window.bridgeClip(id, {text, images: [base64 JPEG]}). A page's clipboard.read() always shows WebKit's 붙여넣기
+     * bubble first; the app's own read does not (iOS asks once, or never with 설정 → Agent Bridge → 다른 앱에서 붙여넣기 → 허용).
+     * hasStrings/hasImages do not count as reading, so an empty clipboard answers without asking.
+     */
+    private func readClipboard(_ id: Int) {
+      let pb = UIPasteboard.general
+      guard pb.hasStrings || pb.hasImages else { return callPage("bridgeClip", id, ["text": "", "images": [String]()] as [String: Any]) }
+      let text = pb.hasStrings ? (pb.strings ?? []).joined(separator: "\n\n") : ""
+      let pictures = pb.hasImages ? Array((pb.images ?? []).prefix(8)) : []
+      DispatchQueue.global(qos: .userInitiated).async {
+        // Made smaller here as the page would (1568 px), so a big screenshot is not carried through JavaScript whole.
+        let images = pictures.compactMap { Self.jpeg($0)?.base64EncodedString() }
+        DispatchQueue.main.async { self.callPage("bridgeClip", id, ["text": text, "images": images] as [String: Any]) }
+      }
+    }
+
+    private static func jpeg(_ img: UIImage) -> Data? {
+      let side = max(img.size.width * img.scale, img.size.height * img.scale)
+      let k = min(1, 1568 / max(side, 1))
+      if k >= 1 { return img.jpegData(compressionQuality: 0.85) }
+      let size = CGSize(width: img.size.width * img.scale * k, height: img.size.height * img.scale * k)
+      let f = UIGraphicsImageRendererFormat.default()
+      f.scale = 1
+      return UIGraphicsImageRenderer(size: size, format: f).jpegData(withCompressionQuality: 0.85) { _ in
+        img.draw(in: CGRect(origin: .zero, size: size))
+      }
     }
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
@@ -108,8 +141,8 @@ struct Web: UIViewRepresentable {
       callPage("appleSignInFailed", canceled ? "" : "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
     }
 
-    private func callPage(_ fn: String, _ arg: Any) {
-      guard let data = try? JSONSerialization.data(withJSONObject: [arg], options: [.fragmentsAllowed]),
+    private func callPage(_ fn: String, _ args: Any...) {
+      guard let data = try? JSONSerialization.data(withJSONObject: args, options: [.fragmentsAllowed]),
             let json = String(data: data, encoding: .utf8) else { return }
       web?.evaluateJavaScript("window.\(fn)?.(...\(json))")
     }

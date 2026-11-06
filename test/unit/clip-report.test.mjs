@@ -41,3 +41,38 @@ test('폰 목록 위 바의 알림 왼쪽에 퀵 제보 버튼', () => {
   const bar = app.slice(app.indexOf('<div className="topbar">'), app.indexOf('<MenuButton me={me} />'))
   assert.ok(bar.indexOf('<QuickReportButton') > 0 && bar.indexOf('<QuickReportButton') < bar.indexOf('<Bell'))
 })
+
+// AC-1631: in the iOS app the page asks the app, which reads the clipboard without WebKit's 붙여넣기 bubble.
+test('iOS 앱 안에서는 앱에게 클립보드를 받는다', async () => {
+  const { appClipboard, readAppClipboard } = await import('../../ui/src/lib/clip-report.ts')
+  const sent = []
+  const w = { webkit: { messageHandlers: { clipboard: { postMessage: (m) => (sent.push(m), queueMicrotask(() => w.bridgeClip(m.id, { text: ' 멈춰요 ', images: [btoa('jpeg-bytes')] }))) } } } }
+  assert.ok(appClipboard(w))
+  assert.equal(appClipboard({}), undefined)
+  const got = await readAppClipboard(w)
+  assert.equal(sent.length, 1)
+  assert.equal(got.text, '멈춰요')
+  assert.equal(got.files.length, 1)
+  assert.equal(got.files[0].type, 'image/jpeg')
+  assert.equal(await got.files[0].text(), 'jpeg-bytes')
+})
+
+test('앱이 답하지 않으면 던진다', async () => {
+  const { readAppClipboard } = await import('../../ui/src/lib/clip-report.ts')
+  await assert.rejects(readAppClipboard({}))
+  await assert.rejects(readAppClipboard({ webkit: { messageHandlers: { clipboard: { postMessage() {} } } } }, 20))
+})
+
+test('앱의 그림도 8장, 글도 20,000자까지', async () => {
+  const { fromApp } = await import('../../ui/src/lib/clip-report.ts')
+  const got = fromApp({ text: 'a'.repeat(30_000), images: Array.from({ length: 12 }, () => btoa('x')) })
+  assert.equal(got.files.length, QUICK_MAX_IMAGES)
+  assert.equal(got.text.length, QUICK_MAX_TEXT)
+})
+
+test('iOS 앱은 clipboard 메시지로 UIPasteboard 를 읽어 bridgeClip 으로 돌려준다', () => {
+  const swift = readFileSync(new URL('../../ios/Bridge/BridgeApp.swift', import.meta.url), 'utf8')
+  assert.match(swift, /add\(context\.coordinator, name: "clipboard"\)/)
+  assert.match(swift, /UIPasteboard\.general/)
+  assert.match(swift, /callPage\("bridgeClip", id/)
+})

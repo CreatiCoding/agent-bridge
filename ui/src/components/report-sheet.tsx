@@ -9,7 +9,7 @@ import { uploadVideo, VIDEO_MAX, VIDEO_TYPES, type SentVideo } from '../lib/vide
 import { Badge, Button, Icon, IconButton, LoadError, Spinner } from '../kit'
 import { confirmDialog, Sheet, toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
-import { readClipboard, type ClipContent } from '../lib/clip-report'
+import { appClipboard, readAppClipboard, readClipboard, type ClipContent } from '../lib/clip-report'
 
 /** Opens the report sheet from anywhere (the app rail, the phone's menu). */
 export const openReport = () => dispatchEvent(new Event('cb-report'))
@@ -26,7 +26,8 @@ export async function quickReport(sid: string | null): Promise<boolean> {
   try {
     let got: ClipContent
     try {
-      got = await readClipboard(navigator.clipboard)
+      // The iOS app reads it itself: a page's read() always shows WebKit's 붙여넣기 bubble first.
+      got = appClipboard() ? await readAppClipboard() : await readClipboard(navigator.clipboard)
     } catch {
       toast('클립보드를 읽지 못했어요. 브라우저가 허락하지 않았어요', { tone: 'bad', action: { label: '제보 창 열기', run: openReport } })
       return false
