@@ -9,9 +9,48 @@ import { uploadVideo, VIDEO_MAX, VIDEO_TYPES, type SentVideo } from '../lib/vide
 import { Badge, Button, Icon, IconButton, LoadError, Spinner } from '../kit'
 import { confirmDialog, Sheet, toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
+import { readClipboard, type ClipContent } from '../lib/clip-report'
 
 /** Opens the report sheet from anywhere (the app rail, the phone's menu). */
 export const openReport = () => dispatchEvent(new Event('cb-report'))
+
+let quickBusy = false
+/**
+ * 퀵 제보 (REQ-F-870): what is on the clipboard goes as a report at once, no sheet. read() is called first thing in
+ * the press, so iOS still counts it as the person's gesture. When the clipboard cannot be read or holds nothing, the
+ * toast offers the report sheet instead. Returns whether a report went.
+ */
+export async function quickReport(sid: string | null): Promise<boolean> {
+  if (quickBusy) return false
+  quickBusy = true
+  try {
+    let got: ClipContent
+    try {
+      got = await readClipboard(navigator.clipboard)
+    } catch {
+      toast('클립보드를 읽지 못했어요. 브라우저가 허락하지 않았어요', { tone: 'bad', action: { label: '제보 창 열기', run: openReport } })
+      return false
+    }
+    if (!got.text && !got.files.length) {
+      toast('클립보드에 보낼 글이나 그림이 없어요', { action: { label: '제보 창 열기', run: openReport } })
+      return false
+    }
+    const images = (await Promise.all(got.files.map((f) => shrinkImage(f).catch(() => null)))).filter((x): x is { data: string; name: string } => !!x)
+    if (!got.text && !images.length) {
+      toast('클립보드의 그림을 읽지 못했어요', { tone: 'bad', action: { label: '제보 창 열기', run: openReport } })
+      return false
+    }
+    await post('/api/reports', { text: got.text, images, videos: [], sid, client: clientDebug(sid) })
+    const what = [got.text ? '글' : '', images.length ? `그림 ${images.length}장` : ''].filter(Boolean).join('과 ')
+    toast(`클립보드의 ${what}을 제보했어요`, { tone: 'ok' })
+    return true
+  } catch (e) {
+    toast(errorText(e), { tone: 'bad' })
+    return false
+  } finally {
+    quickBusy = false
+  }
+}
 
 type Said = { text: string; images: string[]; videos: string[] }
 /** One of the person's earlier reports (REQ-F-739). */

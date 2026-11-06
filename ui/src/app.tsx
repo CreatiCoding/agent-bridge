@@ -18,7 +18,7 @@ import { SudoGate } from './components/sudo-gate'
 import { AgentUpdatePrompt } from './components/agent-update'
 import { NoticeSheet } from './components/notices'
 import { appPushOff } from './components/push'
-import { openReport, ReportSheet } from './components/report-sheet'
+import { openReport, quickReport, ReportSheet } from './components/report-sheet'
 import { CwdSheet } from './components/cwd-sheet'
 import { HandoffSheet } from './components/codex-handoff'
 import { listView, newGroup, SessionList, setListView } from './components/session-list'
@@ -132,6 +132,12 @@ function appMenu(at: HTMLElement, me: Me | null, phone = false) {
   )
 }
 
+/** 퀵 제보 (REQ-F-870): left of the phone's bell, sends what is on the clipboard as a report in one press. */
+function QuickReportButton({ sid }: { sid: string | null }) {
+  const [busy, setBusy] = useState(false)
+  return <IconButton icon="clipboard" label="퀵 제보 · 클립보드 내용 보내기" disabled={busy} aria-busy={busy} onClick={() => (setBusy(true), void quickReport(sid).finally(() => setBusy(false)))} />
+}
+
 /** The phone's ⋯: a dot when an item an extension put in the app menu has a badge (REQ-F-863). */
 function MenuButton({ me }: { me: Me | null }) {
   const badge = useMenuBadge()
@@ -184,6 +190,7 @@ function Sidebar({ route, me, onNotices }: { route: Route; me: Me | null; onNoti
             <Logo />
             <span>Agent Bridge</span>
           </a>
+          {featureOn('reports') ? <QuickReportButton sid={activeId} /> : null}
           {onNotices ? <Bell onClick={onNotices} /> : null}
           <MenuButton me={me} />
         </div>

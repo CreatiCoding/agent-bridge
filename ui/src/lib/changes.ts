@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.445',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '휴대폰 목록 위 바의 알림 왼쪽에 퀵 제보 버튼. 누르면 클립보드의 글·그림(8장까지)을 제보 창 없이 바로 제보. 읽지 못하거나 비어 있으면 보내지 않고 "제보 창 열기"를 보임',
+        refs: ['REQ-F-870'],
+      },
+    ],
+  },
+  {
     version: '1.444',
     date: '2026-11-06',
+    commit: '4d63bf0',
     changes: [
       {
         kind: 'added',
