@@ -423,7 +423,8 @@ func lineToEvents(line string, ctx evOpts) []any {
 		return []any{}
 	}
 	if s, ok := o["aiTitle"].(string); ok && o["type"] == "ai-title" {
-		return []any{M{"k": "title", "title": jsSliceTo(s, 80)}}
+		// A sealing Mac's title is a sealed piece: kept whole for the paired device to open (REQ-S-099, 1.452).
+		return []any{M{"k": "title", "title": sealedShort(s, 80, jsSliceTo)}}
 	}
 	msg, _ := o["message"].(M)
 	if truthy(o["isMeta"]) || truthy(o["isCompactSummary"]) || !truthy(o["message"]) {

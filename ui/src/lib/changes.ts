@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.452',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '짝지은 기기가 봉인하는 맥에 연 세션의 이름이 🔒 로만 남던 것: 새 세션 이름(봉인한 첫 글)과 Claude Code 의 ai-title 을 80자로 자르지 않고 봉인 조각째 두어 짝지은 기기에서 자동 이름이 보임. 이름이 🔒 하나뿐인 세션은 다음 ai-title·첫 글로 이름을 받음',
+        refs: ['REQ-S-099', 'REQ-F-467'],
+      },
+    ],
+  },
+  {
     version: '1.451',
     date: '2026-11-06',
+    commit: 'e29b1d0',
     changes: [
       {
         kind: 'fixed',

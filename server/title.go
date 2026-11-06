@@ -40,6 +40,21 @@ func takeAiTitle(meta *Sess, t string) bool {
 	return true
 }
 
+// startTitle: a new session's name, the title asked for or else its first words. A paired device sends the first
+// words to a sealing Mac as a sealed piece (REQ-S-095 (5)): it is kept whole, so the paired device opens it and the
+// session has a name there as on its own Mac (REQ-S-099, 1.452).
+func startTitle(title, prompt, cwd string) string {
+	if t := sealedShort(title, 80, jsSliceTo); t != "" {
+		return t
+	}
+	return lockedFolderTitle(sealedShort(collapse(prompt), 80, jsSliceTo), cwd)
+}
+
+// unnamed: no name yet, or one that says nothing (🔒 alone): the first words or an ai-title may still name it.
+func unnamed(meta *Sess) bool {
+	return !truthy(meta.get("manualTitle")) && (meta.str("title") == "" || lockOnly(meta.str("title")))
+}
+
 // lockedFolderTitle: a title that is 🔒 alone says nothing, so its folder goes with it (REQ-S-099).
 func lockedFolderTitle(title string, cwd string) string {
 	if lockOnly(title) && cwd != "" && !hasSeal(cwd) {

@@ -82,10 +82,7 @@ func startSession(uid string, b M, req *Req) string {
 		if truthy(b["cwd"]) {
 			cwd = jsString(b["cwd"])
 		}
-		title := jsSliceTo(orStr(b["title"]), 80)
-		if title == "" {
-			title = jsSliceTo(collapse(orStr(b["prompt"])), 80)
-		}
+		title := startTitle(orStr(b["title"]), orStr(b["prompt"]), cwd)
 		if p := createBefore(uid, hostID, cwd, title, mode, from); p != nil {
 			for _, k := range []string{"title", "prompt", "mode"} {
 				if v, ok := p[k]; ok {
@@ -121,10 +118,7 @@ func startSession(uid string, b M, req *Req) string {
 	sid := uuidv4()
 	prompt := jsSliceTo(orStr(b["prompt"]), 100_000)
 	// The session exists from here on, as "starting".
-	title := jsSliceTo(orStr(b["title"]), 80)
-	if title == "" {
-		title = jsSliceTo(collapse(prompt), 80)
-	}
+	title := startTitle(orStr(b["title"]), prompt, orStr(b["cwd"]))
 	meta := newMeta(uid, sid, hostID, M{"title": title})
 	// A codex session's sandbox and approval (REQ-F-854), checked before the session exists.
 	codexM := ""

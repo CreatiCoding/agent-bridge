@@ -529,7 +529,7 @@ func linesFromAgent(uid, hostID string, msg M) {
 	events := convert(meta, lines[silent:])
 	meta.set("lines", numOr0(meta.get("lines"))+float64(len(lines)))
 	meta.set("syncedAt", float64(nowMs()))
-	if !truthy(meta.get("title")) && !truthy(meta.get("manualTitle")) {
+	if unnamed(meta) {
 		t := ""
 		for _, e := range events {
 			if mstr(e, "k") == "user" && !truthy(mget(e, "command")) {
@@ -537,14 +537,10 @@ func linesFromAgent(uid, hostID string, msg M) {
 				break
 			}
 		}
-		title := sealedShort(collapse(t), 80, jsSliceTo)
 		// Too big to keep whole: 🔒 alone told sessions apart by nothing, so its folder goes with it (REQ-S-099).
-		if title == "🔒" {
-			if cwd := strOr(meta.get("cwd"), ""); cwd != "" && !hasSeal(cwd) {
-				title = "🔒 " + filepath.Base(cwd)
-			}
+		if title := lockedFolderTitle(sealedShort(collapse(t), 80, jsSliceTo), strOr(meta.get("cwd"), "")); title != "" {
+			meta.set("title", title)
 		}
-		meta.set("title", title)
 	}
 	touch(meta)
 	logEvents(meta, events)

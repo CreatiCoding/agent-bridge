@@ -4,14 +4,16 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func titleTestSession(t *testing.T, id string, fields M) *Sess {
 	t.Helper()
-	wasData, wasHosts := DATA, hosts
-	DATA, hosts = t.TempDir(), newOMap[M]()
-	t.Cleanup(func() { DATA, hosts = wasData, wasHosts; sessions.Delete(id) })
+	wasData, wasHosts, wasPlug := DATA, hosts, plug
+	// No plugin runs for this person: an empty set, whatever another test left in ALL_PLUGINS.
+	DATA, hosts, plug = t.TempDir(), newOMap[M](), &Plugins{running: newOMap[PluginInst]()}
+	t.Cleanup(func() { DATA, hosts, plug = wasData, wasHosts, wasPlug; sessions.Delete(id) })
 	return newMeta("title-test-user", id, "title-host", fields)
 }
 
@@ -85,4 +87,36 @@ func TestNameSurvivesServerRestart(t *testing.T) {
 	eq(t, back.str("title"), "자동 이름")
 	eq(t, back.str("titleConv"), "title-reload")
 	eq(t, truthy(back.get("resting")), true)
+}
+
+// REQ-S-099 (1.452): a session a paired device starts on a sealing Mac sends its first words as a sealed piece; the
+// name keeps the piece whole (the paired device opens it), as a session started on the Mac's own page has its words.
+func TestPairedDeviceSessionIsNamed(t *testing.T) {
+	piece := "⟦bt1:0a1b2c3d:" + strings.Repeat("A", 200) + "⟧"
+	eq(t, startTitle("", piece, "/Users/x/w/0101-a"), piece, "봉인한 첫 글")
+	eq(t, startTitle("", "평문 첫 글", ""), "평문 첫 글", "자기 기기")
+	eq(t, startTitle("직접 이름", piece, ""), "직접 이름", "요청한 이름")
+	big := "⟦bt1:0a1b2c3d:" + strings.Repeat("A", SEAL_KEEP_MAX) + "⟧"
+	eq(t, startTitle("", big, "/Users/x/w/0101-a"), "🔒 0101-a", "너무 큰 조각")
+
+	// Claude Code's ai-title arrives sealed too: it names the session, kept whole.
+	meta := titleTestSession(t, "title-paired", M{"title": piece})
+	named := "⟦bt1:0a1b2c3d:" + strings.Repeat("B", 120) + "⟧"
+	aiTitle(meta, named)
+	eq(t, meta.str("title"), named, "봉인한 ai-title")
+}
+
+// A session named 🔒 before 1.452 gets its name from the next ai-title or first words.
+func TestLockOnlyNameIsFilledLater(t *testing.T) {
+	piece := "⟦bt1:0a1b2c3d:" + strings.Repeat("C", 120) + "⟧"
+	meta := titleTestSession(t, "title-lockold", M{"title": "🔒"})
+	aiTitle(meta, piece)
+	eq(t, meta.str("title"), piece, "ai-title")
+
+	meta2 := titleTestSession(t, "title-lockold2", M{"title": "🔒", "lines": 0.0})
+	user := jsonStr(M{"type": "user", "uuid": "u1", "message": M{"role": "user", "content": "첫 글 " + piece}})
+	withLock(func() {
+		fromAgent["lines"]("title-test-user", "title-host", M{"sid": meta2.id(), "from": 0.0, "lines": []any{user}})
+	})
+	eq(t, meta2.str("title"), "첫 글 "+piece, "첫 글")
 }
