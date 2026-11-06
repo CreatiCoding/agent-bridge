@@ -248,13 +248,37 @@ test("an MCP tool call's approval (mcp_tool_call_approval) is read apart from th
   assert.deepEqual(a.options.map((o) => codexOptionKind(o.label)), ['allow-once', 'allow-session', 'allow-always', 'deny'])
   assert.deepEqual(codexQuestion(MCP_APPROVAL), a)
   assert.deepEqual(codexQuestion(APPROVAL), parseApproval(APPROVAL))
-  // Waiting for it is not idle, nor a picker; 전부 허용 never answers it.
+  // Waiting for it is not idle, nor a picker.
   assert.equal(codexIdle(`${MCP_APPROVAL}\n›`), null)
   assert.equal(codexPicker(MCP_APPROVAL), null)
-  assert.equal(codexAutoAnswer(a), null)
   // Without its footer or its "Field" line it is the conversation.
   assert.equal(parseMcpApproval(MCP_APPROVAL.replace('enter to submit | esc to cancel', '')), null)
   assert.equal(parseMcpApproval(MCP_APPROVAL.replace('Field 1/1', '')), null)
+})
+
+// REQ-F-859 rule 6 (AC-1633, 1.449): 전부 허용 answers an MCP tool call's approval as Claude's mcp__ call is answered.
+test('전부 허용은 MCP 도구 승인을 "Allow"(한 번)로 답하고, 위험한 인자·다른 양식은 카드로 둔다', () => {
+  const a = parseMcpApproval(MCP_APPROVAL)
+  const pick = codexAutoAnswer(a)
+  assert.equal(pick.option.key, '1')
+  assert.equal(pick.option.label, 'Allow')
+  assert.deepEqual(pick.tool, { name: 'mcp__calendar__create_event', input: { calendar: 'primary', title: 'Roadmap review' } })
+  const safe = { autoAllow: true, allowAll: false, cwd: '/Users/example/proj', home: '/Users/example' }
+  assert.equal(codexAutoRisk(a, pick, safe), null)
+  assert.equal(codexAutoRisk(a, pick, { ...safe, allowAll: true }), null)
+  assert.equal(codexAutoRisk(a, pick, { ...safe, autoAllow: false }), 'off')
+  // A Slack message, the reported case: answered under 안전한 전부 허용.
+  const slack = { ...a, question: 'Allow the slack MCP server to run tool "slack_post_message"?', context: 'Channel id: C123\nText: 배포 끝났어요' }
+  assert.equal(codexAutoRisk(slack, codexAutoAnswer(slack), safe), null)
+  // An argument that names a secret file: asked, as Claude's riskyCall asks it.
+  const secret = { ...a, question: 'Allow the files MCP server to run tool "read_file"?', context: 'Path: /Users/example/.ssh/id_ed25519' }
+  assert.equal(codexAutoRisk(secret, codexAutoAnswer(secret), safe), '비밀 파일')
+  // Never "for this session" nor "Always allow": with no plain Allow nothing is answered.
+  assert.equal(codexAutoAnswer({ ...a, options: a.options.filter((o) => o.label !== 'Allow') }), null)
+  // A server's own question, a field to type into, a question off screen: the card.
+  const bool = parseMcpApproval(`  Field 1/1\n  Allow this request?\n\n  › 1. True\n    2. False\n\n  enter to submit | esc to cancel\n`)
+  assert.equal(codexAutoAnswer(bool), null)
+  assert.equal(codexAutoAnswer(parseMcpApproval(`  Field 1/1\n\n  › 1. Allow   Run\n\n  enter to submit | esc to cancel\n`)), null)
 })
 
 test('an MCP form without a cancel option gets esc as its cancel, and a field to type into still waits (REQ-F-859)', () => {

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.449',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'Codex 세션이 안전한 전부 허용·전부 허용인데도 MCP 도구 호출(슬랙 메시지 보내기 등)마다 카드로 묻던 것: Claude 세션의 mcp__ 호출과 같은 기준으로 판정해 위험이 없으면 "Allow"(한 번)로 바로 답함. 인자에 비밀 파일 같은 위험이 보이거나 서버 자신의 질문·글 입력 양식이면 그대로 카드로 물음',
+        refs: ['REQ-F-859', 'REQ-F-856'],
+      },
+    ],
+  },
+  {
     version: '1.448',
     date: '2026-11-06',
+    commit: 'a589aec',
     changes: [
       {
         kind: 'fixed',

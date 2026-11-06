@@ -666,8 +666,8 @@ const APPROVAL_OPTION_LINES = 40
  * `unknown` says why the kind or the targets could not be read for sure: 안전한 전부 허용 then asks (1.420).
  */
 export function codexAutoAnswer(a) {
-  // An MCP tool call's approval is always left to the card (REQ-F-859): what the tool does is not on screen to judge.
-  if (!a || a.kind === 'mcp') return null
+  if (!a) return null
+  if (a.kind === 'mcp') return codexMcpAutoAnswer(a)
   const yes = a.options.find((o) => o.key !== 'Escape' && /^yes\b/i.test(o.label) && !/don'?t ask|always|session/i.test(o.label))
   if (!yes) return null
   const lines = a.context.split('\n')
@@ -683,6 +683,28 @@ export function codexAutoAnswer(a) {
     return { option: yes, tool: whole, tools, unknown: files.length ? null : '대상 파일을 알 수 없는 수정' }
   }
   return { option: yes, tool: whole, tools: [whole], unknown: '종류를 알 수 없는 승인' }
+}
+
+/**
+ * 전부 허용 on an MCP tool call's approval (REQ-F-859 rule 6, 1.449): judged as Claude Code's PermissionRequest is
+ * for an `mcp__<server>__<tool>` call, so the person who turned 전부 허용 on is not asked for every Slack message.
+ * Only codex's own tool-call approval ('Allow the x MCP server to run tool "y"?') with a plain "Allow" (once, never
+ * "for this session" nor "Always allow"); a server's own question, a field to type into, or a form whose question is
+ * off screen stays a card. The argument lines ("Path: ~/.ssh/id_rsa") go along as the call's input, so the risk
+ * check reads a file it names as Claude's does.
+ */
+function codexMcpAutoAnswer(a) {
+  const m = /^Allow the (.+?) MCP server to run tool "(.+)"\?$/.exec(String(a.question ?? '').trim())
+  if (!m) return null
+  const allow = a.options.find((o) => o.key !== 'Escape' && /^allow$/i.test(o.label.trim()))
+  if (!allow) return null
+  const input = {}
+  for (const l of String(a.context ?? '').split('\n')) {
+    const kv = /^([A-Za-z][\w ]*?)\s*:\s*(.*)$/.exec(l.trim())
+    if (kv) input[kv[1].toLowerCase().replace(/\s+/g, '_')] = kv[2]
+  }
+  const tool = { name: `mcp__${m[1]}__${m[2]}`, input }
+  return { option: allow, tool, tools: [tool], unknown: null }
 }
 
 /**
