@@ -134,6 +134,12 @@ body,
   background: var(--bg);
   color: var(--text);
 }
+/* iOS WebKit enlarges the text of a block that runs wider than the screen (a long command in a card option):
+   keep every text at the size the page set (REQ-F-871). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
   font: var(--text-size) / 1.6 var(--font);
   -webkit-font-smoothing: antialiased;
@@ -2252,12 +2258,14 @@ select.input {
   font-weight: 600;
   font-size: var(--fs-large);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .dcard-desc {
   padding: 0 14px 8px;
   color: var(--muted);
   font-size: var(--fs-medium);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .dcard-detail {
   padding: 0 14px 10px;
@@ -2298,6 +2306,7 @@ select.input {
   align-items: flex-start;
   gap: 1px;
   width: 100%;
+  min-width: 0;
   text-align: left;
   border: 1px solid var(--line-strong);
   background: var(--bg);
@@ -2305,6 +2314,13 @@ select.input {
   padding: 9px 12px;
   font-weight: 600;
   font-size: var(--fs-medium);
+}
+/* An option can carry a long command with no spaces (codex's "don't ask again for commands that start with …"):
+   break it inside the button instead of running off the card (REQ-F-871). */
+.opt > span,
+.opt small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .opt:hover:not(:disabled) {
   background: var(--hover);

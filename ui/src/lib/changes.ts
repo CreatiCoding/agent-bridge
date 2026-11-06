@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.446',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '권한 카드의 긴 선택지(Codex 의 "don\'t ask again for commands that start with …")가 iPhone 에서 글자가 커지고 카드 밖으로 잘리던 것. 긴 명령도 카드 안에서 줄바꿈하고 iOS 글자 자동 확대를 끔',
+        refs: ['REQ-F-871'],
+      },
+    ],
+  },
+  {
     version: '1.445',
     date: '2026-11-06',
+    commit: '2944cb1',
     changes: [
       {
         kind: 'added',
