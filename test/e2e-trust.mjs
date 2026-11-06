@@ -190,6 +190,34 @@ try {
   ok(!(await stranger.locator('.msg-text', { hasText: 'SEALWORD' }).count()), '짝짓지 않은 브라우저에는 🔒')
   await phone.screenshot({ path: `${shots}/trust-4-sealed.png` })
   await stranger.close()
+
+  step('봉인 중 짝지은 기기에서 연 새 세션에도 이름(1.452)')
+  await phone.goto(SITE)
+  await phone.click('.fab')
+  await phone.waitForSelector('.folder-item', { timeout: 15000 })
+  await phone.fill('input.input.mono', work)
+  await phone.press('input.input.mono', 'Enter')
+  await phone.waitForFunction(() => !document.querySelector('.folder-item .spinner'), null, { timeout: 15000 })
+  await phone.fill('textarea.input', 'NAMEWORD: reply with exactly the word NAMEDONE and nothing else.')
+  await phone.getByRole('button', { name: '시작' }).click()
+  await phone.waitForURL(/\/s\/[\w-]+$/, { timeout: 60000 })
+  const named = phone.url().split('/').pop()
+  await answered('NAMEDONE')
+  const titleOnServer = async () => {
+    const pid = Math.random().toString(16).slice(2).padEnd(16, '0')
+    const j = await (await otherCtx.request.get(`${SITE}/api/classic/poll?wait=0&pid=${pid}`)).json()
+    const st = (j.msgs ?? []).map((m) => JSON.parse(m)).find((m) => m.t === 'state')
+    return st?.sessions.find((s) => s.id === named)?.title ?? ''
+  }
+  const t1 = await titleOnServer()
+  ok(/^⟦bt1:[^⟧]+⟧$/.test(t1), `서버의 이름은 봉인 조각 하나(🔒 아님) (${t1.slice(0, 24)}…)`)
+  await phone.waitForFunction(() => {
+    const b = document.querySelector('.crumbs b') ?? document.querySelector('header b')
+    return !!b && !!b.textContent.trim() && !b.textContent.includes('🔒')
+  }, null, { timeout: 30000 })
+  const shownName = await phone.evaluate(() => (document.querySelector('.crumbs b') ?? document.querySelector('header b')).textContent)
+  ok(!!shownName && !shownName.includes('🔒'), `짝지은 기기에 이름이 풀려 보임 (${shownName})`)
+  await phone.screenshot({ path: `${shots}/trust-5-named.png` })
   cli('seal', 'off')
   await sleep(2500)
 
