@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -279,6 +279,39 @@ test('전부 허용은 MCP 도구 승인을 "Allow"(한 번)로 답하고, 위�
   const bool = parseMcpApproval(`  Field 1/1\n  Allow this request?\n\n  › 1. True\n    2. False\n\n  enter to submit | esc to cancel\n`)
   assert.equal(codexAutoAnswer(bool), null)
   assert.equal(codexAutoAnswer(parseMcpApproval(`  Field 1/1\n\n  › 1. Allow   Run\n\n  enter to submit | esc to cancel\n`)), null)
+})
+
+// 1.454: an argument codex wrapped onto the next line ("Path:" then the path under it) was read as an empty path, so
+// a secret file slipped past 안전한 전부 허용. Read off the screen by the real parser, judged by the real risk check.
+test('줄바꿈·여러 줄·잘린 MCP 인자는 비밀 파일 검사를 피하지 못하고, 확실히 못 읽으면 묻는다 (1.454)', () => {
+  const safe = { autoAllow: true, allowAll: false, cwd: '/Users/example/proj', home: '/Users/example' }
+  const screen = (args) => MCP_APPROVAL.replace('create_event"?', 'read_file"?').replace('calendar MCP', 'files MCP').replace('  Calendar: primary\n  Title: Roadmap review', args)
+  const judge = (args) => {
+    const a = parseMcpApproval(screen(args))
+    const pick = codexAutoAnswer(a)
+    assert.ok(pick, args)
+    return codexAutoRisk(a, pick, safe)
+  }
+  // The reported case: the path on the line under its key.
+  assert.equal(judge('  Path:\n    /Users/example/.ssh/id_ed25519'), '비밀 파일')
+  // A path cut in two by the terminal, a secret under a key other than "path", one among several lines.
+  assert.notEqual(judge('  Path: /Users/example/\n    .ssh/id_ed25519'), null)
+  assert.equal(judge('  Source: /Users/example/.ssh/id_ed25519'), '비밀 파일')
+  assert.equal(judge('  Files: README.md\n    /Users/example/proj/.env'), '비밀 파일')
+  assert.equal(judge('  Query: cat ~/.ssh/id_rsa'), '비밀 파일')
+  // Not read for sure, though nothing risky shows: asked.
+  assert.equal(judge('  Path:\n    /Users/example/proj/notes.md'), '여러 줄로 나뉜 MCP 인자')
+  assert.equal(judge('  Path: /Users/example/proj/very/long/…'), '잘린 MCP 인자')
+  assert.equal(judge('  Path:'), '여러 줄로 나뉜 MCP 인자')
+  assert.equal(judge('  Path: a.md\n  Path: b.md'), '같은 이름이 두 번 나온 MCP 인자')
+  // Plain one-line arguments still go through; the wrapped value is still joined to its key for the card.
+  assert.equal(judge('  Path: /Users/example/proj/notes.md\n  Url: https://example.com/a'), null)
+  assert.equal(judge(''), null)
+  assert.deepEqual(codexMcpArgs('Path:\n/Users/example/.ssh/id_ed25519'), { input: { path: '/Users/example/.ssh/id_ed25519' }, unsure: '여러 줄로 나뉜 MCP 인자' })
+  assert.deepEqual(codexMcpArgs('Channel id: C123\nText: 배포 끝났어요'), { input: { channel_id: 'C123', text: '배포 끝났어요' }, unsure: null })
+  // 전부 허용 (not the safe one) still only stops the Mac terminal's own calls, as before.
+  const a = parseMcpApproval(screen('  Path:\n    /Users/example/.ssh/id_ed25519'))
+  assert.equal(codexAutoRisk(a, codexAutoAnswer(a), { ...safe, allowAll: true }), null)
 })
 
 test('an MCP form without a cancel option gets esc as its cancel, and a field to type into still waits (REQ-F-859)', () => {

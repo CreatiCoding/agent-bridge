@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.454',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: 'Codex 안전한 전부 허용이 MCP 승인 인자가 줄바꿈되면(Path: 다음 줄에 경로) 비밀 파일 검사를 건너뛰고 자동 승인하던 것: 이어진 줄을 앞 인자에 붙이고, 모든 인자 값을 키 이름과 상관없이 비밀 파일로 검사하며, 줄바꿈·잘림·빈 값처럼 확실히 읽을 수 없는 인자는 묻는다.',
+        refs: ['REQ-F-859'],
+      },
+    ],
+  },
+  {
     version: '1.453',
     date: '2026-11-06',
+    commit: '81aa199',
     changes: [
       {
         kind: 'fixed',

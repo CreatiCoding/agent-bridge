@@ -691,20 +691,51 @@ export function codexAutoAnswer(a) {
  * Only codex's own tool-call approval ('Allow the x MCP server to run tool "y"?') with a plain "Allow" (once, never
  * "for this session" nor "Always allow"); a server's own question, a field to type into, or a form whose question is
  * off screen stays a card. The argument lines ("Path: ~/.ssh/id_rsa") go along as the call's input, so the risk
- * check reads a file it names as Claude's does.
+ * check reads a file it names as Claude's does; arguments not read for sure (wrapped, cut short) are asked (1.454).
  */
 function codexMcpAutoAnswer(a) {
   const m = /^Allow the (.+?) MCP server to run tool "(.+)"\?$/.exec(String(a.question ?? '').trim())
   if (!m) return null
   const allow = a.options.find((o) => o.key !== 'Escape' && /^allow$/i.test(o.label.trim()))
   if (!allow) return null
-  const input = {}
-  for (const l of String(a.context ?? '').split('\n')) {
-    const kv = /^([A-Za-z][\w ]*?)\s*:\s*(.*)$/.exec(l.trim())
-    if (kv) input[kv[1].toLowerCase().replace(/\s+/g, '_')] = kv[2]
-  }
+  const { input, unsure } = codexMcpArgs(a.context)
   const tool = { name: `mcp__${m[1]}__${m[2]}`, input }
-  return { option: allow, tool, tools: [tool], unknown: null }
+  // riskyCall reads only a "path" of an MCP call: every value, and every word of it that may be a file, also goes
+  // as a Read of its own, so a secret under any key or on a wrapped line is judged as the file it is.
+  const values = Object.values(input)
+  const files = [...new Set([...values, ...values.flatMap((v) => codexEditFiles(v))])]
+  const tools = [tool, ...files.map((f) => ({ name: 'Read', input: { file_path: f } }))]
+  return { option: allow, tool, tools, unknown: unsure }
+}
+
+/**
+ * The argument lines of an MCP approval ("Path: ~/.ssh/id_rsa") as the call's input. A value codex wrapped onto the
+ * lines under its key, a line with no key, an empty value or one cut short ("…") is joined to the key before it but
+ * makes `unsure` say why the arguments are not read for sure: 안전한 전부 허용 then asks.
+ */
+export function codexMcpArgs(context) {
+  const input = {}
+  let key = null
+  let unsure = null
+  for (const raw of String(context ?? '').split('\n')) {
+    const l = raw.trim()
+    if (!l) continue
+    const kv = /^([A-Za-z][\w ]*?)\s*:\s*(.*)$/.exec(l)
+    // "https://…" on a line of its own is a wrapped value, not a key "https".
+    if (kv && !kv[2].startsWith('//')) {
+      key = kv[1].toLowerCase().replace(/\s+/g, '_')
+      if (key in input) unsure ??= '같은 이름이 두 번 나온 MCP 인자'
+      input[key] = kv[2]
+      if (!kv[2]) unsure ??= '여러 줄로 나뉜 MCP 인자'
+    } else {
+      unsure ??= '여러 줄로 나뉜 MCP 인자'
+      key ??= '_'
+      input[key] = input[key] ? `${input[key]}\n${l}` : l
+    }
+    if (/…|\.\.\.$/.test(l)) unsure ??= '잘린 MCP 인자'
+  }
+  for (const k of Object.keys(input)) if (!input[k]) unsure ??= '값이 보이지 않는 MCP 인자'
+  return { input, unsure }
 }
 
 /**
@@ -732,7 +763,8 @@ export function codexAutoRisk(a, pick, { autoAllow, allowAll, cwd = '', home = '
   const first = (f) => pick.tools.map(f).find(Boolean) ?? null
   if (allowAll) return first(bridgeSelfCall)
   if (a.question === APPROVAL_UNKNOWN) return '화면에 다 보이지 않는 명령'
-  return pick.unknown ?? first((t) => riskyCall(t, { cwd, home }))
+  // A risk it can name says more than "not read for sure"; either one asks.
+  return first((t) => riskyCall(t, { cwd, home })) ?? pick.unknown
 }
 
 /**
