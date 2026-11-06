@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.451',
+    date: '2026-11-06',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '휴면·끝내기·깨우기 뒤 세션 이름이 바뀌거나 🔒 로 사라지던 것: 봉인하는 맥의 ai-title 이 🔒 로 잘려 이름을 덮던 것과, 깨울 때 새 id 로 이어진 대화가 최근 글로 이름을 다시 짓던 것을 막음. 이름은 처음 이름을 받은 대화의 것만 따르고, /clear 한 새 대화만 새 이름을 받음',
+        refs: ['REQ-F-467'],
+      },
+    ],
+  },
+  {
     version: '1.450',
     date: '2026-11-06',
+    commit: '2483d5f',
     changes: [
       {
         kind: 'changed',

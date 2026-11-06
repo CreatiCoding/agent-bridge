@@ -762,7 +762,7 @@ func startHeartbeat() {
 	})
 }
 
-var stateDrop = []string{"uid", "silentUntil", "stats", "prLinks", "agentLog", "_legacy"}
+var stateDrop = []string{"uid", "silentUntil", "titleConv", "stats", "prLinks", "agentLog", "_legacy"}
 
 func stateOf(uid string) M {
 	hs := []any{}

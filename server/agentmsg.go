@@ -192,6 +192,17 @@ func init() {
 			silent := 0.0
 			if truthy(msg["replay"]) {
 				silent = numOr0(meta.get("lines"))
+				// A resumed copy keeps the name the conversation it copies gave it (REQ-F-467 rule 3).
+				if meta.str("titleConv") == "" && meta.str("title") != "" {
+					old := meta.str("conv")
+					if old == "" {
+						old = meta.id()
+					}
+					meta.set("titleConv", old)
+				}
+			} else {
+				// A new conversation (/clear) may be named anew.
+				meta.del("titleConv")
 			}
 			meta.set("conv", msg["conv"])
 			meta.set("silentUntil", silent)

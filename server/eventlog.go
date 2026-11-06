@@ -1038,9 +1038,7 @@ func convert(meta *Sess, lines []string) []any {
 				meta.set("reportDeployed", true)
 			}
 			if k == "title" {
-				if !truthy(meta.get("manualTitle")) {
-					meta.set("title", e["title"])
-				}
+				takeAiTitle(meta, mstr(e, "title"))
 			} else if k == "model" {
 				// The model actually answering differs in family from the one asked for: what was asked for is stale.
 				lm := meta.str("launchModel")
