@@ -106,3 +106,22 @@ func TestHandoffReady(t *testing.T) {
 	src.set("cwd", "/w/moved")
 	eq(t, refused(func() { handoffReady(src, "/w/app") }), 409, "확인 뒤 폴더가 바뀜")
 }
+
+// REQ-F-875 (AC-1652): the 새 세션 화면's startKey starts one session like a hand-over's key: a press while it is
+// being made is refused with its own words, one after it gets that session, and a failed start frees the key.
+func TestStartKeyClaim(t *testing.T) {
+	was := sessions
+	defer func() { sessions = was }()
+	sessions = newOMap[*Sess]()
+	handoffKeys = map[string]handoffEntry{}
+	claim := func(k string) string { return claimStart("u1", "new\x00"+k, "긴 키", "시작하는 중") }
+	eq(t, claim("k1"), "", "처음")
+	eq(t, refused(func() { claim("k1") }), 409, "만드는 중에 또")
+	eq(t, handoffClaim("u1", "k1"), "", "같은 글자의 이어서 작업 키는 따로")
+	sessions.Set("new1", &Sess{m: M{"id": "new1", "uid": "u1"}})
+	handoffSettle("u1", "new\x00k1", "new1")
+	eq(t, claim("k1"), "new1", "만든 뒤에 또: 그 세션")
+	handoffSettle("u1", "new\x00k2", "")
+	eq(t, claim("k2"), "", "실패하면 다시 시작")
+	eq(t, refused(func() { claimStart("u1", string(make([]byte, 81)), "긴 키", "시작하는 중") }), 400, "긴 키")
+}

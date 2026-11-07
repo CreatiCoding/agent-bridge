@@ -47,6 +47,10 @@ export function NewSessionPage() {
   const [dirs, setDirs] = useState<Dirs | null>(null)
   const [dirsError, setDirsError] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
+  // 시작 키 (REQ-F-875): one per thing to start. A second press after an answer that never came (a dropped link, the
+  // phone put away) gets the session the first press made instead of starting it again. New once that one opened or
+  // the words change.
+  const startKey = useRef('')
   // Pictures and videos for the first message (REQ-F-828), as the session's box takes them: 8 pictures, 3 videos.
   const [images, setImages] = useState<{ data: string; name: string }[]>([])
   const [videos, setVideos] = useState<{ file: File; pct: number | null }[]>([])
@@ -148,7 +152,8 @@ export function NewSessionPage() {
       // the session's box sends one: videos up first, then words, pictures and videos together. The Mac holds a
       // message said while the session is still starting and hands it over once it is up.
       const first = attached ? { prompt: '', title: prompt } : { prompt }
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
+      if (!startKey.current) startKey.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, startKey: startKey.current, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       if (claude) setPref('newAccount', account)
@@ -166,6 +171,7 @@ export function NewSessionPage() {
           toast(`세션은 띄웠지만 첫 메시지를 보내지 못했어요: ${errorText(e)}`, { tone: 'bad' })
         }
       }
+      startKey.current = ''
       openSession(r.sid, 'new', { replace: true })
     } catch (e) {
       if (e instanceof ApiError && e.data.missing && !create) {
@@ -321,7 +327,7 @@ export function NewSessionPage() {
               {...NO_AUTOFILL}
               rows={5}
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => ((startKey.current = ''), setPrompt(e.target.value))}
               placeholder="무엇을 할까요?"
               onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && start()}
               onPaste={(e) => {

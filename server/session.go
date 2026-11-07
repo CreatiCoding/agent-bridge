@@ -97,16 +97,27 @@ func startSession(uid string, b M, req *Req) string {
 	src := handoffSource(uid, hostID, runner, b)
 	hkey := ""
 	settled := false
+	made := ""
 	if src != nil {
 		hkey, _ = b["handoffKey"].(string)
-		if made := handoffClaim(uid, hkey); made != "" {
-			return made
-		}
+		made = handoffClaim(uid, hkey)
+	} else if k, _ := b["startKey"].(string); k != "" {
+		// 새 세션 화면 (REQ-F-875): its answer lost on the way (a dropped link, the phone put away) left the form up
+		// and a second press started the same session twice (2026-11-06). The same key gets the session it made.
+		made = claimStart(uid, "new\x00"+k, "시작 키가 너무 길어요", "이 세션을 시작하는 중이에요. 잠시 뒤 세션 목록을 확인해 주세요")
+		hkey = "new\x00" + k
+	}
+	if made != "" {
+		return made
+	}
+	if hkey != "" {
 		defer func() {
 			if !settled {
 				handoffSettle(uid, hkey, "")
 			}
 		}()
+	}
+	if src != nil {
 		if orStr(b["title"]) == "" {
 			t := src.str("title")
 			if t == "" {
@@ -296,6 +307,8 @@ func startSession(uid string, b M, req *Req) string {
 		if _, ok := sessions.Get(src.id()); ok {
 			logEvents(src, []any{handoffNotice(HANDOFF_TO, sid, "Codex 세션 열기")})
 		}
+	}
+	if hkey != "" {
 		settled = true
 		handoffSettle(uid, hkey, sid)
 	}

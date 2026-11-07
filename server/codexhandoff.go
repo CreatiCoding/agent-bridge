@@ -95,11 +95,17 @@ func handoffDir(p string) string {
 // caller answers with it and makes nothing), or "" when this start may go on; a start with the same key still under
 // way is refused. Without a key every start goes on.
 func handoffClaim(uid, key string) string {
+	return claimStart(uid, key, "이어서 작업 키가 너무 길어요", "이미 Codex 세션을 만드는 중이에요")
+}
+
+// claimStart is handoffClaim for any start that carries a key (Codex 로 이어서 작업's handoffKey, 새 세션 화면's
+// startKey, REQ-F-875), with the words a too-long key and a start still under way are refused with.
+func claimStart(uid, key, long, busy string) string {
 	if key == "" {
 		return ""
 	}
 	if len(key) > 80 {
-		refuse(400, "이어서 작업 키가 너무 길어요")
+		refuse(400, long)
 	}
 	handoffMu.Lock()
 	defer handoffMu.Unlock()
@@ -112,7 +118,7 @@ func handoffClaim(uid, key string) string {
 	k := uid + "\x00" + key
 	if e, ok := handoffKeys[k]; ok {
 		if e.sid == "" {
-			refuse(409, "이미 Codex 세션을 만드는 중이에요")
+			refuse(409, busy)
 		}
 		if _, alive := sessions.Get(e.sid); alive {
 			return e.sid

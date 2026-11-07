@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.461',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui', 'server'],
+        text: '새 세션 화면에서 첫 시작의 답을 받지 못해 다시 누르면 같은 세션이 두 개 뜨던 것: 화면이 시작 키(startKey)를 보내고, 서버는 같은 키의 두 번째 요청에 이미 만든 세션을 답한다(만드는 중이면 409, 1시간).',
+        refs: ['REQ-F-875', 'IF-016', 'REQ-F-857'],
+      },
+    ],
+  },
+  {
     version: '1.460',
     date: '2026-11-07',
+    commit: '807e294',
     changes: [
       {
         kind: 'changed',
