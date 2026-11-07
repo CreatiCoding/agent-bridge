@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -5288,7 +5288,173 @@ async function diskOp(op, id, where, paths) {
     log('info', 'disk', `휴지통으로 옮김(${real.length}자, ${((r.size ?? 0) / 1e9).toFixed(2)}GB)`)
     return r
   }
+  // 깊게 찾기 (REQ-F-885): measuring only. What it finds is cleared by clones · docker below, or trash (ignored folders).
+  if (op === 'probe') {
+    let used = null
+    try {
+      const s = fs.statfsSync(HOME)
+      used = (s.blocks - s.bfree) * s.bsize
+    } catch {}
+    const roots = [HOME, ...(process.platform === 'darwin' ? ['/Applications', '/Library', '/opt/homebrew', '/usr/local'] : ['/opt', '/usr/local'])].filter((p) => fs.existsSync(p))
+    const measured = await inTurns(roots, 3, async (p) => ({ path: tilde(p), size: await deepSize(p) }))
+    const known = measured.reduce((a, m) => a + (m.size ?? 0), 0)
+    const cl = await clonesNow()
+    const clones = []
+    for (const c of cl.list) {
+      let g = clones.find((x) => x.app === c.app)
+      if (!g) clones.push((g = { app: c.app, count: 0, inUse: 0, removable: 0, oldest: c.mtimeMs, newest: c.mtimeMs }))
+      g.count++
+      if (c.why === '실행 중인 앱이 쓰는 중') g.inUse++
+      if (!c.why) g.removable++
+      g.oldest = Math.min(g.oldest, c.mtimeMs)
+      g.newest = Math.max(g.newest, c.mtimeMs)
+    }
+    return { disk: (() => { try { return diskUse(fs.statfsSync(HOME)) } catch { return null } })(), gap: { used, measured, unexplained: used == null ? null : Math.max(0, used - known) }, clones, docker: await dockerNow(), ignored: await ignoredNow(home) }
+  }
+  // Removes the clones of one app (id: its folder under X) that no running app has open and that are over an hour old.
+  if (op === 'clones') {
+    if (!CLONE_DIR_RE.test(String(id ?? ''))) throw new Error('모르는 항목이에요')
+    const cl = await clonesNow()
+    if (!cl.x) throw new Error('이 기기에는 앱 복제본 폴더가 없어요')
+    if (!cl.checked) throw new Error('어느 앱이 복제본을 쓰는지 확인하지 못해 지우지 않았어요')
+    const before = freeBytes()
+    let removed = 0
+    let kept = 0
+    for (const c of cl.list.filter((x) => x.app === id)) {
+      const p = path.join(cl.x, c.app, c.name)
+      if (c.why || path.dirname(path.dirname(p)) !== cl.x) {
+        kept++
+        continue
+      }
+      try {
+        fs.rmSync(p, { recursive: true, force: true })
+        removed++
+      } catch {
+        kept++
+      }
+    }
+    const after = freeBytes()
+    const freed = before != null && after != null ? Math.max(0, after - before) : null
+    log('info', 'disk', `앱 복제본 ${removed}개 지움(남김 ${kept}): ${((freed ?? 0) / 1e9).toFixed(2)}GB`)
+    return { id, removed, kept, freed }
+  }
+  // Docker's leftovers: failed containers with nothing mounted, images no container uses, then the VM disk trimmed
+  // (colima) so the Mac gets the space back. Volumes are never touched.
+  if (op === 'docker') {
+    const d = binOf('docker')
+    if (!d) throw new Error('이 기기에 docker 가 없어요')
+    const now1 = await dockerNow()
+    if (now1?.error) throw new Error(`docker 에 닿지 못했어요: ${now1.error}`)
+    const before = freeBytes()
+    let containers = 0
+    for (const c of now1.leftovers) if ((await run(d, ['rm', c.id], { timeout: 120_000, env: binEnv(d) })).ok) containers++
+    const pr = await run(d, ['image', 'prune', '-af'], { timeout: 600_000, env: binEnv(d) })
+    let trimmed = null
+    const col = process.platform === 'darwin' ? binOf('colima') : null
+    if (col && (await run(col, ['status'], { timeout: 60_000, env: binEnv(col) })).ok) trimmed = (await run(col, ['ssh', '--', 'sudo', 'fstrim', '-a'], { timeout: 600_000, env: binEnv(col) })).ok
+    const after = freeBytes()
+    const freed = before != null && after != null ? Math.max(0, after - before) : null
+    log('info', 'disk', `docker 정리: 컨테이너 ${containers}개, 이미지 정리 ${pr.ok ? '됨' : '실패'}, fstrim ${trimmed == null ? '없음' : trimmed ? '됨' : '실패'}: ${((freed ?? 0) / 1e9).toFixed(2)}GB`)
+    return { containers, images: pr.ok ? (pr.out.split('\n').pop() ?? '') : `실패: ${pr.err.slice(0, 200)}`, trimmed, freed }
+  }
   throw new Error('모르는 동작이에요')
+}
+
+// ---------- 깊게 찾기 (REQ-F-885) ----------
+
+const freeBytes = () => {
+  try {
+    const s = fs.statfsSync(HOME)
+    return s.bavail * s.bsize
+  } catch {
+    return null
+  }
+}
+/** A big folder (the home folder itself) may take minutes: du with a longer limit than diskSize. */
+async function deepSize(p) {
+  const r = await run('du', ['-skx', p], { timeout: 300_000 })
+  return duBytes(r.out)
+}
+/** A tool where the package managers put it: the agent's PATH (launchd) may not have /opt/homebrew/bin. */
+const binOf = (name) => ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'].map((d) => path.join(d, name)).find((p) => fs.existsSync(p)) ?? null
+const binEnv = (bin) => ({ PATH: `${path.dirname(bin)}:/usr/bin:/bin:/usr/sbin:/sbin` })
+/**
+ * The app clones under the per-user X folder (macOS only), each judged by cloneWhy. `checked`: lsof answered, so
+ * which clones are open is known; without it nothing is removed.
+ */
+async function clonesNow() {
+  if (process.platform !== 'darwin') return { x: null, list: [], checked: false }
+  const t = await run('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'])
+  if (!t.ok || !t.out) return { x: null, list: [], checked: false }
+  let x
+  try {
+    // lsof names files by their real path (/private/var/…), not /var/….
+    x = fs.realpathSync(userXDir(t.out))
+  } catch {
+    return { x: null, list: [], checked: false }
+  }
+  const lsof = await run('/usr/sbin/lsof', ['-n', '-F', 'n'], { timeout: 90_000 })
+  const open = openClones(lsof.out, x)
+  const now = Date.now()
+  const list = []
+  for (const app of fs.readdirSync(x).filter((n) => CLONE_DIR_RE.test(n))) {
+    let ents = []
+    try {
+      ents = fs.readdirSync(path.join(x, app))
+    } catch {
+      continue
+    }
+    for (const name of ents) {
+      let mtimeMs = now
+      try {
+        mtimeMs = fs.lstatSync(path.join(x, app, name)).mtimeMs
+      } catch {}
+      const why = cloneWhy({ inUse: open.has(`${app}/${name}`), mtimeMs, now })
+      list.push({ app, name, mtimeMs, ...(why ? { why } : {}) })
+    }
+  }
+  return { x, list, checked: !!lsof.out }
+}
+/** Docker as it stands: the leftovers dockerLeftovers picks, `docker system df`, and colima's VM disk. Null without docker. */
+async function dockerNow() {
+  const d = binOf('docker')
+  if (!d) return null
+  const ps = await run(d, ['ps', '-a', '--size', '--format', '{{json .}}'], { timeout: 120_000, env: binEnv(d) })
+  if (!ps.ok) return { error: ps.err.slice(0, 200) }
+  const df = await run(d, ['system', 'df', '--format', '{{json .}}'], { timeout: 120_000, env: binEnv(d) })
+  const types = df.out
+    .split('\n')
+    .map((l) => {
+      try {
+        const t = JSON.parse(l)
+        return { type: String(t.Type ?? ''), total: String(t.TotalCount ?? ''), active: String(t.Active ?? ''), size: String(t.Size ?? ''), reclaimable: String(t.Reclaimable ?? '') }
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+  const disks = path.join(HOME, '.colima', '_lima', '_disks')
+  let vm = []
+  try {
+    vm = await inTurns(fs.readdirSync(disks), 2, async (n) => ({ path: tilde(path.join(disks, n)), size: await diskSize(path.join(disks, n)) }))
+  } catch {}
+  return { leftovers: dockerLeftovers(ps.out), df: types, vm }
+}
+/** Folders git ignores in the repositories under home, 200 MB and up, biggest first (30), each with whether trash takes it. */
+async function ignoredNow(home) {
+  const repos = await findRepos(home)
+  const opts = { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform }
+  const found = (await inTurns(repos, 3, async (repo) => {
+    const r = await git(repo, 'ls-files', '-o', '-i', '--exclude-standard', '--directory')
+    const dirs = ignoredDirs(r.out, 50).map((rel) => path.join(repo, rel))
+    return inTurns(dirs, 4, async (p) => {
+      const size = await diskSize(p)
+      if (!(size >= 200e6)) return null
+      const why = diskTrashable(p, opts)
+      return { repo: tilde(repo), path: tilde(p), size, deps: path.basename(p) === 'node_modules', trashable: !why, ...(why ? { why } : {}) }
+    })
+  })).flat().filter(Boolean)
+  return found.sort((a, b) => b.size - a.size).slice(0, 30)
 }
 
 /** Moves a file or folder to this Mac's Trash (never deletes): `~/.Trash`, or the freedesktop Trash with its note. */

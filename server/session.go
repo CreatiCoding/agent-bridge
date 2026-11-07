@@ -701,3 +701,95 @@ func carryLog(meta *Sess, from, to string) bool {
 
 var _ = regexp.MustCompile
 var _ = time.Second
+
+// DISK_WAITS: how long each 디스크 관리 op may take on the Mac (REQ-F-801·802·885). An op missing here is refused.
+var DISK_WAITS = map[string]int64{"info": 240_000, "scan": 240_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000, "probe": 600_000, "clones": 300_000, "docker": 900_000}
+
+// diskRun: one 디스크 관리 op on a host, for its owner or the operator it is granted to (diskHost), from the page
+// (IF-251) or a session's bridge MCP disk tools (REQ-F-886). What removes something is kept in the owner's host log.
+func diskRun(uid, hostID string, b M) M {
+	h := diskHost(uid, hostID)
+	op := jsString(b["op"])
+	wait, known := DISK_WAITS[op]
+	if !known {
+		refuse(400, "모르는 동작이에요")
+	}
+	if !online(hostID) {
+		refuse(409, NOT_CONNECTED)
+	}
+	cmd := M{"t": "disk", "op": op}
+	if s, ok := b["id"].(string); ok && len(s) <= 64 {
+		cmd["id"] = s
+	}
+	if s, ok := b["path"].(string); ok && len(s) <= 4096 {
+		cmd["path"] = s
+	}
+	if arr, ok := b["paths"].([]any); ok {
+		list := []any{}
+		for _, x := range arr {
+			if s, ok := x.(string); ok && len(s) <= 4096 && len(list) < 200 {
+				list = append(list, s)
+			}
+		}
+		cmd["paths"] = list
+	}
+	r := ask(hostID, cmd, wait)
+	if text, removes := diskLogText(op, jsString(cmd["id"])); removes {
+		if !truthy(r["ok"]) {
+			text += " 실패: " + jsStringU(r["error"])
+		}
+		record(mstr(h, "uid"), hostID, M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text + byOperator(uid, h)})
+	}
+	if !truthy(r["ok"]) {
+		refuse(409, orStr(r["error"], "디스크 정보를 받지 못했어요"))
+	}
+	out := shallow(r)
+	delete(out, "reqId")
+	delete(out, "t")
+	return out
+}
+
+// diskLogText: the host log line for an op that removes something, and whether it is one.
+func diskLogText(op, id string) (string, bool) {
+	switch op {
+	case "clean":
+		return "디스크: " + id + " 비움", true
+	case "trash":
+		return "디스크: 휴지통으로 옮김", true
+	case "prune":
+		return "디스크: 머지된 worktree 정리", true
+	case "clones":
+		return "디스크: 앱 복제본 정리(" + id + ")", true
+	case "docker":
+		return "디스크: Docker 찌꺼기 정리", true
+	}
+	return "", false
+}
+
+// diskHostsFor: the hosts uid may manage the disk of (REQ-F-886): its own, then those granted to it (diskHost).
+func diskHostsFor(uid string) []any {
+	out := []any{}
+	now := float64(nowMs())
+	for _, id := range hosts.Keys() {
+		h := hosts.Val(id)
+		row := M{"id": id, "name": h["name"], "online": online(id)}
+		if mstr(h, "uid") == uid {
+			row["own"] = true
+		} else if help, _ := h["diskHelp"].(M); isAdmin(uid) && help != nil && mstr(help, "by") == uid {
+			until, _ := help["until"].(float64)
+			if until <= now {
+				continue
+			}
+			row["own"] = false
+			row["owner"] = mstr(users.Val(mstr(h, "uid")), "login")
+			row["until"] = until
+		} else {
+			continue
+		}
+		if d := mget(cleanSys(asM(live(id)["health"])["sys"]), "disk"); d != nil {
+			row["disk"] = d
+		}
+		out = append(out, row)
+	}
+	return out
+}

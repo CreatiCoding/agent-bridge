@@ -115,7 +115,50 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
+  // 디스크 정리 (REQ-F-886): the disk management of the Macs this person may manage — their own, and, for an operator,
+  // another user's Mac whose owner granted 디스크 정리 도움 (REQ-F-804). Only the agent's guarded operations: no shell.
+  {
+    name: 'disk_hosts',
+    description:
+      "The Macs whose disk this session may manage: the person's own, and (for an operator) other users' Macs whose owner granted disk help, with until when. Each has an id to pass as host to disk_look and disk_clean.",
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'disk_look',
+    description:
+      "Look at a Mac's disk without changing anything. op: info (usage and caches that can be emptied, with sizes), scan (a folder inside the home folder, biggest first; path ~/… ), worktrees (git worktrees and whether each is merged and clean), probe (deep look: how much df counts that the main folders do not add up to, app clones left when an app was killed, Docker's failed containers / reclaimable images / VM disk, and folders git ignores of 200 MB or more). Takes up to several minutes. Report what you find to the person as candidates; never treat it as permission to clean.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'The Mac, by the id disk_hosts gives' },
+        op: { type: 'string', enum: ['info', 'scan', 'worktrees', 'probe'] },
+        path: { type: 'string', description: 'For scan: a folder inside the home folder (~/…). Default ~' },
+      },
+      required: ['host', 'op'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'disk_clean',
+    description:
+      "Clean part of a Mac's disk with the agent's guarded operations. Only after the person approved that exact step in this conversation. op: clean (empty one cache by its id from info), trash (move one item inside the home folder to the Trash; the space comes back once the trash cache is emptied), prune (remove merged, unchanged worktrees: paths from worktrees), clones (remove one app's clones that no running app uses and are over an hour old; id: the app folder from probe, e.g. com.google.Chrome.code_sign_clone), docker (remove failed containers with nothing mounted and images no container uses, then trim colima's VM disk; volumes are never touched). The Mac refuses what its guards do not allow. Report the freed space it returns.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        host: { type: 'string', description: 'The Mac, by the id disk_hosts gives' },
+        op: { type: 'string', enum: ['clean', 'trash', 'prune', 'clones', 'docker'] },
+        id: { type: 'string', description: 'For clean: the cache id. For clones: the app folder' },
+        path: { type: 'string', description: 'For trash: the item (~/…)' },
+        paths: { type: 'array', items: { type: 'string' }, description: 'For prune: the worktree paths (~/…)' },
+      },
+      required: ['host', 'op'],
+      additionalProperties: false,
+    },
+  },
 ]
+
+/** The disk tools wait on du, lsof, docker and fstrim on the other Mac: up to the server's longest disk wait. */
+const DISK_TOOLS = ['disk_look', 'disk_clean']
 
 /**
  * The to-do list needs nothing from the agent: the call itself, in the transcript, is what the page reads
@@ -269,9 +312,9 @@ export function convText(r, label) {
 async function call(name, args) {
   if (name === 'todos') return todosAnswer(args)
   const key = fs.readFileSync(KEY_FILE, 'utf8').match(/x-bridge-key:\s*(\S+)/)?.[1] ?? ''
-  const quick = name === 'hosts' || name === 'delegate_stop' || name === 'attach' || name === 'read_session'
-  const wait = args?.wait !== false && !quick
-  const timeout = wait ? (Math.min(1800, Math.max(10, Number(args?.timeout_s) || 600)) + 60) * 1000 : 90_000
+  const quick = name === 'hosts' || name === 'delegate_stop' || name === 'attach' || name === 'read_session' || name === 'disk_hosts'
+  const wait = args?.wait !== false && !quick && !DISK_TOOLS.includes(name)
+  const timeout = DISK_TOOLS.includes(name) ? 960_000 : wait ? (Math.min(1800, Math.max(10, Number(args?.timeout_s) || 600)) + 60) * 1000 : 90_000
   const r = await fetch(URL_, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridge-key': key }, body: JSON.stringify({ op: name, args: args ?? {} }), signal: AbortSignal.timeout(timeout) })
   const j = await r.json().catch(() => ({ ok: false, error: `에이전트 응답을 읽지 못했어요 (HTTP ${r.status})` }))
   if (!j.ok) throw new Error(j.error || '실패했어요')

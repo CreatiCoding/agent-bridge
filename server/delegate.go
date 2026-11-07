@@ -501,6 +501,10 @@ func runDelegate(uid, hostID string, msg M) any {
 	if msg["op"] == "read_session" {
 		return readSession(uid, hostID, msg)
 	}
+	// Disk tools (REQ-F-886) hand no work over either.
+	if op := jsString(msg["op"]); op == "disk_hosts" || op == "disk_look" || op == "disk_clean" {
+		return runDiskTool(uid, hostID, msg)
+	}
 	if !cfgOn("features.sessionMove") {
 		throw(FEATURE_OFF)
 	}
@@ -868,3 +872,41 @@ func init() {
 }
 
 var _ = regexp.MustCompile
+
+// DISK_TOOL_OPS: which disk ops each bridge MCP disk tool may ask for (REQ-F-886). disk_look never removes anything.
+var DISK_TOOL_OPS = map[string][]string{
+	"disk_look":  {"info", "scan", "worktrees", "probe"},
+	"disk_clean": {"clean", "trash", "prune", "clones", "docker"},
+}
+
+// runDiskTool: a session's disk_hosts · disk_look · disk_clean. Asked by a live session of uid on hostID; the host it
+// names is checked like the page's IF-251 (diskHost: the owner, or the operator granted it until it ends).
+func runDiskTool(uid, hostID string, msg M) any {
+	parent, ok := sessions.Get(strOr(msg["sid"], ""))
+	if !ok || parent.uid() != uid || parent.host() != hostID || truthy(parent.get("closed")) {
+		throw("이 세션을 서버가 모릅니다")
+	}
+	op := jsString(msg["op"])
+	if op == "disk_hosts" {
+		return diskHostsFor(uid)
+	}
+	a, _ := msg["args"].(M)
+	if a == nil {
+		a = M{}
+	}
+	want := jsString(a["op"])
+	if !contains(DISK_TOOL_OPS[op], want) {
+		throw(op + " 로는 " + want + " 를 할 수 없어요(" + strings.Join(DISK_TOOL_OPS[op], ", ") + ")")
+	}
+	target := jsString(a["host"])
+	if !hosts.Has(target) {
+		throw("그 기기를 모릅니다. disk_hosts 의 id 를 써 주세요")
+	}
+	b := M{"op": want}
+	for _, k := range []string{"id", "path", "paths"} {
+		if v, ok := a[k]; ok {
+			b[k] = v
+		}
+	}
+	return diskRun(uid, target, b)
+}

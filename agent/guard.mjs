@@ -798,6 +798,67 @@ export function worktreeWhy({ merged, dirty, locked, active, touched, now }) {
   return null
 }
 
+// ---------- 깊게 찾기 (REQ-F-885) ----------
+// What the plain disk buttons do not see: what df counts but the folders do not add up to, app clones left in the
+// per-user X folder when an app was killed, Docker's failed builds and the VM disk that does not shrink by itself,
+// and folders git ignores. Judged here; the agent only measures and acts.
+
+/** A clone made in the last hour may belong to an app still starting: kept. */
+export const CLONE_QUIET_MS = 3_600_000
+/** The app folders under X that hold clones (com.google.Chrome.code_sign_clone, …). */
+export const CLONE_DIR_RE = /^[\w.-]+\.code_sign_clone$/
+/** The per-user X folder, a sibling of DARWIN_USER_TEMP_DIR (`getconf DARWIN_USER_TEMP_DIR`, …/T/). */
+export const userXDir = (tempDir) => path.join(path.dirname(String(tempDir).replace(/\/+$/, '')), 'X')
+
+/** Why one clone is not removed, or null when it is: no running app has it open and it is over an hour old. */
+export function cloneWhy({ inUse, mtimeMs, now }) {
+  if (inUse) return '실행 중인 앱이 쓰는 중'
+  if (!(now - mtimeMs >= CLONE_QUIET_MS)) return '최근 1시간 안에 생김'
+  return null
+}
+
+/** `lsof -F n` output → the clones (`<app folder>/<clone>`) some process has a file open in. */
+export function openClones(lsofOut, xDir) {
+  const out = new Set()
+  const pre = `n${String(xDir).replace(/\/+$/, '')}/`
+  for (const l of String(lsofOut ?? '').split('\n')) {
+    if (!l.startsWith(pre)) continue
+    const [app, clone] = l.slice(pre.length).split('/')
+    if (clone && CLONE_DIR_RE.test(app)) out.add(`${app}/${clone}`)
+  }
+  return out
+}
+
+/**
+ * `docker ps -a --size --format '{{json .}}'` lines → the containers 정리 removes: stopped after failing (exit code
+ * not 0) and with nothing mounted. A stopped service that ended cleanly, or one holding a volume, is never one.
+ */
+export function dockerLeftovers(lines) {
+  const out = []
+  for (const l of String(lines ?? '').split('\n')) {
+    let c
+    try {
+      c = JSON.parse(l)
+    } catch {
+      continue
+    }
+    const code = /^Exited \((\d+)\)/.exec(String(c?.Status ?? ''))?.[1]
+    if (c?.State !== 'exited' || !code || code === '0' || String(c.Mounts ?? '').trim()) continue
+    out.push({ id: String(c.ID ?? ''), name: String(c.Names ?? ''), image: String(c.Image ?? ''), status: String(c.Status), size: String(c.Size ?? '') })
+  }
+  return out.filter((x) => /^[0-9a-f]{6,64}$/.test(x.id))
+}
+
+/** `git ls-files -o -i --exclude-standard --directory` output → the ignored folders (relative, no trailing /), at most `max`. */
+export function ignoredDirs(out, max = 200) {
+  return String(out ?? '')
+    .split('\n')
+    .filter((l) => l.endsWith('/') && !l.startsWith('../') && !l.includes('\0'))
+    .map((l) => l.slice(0, -1))
+    .filter((l) => l && !l.split('/').includes('.git'))
+    .slice(0, max)
+}
+
 // ---------- hooks (agent.json, REQ-F-821) ----------
 // A command the Mac's owner names runs after a session starts, closes or ends a turn, with {name, at, session: {id,
 // cwd, host}} on stdin. No shell; `~` is the home folder. What it does is the owner's affair (it may reach out, an

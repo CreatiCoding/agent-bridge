@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.475',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'agent'],
+        text: '디스크 관리에 깊게 찾기: 디스크 사용량 중 설명 안 되는 부분, 앱이 남긴 임시 복제본(Chrome 등), Docker 컨테이너·이미지·VM 디스크, 저장소의 git 무시 폴더(200MB 이상)를 한 번에 잰다. 어느 앱도 쓰지 않고 1시간 넘은 복제본과, 실패로 끝난 Docker 컨테이너·안 쓰는 이미지를 지울 수 있다(볼륨은 건드리지 않음)',
+        refs: ['REQ-F-885', 'IF-251'],
+      },
+      {
+        kind: 'added',
+        scope: ['server', 'agent'],
+        text: '세션의 Claude 가 bridge MCP 도구(disk_hosts·disk_look·disk_clean)로 디스크를 보고 정리한다. 운영자는 주인이 허용한 동안 남의 기기도 자기 Claude 로 정리할 수 있다(셸·대화는 볼 수 없음)',
+        refs: ['REQ-F-886', 'REQ-F-804'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '디스크 정리 허용 확인 창이 앱 복제본·Docker 정리와 운영자의 Claude 세션이 대신할 수 있음을 알린다',
+        refs: ['REQ-F-804'],
+      },
+    ],
+  },
+  {
     version: '1.474',
     date: '2026-11-08',
+    commit: '473c677',
     changes: [
       {
         kind: 'fixed',

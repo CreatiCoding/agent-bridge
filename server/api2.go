@@ -270,53 +270,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	}
 	// 디스크 관리 (REQ-F-801). Its owner only: an operator never clears or moves someone else's files.
 	if m := hostDiskRe.FindStringSubmatch(p); post && m != nil {
-		b := body(req, 262_144)
-		h := diskHost(uid, m[1])
-		op := jsString(b["op"])
-		timeouts := map[string]int64{"info": 240_000, "scan": 240_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000}
-		wait, known := timeouts[op]
-		if !known {
-			refuse(400, "모르는 동작이에요")
-		}
-		if !online(m[1]) {
-			refuse(409, NOT_CONNECTED)
-		}
-		cmd := M{"t": "disk", "op": op}
-		if s, ok := b["id"].(string); ok && len(s) <= 64 {
-			cmd["id"] = s
-		}
-		if s, ok := b["path"].(string); ok && len(s) <= 4096 {
-			cmd["path"] = s
-		}
-		if arr, ok := b["paths"].([]any); ok {
-			list := []any{}
-			for _, x := range arr {
-				if s, ok := x.(string); ok && len(s) <= 4096 && len(list) < 200 {
-					list = append(list, s)
-				}
-			}
-			cmd["paths"] = list
-		}
-		r := ask(m[1], cmd, wait)
-		if op == "clean" || op == "trash" || op == "prune" {
-			text := "디스크: 휴지통으로 옮김"
-			if op == "clean" {
-				text = "디스크: " + jsString(cmd["id"]) + " 비움"
-			} else if op == "prune" {
-				text = "디스크: 머지된 worktree 정리"
-			}
-			if !truthy(r["ok"]) {
-				text += " 실패: " + jsStringU(r["error"])
-			}
-			record(mstr(h, "uid"), m[1], M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text + byOperator(uid, h)})
-		}
-		if !truthy(r["ok"]) {
-			refuse(409, orStr(r["error"], "디스크 정보를 받지 못했어요"))
-		}
-		out := shallow(r)
-		delete(out, "reqId")
-		delete(out, "t")
-		jsonRes(res, 200, out)
+		jsonRes(res, 200, diskRun(uid, m[1], body(req, 262_144)))
 		return true
 	}
 	// 디스크 정리 도움 (REQ-F-804): an operator asks, the owner grants for DISK_HELP_MS or turns it down, and either

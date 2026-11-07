@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 8
+export const TRUST_VERSION = 9
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -155,7 +155,8 @@ export const TRUST_CLASS = {
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
   // by op
-  disk: { ops: { info: 'free', scan: 'free', worktrees: 'free', prune: { i: ['op', 'id', 'path', 'paths'] }, clean: { i: ['op', 'id', 'path', 'paths'] }, trash: { i: ['op', 'id', 'path', 'paths'] } } },
+  // 깊게 찾기 (REQ-F-885, 9): probe only measures; clones and docker remove things, so they are signed like clean.
+  disk: { ops: { info: 'free', scan: 'free', worktrees: 'free', probe: 'free', prune: { i: ['op', 'id', 'path', 'paths'] }, clean: { i: ['op', 'id', 'path', 'paths'] }, trash: { i: ['op', 'id', 'path', 'paths'] }, clones: { i: ['op', 'id', 'path', 'paths'] }, docker: { i: ['op', 'id', 'path', 'paths'] } } },
   account: { ops: { list: 'free' }, other: 'off' },
   trust: { ops: { info: 'free', pair1: 'free', pair3: 'free', pair4: 'free', keys: 'free', remove: { i: ['op', 'id'], always: true } } },
 }
