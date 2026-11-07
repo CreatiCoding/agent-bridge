@@ -827,7 +827,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
               ) : null}
               {h ? <CompactBox key={`cw-${h.id}`} hostId={h.id} window={detail.health?.compactWindow ?? null} online={h.online} /> : null}
               {h?.update ? <UpdateBox key={`up-${h.id}`} hostId={h.id} policy={h.update} online={h.online} /> : null}
-              {h?.reboot && !linux ? <RebootBox key={`rb-${h.id}`} hostId={h.id} state={h.reboot} online={h.online} mine={!others} /> : null}
+              {h?.reboot && !linux && !others ? <RebootBox key={`rb-${h.id}`} hostId={h.id} state={h.reboot} online={h.online} mine={!others} /> : null}
               {h?.outdated && !h.update?.pending ? (
                 <div className="banner">
                   <Icon name="info" />

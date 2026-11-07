@@ -577,12 +577,14 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 	if m := hostRebootRe.FindStringSubmatch(p); post && m != nil {
 		b := body(req, 1024)
 		h := readableHost(uid, m[1])
+		// The policy too is its owner's only: once it can restart the Mac on its own, setting it is restarting it.
+		ownHost(uid, m[1])
 		if now, _ := b["now"].(bool); now {
-			ownHost(uid, m[1])
 			if !online(m[1]) {
 				refuse(409, NOT_CONNECTED)
 			}
-			r := ask(m[1], M{"t": "rebootNow"}, 30_000)
+			// Longer than the agent's worst case: a fresh look at the facts (10 s) and the restart command (20 s).
+			r := ask(m[1], M{"t": "rebootNow"}, 45_000)
 			if !truthy(r["ok"]) {
 				record(mstr(h, "uid"), m[1], M{"level": "warn", "area": "reboot", "text": "지금 재부팅 거절: " + jsSliceTo(jsStringU(r["error"]), 300)})
 				refuse(409, orStr(r["error"], "재부팅하지 못했습니다(에이전트가 이 기능보다 오래된 버전일 수 있어요)"))
@@ -605,7 +607,11 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		said := "꺼짐"
 		if truthy(r["on"]) {
-			said = []string{"일", "월", "화", "수", "목", "금", "토"}[int(jsNumber(r["day"]))%7] + "요일 " + numStr(jsNumber(r["from"])) + "~" + numStr(jsNumber(r["to"])) + "시"
+			day := "?"
+			if d := jsNumber(r["day"]); d >= 0 && d <= 6 {
+				day = []string{"일", "월", "화", "수", "목", "금", "토"}[int(d)]
+			}
+			said = day + "요일 " + numStr(jsNumber(r["from"])) + "~" + numStr(jsNumber(r["to"])) + "시"
 		}
 		record(mstr(h, "uid"), m[1], M{"level": "info", "area": "reboot", "text": "정비 재부팅 " + said + byOperator(uid, h)})
 		out := M{"ok": true}

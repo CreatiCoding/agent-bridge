@@ -6841,7 +6841,9 @@ function rebootBlocking() {
 async function rebootHealth() {
   const policy = rebootPolicyOf(config.reboot)
   if (!IS_MAC) return { ...policy, supported: false, facts: null, preflight: [], blockers: [], due: null, last: null }
-  const f = await rebootGather().catch(() => null)
+  // Not waited for: a stale look is refreshed for the next report, so health is never held up by launchctl or colima.
+  if (Date.now() - rebootFacts.at >= REBOOT_FACTS_MS) rebootGather().catch(() => {})
+  const f = rebootFacts.v
   const facts = { clones: f?.clones ?? null, freeGB: f?.freeGB ?? null, docker: f?.docker ?? null }
   const d = new Date()
   return { ...policy, supported: true, facts, preflight: rebootReasons(f), blockers: rebootBlocking(), due: rebootWhy(policy, { day: d.getDay(), hour: d.getHours() }, facts), last: rebootSummary(rebootRec) }
@@ -6862,8 +6864,10 @@ async function readBootTime() {
 /** At start: a restart asked for that the Mac has since booted from is marked back. Nothing more yet. */
 async function rebootOnStart() {
   bootAt = await readBootTime()
+  if (bootAt == null) bootAt = await new Promise((r) => setTimeout(r, 30_000)).then(readBootTime)
   const rec = rebootRec
-  if (rec?.phase !== 'requested' || rebootPhase(rec, bootAt, Date.now(), rec.failMin) !== 'back') return
+  // 'failed' too: a restart command that timed out (or a failure timer) may still have restarted the Mac.
+  if (!['requested', 'failed'].includes(rec?.phase) || rebootPhase({ ...rec, phase: 'requested' }, bootAt, Date.now(), rec.failMin) !== 'back') return
   rebootSave({ ...rec, phase: 'back', backAt: Date.now(), bootAfter: bootAt })
   log('info', 'reboot', `정비 재부팅에서 돌아왔어요(${rec.reason || '이유 없음'}, 요청 ${new Date(rec.requestedAt).toISOString()})`)
 }
@@ -6871,7 +6875,8 @@ async function rebootOnStart() {
 /** Every tick while a restart is asked for: past failMin minutes without a boot, it failed, and the phone is told. */
 function rebootWatch() {
   const rec = rebootRec
-  if (rec?.phase !== 'requested' || rebootPhase(rec, bootAt, Date.now(), rec.failMin) !== 'failed') return
+  // Without this boot's time it cannot tell a Mac that came back from one that never went: say nothing.
+  if (bootAt == null || rec?.phase !== 'requested' || rebootPhase(rec, bootAt, Date.now(), rec.failMin) !== 'failed') return
   const min = rebootPolicyOf({ failMin: rec.failMin }).failMin
   rebootSave({ ...rec, phase: 'failed', failedAt: Date.now(), error: `${min}분 안에 재부팅되지 않음` })
   log('warn', 'reboot', `정비 재부팅이 ${min}분 안에 되지 않았어요(저장하지 않은 문서 창 등이 막았을 수 있어요)`)
@@ -6882,9 +6887,20 @@ function rebootWatch() {
  * 지금 재부팅: refused while anything is working or the Mac would not come back by itself; otherwise reboot.json
  * (what to compare and reopen after), sessions.json, and the restart (CB_REBOOT_CMD stands in for it in tests).
  */
+let rebootAsking = false
 async function rebootNow(reason) {
   if (!IS_MAC) return { error: '정비 재부팅은 macOS 에서만 해요' }
-  if (rebootPhase(rebootRec, bootAt, Date.now(), rebootRec?.failMin) === 'waiting') return { error: '이미 재부팅을 요청했어요. 끝나기를 기다리는 중이에요' }
+  // A second request while the first is still looking (up to 10 s) would pass the check below and restart twice.
+  if (rebootAsking || rebootPhase(rebootRec, bootAt, Date.now(), rebootRec?.failMin) === 'waiting') return { error: '이미 재부팅을 요청했어요. 끝나기를 기다리는 중이에요' }
+  rebootAsking = true
+  try {
+    return await rebootNowOnce(reason)
+  } finally {
+    rebootAsking = false
+  }
+}
+
+async function rebootNowOnce(reason) {
   const f = await rebootGather(true)
   const pre = rebootReasons(f)
   if (pre.length) return { error: `재부팅 뒤 스스로 돌아오지 못해요: ${pre.join(' / ')}` }
