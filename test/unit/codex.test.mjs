@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, codexStatus, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -407,6 +407,15 @@ test('the screen: idle with an empty box, working, the folder trust question, te
   assert.ok(codexBoxHas('• 답\n› 보낸 글 첫 줄\n  둘째 줄\n', '보낸 글 첫'))
   assert.ok(!codexBoxHas(idle, '보낸 글'))
   assert.ok(!codexBoxHas('› 보낸 글\n• Working (2s • esc to interrupt)\n', '보낸 글'))
+})
+
+test('codexStatus: the header codex streams on its working line, not the bare Working (REQ-F-851 rule 9a)', () => {
+  assert.equal(codexStatus('› 진행해\n• Planning the file filter (5m 41s • esc to interrupt)\n› Ask Codex to do anything\n'), 'Planning the file filter')
+  assert.equal(codexStatus('◦ **Exploring repo layout** (1h 2m 3s • esc to interrupt)\n'), 'Exploring repo layout')
+  assert.equal(codexStatus('• Working (12s • esc to interrupt)\n'), null)
+  assert.equal(codexStatus('• Worked for 5s • 1:13 AM\n› Ask Codex to do anything\n'), null)
+  assert.equal(codexStatus(''), null)
+  assert.equal(codexStatus(`• ${'x'.repeat(300)} (3s • esc to interrupt)`).length, 120)
 })
 
 // Screens as codex 0.166 draws them in a 220x80 tmux terminal (REQ-F-852), cut down.

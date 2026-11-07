@@ -456,6 +456,21 @@ export const turnOpenAt = (signals) => {
 
 /** Codex says it is working on the line above its input box: "• Working (12s • esc to interrupt)". */
 export const CODEX_WORKING_RE = /\((?:\d+[hms]\s*)+[^)]*esc to interrupt\)|^\s*[•◦]\s+\S.*\(\d+s\b/m
+/**
+ * What codex says it is doing on its working line, "• Exploring the repo (2m 03s • esc to interrupt)": the header of
+ * the reasoning summary it streams, which goes into the rollout only once that thinking is over. Null for the bare
+ * "Working" (nothing more than the spinner already says) or when no working line is on screen.
+ */
+export function codexStatus(screen) {
+  const lines = String(screen ?? '').split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = /^\s*(?:[•◦●○·]\s+)?(\S.*?)\s+\((?:\d+[hms]\s*)+[^)]*esc to interrupt\)/.exec(lines[i])
+    if (!m) continue
+    const h = m[1].replace(/\*\*/g, '').trim()
+    return !h || /^working$/i.test(h) ? null : h.slice(0, 120)
+  }
+  return null
+}
 /** The input box, empty: "› Ask Codex to do anything" (the placeholder) or a bare "›" as the last prompt line. */
 const EMPTY_BOX_RE = /^\s*›\s*(Ask Codex to do anything|Implement \{feature\}|Find and fix a bug in @filename|Explain this codebase|Summarize recent commits|Write tests for @filename|Improve documentation in @filename|Run \/review on my current changes|Use \/skills to list available skills)?\s*$/m
 

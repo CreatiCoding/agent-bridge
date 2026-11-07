@@ -377,7 +377,8 @@ function Activity({ s, items }: { s: Session; items: Item[] }) {
     <div className="activity">
       <Spinner size={12} />
       <span className="activity-text">
-        {st.tool?.name ? `${st.tool.name}${what ? ` · ${what}` : ''}` : '생각하는 중'}
+        {/* A tool with no name: what a runner without hooks says it is doing (Codex's working line, REQ-F-851 규칙 9a). */}
+        {st.tool?.name ? `${st.tool.name}${what ? ` · ${what}` : ''}` : what || '생각하는 중'}
         {since ? ` · ${since}` : ''}
         {st.running && st.running.length > 1 ? ` · 도구 ${st.running.length}개 실행 중` : ''}
       </span>

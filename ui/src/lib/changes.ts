@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.456',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent', 'ui'],
+        text: 'Codex 가 오래 생각하는 동안 화면에 "생각하는 중 · 5분" 만 뜨고 아무것도 안 보이던 것: Codex 는 생각이 끝나야 기록을 남겨 그동안 보일 게 없었다. 이제 Codex 터미널의 작업 줄에서 지금 하는 일(생각 요약의 머리말)을 읽어 상태줄과 세션 목록에 보인다',
+        refs: ['REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.455',
     date: '2026-11-07',
+    commit: '60035a3',
     changes: [
       {
         kind: 'fixed',

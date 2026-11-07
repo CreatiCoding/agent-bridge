@@ -29,7 +29,7 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -1371,6 +1371,9 @@ async function watchCodex(sid, s, screen) {
   const idle = codexIdle(screen)
   if (s.starting && idle && Date.now() - s.launchedAt >= 7000) (s.starting = false), clearTimeout(s.slowStart), releaseHeld(sid, s, 'started')
   if (CODEX_WORKING_RE.test(screen)) s.activityAt = Date.now()
+  // Codex has no hooks to say what it is doing: its working line's header goes to the status line, so a long
+  // thinking that writes nothing to the rollout yet does not read as a page stuck on "생각하는 중" (REQ-F-851 규칙 9a).
+  s.codexDoing = s.turn ? codexStatus(screen) : null
   // A command or edit approval, or an MCP tool call waiting for its approval (REQ-F-859): both become a card.
   const a = codexQuestion(screen)
   if (a) {
@@ -1809,7 +1812,7 @@ function publish(sid, s) {
     waiting: s.wait ? WAIT_LABEL[s.wait.reason] ?? '응답 대기' : null,
     waitingSince: s.wait?.since ?? null,
     held: s.held.map(({ id, text, at }) => ({ id, text, at })),
-    tool: tool ? { name: tool.name, title: tool.title, at: tool.at } : null,
+    tool: tool ? { name: tool.name, title: tool.title, at: tool.at } : s.turn && s.codexDoing ? { name: '', title: s.codexDoing, at: null } : null,
     tools: s.running.size,
     running: [...s.running.values()].map((r) => r.title).filter(Boolean).slice(0, 20),
     sessionMd: sessionMdBytes(sid, s),
