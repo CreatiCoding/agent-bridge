@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.463',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '휴대폰에서 결정 카드의 선택지를 누르면 그 선택지가 꺼진 것처럼(다크 모드에서 어두운 회색 바탕에 어두운 글자) 보이던 것: 선택지의 hover 색을 마우스가 있는 기기에서만 쓰고, 답이 가는 동안 다른 선택지는 흐리게, 누른 선택지는 스피너와 함께 또렷하게 보인다.',
+        refs: ['REQ-F-877'],
+      },
+    ],
+  },
+  {
     version: '1.462',
     date: '2026-11-07',
+    commit: 'd1c3bf2',
     changes: [
       {
         kind: 'fixed',

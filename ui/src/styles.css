@@ -2341,8 +2341,33 @@ select.input {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
-.opt:hover:not(:disabled) {
-  background: var(--hover);
+/* Hover only where a pointer hovers: on a phone the tapped option kept :hover, which laid the near-clear hover
+   colour over the primary option's accent, leaving dark text on dark grey, a pressed option that looked switched
+   off (REQ-F-877). */
+@media (hover: hover) {
+  .opt:not(.primary):hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .opt.primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+}
+.opt:not(.primary):active:not(:disabled) {
+  background: var(--press);
+}
+.opt.primary:active:not(:disabled) {
+  filter: brightness(0.92);
+}
+/* While an answer is on its way: the other options step back, the pressed one says so (REQ-F-877). */
+.opt:disabled {
+  opacity: 0.5;
+}
+.opt.pressing:disabled {
+  opacity: 1;
+}
+.opt.pressing .spinner {
+  margin-right: 8px;
+  vertical-align: -2px;
 }
 .opt.allow {
   border-color: color-mix(in srgb, var(--green) 50%, transparent);

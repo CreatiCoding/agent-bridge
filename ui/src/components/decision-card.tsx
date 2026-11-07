@@ -6,7 +6,7 @@ import { useStore } from '../lib/store'
 import { ANSWER_WAIT_MS, LATE, LATE_NOTE, pressNote, withDeadline } from '../lib/card-press'
 import { toast } from '../kit/overlay'
 import type { Card, Session } from '../lib/types'
-import { Button, Icon } from '../kit'
+import { Button, Icon, Spinner } from '../kit'
 import { act, command, inSlack } from './session-menu'
 import { dispatch } from '../lib/actions'
 
@@ -180,8 +180,11 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
             const kind = o.kind ?? 'other'
             const cls = kind === 'deny' ? 'deny' : kind.startsWith('allow') ? 'allow' : ''
             return (
-              <button key={o.n} type="button" className={`opt ${cls}${card.kind === 'permission' && kind === 'allow-once' ? ' primary' : ''}`} disabled={!!busy || away} onClick={() => answer(o.n)}>
+              <button key={o.n} type="button" className={`opt ${cls}${card.kind === 'permission' && kind === 'allow-once' ? ' primary' : ''}${busy === String(o.n) ? ' pressing' : ''}`} disabled={!!busy || away} aria-busy={busy === String(o.n) || undefined} onClick={() => answer(o.n)}>
                 <span>
+                  {/* The pressed option says it is on its way at once (REQ-F-877): the card closes only when the Mac's
+                      next state arrives, which can take a moment. */}
+                  {busy === String(o.n) ? <Spinner size={14} /> : null}
                   {card.kind !== 'keyed' ? `${o.n}. ` : ''}
                   {o.label}
                 </span>
