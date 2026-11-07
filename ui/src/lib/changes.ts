@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.467',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '휴대폰에서 입력칸을 위로 쓸면 ↑ 처럼 보낸 글 기록을 하나씩 불러온다(40 px 마다 한 단계, 입력칸이 비었거나 불러온 글 그대로일 때). 되짚는 중 아래로 쓸면 ↓ 처럼 앞으로, 그 밖의 아래로 쓸기는 전처럼 키보드를 내린다',
+        refs: ['REQ-F-880', 'REQ-F-082'],
+      },
+    ],
+  },
+  {
     version: '1.466',
     date: '2026-11-07',
+    commit: '017f2b8',
     changes: [
       {
         kind: 'added',

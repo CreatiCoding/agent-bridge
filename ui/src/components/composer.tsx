@@ -22,6 +22,7 @@ import { dispatch } from '../lib/actions'
 import { registerComposer } from '../lib/builtin-actions'
 import { resolve, type SlotItem } from '../lib/slots'
 import { SlotContext, SlotRender, useSlots } from '../lib/slot-view'
+import { swipeBegin, swipeMove, type Swipe } from '../lib/composer-swipe'
 import type { IconName } from '../kit'
 
 interface Skill {
@@ -247,6 +248,30 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
   const sendAfterIme = useRef(false)
   const sendNow = useRef(send)
   sendNow.current = send
+  // 보낸 글 기록 (REQ-F-082): ↑ and an upward swipe go one back, ↓ and a downward swipe one forward. Each returns
+  // whether it took the step (false leaves the key or swipe to do what it otherwise does).
+  // Back works on an empty input, or on a message just brought back (untouched).
+  const recallBack = () => {
+    if (text && recall.current == null) return false
+    // The list is taken once when going back starts: a message arriving meanwhile must not shift the steps.
+    if (recall.current == null) recalling.current = history
+    const h = recalling.current
+    if (!h.length) return false
+    recall.current = recall.current == null ? h.length - 1 : Math.max(0, recall.current - 1)
+    setText(h[recall.current])
+    return true
+  }
+  const recallForward = () => {
+    if (recall.current == null) return false
+    const h = recalling.current
+    recall.current = recall.current + 1
+    if (recall.current >= h.length) {
+      recall.current = null
+      setText('')
+    } else setText(h[recall.current])
+    return true
+  }
+
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const cmdEnter = e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.shiftKey
     if (e.nativeEvent.isComposing || e.keyCode === 229) {
@@ -274,25 +299,12 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
       void send()
       return
     }
-    // ↑ on an empty input, or on a message just brought back (untouched), goes one further back in this session.
-    if (e.key === 'ArrowUp' && !e.shiftKey && (!text || recall.current != null)) {
-      // The list is taken once when going back starts: a message arriving meanwhile must not shift the steps.
-      if (recall.current == null) recalling.current = history
-      const h = recalling.current
-      if (!h.length) return
+    if (e.key === 'ArrowUp' && !e.shiftKey && recallBack()) {
       e.preventDefault()
-      recall.current = recall.current == null ? h.length - 1 : Math.max(0, recall.current - 1)
-      setText(h[recall.current])
       return
     }
-    if (e.key === 'ArrowDown' && recall.current != null && !e.shiftKey) {
-      const h = recalling.current
+    if (e.key === 'ArrowDown' && !e.shiftKey && recallForward()) {
       e.preventDefault()
-      recall.current = recall.current + 1
-      if (recall.current >= h.length) {
-        recall.current = null
-        setText('')
-      } else setText(h[recall.current])
       return
     }
     if (e.key === 'Escape' && busy && !text) {
@@ -375,19 +387,22 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
     return () => removeEventListener('keydown', down)
   }, [voiceOn, session.id])
 
-  // A downward swipe on the box puts a phone's keyboard away. Not while the text inside is scrolled down (the swipe
-  // scrolls it back first), and not for a sideways swipe (the chips scroll sideways).
-  const swipe = useRef<{ x: number; y: number } | null>(null)
+  // Vertical swipes on the box (REQ-F-880, `lib/composer-swipe.ts`): up = ↑, down while going through the record =
+  // ↓, any other downward swipe puts a phone's keyboard away.
+  const swipe = useRef<Swipe | null>(null)
   const swipeStart = (e: React.TouchEvent) => {
     const ta = box.current
-    swipe.current = ta && document.activeElement === ta && !(e.target === ta && ta.scrollTop > 0) ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null
+    swipe.current = ta && e.touches.length === 1 && !disabled ? swipeBegin(e.touches[0].clientX, e.touches[0].clientY, ta, e.target === ta) : null
   }
-  const swipeMove = (e: React.TouchEvent) => {
+  const swipeStep = (e: React.TouchEvent) => {
     const s = swipe.current
-    if (!s) return
-    const dy = e.touches[0].clientY - s.y
-    const dx = Math.abs(e.touches[0].clientX - s.x)
-    if (dy > 40 && dy > dx * 1.5) (box.current?.blur(), (swipe.current = null))
+    if (!s || e.touches.length !== 1) return
+    swipe.current = swipeMove(s, e.touches[0].clientX, e.touches[0].clientY, {
+      picking: matches.length > 0,
+      back: recallBack,
+      forward: recallForward,
+      blur: () => document.activeElement === box.current && box.current?.blur(),
+    })
   }
 
   const empty = !text.trim() && !images.length && !videos.length
@@ -539,7 +554,7 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
         />
       ) : (
       /* One glass card: the text on top, and under it a row of 사진 · the session's chips · 보내기. */
-      <div className="inputbox" onTouchStart={swipeStart} onTouchMove={swipeMove} onTouchEnd={() => (swipe.current = null)}>
+      <div className="inputbox" onTouchStart={swipeStart} onTouchMove={swipeStep} onTouchEnd={() => (swipe.current = null)}>
         <textarea
           ref={box}
           rows={1}
