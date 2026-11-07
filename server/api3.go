@@ -169,8 +169,8 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		sessionEvents(res, u, meta)
 		return true
 	}
-	if get && op == "snapshot" {
-		sessionSnapshot(req, res, u, meta)
+	if post && op == "snapshot" {
+		sessionSnapshot(req, res, meta)
 		return true
 	}
 	if get && op == "agentsmd" {

@@ -46,11 +46,13 @@ export const SNAPSHOT_IMG_COUNT = 20
 export const SNAPSHOT_IMG_ONE_MAX = 1024 * 1024
 export const SNAPSHOT_IMG_ALL_MAX = 6 * 1024 * 1024
 
+export const SNAPSHOT_IMG_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']
+
 /**
- * The addresses of a rendered page's pictures that the agent reads for its snapshot: the address the server's reader
+ * The addresses of a rendered page's pictures that the agent reads for its snapshot: the address the screen's reader
  * takes for each <img> (src; data-src when src is empty or data:; else srcset's first), resolved on the page's
- * address, and only those of the page's own origin (an app on this Mac's localhost: the server cannot fetch them).
- * Pictures of other sites the server fetches itself (GET /api/read/img), so none of them is read here.
+ * address, http(s) of any site. All of them are read on the Mac (1.469): the server never learns which pictures a
+ * page has (a signed-in page's pictures can say what is on it), and it cannot reach this Mac's localhost anyway.
  */
 export function snapshotImageUrls(html, page) {
   const base = page instanceof URL ? page : new URL(String(page))
@@ -70,11 +72,79 @@ export function snapshotImageUrls(html, page) {
     } catch {
       continue
     }
-    if (u.origin !== base.origin || out.includes(u.href)) continue
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || out.includes(u.href)) continue
     out.push(u.href)
     if (out.length >= SNAPSHOT_IMG_COUNT) break
   }
   return out
+}
+
+/** The marker in front of the one line an ego-browser snapshot script prints its result on. */
+export const EGO_MARK = 'CB-SNAPSHOT '
+
+/**
+ * The script `ego-browser nodejs` runs for a snapshot (stdin): a task space of its own name, the address opened in
+ * its page, a wait for the network to go quiet (budgetMs at most), then in the page the rendered DOM and the page's
+ * own-origin pictures fetched with its cookies (credentials: include) as data: addresses. The task space is always
+ * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
+ */
+export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
+  const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES }
+  const inPage = `async (o) => {
+  const pick = (img) => {
+    let s = img.getAttribute("src") || ""
+    if (!s || s.startsWith("data:")) s = img.getAttribute("data-src") || ""
+    if (!s) s = (img.getAttribute("srcset") || "").trim().split(/\\s+/)[0] || ""
+    return s.startsWith("data:") ? "" : s
+  }
+  const images = {}
+  let total = 0, n = 0
+  for (const img of Array.from(document.images)) {
+    if (n >= o.count) break
+    const s = pick(img)
+    if (!s) continue
+    let u
+    try { u = new URL(s, location.href) } catch { continue }
+    if (u.origin !== location.origin || images[u.href]) continue
+    n++
+    try {
+      const r = await fetch(u.href, { credentials: "include" })
+      const b = await r.blob()
+      if (!r.ok || !o.types.includes(b.type) || b.size > o.one || total + b.size > o.all) continue
+      total += b.size
+      images[u.href] = await new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = rej; f.readAsDataURL(b) })
+    } catch {}
+  }
+  const dt = document.doctype ? "<!DOCTYPE " + document.doctype.name + ">" : ""
+  return { url: location.href, html: dt + document.documentElement.outerHTML, images }
+}`
+  return `const task = await taskSpace(${JSON.stringify(name)})
+let out
+try {
+  const page = task.page("p1")
+  await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
+  try { await page.waitForLoadState("networkidle", { timeout: ${Number(budgetMs)}, idleMs: 500 }) } catch {}
+  out = await page.evaluate(${inPage}, ${JSON.stringify(opts)})
+} finally {
+  await task.finish({ keep: [] })
+}
+console.log(${JSON.stringify(EGO_MARK)} + JSON.stringify(out))
+`
+}
+
+/** The result line of an ego-browser snapshot script's output, or null. */
+export function egoSnapshotResult(stdout) {
+  const line = String(stdout)
+    .split('\n')
+    .reverse()
+    .find((l) => l.startsWith(EGO_MARK))
+  if (!line) return null
+  try {
+    const v = JSON.parse(line.slice(EGO_MARK.length))
+    return v && typeof v.html === 'string' && typeof v.url === 'string' ? { url: v.url, html: v.html, images: v.images && typeof v.images === 'object' ? v.images : {} } : null
+  } catch {
+    return null
+  }
 }
 
 /** A folder name inside a session's folder that a move may create (R1-L7): one plain name, never `.` or `..`. */

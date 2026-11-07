@@ -367,6 +367,8 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     else if (op === 'lightfork') xs = [{ t: 'lightfork', i: { sid, ...(body.mode === 'shrink' || body.mode === 'cut' ? { mode: body.mode } : {}) } }]
     else if (op === 'key') xs = [{ t: 'key', i: { sid, keys: (Array.isArray(body.keys) ? body.keys : []).slice(0, 20).map(String), card: s.card?.open ? s.card.id : null } }]
     else if (op === 'killserver') xs = [{ t: 'killserver', i: { sid, port: Number(body.port) } }]
+    // 스냅샷 (REQ-F-881, 1.469): the address the Mac's browser opens is the one this device asked for.
+    else if (op === 'snapshot') xs = [{ t: 'snapshot', i: { sid, url: str(body.url) } }]
     else if (op === 'retract') xs = await retractI(s, h)
     else if (op === 'resume') xs = [{ t: 'open', i: { sid } }]
     else if (op === 'settings') {

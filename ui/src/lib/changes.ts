@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.469',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '스냅샷은 맥에 ego lite 가 있으면 ego lite 로 그린다(로그인한 사이트 그대로). 없거나 실패하면 전처럼 임시 프로필 Chrome. 그림도 모두 맥이 읽어 넘긴다',
+        refs: ['REQ-F-881'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui', 'server', 'agent'],
+        text: '서버를 믿지 않는 맥에서도 스냅샷을 쓴다: 기기가 주소에 서명하고 맥은 그 주소만 열며, 봉인 중이면 페이지·그림이 한 조각으로 봉인돼 서버는 전달만 한다. 본문은 화면이 DOMParser 로 직접 뽑는다(POST /api/sessions/<id>/snapshot)',
+        refs: ['REQ-F-881', 'IF-278', 'REQ-S-091', 'REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.468',
     date: '2026-11-08',
+    commit: '449002e',
     changes: [
       {
         kind: 'added',

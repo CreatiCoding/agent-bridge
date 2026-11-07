@@ -158,6 +158,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | lightfork | sid, cut(mode 칸, 잘라 내는 방식) | newSid 같음, launch 없음, sysPrompt 맥 | newSid |
 | btw | sid, textH | | text |
 | killserver | sid, port | | |
+| snapshot(SPEC 1.469) | sid, url | | 주소를 고르는 것은 기기. 1.468 에는 끔 |
 | background | on, proxy | login 은 `config.site` 와 같은 출처일 때만 | login |
 | heal | action | | |
 | awake | idle, lid | | |
@@ -178,7 +179,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 ### 5.5 명령 분류표 (에이전트 `commands` 전부)
 
 - **서명 필요**: §5.3 표의 명령.
-- **끔**(`enforce` 거부): `release`, `sudo`, `sudopass`, `account`(op≠list), `http`, `ws`, `delegated`, `sudoans`, `snapshot`(스냅샷, SPEC 1.468). 그리고 `welcome` 의 남의 세션 kill 은 `enforce` 에서 하지 않는다.
+- **끔**(`enforce` 거부): `release`, `sudo`, `sudopass`, `account`(op≠list), `http`, `ws`, `delegated`, `sudoans`. 그리고 `welcome` 의 남의 세션 kill 은 `enforce` 에서 하지 않는다.
 - **서명**(1.408): `adopt` 는 `{conv, cwd}` 를 서명하고, 맥은 대화 기록(jsonl)에 적힌 cwd 가 서명한 cwd 와 realpath 로 같을 때만 연다. 서버가 넣은 sysPrompt·routing 은 버린다.
 - **자유**(서명 없이): 
   - 상태: `ping`, `rehello`, `check`, `report`, `resync`, `welcome`(kill 없이), `models`, `sudooff`(비밀번호를 잊기만), `bg`(`enforce` 에서는 세는 수만 기록하고 새로고침을 일으키지 않음).
@@ -234,6 +235,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | attachment(1.401) | id·세션·이름·종류·크기·바이트를 한 조각 `sealed` 로(화면이 안의 id·sid 확인), 오류 | id, size |
 | convread(1.401) | text, error(단, 봉인 중에는 아예 거절해 글을 보내지 않음) | |
 | image, img, export | data | |
+| snapshot(SPEC 1.469) | url·html·images·via 를 `{kind:"snapshot", sid, …}` 한 조각 `sealed` 로, error | ok |
 | btw | answer | |
 | voice | text 와 그 녹음의 SHA-256 을 한 조각에(`{"text","audioH"}` 를 JSON 으로) | |
 | recent | 대화마다 title·first·last·cwd | |

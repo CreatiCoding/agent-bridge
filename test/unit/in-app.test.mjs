@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { imageUrl, localPort, modeFor, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
-import { snapshotImageUrls } from '../../agent/guard.mjs'
+import { snapshotImageUrls, egoSnapshotScript, egoSnapshotResult, EGO_MARK } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
 
@@ -74,10 +74,41 @@ test('AC-1659: a host’s rule, its subdomains’ too, the closest one first; no
   assert.equal(ruleHost('not a host'), null)
 })
 
-test('AC-1660: a snapshot reads the page’s own pictures on the Mac; a data: picture shows as it is', () => {
-  const html = '<img src="/a.png"><img src="data:x" data-src="b.jpg"><img srcset="c.webp 1x, d.webp 2x"><img src="https://cdn.example/x.png"><img src="/a.png">'
-  assert.deepEqual(snapshotImageUrls(html, 'http://localhost:3000/p/q'), ['http://localhost:3000/a.png', 'http://localhost:3000/p/b.jpg', 'http://localhost:3000/p/c.webp'])
+test('AC-1660: a snapshot reads all the page’s pictures on the Mac; a data: picture shows as it is', () => {
+  const html = '<img src="/a.png"><img src="data:x" data-src="b.jpg"><img srcset="c.webp 1x, d.webp 2x"><img src="https://cdn.example/x.png"><img src="/a.png"><img src="javascript:x">'
+  assert.deepEqual(snapshotImageUrls(html, 'http://localhost:3000/p/q'), ['http://localhost:3000/a.png', 'http://localhost:3000/p/b.jpg', 'http://localhost:3000/p/c.webp', 'https://cdn.example/x.png'])
   assert.equal(readerImg('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA')
   const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
-  assert.match(sheet, /\/api\/sessions\/\$\{sid\}\/snapshot\?u=/)
+  // POST (signed), the sealed piece checked for this session, read on the screen.
+  assert.match(sheet, /post<[^>]+>\(`\/api\/sessions\/\$\{sid\}\/snapshot`, \{ url: abs \}\)/)
+  assert.match(sheet, /o\.kind === 'snapshot' && o\.sid === sid/)
+  assert.match(sheet, /readSnapshot\(s\.html, s\.url,/)
+  assert.doesNotMatch(sheet, /dangerouslySetInnerHTML|innerHTML/)
+  const trust = readFileSync(new URL('../../ui/src/lib/trust.ts', import.meta.url), 'utf8')
+  assert.match(trust, /op === 'snapshot'\) xs = \[\{ t: 'snapshot', i: \{ sid, url: str\(body\.url\) \} \}\]/)
+})
+
+test('AC-1661: ego lite’s script opens the address, finishes its task space, and its result line is found', () => {
+  const s = egoSnapshotScript({ name: 'cb-snapshot-ab12', url: 'https://example.com/"x', budgetMs: 8000, gotoMs: 15000 })
+  assert.match(s, /taskSpace\("cb-snapshot-ab12"\)/)
+  assert.match(s, /page\.goto\("https:\/\/example\.com\/\\"x", \{ waitUntil: "load", timeout: 15000 \}\)/)
+  assert.match(s, /finally \{\n  await task\.finish\(\{ keep: \[\] \}\)/)
+  assert.match(s, /credentials: "include"/)
+  // The in-page function is valid JavaScript.
+  assert.doesNotThrow(() => new Function(`return (${s.slice(s.indexOf('page.evaluate(') + 14, s.lastIndexOf(', {"count"'))})`))
+  assert.deepEqual(egoSnapshotResult(`[ego] hello\n${EGO_MARK}{"url":"https://e/","html":"<p>a</p>","images":{"https://e/a.png":"data:image/png;base64,AA"}}\n`), { url: 'https://e/', html: '<p>a</p>', images: { 'https://e/a.png': 'data:image/png;base64,AA' } })
+  assert.equal(egoSnapshotResult('no result'), null)
+  assert.equal(egoSnapshotResult(`${EGO_MARK}{"html":1}`), null)
+})
+
+test('AC-1661: a Mac that does not trust the server takes a snapshot only for the address the device signed, and seals it', async () => {
+  const { classOf, rebuild, sealOut } = await import('../../agent/trust.mjs')
+  const rule = classOf({ t: 'snapshot' })
+  assert.deepEqual(rule, { i: ['sid', 'url'] })
+  assert.deepEqual(rebuild({ t: 'snapshot', reqId: 'r1', sid: 's1', url: 'https://evil/' }, rule, { sid: 's1', url: 'https://good/' }), { t: 'snapshot', reqId: 'r1', sid: 's1', url: 'https://good/' })
+  const m = sealOut({ t: 'snapshot', reqId: 'r1', sid: 's1', ok: true, url: 'https://good/', html: '<p>secret</p>', images: {}, via: 'ego' }, (v, sid) => `⟦${sid}:${v}⟧`)
+  assert.equal(m.html, undefined)
+  assert.equal(m.url, undefined)
+  assert.equal(JSON.parse(m.sealed.slice(4, -1)).html, '<p>secret</p>')
+  assert.equal(JSON.parse(m.sealed.slice(4, -1)).kind, 'snapshot')
 })

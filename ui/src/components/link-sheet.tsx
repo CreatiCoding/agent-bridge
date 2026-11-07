@@ -2,6 +2,7 @@
 // a real tab. A computer opens links in a new tab right away (lib/builtin-actions, link.open).
 // A page is shown in reading mode: the server fetches it (GET /api/read, REQ-S-100) and hands back its title, text
 // and pictures as data, drawn here as this page's own elements. Nothing of the page's HTML or scripts runs here.
+// 스냅샷 (REQ-F-881) is the page the session's Mac rendered, read here by lib/reader-dom.
 // http://localhost:<port> is a Mac's own app, made of scripts: when the session on screen started that server, it
 // shows through the site's preview origin in a frame (the same address 로컬 서버 열기 uses, REQ-F-727).
 import { useEffect, useState, useSyncExternalStore } from 'react'
@@ -9,6 +10,10 @@ import { createRoot } from 'react-dom/client'
 import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
 import { imageUrl, localPort, modeFor, readerImg, throughPreview } from '../lib/in-app'
+import { readSnapshot } from '../lib/reader-dom'
+
+/** What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address. */
+type Snap = { url: string; html: string; images?: Record<string, string>; via?: string }
 import { matchRoute } from '../lib/router'
 import { Button } from '../kit'
 import { Sheet } from '../kit/overlay'
@@ -71,8 +76,24 @@ async function load(url: string): Promise<View> {
   if (mode === 'snapshot') {
     // Drawn by the session's Mac: only from a session's page.
     if (!sid) throw new Error('스냅샷은 세션 화면에서만 열 수 있어요. 그 세션의 맥이 페이지를 그려요')
-    const p = await get<Page>(`/api/sessions/${sid}/snapshot?u=${encodeURIComponent(abs)}`)
-    return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks, snapshot: true }
+    // POST, signed by this device for a Mac that does not trust the server (lib/trust intentsFor).
+    const p = await post<Snap & { sealed?: string }>(`/api/sessions/${sid}/snapshot`, { url: abs })
+    let s: Snap | null = p
+    // A sealing Mac's answer is one piece (opened by api.ts): it must be a snapshot of this session.
+    if (p.sealed !== undefined) {
+      s = null
+      try {
+        const o = JSON.parse(p.sealed) as Snap & { kind?: string; sid?: string }
+        if (o.kind === 'snapshot' && o.sid === sid) s = o
+      } catch {}
+      if (!s) throw new Error('이 기기에서는 풀 수 없는 스냅샷이에요')
+    }
+    if (typeof s.html !== 'string' || typeof s.url !== 'string') throw new Error('맥에서 페이지를 그리지 못했어요')
+    const images = s.images && typeof s.images === 'object' ? s.images : {}
+    const sealed = p.sealed !== undefined
+    // Pictures the Mac read come as data:; the rest only when the server already saw the page (not sealed).
+    const pg = readSnapshot(s.html, s.url, (u) => (typeof images[u] === 'string' && /^data:image\//.test(images[u]) ? images[u] : sealed ? null : readerImg(u)))
+    return { kind: 'read', url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
   }
   const p = await get<Page>(`/api/read?u=${encodeURIComponent(abs)}`)
   return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks }
@@ -176,7 +197,7 @@ function LinkSheet() {
       {error ? (
         <div className="preview-msg">{error}</div>
       ) : !view ? (
-        <div className="preview-msg">{cur && modeFor(cur.url, location.href) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 30초 걸려요' : '여는 중…'}</div>
+        <div className="preview-msg">{cur && modeFor(cur.url, location.href) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 1분 걸려요' : '여는 중…'}</div>
       ) : view.kind === 'frame' ? (
         <iframe key={n} className="preview-frame" src={view.src} title={title} allow="clipboard-write; fullscreen" />
       ) : view.kind === 'image' ? (

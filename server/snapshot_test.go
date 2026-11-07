@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net/url"
 	"strings"
 	"testing"
 )
@@ -41,17 +40,9 @@ func TestLinkRulesAPI(t *testing.T) {
 	jeq(t, oget(js(body), "rules"), `[]`, body)
 }
 
-// AC-1660: a snapshot is read as the reader reads a page; the agent's pictures of the page's origin go in as data:,
-// anything else it hands over is dropped.
-func TestSnapshotPage(t *testing.T) {
-	base, _ := url.Parse("http://localhost:3000/app/")
-	png := "data:image/png;base64,iVBORw0KGgo="
-	html := `<html><head><title>앱</title><script>x()</script></head><body><div id="app"><main><h1>앱</h1><p>스크립트가 그린 본문</p><img src="/a.png"><img src="b.png"><img src="https://cdn.example/c.png"></main></div></body></html>`
-	pg := snapshotPage(html, base, M{"http://localhost:3000/a.png": png, "http://localhost:3000/app/b.png": "data:text/html;base64,PHA+"})
-	eq(t, pg.Title, "앱")
-	got := []string{}
-	for _, b := range pg.Blocks {
-		got = append(got, b.T+":"+b.Text+b.Src)
-	}
-	eq(t, strings.Join(got, "|"), "h1:앱|p:스크립트가 그린 본문|img:"+png+"|img:http://localhost:3000/app/b.png|img:https://cdn.example/c.png")
+// AC-1661 (1.469): a snapshot is asked for with POST; a GET is not a route, a wrong address is refused before the Mac.
+func TestSnapshotRoute(t *testing.T) {
+	_ = withConfigServer(t)
+	code, _ := callAPI(t, "POST", "/api/sessions/nope/snapshot", `{"url":"https://example.com/"}`)
+	ok(t, code == 404, "no such session")
 }

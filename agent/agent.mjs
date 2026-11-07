@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -4267,49 +4267,48 @@ const commands = {
     }
   },
   /**
-   * 스냅샷 (REQ-F-881): a page as this Mac renders it, for the in-app browser sheet of a phone. A headless Chrome of
-   * a throwaway profile (never the link's ~/.claude-bridge/browser, which is signed in to the site) opens the
-   * address, lets its scripts run for a while (--virtual-time-budget) and prints the rendered DOM. Pictures of the
-   * page's own origin are read here too, since the server cannot reach this Mac's localhost; the server turns the
-   * DOM into text and pictures (readerParse), so none of the page's HTML reaches the screen.
+   * 스냅샷 (REQ-F-881): a page as this Mac renders it, for the in-app browser sheet of a phone. ego lite first
+   * (`ego-browser nodejs`, 1.469): the person's own browser, signed in where they are, already running, so no
+   * profile lock. Without it, or when it fails, a headless Chrome of a throwaway profile (never the link's
+   * ~/.claude-bridge/browser, which is signed in to the site; never Chrome's own profile, locked while Chrome runs)
+   * with --dump-dom. The pictures are read here too, so the server never learns them. What goes back is sealed when
+   * sealing is on (sealOut): the screen opens it and reads it itself, the server only passes it on. The address is
+   * the one the person's device signed (TRUST_CLASS snapshot), so a server cannot make this Mac open another.
    */
-  async snapshot({ reqId, url }) {
-    const fail = (error) => emit({ t: 'snapshot', reqId, ok: false, error })
+  async snapshot({ reqId, sid, url }) {
+    const fail = (error) => emit({ t: 'snapshot', reqId, sid, ok: false, error })
     let page
     try {
       page = new URL(String(url ?? ''))
     } catch {}
     if (!page || (page.protocol !== 'http:' && page.protocol !== 'https:')) return fail('http(s) 주소만 스냅샷으로 열 수 있어요')
-    if (!CHROME_BIN) return fail(`이 맥에 Chrome 이 없어서 스냅샷을 만들 수 없어요. ${CHROME_FIX}`)
+    if (!EGO_BIN && !CHROME_BIN) return fail(`이 맥에 ego lite 도 Chrome 도 없어서 스냅샷을 만들 수 없어요. ${CHROME_FIX}`)
     if (snapshotsRunning >= SNAPSHOT_PARALLEL) return fail('스냅샷을 이미 만드는 중이에요. 잠시 뒤에 다시 해 주세요')
     snapshotsRunning++
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
     try {
-      const html = await new Promise((resolve, reject) => {
-        const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
-        const child = spawn(CHROME_BIN, args, { stdio: ['ignore', 'pipe', 'ignore'] })
-        const parts = []
-        let size = 0
-        const timer = setTimeout(() => (child.kill('SIGKILL'), reject(new Error('페이지를 그리는 데 너무 오래 걸려요'))), SNAPSHOT_TIMEOUT_MS)
-        child.stdout.on('data', (d) => {
-          size += d.length
-          if (size > SNAPSHOT_HTML_MAX) return child.kill('SIGKILL'), clearTimeout(timer), reject(new Error('페이지가 너무 커서 스냅샷으로 못 열어요'))
-          parts.push(d)
-        })
-        child.on('error', (e) => (clearTimeout(timer), reject(new Error(`Chrome 을 띄우지 못했어요 (${e.code ?? e.message})`))))
-        child.on('close', () => {
-          clearTimeout(timer)
-          const out = Buffer.concat(parts).toString('utf8')
-          if (!out.trim()) reject(new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요'))
-          else resolve(out)
-        })
-      })
-      emit({ t: 'snapshot', reqId, ok: true, url: page.href, html, images: await snapshotImages(html, page) })
+      let r = null
+      let via = 'ego'
+      let egoWhy = ''
+      if (EGO_BIN) {
+        try {
+          r = await egoSnapshot(page, reqId)
+        } catch (e) {
+          egoWhy = e.message
+          log('warn', 'snapshot', `ego lite 로 못 그려 Chrome 으로 (${egoWhy})`, sid)
+        }
+      }
+      if (!r) {
+        if (!CHROME_BIN) return fail(`ego lite 로 페이지를 그리지 못했어요 (${egoWhy})`)
+        via = 'chrome'
+        r = await chromeSnapshot(page)
+      }
+      if (r.html.length > SNAPSHOT_HTML_MAX) return fail('페이지가 너무 커서 스냅샷으로 못 열어요')
+      const images = await snapshotImages(r.html, r.url, r.images)
+      emit({ t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, via })
     } catch (e) {
       fail(e.message)
     } finally {
       snapshotsRunning--
-      fs.rm(profile, { recursive: true, force: true }, () => {})
     }
   },
   /**
@@ -6270,24 +6269,92 @@ const BG_PROFILE = path.join(STATE_DIR, 'browser')
 // all, the most of the rendered DOM passed on, and how many at once.
 const SNAPSHOT_BUDGET_MS = 8_000
 const SNAPSHOT_TIMEOUT_MS = 30_000
+const SNAPSHOT_EGO_GOTO_MS = 15_000
+const SNAPSHOT_EGO_TIMEOUT_MS = 30_000
+const SNAPSHOT_IMG_FETCH_MS = 8_000
 const SNAPSHOT_HTML_MAX = 3 * 1024 * 1024
 const SNAPSHOT_PARALLEL = 2
 let snapshotsRunning = 0
-const SNAPSHOT_IMG_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
-/** The page's own pictures as data: addresses, by their full address ({} when none could be read). */
-async function snapshotImages(html, page) {
+// ego lite's command (ego-browser), where its installer puts it: the agent runs under launchd with a short PATH.
+const EGO_BIN = [...String(process.env.PATH ?? '').split(':').filter(Boolean), path.join(HOME, '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin'].map((d) => path.join(d, 'ego-browser')).find((p) => fs.existsSync(p)) ?? null
+
+/** A child's stdout up to max bytes within ms; rejects with why. stdin is written once and closed. */
+function runCapture(bin, args, { input, max, ms, slow, big, gone }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] })
+    const parts = []
+    let size = 0
+    let done = false
+    const end = (f) => (done ? undefined : ((done = true), clearTimeout(timer), f()))
+    const timer = setTimeout(() => end(() => (child.kill('SIGKILL'), reject(new Error(slow)))), ms)
+    child.stdout.on('data', (d) => {
+      size += d.length
+      if (size > max) return end(() => (child.kill('SIGKILL'), reject(new Error(big))))
+      parts.push(d)
+    })
+    child.on('error', (e) => end(() => reject(new Error(`${gone} (${e.code ?? e.message})`))))
+    child.on('close', () => end(() => resolve(Buffer.concat(parts).toString('utf8'))))
+    if (input !== undefined) {
+      child.stdin.on('error', () => {})
+      child.stdin.end(input)
+    }
+  })
+}
+
+/** The page through ego lite: {url, html, images} (its own-origin pictures read with its cookies). */
+async function egoSnapshot(page, reqId) {
+  const name = `cb-snapshot-${String(reqId ?? crypto.randomUUID()).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12)}`
+  const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS })
+  const out = await runCapture(EGO_BIN, ['nodejs'], { input: script, max: 16 * 1024 * 1024, ms: SNAPSHOT_EGO_TIMEOUT_MS, slow: 'ego lite 가 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'ego-browser 를 띄우지 못했어요' })
+  const r = egoSnapshotResult(out)
+  if (!r) throw new Error(`ego lite 가 결과를 주지 않았어요: ${out.trim().split('\n').pop()?.slice(0, 200) ?? ''}`)
+  return r
+}
+
+/** The page through a headless Chrome of a throwaway profile: {url, html, images: {}}. */
+async function chromeSnapshot(page) {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
+  try {
+    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+    const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
+    if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
+    return { url: page.href, html, images: {} }
+  } finally {
+    fs.rm(profile, { recursive: true, force: true }, () => {})
+  }
+}
+
+/**
+ * The page's pictures as data: addresses by their full address: what the browser already read (have, with the page's
+ * cookies), the rest read here without cookies, all at once within SNAPSHOT_IMG_FETCH_MS, within the size limits.
+ */
+async function snapshotImages(html, pageUrl, have = {}) {
   const out = {}
   let total = 0
-  for (const src of snapshotImageUrls(html, page)) {
-    try {
-      const r = await fetch(src, { signal: AbortSignal.timeout(5_000), redirect: 'error' })
-      const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
-      if (!r.ok || !SNAPSHOT_IMG_TYPES.has(type)) continue
-      const bytes = Buffer.from(await r.arrayBuffer())
-      if (bytes.length > SNAPSHOT_IMG_ONE_MAX || total + bytes.length > SNAPSHOT_IMG_ALL_MAX) continue
-      total += bytes.length
-      out[src] = `data:${type};base64,${bytes.toString('base64')}`
-    } catch {}
+  for (const [k, v] of Object.entries(have)) {
+    if (typeof v !== 'string' || !/^data:image\/(png|jpeg|gif|webp|avif);base64,/.test(v)) continue
+    if (total + v.length > SNAPSHOT_IMG_ALL_MAX * 1.4) break
+    total += v.length
+    out[k] = v
+  }
+  const want = snapshotImageUrls(html, pageUrl).filter((u) => !out[u])
+  const got = await Promise.all(
+    want.map(async (src) => {
+      try {
+        const r = await fetch(src, { signal: AbortSignal.timeout(SNAPSHOT_IMG_FETCH_MS), redirect: 'follow' })
+        const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+        if (!r.ok || !SNAPSHOT_IMG_TYPES.includes(type)) return null
+        const bytes = Buffer.from(await r.arrayBuffer())
+        return bytes.length > SNAPSHOT_IMG_ONE_MAX ? null : [src, `data:${type};base64,${bytes.toString('base64')}`]
+      } catch {
+        return null
+      }
+    }),
+  )
+  for (const x of got) {
+    if (!x || total + x[1].length > SNAPSHOT_IMG_ALL_MAX * 1.4) continue
+    total += x[1].length
+    out[x[0]] = x[1]
   }
   return out
 }

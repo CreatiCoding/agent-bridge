@@ -1,11 +1,9 @@
 package main
 
 // 링크 열기 규칙과 스냅샷 (REQ-F-881): the in-app browser sheet of a touch device (REQ-F-879) opens a link one of
-// four ways, chosen per host in the account's rules. 스냅샷 is the reading mode drawn from what the session's Mac
-// rendered: its agent opens the address in a headless Chrome of a throwaway profile, lets the page's scripts run,
-// and hands back the rendered DOM. The same reader (readerParse) turns it into title, text and pictures, so a page
-// a script draws (an SPA, an app on the Mac's localhost) reads as well as a plain one, and still no HTML of the
-// page reaches the screen.
+// four ways, chosen per host in the account's rules. 스냅샷 is the page as the session's Mac rendered it (ego lite,
+// else a headless Chrome), scripts and sign-ins included. Since 1.469 the server only passes it on: the screen reads
+// the DOM into text and pictures itself, and a Mac that seals sends it as one piece the server cannot open.
 
 import (
 	"net/url"
@@ -16,7 +14,7 @@ import (
 
 const (
 	LINK_RULES_MAX  = 50
-	SNAPSHOT_MS     = 45_000 // the agent gives Chrome 30 s
+	SNAPSHOT_MS     = 75_000 // the agent: ego lite 30 s, then Chrome 30 s, then the pictures 8 s
 	SNAPSHOT_IMGMAX = 8 << 20
 )
 
@@ -90,9 +88,13 @@ func apiLinkRules(req *Req, res *Res, uid string, get, post bool) bool {
 	return true
 }
 
-// GET /api/sessions/<id>/snapshot?u= (IF-278): the page as the session's Mac rendered it, in the reader's shape.
-func sessionSnapshot(req *Req, res *Res, u *url.URL, meta *Sess) {
-	target := qstr(u, "u")
+// POST /api/sessions/<id>/snapshot {url} (IF-278, 1.469): the page as the session's Mac rendered it, passed on as the
+// Mac gave it. The server reads none of it: when the Mac seals its words, the page, its address and its pictures
+// come as one sealed piece only the person's devices open; the screen reads the DOM itself. The address is signed
+// by the person's device (X-Bridge-Auth): a Mac that does not trust this server opens only that one.
+func sessionSnapshot(req *Req, res *Res, meta *Sess) {
+	b := body(req, 8*1024)
+	target := jsStringU(b["url"])
 	if len(target) > 4096 {
 		refuse(400, "주소가 너무 길어요")
 	}
@@ -107,40 +109,30 @@ func sessionSnapshot(req *Req, res *Res, u *url.URL, meta *Sess) {
 	if !online(hostID) {
 		refuse(409, "세션의 맥이 연결돼 있지 않아서 스냅샷을 만들 수 없어요")
 	}
-	r := ask(hostID, M{"t": "snapshot", "sid": meta.id(), "url": pu.String()}, SNAPSHOT_MS)
+	// The address as the device sent it: it is what the device signed.
+	r := ask(hostID, M{"t": "snapshot", "sid": meta.id(), "url": target}, SNAPSHOT_MS)
 	if !truthy(r["ok"]) {
 		refuse(502, orStr(r["error"], "맥에서 페이지를 그리지 못했어요"))
+	}
+	if sealed := jsStringU(r["sealed"]); sealed != "" {
+		jsonRes(res, 200, M{"ok": true, "sealed": sealed})
+		return
 	}
 	html := jsStringU(r["html"])
 	if len(html) > READER_MAX_HTML {
 		refuse(502, "페이지가 너무 커서 스냅샷으로 못 열어요")
 	}
-	base := pu
-	if f, err := url.Parse(jsStringU(r["url"])); err == nil && (f.Scheme == "http" || f.Scheme == "https") && f.Host != "" {
-		base = f
-	}
-	pg := snapshotPage(html, base, asM(r["images"]))
-	jsonRes(res, 200, M{"ok": true, "url": base.String(), "title": pg.Title, "site": pg.Site, "blocks": pg.Blocks, "snapshot": true})
-}
-
-// snapshotPage reads the rendered DOM as the reader does. Pictures of the page's own origin the agent read on the
-// Mac (an app on localhost cannot be fetched from here) take a data: address in place of theirs, only for a real
-// picture type and up to SNAPSHOT_IMGMAX in all.
-func snapshotPage(html string, base *url.URL, imgs M) readerPage {
-	pg := readerParse(strings.ToValidUTF8(html, ""), base)
+	images := M{}
 	total := 0
-	for i, b := range pg.Blocks {
-		if b.T != "img" {
-			continue
-		}
-		d := jsStringU(imgs[b.Src])
-		if d == "" || !snapshotDataRe.MatchString(d) || total+len(d) > SNAPSHOT_IMGMAX {
+	for k, v := range asM(r["images"]) {
+		d := jsStringU(v)
+		if !snapshotDataRe.MatchString(d) || total+len(d) > SNAPSHOT_IMGMAX {
 			continue
 		}
 		total += len(d)
-		pg.Blocks[i].Src = d
+		images[k] = d
 	}
-	return pg
+	jsonRes(res, 200, M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "via": r["via"]})
 }
 
 var snapshotDataRe = regexp.MustCompile(`^data:image/(png|jpeg|gif|webp|avif);base64,[A-Za-z0-9+/=]+$`)
