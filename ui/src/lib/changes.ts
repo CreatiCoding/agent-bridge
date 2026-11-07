@@ -26,7 +26,20 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.476',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '전부 허용 세션에서 권한 요청 카드가 잠깐 떴다 꺼지고 알림이 오던 것: 훅이 이미 허용해 닫히는 중인 확인 창을 화면 읽기가 누르려다 실패하면 카드를 열었음. 이제 훅 허용 뒤 3초 동안은 화면의 창을 누르지 않고, 누르기 전에 창이 사라졌으면 카드 없이 넘김. 위험한 호출은 그대로 물음',
+        refs: ['REQ-F-731'],
+      },
+    ],
+  },
+  {
     version: '1.475',
+    commit: '581ea22',
     date: '2026-11-08',
     changes: [
       {

@@ -11,7 +11,7 @@ import crypto from 'node:crypto'
 import readline from 'node:readline/promises'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN } from './dialog.mjs'
+import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN, autoAllowStep } from './dialog.mjs'
 import { writingPreview } from './preview.mjs'
 import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
@@ -1248,6 +1248,9 @@ function autoAllowAnswer(sid, ev) {
     note(sid, `⚠️ *안전한 전부 허용*이라 ${risk}는 물어봐요.`, 'warn')
     return null
   }
+  // The screen reader leaves the dialog this closes alone for a moment (surfaceDialog, REQ-F-731 rule 5).
+  s.hookAllowAt = Date.now()
+  s.autoTries = 0
   emit({ t: 'card', sid, card: { id: crypto.randomUUID(), kind: 'permission', open: false, auto: true, at: Date.now(), title: `${ev.tool_name} 권한 요청`, tool, result: '자동 허용' } })
   log('info', 'dialog', `전부 허용: ${ev.tool_name} 을 훅에서 허용`, sid)
   return { hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } } }
@@ -2301,15 +2304,17 @@ async function surfaceDialog(sid, s, screen) {
   const risk = s.autoAllow && proceed ? guarded ?? (tool ? (s.allowAll ? bridgeSelfCall(tool) : riskyCall(tool, { cwd: s.cwd, home: os.homedir() })) : null) : null
   if (risk && !guarded) note(sid, `⚠️ *안전한 전부 허용*이라 ${risk}는 물어봐요.`, 'warn')
   if (s.autoAllow && proceed && !risk) {
+    // The hook has just allowed it (autoAllowAnswer): Claude Code can still draw the dialog for a moment while it
+    // closes. Pressing it then finds no dialog or types the digit into the prompt, and the card that followed
+    // flashed up with a push notice and folded again (REQ-F-731 rule 5). Leave it to the hook's allow.
+    if (autoAllowStep({ hookAllowAt: s.hookAllowAt }) === 'leave') return true
     // 전부 허용: the widest allow that ends with the session, never one that is written into the settings.
     const r = await driver.answerProceed(pane(s), 'auto')
-    if (r === 'answered') {
-      s.autoTries = 0
-      emit({ t: 'card', sid, card: { id: crypto.randomUUID(), kind: 'permission', open: false, auto: true, at: Date.now(), title: d.question, context: d.context, tool, result: '자동 허용' } })
-      return true
-    }
-    if (r === 'unfocused' && ++s.autoTries <= 3) return true
+    const next = autoAllowStep({ hookAllowAt: s.hookAllowAt, result: r, tries: s.autoTries ?? 0 })
+    if (r === 'answered') emit({ t: 'card', sid, card: { id: crypto.randomUUID(), kind: 'permission', open: false, auto: true, at: Date.now(), title: d.question, context: d.context, tool, result: '자동 허용' } })
+    if (next === 'retry') return (s.autoTries = (s.autoTries ?? 0) + 1), true
     s.autoTries = 0
+    if (next === 'done') return true
   }
   // The same dialog coming back after it was answered is a setting that needs a restart, not a question.
   const kind = proceed ? 'permission' : (s.asking?.kind ?? 'dialog')

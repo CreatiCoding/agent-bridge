@@ -310,6 +310,22 @@ export function isProceedDialog(d) {
   return kinds.includes('deny') && kinds.some((k) => k === 'allow-once' || k === 'allow-session' || k === 'allow-always')
 }
 
+/** How long after the PermissionRequest hook's allow a proceed dialog on screen is the one closing (REQ-F-731 rule 5). */
+export const HOOK_ALLOW_GRACE_MS = 3000
+
+/**
+ * 전부 허용 reading a proceed dialog off the screen (REQ-F-731 rule 5): 'leave' while the hook's allow closes it,
+ * 'press' before the press, then after it (`result` is answerProceed's): 'done' when pressed, or when nothing is left
+ * to ask (gone, or the hook allowed it meanwhile), 'retry' while the prompt holds the keyboard (at most 3 times),
+ * else 'card'. A card here opened, sent a push notice and folded again a moment later.
+ */
+export function autoAllowStep({ hookAllowAt = 0, now = Date.now(), result = null, tries = 0 } = {}) {
+  const hookAllowed = now - (hookAllowAt ?? 0) < HOOK_ALLOW_GRACE_MS
+  if (result == null) return hookAllowed ? 'leave' : 'press'
+  if (result === 'answered' || result === 'no-dialog' || hookAllowed) return 'done'
+  return result === 'unfocused' && tries < 3 ? 'retry' : 'card'
+}
+
 /**
  * Reads and answers terminal dialogs. Holds the only code in the app that
  * presses dialog keys, so "is that option actually on screen?" is asked once.

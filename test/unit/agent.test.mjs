@@ -2,7 +2,7 @@
 // Claude Code draws shows up here as a failing example rather than as a session that sits unanswered.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, detectKnown, cursorKeys, DialogDriver } from '../../agent/dialog.mjs'
+import { parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, detectKnown, cursorKeys, DialogDriver, autoAllowStep, HOOK_ALLOW_GRACE_MS } from '../../agent/dialog.mjs'
 import { writingPreview, visualWidth } from '../../agent/preview.mjs'
 import { mainColumn, splitColumn } from '../../agent/split.mjs'
 import { stuckState, inputBoxHas, detectPermissionMode, detectEffort, detectContext, normalizeMessage, transcriptHasPrompt, WORKING_RE, mdMaxOf } from '../../agent/screen.mjs'
@@ -353,6 +353,29 @@ test('a digit pressed after the dialog closed by itself is taken back, not count
   })
   assert.equal(await driver.answerNumber('p', '1'), 'gone')
   assert.deepEqual(sent, [['1'], ['BSpace']])
+})
+
+// AC-1672 (REQ-F-731 rule 5, 제보 2026-11-07): in 전부 허용 the dialog the hook just allowed is not pressed and no card
+// is opened for it (one used to flash up with a push notice and fold again).
+test('AC-1672 전부 허용 leaves the dialog the hook just allowed, and a dialog gone before the press opens no card', async () => {
+  const now = 1_000_000
+  assert.equal(HOOK_ALLOW_GRACE_MS, 3000)
+  assert.equal(autoAllowStep({ hookAllowAt: now - 35, now }), 'leave')
+  assert.equal(autoAllowStep({ hookAllowAt: now - HOOK_ALLOW_GRACE_MS, now }), 'press')
+  assert.equal(autoAllowStep({ hookAllowAt: undefined, now }), 'press')
+  assert.equal(autoAllowStep({ now, result: 'answered' }), 'done')
+  assert.equal(autoAllowStep({ now, result: 'no-dialog' }), 'done')
+  // The hook's allow came in while the digit was being pressed: the digit landed in the prompt (unfocused).
+  assert.equal(autoAllowStep({ hookAllowAt: now - 10, now, result: 'unfocused', tries: 3 }), 'done')
+  assert.equal(autoAllowStep({ now, result: 'unfocused', tries: 0 }), 'retry')
+  assert.equal(autoAllowStep({ now, result: 'unfocused', tries: 2 }), 'retry')
+  assert.equal(autoAllowStep({ now, result: 'unfocused', tries: 3 }), 'card')
+  assert.equal(autoAllowStep({ now, result: 'no-option' }), 'card')
+  // The dialog closed before answerProceed read it again: 'no-dialog', nothing pressed.
+  const sent = []
+  const driver = new DialogDriver({ sendKeys: async (p, k) => sent.push(k), capture: async () => `⏺ Bash(ls)\n${RULE}\n❯ \n${RULE}\n  ⏸ manual mode on` })
+  assert.equal(await driver.answerProceed('p', 'auto'), 'no-dialog')
+  assert.deepEqual(sent, [])
 })
 
 test('the fullscreen offer under a sent message is read as its own dialog and declined (2026-10-25)', () => {
