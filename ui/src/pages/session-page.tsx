@@ -13,6 +13,7 @@ import { featureOn } from '../lib/features'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { runnerCan, runnerLabel } from '../lib/runner'
+import { activityLine } from '../lib/activity'
 import { Button, Chip, Empty, Icon, IconButton, LoadError, Spinner, useTick, useWide, wideNow } from '../kit'
 import { openMenu, toast } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
@@ -343,8 +344,23 @@ function shownRunning(items: Item[], name: string): boolean {
   return false
 }
 
+/** When the latest timeline item of the running turn came: what the status line counts "마지막 활동" from. */
+function lastItemAt(items: Item[], turnAt: number | null): number {
+  let at = 0
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (turnAt && it.at < turnAt) break
+    at = Math.max(at, it.at)
+    if (it.t === 'user') break
+  }
+  return at
+}
+
 function Activity({ s, items }: { s: Session; items: Item[] }) {
   useTick(1000)
+  const hostOnline = useStore((st) => st.state?.hosts.find((h) => h.id === s.hostId)?.online ?? true)
+  const link = useStore((st) => st.link)
+  const downSince = useStore((st) => st.downSince)
   if (s.closed || !s.state.alive) return null
   const st = s.state
   if (st.phase === 'starting')
@@ -353,10 +369,37 @@ function Activity({ s, items }: { s: Session; items: Item[] }) {
         <Spinner size={12} /> 세션을 띄우는 중
       </div>
     )
+  const line = activityLine({
+    now: Date.now(),
+    phase: st.phase,
+    turnAt: st.turnAt,
+    waiting: st.waiting,
+    waitingSince: st.waitingSince,
+    tool: st.tool,
+    compacting: st.compacting,
+    hooks: runnerCan(s, 'hooks'),
+    hostOnline,
+    link,
+    downSince,
+    lastItemAt: st.phase === 'busy' ? lastItemAt(items, st.turnAt) : 0,
+  })
   // Between turns the line keeps its place, empty: dropping it pulled the conversation down at every turn's end
   // and pushed it up again at the next one.
-  if (st.phase !== 'busy') return <div className="activity" aria-hidden />
-  const since = st.turnAt ? duration(Date.now() - st.turnAt) : ''
+  if (!line) return <div className="activity" aria-hidden />
+  // The turn's whole time, and apart from it how long nothing has moved (REQ-F-874): a long quiet stretch reads as such.
+  const times = line.total == null ? '' : line.quiet != null ? ` · 전체 ${duration(line.total)} · 마지막 활동 ${duration(line.quiet)} 전` : ` · ${duration(line.total)}`
+  const many = st.running && st.running.length > 1 ? ` · 도구 ${st.running.length}개 실행 중` : ''
+  if (line.label)
+    return (
+      <div className="activity">
+        <Spinner size={12} />
+        <span className="activity-text">
+          {line.label}
+          {times}
+          {st.phase === 'busy' ? many : ''}
+        </span>
+      </div>
+    )
   // The agent's title starts with the tool's name ("Bash /private/tmp/…"): said once, with its paths short (REQ-F-703).
   const name = st.tool?.name ?? ''
   // The timeline row of that tool already says its name and command: said again here it read as the same thing twice.
@@ -367,7 +410,7 @@ function Activity({ s, items }: { s: Session; items: Item[] }) {
         <Spinner size={12} />
         <span className="activity-text">
           {n > 1 ? `도구 ${n}개 실행 중` : '도구 실행 중'}
-          {since ? ` · ${since}` : ''}
+          {times}
         </span>
       </div>
     )
@@ -378,9 +421,9 @@ function Activity({ s, items }: { s: Session; items: Item[] }) {
       <Spinner size={12} />
       <span className="activity-text">
         {/* A tool with no name: what a runner without hooks says it is doing (Codex's working line, REQ-F-851 규칙 9a). */}
-        {st.tool?.name ? `${st.tool.name}${what ? ` · ${what}` : ''}` : what || '생각하는 중'}
-        {since ? ` · ${since}` : ''}
-        {st.running && st.running.length > 1 ? ` · 도구 ${st.running.length}개 실행 중` : ''}
+        {name ? `${name}${what ? ` · ${what}` : ''}` : what}
+        {times}
+        {many}
       </span>
     </div>
   )

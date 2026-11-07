@@ -65,6 +65,8 @@ export interface SessionState {
   routing?: boolean
   size?: number | null
   quietSince?: number | null
+  /** The working line says the context is being compacted (REQ-F-874). */
+  compacting?: boolean
   usage?: Usage | null
   cache?: CacheUsage | null
   handedOffTo?: string | null

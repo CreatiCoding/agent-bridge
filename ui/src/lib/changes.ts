@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.460',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'agent', 'server'],
+        text: '세션 화면의 작업 상태줄: 1분 넘게 아무것도 오지 않으면 "전체 12분 · 마지막 활동 5분 전"처럼 두 시간을 따로 보이고, 승인 대기·컨텍스트 압축·맥 연결 끊김·페이지 연결 끊김을 따로 말한다. Codex 처럼 지금 하는 일을 알 수 없으면 "생각하는 중" 대신 "작업 중 · 상태 업데이트 없음". 이미 받는 상태로만 계산해 서버에 더 묻지 않는다',
+        refs: ['REQ-F-874', 'REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.459',
     date: '2026-11-07',
+    commit: '64f2895',
     changes: [
       {
         kind: 'fixed',

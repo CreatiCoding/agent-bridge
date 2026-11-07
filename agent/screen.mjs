@@ -7,6 +7,10 @@ const EMPTY_PROMPT_RE = /^\s*❯\s*$/m
 // `esc to interrupt` is the familiar hint; newer Claude Code also shows only a spinner line
 // (`✽ Flibbertigibbeting… (13m 20s · ↓ 14.5k tokens)`) while a long tool call runs, with no hint text at all.
 export const WORKING_RE = /esc to interrupt|^\s*[✻✢✶✳✽✦*·]\s+\S+…\s*\(\d/im
+// The working line while the context is compacted: Claude Code's "✻ Compacting conversation… (…)", codex's
+// "• Compacting… (12s • esc to interrupt)". A spinner glyph, the word, and the line's timer or hint after it:
+// a reply that merely starts with "Compacting" has no glyph in front.
+export const COMPACTING_RE = /^\s*[✻✢✶✳✽✦*·•◦]\s+(?:\*\*)?Compacting\b[^\n]*\(/im
 
 /**
  * 'interrupted': the turn was stopped and Claude waits for the next instruction. 'idle': an empty prompt and

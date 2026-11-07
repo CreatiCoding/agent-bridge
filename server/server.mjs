@@ -2501,6 +2501,7 @@ const fromAgent = {
       bridgeTools: Array.isArray(msg.bridgeTools) ? msg.bridgeTools.slice(0, 50).map((t) => String(t).slice(0, 80)) : null,
       size: Number(msg.size) || null,
       quietSince: Number(msg.quietSince) || null,
+      compacting: msg.compacting === true,
       usage: msg.usage && typeof msg.usage === 'object' ? Object.fromEntries(['context', 'window', 'fiveHour', 'week', 'cost', 'fiveHourResetsAt', 'weekResetsAt'].map((k) => [k, typeof msg.usage[k] === 'number' ? msg.usage[k] : null])) : null,
       handedOffTo: safeId(msg.handedOffTo) ? msg.handedOffTo : null,
       cache: cacheOf(msg.cache),

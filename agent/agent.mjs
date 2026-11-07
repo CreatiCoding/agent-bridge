@@ -31,7 +31,7 @@ import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
 import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
-import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
+import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
@@ -1405,7 +1405,11 @@ async function watchCodex(sid, s, screen) {
   if (CODEX_WORKING_RE.test(screen)) s.activityAt = Date.now()
   // Codex has no hooks to say what it is doing: its working line's header goes to the status line, so a long
   // thinking that writes nothing to the rollout yet does not read as a page stuck on "생각하는 중" (REQ-F-851 규칙 9a).
-  s.codexDoing = s.turn ? codexStatus(screen) : null
+  const doing = s.turn ? codexStatus(screen) : null
+  // When the header last changed: the page counts "마지막 활동" from it while nothing reaches the rollout (REQ-F-874).
+  if (doing !== s.codexDoing) s.codexDoingAt = doing ? Date.now() : null
+  s.codexDoing = doing
+  s.compacting = !!s.turn && COMPACTING_RE.test(screen)
   // A command or edit approval, or an MCP tool call waiting for its approval (REQ-F-859): both become a card.
   const a = codexQuestion(screen)
   if (a) {
@@ -1844,7 +1848,7 @@ function publish(sid, s) {
     waiting: s.wait ? WAIT_LABEL[s.wait.reason] ?? '응답 대기' : null,
     waitingSince: s.wait?.since ?? null,
     held: s.held.map(({ id, text, at }) => ({ id, text, at })),
-    tool: tool ? { name: tool.name, title: tool.title, at: tool.at } : s.turn && s.codexDoing ? { name: '', title: s.codexDoing, at: null } : null,
+    tool: tool ? { name: tool.name, title: tool.title, at: tool.at } : s.turn && s.codexDoing ? { name: '', title: s.codexDoing, at: s.codexDoingAt ?? null } : null,
     tools: s.running.size,
     running: [...s.running.values()].map((r) => r.title).filter(Boolean).slice(0, 20),
     sessionMd: sessionMdBytes(sid, s),
@@ -1869,6 +1873,8 @@ function publish(sid, s) {
     cache: cacheStatus(s.cache),
     // A turn that has shown nothing new for a minute and a half: the page says so instead of just "working".
     quietSince: s.turn && !s.wait && Date.now() - s.activityAt >= 90_000 ? s.activityAt : null,
+    // The working line says the context is being compacted (REQ-F-874): the page says so instead of "생각하는 중".
+    compacting: !!(s.turn && s.compacting),
     card: s.card?.open ? s.card.id : null,
   }
   const key = JSON.stringify(status)
@@ -2673,6 +2679,7 @@ async function watch(sid, s) {
 
     const working = WORKING_RE.test(screen)
     if (working) s.activityAt = Date.now()
+    s.compacting = !!s.turn && COMPACTING_RE.test(screen)
     // An old Claude Code without these hooks: the screen is all there is to go by.
     if (!s.hooks) {
       if (working && !s.turn) beginTurn(sid, s)
