@@ -12,6 +12,8 @@ import (
 const (
 	MAX_TEXT = 40_000
 	MAX_TOOL = 6_000
+	// A Codex thinking summary as the page shows it (the agent already cuts at 4,000).
+	MAX_THINKING = 4_000
 )
 
 func shortenHome(p, home string) string {
@@ -622,7 +624,11 @@ func lineToEvents(line string, ctx evOpts) []any {
 		}
 		for idx, c := range list {
 			cm := asM(c)
-			if t, ok := cm["text"].(string); ok && cm["type"] == "text" && jsTrim(t) != "" {
+			if t, ok := cm["text"].(string); ok && cm["type"] == "reasoning" && jsTrim(t) != "" {
+				// Codex's thinking summary (REQ-F-851 rule 9b): its own kind, so it is no answer (no 새 답, no preview,
+				// not posted to a thread) and a quiet answer stays quiet.
+				push(M{"k": "thinking", "text": truncate(t, MAX_THINKING)})
+			} else if t, ok := cm["text"].(string); ok && cm["type"] == "text" && jsTrim(t) != "" {
 				said := FAKE_NOTIFICATION.ReplaceAllString(t, "")
 				faked := said != t
 				listedText, todos := extractTodos(said)

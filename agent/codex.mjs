@@ -270,6 +270,18 @@ const textOf = (content, kind) =>
     .map((c) => c.text)
     .join('\n')
 
+/** A thinking's summary parts, one paragraph each, up to REASONING_MAX characters; '' when it has none. */
+export const REASONING_MAX = 4000
+export function reasoningText(summary) {
+  const t = textOf(summary, 'summary_text')
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return t.length > REASONING_MAX ? `${t.slice(0, REASONING_MAX - 1)}…` : t
+}
+
 const parseArgs = (s) => {
   if (s && typeof s === 'object') return s
   try {
@@ -364,6 +376,11 @@ export function convertLine(o, { sid, off, st }) {
     } else if (p.type === 'message' && p.role === 'assistant') {
       const t = textOf(p.content, 'output_text')
       if (t.trim()) assistant([{ type: 'text', text: t }])
+    } else if (p.type === 'reasoning') {
+      // Codex's thinking, as the summary it shows (REQ-F-851 rule 9b): written once a thinking ends. Its own block
+      // type, not "thinking", so Claude Code's thinking blocks stay as they were. Raw reasoning (content) is left out.
+      const t = reasoningText(p.summary)
+      if (t) assistant([{ type: 'reasoning', text: t }])
     } else if ((p.type === 'function_call' || p.type === 'custom_tool_call') && p.call_id) {
       assistant([toolUse(p.name, p.type === 'custom_tool_call' ? { input: p.input } : p.arguments, String(p.call_id))])
     } else if (p.type === 'local_shell_call' && p.call_id) {

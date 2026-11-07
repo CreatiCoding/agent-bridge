@@ -9,6 +9,7 @@ export type Item =
   | { t: 'card'; key: string; seq: number; at: number; card: Card; result?: string; closed: boolean }
   | { t: 'held'; key: string; seq: number; at: number; id: string; n: number }
   | { t: 'side'; key: string; seq: number; at: number; id: string; q: string; answer?: string; error?: string }
+  | { t: 'thinking'; key: string; seq: number; at: number; text: string }
   | { t: 'note'; key: string; seq: number; at: number; text: string; tone: 'info' | 'warn' | 'error' | 'end' | 'local'; error?: boolean; actions?: NoteAction[]; open?: { sid: string; label: string } }
 
 /** A button the server put on a line (as a block of buttons): its value is `<pid>:<command> [argument]`. */
@@ -139,6 +140,10 @@ export function fold(prev: Folded, events: Ev[]): Folded {
       case 'notice':
         // A notice that links another session (Codex 로 이어서 작업, REQ-F-857) carries a button that opens it.
         add({ t: 'note', key: `n:${e.seq}`, ...base, text: e.text, tone: e.tone === 'warn' ? 'warn' : 'info', ...(e.open ? { open: { sid: e.open, label: e.openLabel || '세션 열기' } } : {}) })
+        break
+      case 'thinking':
+        // Codex's thinking summary (REQ-F-851 rule 9b): one folded row, its header shown.
+        add({ t: 'thinking', key: `k:${e.seq}`, ...base, text: e.text })
         break
       case 'line':
         add({ t: 'note', key: `n:${e.seq}`, ...base, text: e.text, tone: 'info', actions: actionsOf(e.blocks) })

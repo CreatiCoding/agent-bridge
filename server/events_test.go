@@ -167,3 +167,13 @@ func TestFileLine(t *testing.T) {
 	}
 	eq(t, user["text"], any("읽어 줘\n📎 보고서.pdf"))
 }
+
+func TestCodexReasoningBlock(t *testing.T) {
+	e := evs(`{"type":"assistant","timestamp":"2026-11-08T00:00:00Z","message":{"model":"gpt-5-codex","content":[{"type":"reasoning","text":"**Planning the fix**\n\nRead first."},{"type":"reasoning","text":"  "}]}}`)
+	ks := []any{}
+	for _, x := range e {
+		ks = append(ks, x["k"])
+	}
+	jeq(t, ks, `["model", "thinking"]`)
+	eq(t, e[1]["text"], any("**Planning the fix**\n\nRead first."))
+}

@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, codexStatus, convertLine, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, codexStatus, convertLine, reasoningText, REASONING_MAX, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -569,4 +569,20 @@ test('codex 전부 허용은 키 직전의 모드로 다시 판정한다', () =>
   const cap = body.indexOf('term.capture(')
   const again = body.indexOf('judge()', cap)
   assert.ok(cap > 0 && again > cap && again < body.indexOf('term.sendKeys('))
+})
+
+test('a reasoning item becomes a reasoning block with its summary, raw reasoning and an empty summary left out (REQ-F-851 rule 9b)', () => {
+  const [a, b, c] = conv([
+    { type: 'response_item', timestamp: '2026-11-08T00:00:00Z', payload: { type: 'reasoning', summary: [{ type: 'summary_text', text: '**Planning the fix**\n\nRead the code first.  ' }, { type: 'summary_text', text: '**Checking tests**' }], content: [{ type: 'reasoning_text', text: 'secret raw' }], encrypted_content: 'xx' } },
+    { type: 'response_item', payload: { type: 'reasoning', summary: [], encrypted_content: 'xx' } },
+    { type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Planning the fix**' } },
+  ])
+  assert.equal(a.lines.length, 1)
+  assert.equal(a.lines[0].type, 'assistant')
+  assert.deepEqual(a.lines[0].message.content, [{ type: 'reasoning', text: '**Planning the fix**\n\nRead the code first.\n**Checking tests**' }])
+  assert.equal(b.lines.length, 0)
+  // The event_msg copy of the same thinking is not shown twice.
+  assert.equal(c.lines.length, 0)
+  assert.equal(reasoningText([{ type: 'summary_text', text: 'x'.repeat(REASONING_MAX + 50) }]).length, REASONING_MAX)
+  assert.equal(reasoningText(undefined), '')
 })

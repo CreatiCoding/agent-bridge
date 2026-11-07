@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.478',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent', 'server', 'ui'],
+        text: 'Codex 세션에서 생각 과정이 보이지 않던 것: 생각이 끝나 rollout 에 쓰인 reasoning 요약을 버리고 있었다. 이제 대화에 "생각 · <요약 첫 줄>" 접힌 줄로 보이고 누르면 요약 전체를 편다(새 답·미리보기·Slack 에는 영향 없음)',
+        refs: ['REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.477',
     date: '2026-11-08',
+    commit: 'd9ef204',
     changes: [
       {
         kind: 'security',

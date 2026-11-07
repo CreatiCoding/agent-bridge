@@ -156,6 +156,34 @@ function UserMsgView({ it, session, onImage, onEdit }: { it: Extract<Item, { t: 
   )
 }
 
+/** The header of a thinking summary: its first line, without the bold marks Codex wraps it in. */
+export function thinkingHead(text: string): string {
+  const first = text.split('\n').find((l) => l.trim()) ?? ''
+  return first.replace(/^#+\s*/, '').replace(/\*\*/g, '').trim()
+}
+
+/** Codex's thinking summary (REQ-F-851 rule 9b): a row folded to its header, opening to the whole summary. */
+function ThinkingRow({ it }: { it: Extract<Item, { t: 'thinking' }> }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="tool thinking">
+      <button type="button" className="tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="tool-state">
+          <Icon name="sparkle" />
+        </span>
+        <span className="tool-name">생각</span>
+        <span className="tool-label">{thinkingHead(it.text) || '생각 요약'}</span>
+        <Icon name="forward" className={`chev${open ? ' chev-open' : ''}`} />
+      </button>
+      <Collapse open={open}>
+        <div className="tool-body msg-text thinking-body">
+          <Markdown text={it.text} />
+        </div>
+      </Collapse>
+    </div>
+  )
+}
+
 function ToolRow({ it, onImage }: { it: Tool; onImage: (s: string) => void }) {
   const [open, setOpen] = useState(false)
   return (
@@ -723,6 +751,8 @@ export const TimelineView = memo(function TimelineView({ items, session, onSend:
             )
           case 'note':
             return <Note key={b.key} it={b} session={session} />
+          case 'thinking':
+            return <ThinkingRow key={b.key} it={b} />
         }
       })}
       {viewer ? <ImageViewer src={viewer} onClose={() => setViewer(null)} /> : null}

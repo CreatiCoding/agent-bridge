@@ -356,6 +356,7 @@ export type Ev = { seq: number; at: number } & (
   | { k: 'local'; text: string; error?: boolean }
   | { k: 'notice'; text: string; tone?: string; icon?: string; open?: string; openLabel?: string }
   | { k: 'line'; text: string; blocks?: unknown }
+  | { k: 'thinking'; text: string }
   | { k: 'title'; title: string }
   | { k: 'model'; model: string }
   | { k: 'status'; phase: Phase }
