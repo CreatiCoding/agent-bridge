@@ -2,8 +2,11 @@
 // tool), and its home folder by size, where an item can be moved to the Trash. The agent decides what each action may
 // touch; this page only names a cache id or a path inside the home folder. The host's owner only.
 import { SlotActions } from '../components/slot-parts'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { errorText, post } from '../lib/api'
+import { dispatch, isCancel } from '../lib/actions'
+import { openSession } from '../lib/builtin-actions'
+import { diskSession } from '../lib/disk-prompt'
 import { bytes, type SysUse } from '../lib/format'
 import { NONE, useStore } from '../lib/store'
 import { Button, CardHead, Icon, IconButton, Row, Spinner } from '../kit'
@@ -72,6 +75,10 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
   const wtFree = (wts ?? []).filter((w) => w.removable).reduce((a, w) => a + (w.size ?? 0), 0)
   const sessionList = useStore((s) => s.state?.sessions ?? NONE)
   const titles = new Map(sessionList.map((x) => [x.id, x.title]))
+  // Claude 로 정리 후보 찾기 (REQ-F-882) is the owner's: a session and its conversation stay the owner's, so an operator
+  // granted 디스크 정리 도움 (REQ-F-804) does not get it. A host that is mine is in my own state.
+  const own = useStore((s) => !!s.state?.hosts.some((x) => x.id === hostId))
+  const startKey = useRef('')
   const raw = info?.disk ?? sys?.disk ?? null
   const d = raw && raw.pct != null && raw.total != null ? { pct: raw.pct, total: raw.total, avail: raw.avail ?? 0 } : null
 
@@ -160,6 +167,27 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
     setBusy(null)
   }
 
+  async function askClaude() {
+    const ok = await confirmDialog('Claude 에게 정리 후보를 찾게 할까요?', {
+      text: '이 기기의 홈 폴더에서 새 세션을 열어 숨은 큰 공간(테스트 산출물, Docker·VM 디스크, 앱 임시 복제본, 머지된 worktree 등)을 찾아요. 지우기 전에 후보를 먼저 보여 주고, 승인한 것만 지워요. 권한 요청은 하나씩 물어요.',
+      ok: '세션 시작',
+    })
+    if (!ok) return
+    setBusy('claude')
+    try {
+      // The same start key on a retry of this one press: a second press after an unseen answer is not a second session.
+      if (!startKey.current) startKey.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const r = await dispatch('session.create', diskSession(hostId, startKey.current))
+      if (isCancel(r)) return
+      startKey.current = ''
+      openSession(r.sid, 'disk')
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const top = Math.max(1, ...(scan?.items ?? []).map((x) => x.size ?? 0))
   const cacheTotal = (info?.caches ?? []).filter((c) => !c.irreversible).reduce((a, c) => a + (c.size ?? 0), 0)
   return (
@@ -175,6 +203,18 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
           </div>
           <Bar pct={d.pct} tone={d.pct >= 95 ? 'red' : d.pct >= 85 ? 'amber' : undefined} />
         </div>
+      ) : null}
+      {online && own ? (
+        <Row
+          left={<Icon name="search" />}
+          title="Claude 로 정리 후보 찾기"
+          sub="버튼으로 안 보이는 숨은 공간까지 찾아서, 승인한 것만 지워요"
+          right={
+            <Button size="sm" busy={busy === 'claude'} disabled={!!busy} onClick={askClaude}>
+              시작
+            </Button>
+          }
+        />
       ) : null}
       {!online ? (
         <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>

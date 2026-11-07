@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.470',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '디스크 관리 칸에 "Claude 로 정리 후보 찾기": 그 기기의 홈 폴더에서 정리 프롬프트를 실은 세션을 띄운다. 숨은 공간(테스트 산출물, Docker·VM 디스크, 앱 임시 복제본, 머지된 worktree)을 찾아 후보를 먼저 보여 주고 승인한 것만 지우며, 재부팅은 제안만 한다. 기본값과 상관없이 권한을 하나씩 묻는 모드로 시작하고, 주인에게만 보인다',
+        refs: ['REQ-F-882', 'REQ-F-801', 'IF-016'],
+      },
+    ],
+  },
+  {
     version: '1.469',
     date: '2026-11-08',
+    commit: '7bddd9f',
     changes: [
       {
         kind: 'changed',
