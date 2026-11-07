@@ -91,33 +91,40 @@ test('AC-1644 docker ps, docker top', () => {
   assert.equal(topHasSshd('UID PID CMD\nroot 1 nginx: master\n'), false)
 })
 
-test('AC-1644 a Linux host with two containers of one image: files read once, no Env asked', async () => {
+const tarOf = (text) => {
+  const b = Buffer.from(text)
+  const h = Buffer.alloc(512)
+  h.write('f', 0)
+  h.write(`${b.length.toString(8).padStart(11, '0')}\0`, 124)
+  h.write('0', 156)
+  return Buffer.concat([h, b, Buffer.alloc((512 - (b.length % 512)) % 512), Buffer.alloc(1024)])
+}
+const ALPINE = 'ID=alpine\nVERSION_ID=3.20.1\nPRETTY_NAME="Alpine Linux v3.20"\n'
+const apk = (ver) => `P:openssh-server\nV:${ver}\no:openssh\n`
+
+/** A Linux host whose docker runs c1 (a) and c2 (b), both alpine:3.20 of one image id; `files[id]` is what each holds. */
+async function twoContainers(files) {
   const calls = []
-  const tarOf = (text) => {
-    const b = Buffer.from(text)
-    const h = Buffer.alloc(512)
-    h.write('f', 0)
-    h.write(`${b.length.toString(8).padStart(11, '0')}\0`, 124)
-    h.write('0', 156)
-    return Buffer.concat([h, b, Buffer.alloc((512 - (b.length % 512)) % 512), Buffer.alloc(1024)])
-  }
   const run = async (file, args) => {
     calls.push([file, ...args].join(' '))
     const ok = (out) => ({ ok: true, out: Buffer.isBuffer(out) ? out : Buffer.from(out), err: '' })
     if (file === 'dpkg-query') return ok('ii \topenssh\t1:9.6p1-3ubuntu13.5\n')
     if (args[0] === 'ps') return ok('{"ID":"c1","Names":"a","Image":"alpine:3.20","Ports":""}\n{"ID":"c2","Names":"b","Image":"alpine:3.20","Ports":"22/tcp"}\n')
     if (args[0] === 'inspect') return ok('c1full\tsha256:img\nc2full\tsha256:img\n')
-    if (args[0] === 'cp' && args[2].endsWith('/etc/os-release')) return ok(tarOf('ID=alpine\nVERSION_ID=3.20.1\nPRETTY_NAME="Alpine Linux v3.20"\n'))
-    if (args[0] === 'cp' && args[2].endsWith('/lib/apk/db/installed')) return ok(tarOf('P:openssh-server\nV:9.7_p1-r4\no:openssh\n'))
+    if (args[0] === 'cp') {
+      const [id, f] = args[2].split(':')
+      const t = files[id]?.[f]
+      if (t != null) return ok(tarOf(t))
+    }
     if (args[0] === 'top') return ok(args[1] === 'c2' ? 'UID PID CMD\nroot 1 /usr/sbin/sshd -D\n' : 'UID PID CMD\nroot 1 sleep\n')
     return { ok: false, out: Buffer.alloc(0), err: 'no' }
   }
-  const files = { '/etc/os-release': 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION="24.04.4 LTS (Noble Numbat)"\nPRETTY_NAME="Ubuntu 24.04.4 LTS"\n', '/etc/ssh/sshd_config': 'PasswordAuthentication no\n' }
+  const host = { '/etc/os-release': 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION="24.04.4 LTS (Noble Numbat)"\nPRETTY_NAME="Ubuntu 24.04.4 LTS"\n', '/etc/ssh/sshd_config': 'PasswordAuthentication no\n' }
   const r = await collectExposure({
     platform: 'linux',
     readFile: (p) => {
-      if (!(p in files)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
-      return files[p]
+      if (!(p in host)) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+      return host[p]
     },
     readdir: () => [],
     run,
@@ -125,16 +132,37 @@ test('AC-1644 a Linux host with two containers of one image: files read once, no
     docker: '/usr/bin/docker',
     now: () => 42,
   })
+  return { r, calls }
+}
+
+test('AC-1644 two containers of one image with different packages: each reports its own, no Env asked', async () => {
+  const { r, calls } = await twoContainers({
+    c1: { '/etc/os-release': ALPINE, '/lib/apk/db/installed': apk('9.9_p2-r0') },
+    c2: { '/etc/os-release': ALPINE, '/lib/apk/db/installed': apk('9.7_p1-r0') },
+  })
   assert.deepEqual(r.os, { id: 'ubuntu', versionId: '24.04', pretty: 'Ubuntu 24.04.4 LTS' })
   assert.deepEqual(r.ssh, { listening: true, banner: 'SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5', passwordAuth: 'no', permitRootLogin: 'prohibit-password' })
   assert.deepEqual(r.packages, { ecosystem: 'Ubuntu:24.04:LTS', list: [['openssh', '1:9.6p1-3ubuntu13.5']] })
   assert.equal(r.at, 42)
   assert.equal(r.containers.length, 2)
-  assert.deepEqual(r.containers[1], { name: 'b', image: 'alpine:3.20', ports: '22/tcp', os: { id: 'alpine', versionId: '3.20.1', pretty: 'Alpine Linux v3.20' }, sshd: true, packages: { ecosystem: 'Alpine:v3.20', list: [['openssh', '9.7_p1-r4']] } })
-  assert.equal(r.containers[0].sshd, false)
-  assert.equal(calls.filter((c) => c.includes(' cp ')).length, 2, 'one image: its two files read once')
+  const os = { id: 'alpine', versionId: '3.20.1', pretty: 'Alpine Linux v3.20' }
+  assert.deepEqual(r.containers[0], { name: 'a', image: 'alpine:3.20', ports: '', os, sshd: false, packages: { ecosystem: 'Alpine:v3.20', list: [['openssh', '9.9_p2-r0']] } })
+  assert.deepEqual(r.containers[1], { name: 'b', image: 'alpine:3.20', ports: '22/tcp', os, sshd: true, packages: { ecosystem: 'Alpine:v3.20', list: [['openssh', '9.7_p1-r0']] } })
+  for (const id of ['c1', 'c2']) {
+    assert.equal(calls.filter((c) => c.includes(` cp -L ${id}:`)).length, 2, `${id}: its own two files read`)
+  }
   assert.ok(!calls.some((c) => /Env|Config/.test(c)), 'never asks for the environment')
   assert.deepEqual(r.errors, [])
+})
+
+test('AC-1644 a container whose files cannot be read is not filled from another of its image', async () => {
+  const { r } = await twoContainers({ c1: { '/etc/os-release': ALPINE, '/lib/apk/db/installed': apk('9.9_p2-r0') }, c2: {} })
+  assert.deepEqual(r.containers[0].packages, { ecosystem: 'Alpine:v3.20', list: [['openssh', '9.9_p2-r0']] })
+  assert.equal(r.containers[1].os, null)
+  assert.deepEqual(r.containers[1].packages, { ecosystem: '', list: [] })
+  const first = await twoContainers({ c1: { '/etc/os-release': ALPINE }, c2: { '/etc/os-release': ALPINE, '/lib/apk/db/installed': apk('9.7_p1-r0') } })
+  assert.deepEqual(first.r.containers[0].packages, { ecosystem: '', list: [] }, 'the first one failing is not cached for the second')
+  assert.deepEqual(first.r.containers[1].packages, { ecosystem: 'Alpine:v3.20', list: [['openssh', '9.7_p1-r0']] })
 })
 
 test('AC-1645 over 2MB: package lists emptied first, noted', () => {

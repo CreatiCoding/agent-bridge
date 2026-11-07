@@ -368,45 +368,32 @@ async function containers(docker, exec, out, err) {
     list = list.slice(0, CONTAINERS_MAX)
   }
   if (!list.length) return
-  // Image ids, so containers of one image read its files once. Only these two fields, never Env.
-  const imageOf = {}
-  const ins = await exec(docker, ['inspect', '--format', '{{.Id}}\t{{.Image}}', ...list.map((c) => c.id)], { env })
-  if (ins.ok) {
-    for (const line of ins.out.toString('utf8').split('\n')) {
-      const [cid, img] = line.trim().split('\t')
-      if (cid && img) for (const c of list) if (cid.startsWith(c.id)) imageOf[c.id] = img
-    }
-  }
   const cat = async (id, file) => {
     const r = await exec(docker, ['cp', '-L', `${id}:${file}`, '-'], { env, ms: BIG_MS })
     if (!r.ok) return null
     const f = firstTarFile(r.out)
     return f ? f.toString('utf8') : null
   }
-  const byImage = new Map()
+  // Each container's own files, never shared by image: a container can install, upgrade or mount packages after it
+  // starts, so two of one image may differ. A container whose files cannot be read reports null/[] for itself.
   for (const c of list) {
-    const img = imageOf[c.id] || ''
-    let read = img && byImage.get(img)
-    if (!read) {
-      read = { os: null, packages: { ecosystem: '', list: [] } }
-      const o = parseOsRelease((await cat(c.id, '/etc/os-release')) || '')
-      read.os = osOut(o)
-      if (o) {
-        const eco = ecosystemOf(o)
-        let p = null
-        if (o.id === 'alpine') {
-          const t = await cat(c.id, '/lib/apk/db/installed')
-          if (t != null) p = parseApkInstalled(t)
-        } else {
-          const t = await cat(c.id, '/var/lib/dpkg/status')
-          if (t != null) p = parseDpkgStatus(t)
-        }
-        if (p) {
-          read.packages = { ecosystem: eco, list: p.list }
-          if (p.cut) err(`${c.name}: 패키지 ${PKG_MAX}개에서 자름`)
-        }
+    const read = { os: null, packages: { ecosystem: '', list: [] } }
+    const o = parseOsRelease((await cat(c.id, '/etc/os-release')) || '')
+    read.os = osOut(o)
+    if (o) {
+      const eco = ecosystemOf(o)
+      let p = null
+      if (o.id === 'alpine') {
+        const t = await cat(c.id, '/lib/apk/db/installed')
+        if (t != null) p = parseApkInstalled(t)
+      } else {
+        const t = await cat(c.id, '/var/lib/dpkg/status')
+        if (t != null) p = parseDpkgStatus(t)
       }
-      if (img) byImage.set(img, read)
+      if (p) {
+        read.packages = { ecosystem: eco, list: p.list }
+        if (p.cut) err(`${c.name}: 패키지 ${PKG_MAX}개에서 자름`)
+      }
     }
     const top = await exec(docker, ['top', c.id], { env })
     out.containers.push({ name: c.name, image: c.image, ports: c.ports, os: read.os, sshd: top.ok && topHasSshd(top.out.toString('utf8')), packages: { ecosystem: read.packages.ecosystem, list: read.packages.list } })

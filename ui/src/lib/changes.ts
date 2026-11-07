@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.464',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '기기 노출 정보에서 같은 이미지의 컨테이너가 서로 다른 패키지를 설치했어도 첫 컨테이너의 OS·패키지 판으로 함께 보고하던 것: 이제 컨테이너마다 자기 파일을 읽고, 한 컨테이너를 읽지 못하면 다른 컨테이너 값으로 채우지 않고 비워 둔다.',
+        refs: ['REQ-F-873'],
+      },
+    ],
+  },
+  {
     version: '1.463',
     date: '2026-11-07',
+    commit: 'cb23a91',
     changes: [
       {
         kind: 'fixed',
