@@ -1,7 +1,7 @@
 // 정비 재부팅: when a Mac restarts itself on purpose, what stops it, and what comes back after.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { REBOOT_DEFAULT, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, bootTimeOf, rebootPhase, rebootDiff, rebootResumeList } from '../../agent/guard.mjs'
+import { REBOOT_DEFAULT, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, bootTimeOf, rebootPhase, rebootDiff, rebootResumeList, REBOOT_LABELS, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from '../../agent/guard.mjs'
 
 test('the policy is off by default and falls back to the default on anything malformed', () => {
   assert.deepEqual(rebootPolicyOf(undefined), { ...REBOOT_DEFAULT })
@@ -109,4 +109,31 @@ test('sessions come back once each, not into a folder the boot took away', () =>
     g: '대화 id 가 없어요',
     h: '한 번에 1개까지만 다시 열어요',
   })
+})
+
+test('the launchd jobs watched: the agent and colima, then the owner\'s own, each once', () => {
+  assert.deepEqual(rebootWatchOf(undefined), [...REBOOT_LABELS])
+  assert.deepEqual(rebootWatchOf({ watch: ['com.example.db', 'sh.brew.colima', 'bad label!', 5] }), ['dev.claude-bridge.agent', 'sh.brew.colima', 'com.example.db'])
+  assert.equal(rebootWatchOf({ watch: Array.from({ length: 40 }, (_, i) => `x.${i}`) }).length, 20)
+})
+
+test('launchctl list: a pid when running, null pid when loaded and stopped, null when not loaded', () => {
+  const text = 'PID\tStatus\tLabel\n23857\t0\tdev.claude-bridge.agent\n-\t78\tsh.brew.colima\n583\t0\tcom.apple.progressd\n'
+  assert.deepEqual(launchctlList(text, ['dev.claude-bridge.agent', 'sh.brew.colima', 'com.example.db']), { 'dev.claude-bridge.agent': { pid: 23857 }, 'sh.brew.colima': { pid: null }, 'com.example.db': null })
+  assert.deepEqual(launchctlList('', ['Label']), { Label: null })
+})
+
+test('the summary of reboot.json leaves the session list out', () => {
+  assert.equal(rebootSummary(null), null)
+  assert.equal(rebootSummary({ id: 'r1' }), null)
+  const s = rebootSummary({ id: 'r1', phase: 'failed', reason: '지금', requestedAt: 5, failedAt: 'x', error: '10분 안에 재부팅되지 않음', resume: [{ sid: 's' }], before: {} })
+  assert.deepEqual(s, { id: 'r1', phase: 'failed', reason: '지금', requestedAt: 5, backAt: null, failedAt: null, error: '10분 안에 재부팅되지 않음' })
+})
+
+test('CB_BOOTTIME stands in for sysctl: ms or the same text', () => {
+  const text = '{ sec = 1794070817, usec = 658211 } Sun Nov  8 02:00:17 2026'
+  assert.equal(bootTimeFrom('', text), 1794070817658)
+  assert.equal(bootTimeFrom('1794070800000', text), 1794070800000)
+  assert.equal(bootTimeFrom('{ sec = 10, usec = 0 }', text), 10000)
+  assert.equal(bootTimeFrom('', 'nonsense'), null)
 })

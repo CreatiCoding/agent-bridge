@@ -7,9 +7,9 @@ import { ago, batteryLine, batteryLow, bytes, hostBattery, clock, duration, shor
 import { back, go } from '../lib/router'
 import { hostIcon, KINDS } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
-import type { Me, Session, UpdatePolicy } from '../lib/types'
+import type { Me, RebootPolicy, RebootState, Session, UpdatePolicy } from '../lib/types'
 import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmented, Spinner, Switch, useWide } from '../kit'
-import { toast } from '../kit/overlay'
+import { confirmDialog, toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
 import { featureOn, proxyLogin } from '../lib/features'
@@ -438,6 +438,126 @@ function UpdateBox({ hostId, policy, online }: { hostId: string; policy: UpdateP
   )
 }
 
+const DAYS = ['일', '월', '화', '수', '목', '금', '토']
+const PHASES: Record<string, string> = { requested: '재부팅 중', back: '돌아옴', failed: '되지 않음' }
+
+/**
+ * 정비 재부팅 (REQ-F-884): when this Mac may restart itself (only shown for now: it does not yet), what it reads,
+ * and 지금 재부팅. Turning it on, and restarting, are refused while the Mac would not come back by itself.
+ */
+function RebootBox({ hostId, state, online, mine }: { hostId: string; state: RebootState; online: boolean; mine: boolean }) {
+  const [shown, setShown] = useState<RebootPolicy | null>(null)
+  const [busy, setBusy] = useState(false)
+  const now = shown ?? state
+  const blocked = state.preflight.length > 0
+  const set = async (next: RebootPolicy) => {
+    if (next.from === next.to) return toast('시작과 끝 시간이 같으면 안 돼요', { tone: 'bad' })
+    setBusy(true)
+    try {
+      const { on, day, from, to, minClones, minFreeGB, failMin } = next
+      const r = await post<{ ok: true } & RebootPolicy>(`/api/hosts/${hostId}/reboot`, { policy: { on, day, from, to, minClones, minFreeGB, failMin } })
+      setShown({ on: r.on, day: r.day, from: r.from, to: r.to, minClones: r.minClones, minFreeGB: r.minFreeGB, failMin: r.failMin })
+      toast(r.on ? `${DAYS[r.day]}요일 ${r.from}~${r.to}시를 정비 재부팅 시간으로 정했어요` : '정비 재부팅을 껐어요')
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setBusy(false)
+  }
+  const count = (v: string) => Math.max(0, Math.floor(Number(v) || 0))
+  const restart = async () => {
+    const ok = await confirmDialog('이 맥을 지금 재부팅할까요?', { text: '열린 앱이 모두 닫히고 몇 분 동안 연결이 끊겨요. 저장하지 않은 문서가 있으면 재부팅이 멈출 수 있어요.', ok: '재부팅', danger: true })
+    if (!ok) return
+    setBusy(true)
+    try {
+      await post(`/api/hosts/${hostId}/reboot`, { now: true })
+      toast('재부팅을 시작했어요. 몇 분 뒤 다시 연결돼요')
+    } catch (e) {
+      toast(errorText(e), { tone: 'bad' })
+    }
+    setBusy(false)
+  }
+  const f = state.facts
+  const last = state.last
+  return (
+    <section className="card-box">
+      <CardHead title="정비 재부팅" help="오래 켜 둔 맥은 Chrome 이 남긴 복제본(재부팅해야 지워짐)이 쌓여 디스크를 차지해요. 정한 요일·시간에 조건이 맞으면 맥을 재부팅하도록 정해 둘 수 있어요. 지금은 정해 두기만 하고 스스로 재부팅하지는 않아요." />
+      {!state.supported ? (
+        <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>
+          정비 재부팅은 macOS 에서만 해요.
+        </p>
+      ) : (
+        <>
+          <dl className="kv">
+            <dt>Chrome 복제본</dt>
+            <dd>{f?.clones != null ? `${f.clones}개` : '확인 못 함'}</dd>
+            <dt>남은 공간</dt>
+            <dd>{f?.freeGB != null ? `${f.freeGB}GB` : '확인 못 함'}</dd>
+            {f?.docker ? (
+              <>
+                <dt>Docker(colima)</dt>
+                <dd>{f.docker === 'running' ? '실행 중' : '멈춤'}</dd>
+              </>
+            ) : null}
+            {last ? (
+              <>
+                <dt>마지막 재부팅</dt>
+                <dd>{`${PHASES[last.phase] ?? last.phase}${last.requestedAt ? ` · ${ago(last.requestedAt)}` : ''}${last.error ? ` · ${last.error}` : ''}`}</dd>
+              </>
+            ) : null}
+          </dl>
+          <div className="setting-line">
+            <span className="grow">
+              <b style={{ fontSize: 'var(--fs-medium)' }}>정해진 때에 재부팅</b>
+              <Help>{blocked ? `켤 수 없어요: ${state.preflight.join(' / ')}` : '재부팅 뒤 스스로 로그인하고 사이트와 다시 이어질 수 있어요'}</Help>
+            </span>
+            <Switch label="정해진 때에 재부팅" checked={now.on} disabled={!online || busy || (blocked && !now.on)} onChange={(on) => void set({ ...now, on })} />
+          </div>
+          <fieldset disabled={!online || busy} style={{ border: 0, padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+            <div className="hstack" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <select className="input" style={{ width: 'auto' }} aria-label="요일" value={now.day} onChange={(e) => void set({ ...now, day: Number(e.target.value) })}>
+                {DAYS.map((d, i) => (
+                  <option key={d} value={i}>{`${d}요일`}</option>
+                ))}
+              </select>
+              <select className="input" style={{ width: 'auto' }} aria-label="시작 시각" value={now.from} onChange={(e) => void set({ ...now, from: Number(e.target.value) })}>
+                {HOURS.map((x) => (
+                  <option key={x} value={x}>{`${x}시`}</option>
+                ))}
+              </select>
+              <span>부터</span>
+              <select className="input" style={{ width: 'auto' }} aria-label="끝 시각" value={now.to} onChange={(e) => void set({ ...now, to: Number(e.target.value) })}>
+                {HOURS.map((x) => (
+                  <option key={x} value={x}>{`${x}시`}</option>
+                ))}
+              </select>
+              <span>사이 (이 맥의 시각)</span>
+            </div>
+            <div className="hstack" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <span>Chrome 복제본</span>
+              <input className="input" style={{ width: 80 }} type="number" min={0} inputMode="numeric" aria-label="Chrome 복제본 기준 개수" defaultValue={now.minClones} key={`c-${now.minClones}`} onBlur={(e) => count(e.target.value) !== now.minClones && void set({ ...now, minClones: count(e.target.value) })} />
+              <span>개 이상, 또는 남은 공간</span>
+              <input className="input" style={{ width: 80 }} type="number" min={0} inputMode="numeric" aria-label="남은 공간 기준 GB" defaultValue={now.minFreeGB} key={`g-${now.minFreeGB}`} onBlur={(e) => count(e.target.value) !== now.minFreeGB && void set({ ...now, minFreeGB: count(e.target.value) })} />
+              <span>GB 미만일 때 (0 은 그 조건을 쓰지 않음, 둘 다 0 이면 매주)</span>
+            </div>
+          </fieldset>
+          {state.due ? <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>{`지금이 정한 때라면 재부팅할 이유: ${state.due}`}</p> : null}
+          {mine ? (
+            <div className="setting-line">
+              <span className="grow">
+                <b style={{ fontSize: 'var(--fs-medium)' }}>지금 재부팅</b>
+                <Help>{blocked ? `할 수 없어요: ${state.preflight.join(' / ')}` : state.blockers.length ? `일하는 중이라 지금은 할 수 없어요: ${state.blockers.join(' / ')}` : `${state.failMin}분 안에 재부팅되지 않으면 알려 드려요`}</Help>
+              </span>
+              <Button size="sm" tone="danger" disabled={!online || busy || blocked || state.blockers.length > 0 || last?.phase === 'requested'} onClick={() => void restart()}>
+                지금 재부팅
+              </Button>
+            </div>
+          ) : null}
+        </>
+      )}
+      {online ? null : <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>맥이 연결돼 있을 때 바꿀 수 있어요.</p>}
+    </section>
+  )
+}
 
 /** Whether this Mac takes work a session on another of the person's Macs hands over (REQ-F-760). */
 function DelegateBox({ hostId, on }: { hostId: string; on: boolean }) {
@@ -622,7 +742,7 @@ function BackgroundBox({ hostId, state, online }: { hostId: string; state: Backg
 }
 
 interface Detail {
-  host: { id: string; name: string; kind: string; online: boolean; user: string; home: string; info: { version: string; build: string; node: string; os: string } | null; updateBlocked?: boolean; outdated: boolean; latest?: string; takesWork?: boolean; update?: UpdatePolicy | null }
+  host: { id: string; name: string; kind: string; online: boolean; user: string; home: string; info: { version: string; build: string; node: string; os: string } | null; updateBlocked?: boolean; outdated: boolean; latest?: string; takesWork?: boolean; update?: UpdatePolicy | null; reboot?: RebootState | null }
   link: { connectedAt: number | null; disconnectedAt: number | null; connects: number; rtt: number | null }
   health: null | { version: string; uptime: number; tools?: { zeropty?: string | null; tmux?: string | null }; checks: { id: string; level: string; title: string; detail: string; fix?: string }[]; load: number; memFree: number; memTotal: number; sys?: SysUse | null; rss: number; keepAwake: boolean; compactWindow?: number | null; awake?: Awake; background?: Background; features?: Feature[]; repairs?: { at: number; id: string; text: string; ok: boolean }[]; at: number; lastCommand?: { t: string; at: number } | null }
   page: null | { visible: string; queue: number; ua: string; upFail: number; agentReconnects: number; at: number }
@@ -707,6 +827,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
               ) : null}
               {h ? <CompactBox key={`cw-${h.id}`} hostId={h.id} window={detail.health?.compactWindow ?? null} online={h.online} /> : null}
               {h?.update ? <UpdateBox key={`up-${h.id}`} hostId={h.id} policy={h.update} online={h.online} /> : null}
+              {h?.reboot && !linux ? <RebootBox key={`rb-${h.id}`} hostId={h.id} state={h.reboot} online={h.online} mine={!others} /> : null}
               {h?.outdated && !h.update?.pending ? (
                 <div className="banner">
                   <Icon name="info" />

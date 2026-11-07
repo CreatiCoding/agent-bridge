@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -4872,6 +4872,32 @@ const commands = {
     emit({ t: 'updatePolicy', reqId, ok: true, ...updatePolicyOf(config.update) })
     health().catch(() => {})
   },
+  /**
+   * 정비 재부팅 정책 (REQ-F-884): kept in agent.json `reboot`. Turning it on is refused while the Mac would not come
+   * back by itself after a restart (자동 로그인, FileVault, 헤드리스 연동, launchd). `watch` stays as it was.
+   */
+  async rebootPolicy({ reqId, on, day, from, to, minClones, minFreeGB, failMin }) {
+    const p = { on, day, from, to, minClones, minFreeGB, ...(failMin !== undefined ? { failMin } : {}) }
+    const error = rebootPolicyError(p)
+    if (error) return emit({ t: 'rebootPolicy', reqId, ok: false, error })
+    if (on) {
+      const pre = rebootReasons(await rebootGather(true).catch(() => null))
+      if (pre.length) return emit({ t: 'rebootPolicy', reqId, ok: false, error: `켤 수 없어요: ${pre.join(' / ')}` })
+    }
+    const watch = config.reboot?.watch
+    config.reboot = { ...rebootPolicyOf({ ...config.reboot, ...p }), ...(watch !== undefined ? { watch } : {}) }
+    writeJson(configPath, config)
+    const r = rebootPolicyOf(config.reboot)
+    log('info', 'reboot', r.on ? `정비 재부팅: ${'일월화수목금토'[r.day]}요일 ${r.from}~${r.to}시, 복제본 ${r.minClones}개 이상 또는 남은 공간 ${r.minFreeGB}GB 미만일 때(아직 스스로 재부팅하지는 않음)` : '정비 재부팅: 꺼짐')
+    emit({ t: 'rebootPolicy', reqId, ok: true, ...r })
+    health().catch(() => {})
+  },
+  /** 지금 재부팅 (REQ-F-884): refused with the list of what is working, or what would keep the Mac from coming back. */
+  async rebootNow({ reqId }) {
+    const r = await rebootNow('사이트에서 지금 재부팅').catch((e) => ({ error: e.message }))
+    emit({ t: 'rebootNow', reqId, ...(r.error ? { ok: false, error: r.error } : { ok: true, id: r.id }) })
+    health().catch(() => {})
+  },
   /** 지금 업데이트 (REQ-F-832): put the update already taken in place now, whatever the policy says. */
   updateNow({ reqId }) {
     if (!pendingUpdate) return emit({ t: 'updateNow', reqId, ok: false, error: noAutoUpdate ? '이 맥은 자동 업데이트가 꺼져 있어요(--no-auto-update)' : '받아 둔 새 버전이 없어요' })
@@ -5775,6 +5801,8 @@ async function health() {
     compactWindow: compactWindowOf(config.compactWindow),
     // When this Mac takes a new agent and the one waiting for that, if any (REQ-F-832).
     update: { ...updatePolicyOf(config.update), off: !!noAutoUpdate, busy: sessionsWorking(), pending: pendingUpdate ? { build: pendingUpdate.build, at: pendingUpdate.at, now: !!pendingUpdate.now } : null },
+    // 정비 재부팅 (REQ-F-884): the policy, the facts (read every few minutes at most) and what would stop it now.
+    reboot: await rebootHealth(),
     awake: { idle: !!config.keepAwake, idleActive: !!keepAwake, lid: !!config.keepLidAwake, lidActive, lidReady: await lidReady(), kind: config.kind },
     load: os.loadavg()[0],
     memFree: os.freemem(),
@@ -6732,6 +6760,161 @@ const midAction = () => [...sessions.values()].some((s) => s.check || s.starting
 /** How long an update or a restart waits for those few-second actions before going anyway. */
 const RESTART_WAIT_MS = 60_000
 
+// ---------- 정비 재부팅 (REQ-F-884): facts, the policy, 지금 재부팅 and its failure ----------
+// The schedule (rebootWhy) is only shown for now: nothing restarts the Mac by itself yet. After a boot the record is
+// only marked back; comparing and reopening sessions come later.
+
+const rebootPath = path.join(STATE_DIR, 'reboot.json')
+/** How long the facts read for a restart are kept: launchctl, colima and the clone folder are not read more often. */
+const REBOOT_FACTS_MS = 5 * 60_000
+const COLIMA_BINS = ['/opt/homebrew/bin/colima', '/usr/local/bin/colima']
+let rebootFacts = { at: 0, v: null, busy: null }
+/** reboot.json as last read or written. */
+let rebootRec = readJson(rebootPath, null)
+/** When this Mac booted (ms), read at start: a running agent has not been through a restart since. */
+let bootAt = null
+
+/** The Chrome clones, free GB, launchd jobs, Docker and what a restart needs to come back; cached REBOOT_FACTS_MS. */
+async function rebootGather(force = false) {
+  if (!IS_MAC) return null
+  if (!force && rebootFacts.v && Date.now() - rebootFacts.at < REBOOT_FACTS_MS) return rebootFacts.v
+  if (rebootFacts.busy) return rebootFacts.busy
+  rebootFacts.busy = (async () => {
+    const colima = COLIMA_BINS.find((b) => fs.existsSync(b))
+    const [tmp, lc, auto, fv, dk] = await Promise.all([
+      run('/usr/bin/getconf', ['DARWIN_USER_TEMP_DIR'], { timeout: 5_000 }),
+      run('/bin/launchctl', ['list'], { timeout: 10_000 }),
+      run('/usr/bin/defaults', ['read', '/Library/Preferences/com.apple.loginwindow', 'autoLoginUser'], { timeout: 5_000 }),
+      run('/usr/bin/fdesetup', ['status'], { timeout: 5_000 }),
+      colima ? run(colima, ['status'], { timeout: 10_000, env: { PATH: `${path.dirname(colima)}:${process.env.PATH ?? '/usr/bin:/bin'}` } }) : null,
+    ])
+    let clones = null
+    if (tmp.ok && tmp.out) {
+      const dir = chromeCloneDir(tmp.out)
+      try {
+        clones = fs.readdirSync(dir).length
+      } catch (e) {
+        // No clone folder in a readable X folder: Chrome has left none.
+        if (e.code === 'ENOENT' && fs.existsSync(path.dirname(dir))) clones = 0
+      }
+    }
+    let freeGB = null
+    try {
+      const d = diskUse(fs.statfsSync(HOME))
+      if (d) freeGB = Math.round(d.avail / 1e9)
+    } catch {}
+    const v = { clones, freeGB, services: lc.ok ? launchctlList(lc.out, rebootWatchOf(config.reboot)) : null, docker: dk ? (dk.ok ? 'running' : 'stopped') : null, autoLoginUser: auto.ok ? auto.out : '', fileVault: fv.out }
+    rebootFacts = { at: Date.now(), v, busy: null }
+    return v
+  })().finally(() => (rebootFacts.busy = null))
+  return rebootFacts.busy
+}
+
+/** Why this Mac would not come back by itself after a restart (rebootPreflight, and the agent not under launchd). */
+function rebootReasons(f) {
+  if (!IS_MAC) return ['정비 재부팅은 macOS 에서만 해요']
+  if (!f) return ['재부팅에 필요한 것을 아직 확인하지 못했어요']
+  const out = rebootPreflight({ user: os.userInfo().username, autoLoginUser: f.autoLoginUser, fileVault: f.fileVault, background: !!config.background })
+  if (!asService) out.push('에이전트가 백그라운드 서비스(launchd)로 돌고 있지 않아요: 재부팅 뒤 다시 뜨지 않아요')
+  return out
+}
+
+/** What keeps the Mac from restarting now, from the sessions as they are (rebootBlockers). */
+function rebootBlocking() {
+  const list = []
+  for (const [sid, s] of sessions) {
+    if (s.closed) continue
+    list.push({
+      name: path.basename(s.cwd || '') || sid.slice(0, 8),
+      working: !!((s.alive && s.turn) || s.check),
+      bg: trustOn() ? ownBg(s).length : (s.bgCount ?? 0),
+      waiting: !!s.wait,
+      card: !!s.card?.open,
+      launching: !!(s.launching || s.starting || s.refreshing || s.lightforking),
+    })
+  }
+  if (delegating.size) list.push({ name: '이 맥', delegating: delegating.size })
+  return rebootBlockers(list)
+}
+
+/** health's `reboot`: the policy, the facts, what would stop it now, the last restart asked for. */
+async function rebootHealth() {
+  const policy = rebootPolicyOf(config.reboot)
+  if (!IS_MAC) return { ...policy, supported: false, facts: null, preflight: [], blockers: [], due: null, last: null }
+  const f = await rebootGather().catch(() => null)
+  const facts = { clones: f?.clones ?? null, freeGB: f?.freeGB ?? null, docker: f?.docker ?? null }
+  const d = new Date()
+  return { ...policy, supported: true, facts, preflight: rebootReasons(f), blockers: rebootBlocking(), due: rebootWhy(policy, { day: d.getDay(), hour: d.getHours() }, facts), last: rebootSummary(rebootRec) }
+}
+
+function rebootSave(rec) {
+  rebootRec = rec
+  writeJson(rebootPath, rec)
+}
+
+/** When this Mac booted, from sysctl (CB_BOOTTIME stands in for it in tests). */
+async function readBootTime() {
+  if (process.env.CB_BOOTTIME) return bootTimeFrom(process.env.CB_BOOTTIME)
+  if (!IS_MAC) return null
+  return bootTimeFrom('', (await run('/usr/sbin/sysctl', ['-n', 'kern.boottime'], { timeout: 5_000 })).out)
+}
+
+/** At start: a restart asked for that the Mac has since booted from is marked back. Nothing more yet. */
+async function rebootOnStart() {
+  bootAt = await readBootTime()
+  const rec = rebootRec
+  if (rec?.phase !== 'requested' || rebootPhase(rec, bootAt, Date.now(), rec.failMin) !== 'back') return
+  rebootSave({ ...rec, phase: 'back', backAt: Date.now(), bootAfter: bootAt })
+  log('info', 'reboot', `정비 재부팅에서 돌아왔어요(${rec.reason || '이유 없음'}, 요청 ${new Date(rec.requestedAt).toISOString()})`)
+}
+
+/** Every tick while a restart is asked for: past failMin minutes without a boot, it failed, and the phone is told. */
+function rebootWatch() {
+  const rec = rebootRec
+  if (rec?.phase !== 'requested' || rebootPhase(rec, bootAt, Date.now(), rec.failMin) !== 'failed') return
+  const min = rebootPolicyOf({ failMin: rec.failMin }).failMin
+  rebootSave({ ...rec, phase: 'failed', failedAt: Date.now(), error: `${min}분 안에 재부팅되지 않음` })
+  log('warn', 'reboot', `정비 재부팅이 ${min}분 안에 되지 않았어요(저장하지 않은 문서 창 등이 막았을 수 있어요)`)
+  emit({ t: 'rebootFailed', id: rec.id, min, at: Date.now() })
+}
+
+/**
+ * 지금 재부팅: refused while anything is working or the Mac would not come back by itself; otherwise reboot.json
+ * (what to compare and reopen after), sessions.json, and the restart (CB_REBOOT_CMD stands in for it in tests).
+ */
+async function rebootNow(reason) {
+  if (!IS_MAC) return { error: '정비 재부팅은 macOS 에서만 해요' }
+  if (rebootPhase(rebootRec, bootAt, Date.now(), rebootRec?.failMin) === 'waiting') return { error: '이미 재부팅을 요청했어요. 끝나기를 기다리는 중이에요' }
+  const f = await rebootGather(true)
+  const pre = rebootReasons(f)
+  if (pre.length) return { error: `재부팅 뒤 스스로 돌아오지 못해요: ${pre.join(' / ')}` }
+  const blockers = rebootBlocking()
+  if (blockers.length) return { error: `지금은 재부팅할 수 없어요: ${blockers.join(' / ')}` }
+  const policy = rebootPolicyOf(config.reboot)
+  const rec = {
+    id: crypto.randomUUID(),
+    phase: 'requested',
+    reason: String(reason || '사이트에서 지금 재부팅').slice(0, 200),
+    requestedAt: Date.now(),
+    failMin: policy.failMin,
+    bootBefore: bootAt,
+    before: { services: f.services ?? {}, docker: f.docker, clones: f.clones, freeGB: f.freeGB },
+    resume: [...sessions].map(([sid, s]) => ({ sid, conv: s.conv ?? null, cwd: s.cwd ?? null, runner: s.runner ?? 'claude', account: s.account ?? null, closed: !!s.closed, sleeping: s.alive === false, moved: false })),
+  }
+  rebootSave(rec)
+  saveSessions()
+  log('warn', 'reboot', `정비 재부팅을 시작해요: ${rec.reason}`)
+  const cmd = process.env.CB_REBOOT_CMD
+  const r = cmd ? await run('/bin/sh', ['-c', cmd], { timeout: 20_000 }) : await run('/usr/bin/osascript', ['-e', 'tell application "System Events" to restart'], { timeout: 20_000 })
+  if (!r.ok) {
+    const error = `재부팅 명령이 실패했어요: ${r.err.slice(0, 200)}`
+    rebootSave({ ...rec, phase: 'failed', failedAt: Date.now(), error })
+    log('error', 'reboot', error)
+    return { error }
+  }
+  return { id: rec.id }
+}
+
 /**
  * Run with node --experimental-vm-modules --input-type=module -e LINK_CHECK <entry>: links <entry> and every file
  * it imports without running any of them, so a missing file or a missing named export fails here instead of at
@@ -7049,6 +7232,11 @@ setInterval(async () => {
       releaseLid()
       if (!asService) return setTimeout(startSuccessor, 300)
       return setTimeout(() => process.exit(0), 300)
+    }
+    try {
+      rebootWatch()
+    } catch (e) {
+      log('error', 'reboot', e.message)
     }
     stats.lastTail = Date.now()
     // Not waited for: lsof can take a second, and the conversations must not.
@@ -7493,6 +7681,7 @@ server.on('listening', async () => {
   await runChecks()
   printChecks()
   reviveAfterRestart().catch((e) => log('error', 'revive', e.message))
+  rebootOnStart().catch((e) => log('error', 'reboot', e.message))
   takeHeadlessLogin()
   // A browser left running for this agent while 헤드리스 연동 모드 was turned off in between: it goes.
   if (!config.background && !doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && (bg.child = adoptBackground())) stopBackground()

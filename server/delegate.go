@@ -837,6 +837,12 @@ func init() {
 		}
 		broadcastState(uid)
 	}
+	// 정비 재부팅 (REQ-F-884): a restart asked for did not happen within failMin minutes (an unsaved document's dialog).
+	fromAgent["rebootFailed"] = func(uid, hostID string, msg M) {
+		n := rebootFailedNotice(hostID, msg)
+		record(uid, hostID, M{"level": "warn", "area": "reboot", "text": jsString(n["text"])})
+		addNotice(uid, n)
+	}
 	// macOS shows one of its own alerts (a privacy prompt) while sessions work.
 	fromAgent["sysdialog"] = func(uid, hostID string, msg M) {
 		key := "sysdialog-" + hostID

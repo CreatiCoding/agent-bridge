@@ -146,6 +146,10 @@ export const TRUST_CLASS = {
   compact: { i: ['window'] },
   updatePolicy: { i: ['mode', 'from', 'to', 'skipBusy'] },
   updateNow: { i: [] },
+  // 정비 재부팅 (REQ-F-884): the policy like updatePolicy. Restarting the Mac itself cannot be undone and stops every
+  // session on it: never without a paired device's signature, in warn too (like removing a device).
+  rebootPolicy: { i: ['on', 'day', 'from', 'to', 'minClones', 'minFreeGB', 'failMin'] },
+  rebootNow: { i: [], always: true },
   // 세션 정리 (REQ-F-839): the timed batch only reports while trust is on (agent.mjs tidyRun); what a person picks is signed.
   tidyRun: 'free',
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },

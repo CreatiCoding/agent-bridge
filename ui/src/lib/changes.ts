@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.473',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '맥 화면에 "정비 재부팅" 상자: Chrome 복제본 수·남은 공간·Docker 와, 재부팅 뒤 스스로 돌아올 수 없는 까닭(자동 로그인·FileVault·헤드리스 연동)을 보이고, 요일·시간·기준을 정해 둔다(아직 스스로 재부팅하지는 않음). 돌아올 수 없으면 켤 수 없다',
+        refs: ['REQ-F-884', 'IF-279', 'ERR-350', 'ERR-351'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '"지금 재부팅"(맥 주인만): 턴·백그라운드 작업·질문·카드·맡긴 일·뜨는 세션이 있으면 그 목록으로 거절하고, 아니면 ~/.claude-bridge/reboot.json 을 남긴 뒤 macOS 를 재부팅한다. 정한 분 안에 재부팅되지 않으면 폰에 알린다',
+        refs: ['REQ-F-884', 'IF-279', 'ERR-352', 'ERR-353', 'DM-066'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'ui'],
+        text: '서버를 믿지 않는 맥에서 정비 재부팅 설정은 짝지은 기기의 서명이 있어야 하고, 지금 재부팅은 warn 모드에서도 서명이 없으면 거절한다',
+        refs: ['REQ-F-884', 'REQ-S-089'],
+      },
+    ],
+  },
+  {
     version: '1.472',
     date: '2026-11-08',
+    commit: 'cbddc36',
     changes: [
       {
         kind: 'added',

@@ -262,6 +262,34 @@ export interface UpdatePolicy {
   pending: { build: string; at: number; now: boolean } | null
 }
 
+/** 정비 재부팅 (REQ-F-884): the policy as the Mac keeps it (agent.json `reboot`). */
+export interface RebootPolicy {
+  on: boolean
+  /** 0 (Sunday) ~ 6, the Mac's clock. */
+  day: number
+  from: number
+  to: number
+  /** Restart when Chrome's clone folder holds at least this many (0: not a reason). */
+  minClones: number
+  /** Restart when less than this many GB are free (0: not a reason). */
+  minFreeGB: number
+  failMin: number
+}
+
+/** health's `reboot`: the policy, what the Mac reads, and what would stop a restart now. */
+export interface RebootState extends RebootPolicy {
+  /** false on Linux: nothing below is read. */
+  supported: boolean
+  facts: { clones: number | null; freeGB: number | null; docker: 'running' | 'stopped' | null } | null
+  /** Why the Mac would not come back by itself after a restart; turning it on is refused while there are any. */
+  preflight: string[]
+  /** What is working now (a turn, background work, a question, a card, a handover, a session starting). */
+  blockers: string[]
+  /** Why it would restart now if the schedule ran (it does not yet). */
+  due: string | null
+  last: { id: string; phase: string; reason: string; requestedAt: number | null; backAt: number | null; failedAt: number | null; error: string | null } | null
+}
+
 export interface VoiceStatus {
   whisper: boolean
   models: string[]

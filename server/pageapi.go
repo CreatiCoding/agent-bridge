@@ -639,7 +639,7 @@ func hostSummary(id string, h M, masked bool) M {
 			accts[i] = m
 		}
 	}
-	return M{"id": id, "name": h["name"], "kind": kind, "info": info, "awake": health["awake"], "voice": voice, "takesWork": !delegateOff(mstr(h, "uid"))[id], "sudo": sudo, "background": background, "update": cleanUpdate(health["update"]), "tidy": tidyBrief(id),
+	return M{"id": id, "name": h["name"], "kind": kind, "info": info, "awake": health["awake"], "voice": voice, "takesWork": !delegateOff(mstr(h, "uid"))[id], "sudo": sudo, "background": background, "update": cleanUpdate(health["update"]), "reboot": cleanReboot(health["reboot"], masked), "tidy": tidyBrief(id),
 		// Behind, and this server will hand it the new one: not when it sends none (R9-I1).
 		"outdated": behind && AGENT_SIGNED,
 		// Behind, but this server sends no update (R10-I2).

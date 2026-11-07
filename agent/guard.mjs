@@ -984,6 +984,39 @@ export function rebootDiff(before = {}, after = {}) {
   return { lines, bad: lines.filter((l) => !l.ok).length }
 }
 
+/** The launchd jobs whose state is kept before a restart and compared after: the agent's own and colima's. */
+export const REBOOT_LABELS = Object.freeze(['dev.claude-bridge.agent', 'sh.brew.colima'])
+const LABEL_RE = /^[\w.-]{1,100}$/
+
+/** REBOOT_LABELS and the owner's own (agent.json `reboot.watch`, launchd labels), at most 20, each once. */
+export function rebootWatchOf(c) {
+  const own = Array.isArray(c?.watch) ? c.watch.filter((x) => typeof x === 'string' && LABEL_RE.test(x)) : []
+  return [...new Set([...REBOOT_LABELS, ...own])].slice(0, 20)
+}
+
+/**
+ * `launchctl list` ("PID\tStatus\tLabel" lines, "-" for no pid) -> label -> {pid} for the labels asked for: a pid
+ * number when it runs, null when it is loaded and not running; a label not listed is null (not loaded).
+ */
+export function launchctlList(text, labels) {
+  const got = new Map()
+  for (const line of String(text ?? '').split('\n')) {
+    const [pid, , label] = line.trim().split(/\s+/)
+    if (label && label !== 'Label') got.set(label, /^\d+$/.test(pid) ? Number(pid) : null)
+  }
+  return Object.fromEntries(labels.map((l) => [l, got.has(l) ? { pid: got.get(l) } : null]))
+}
+
+/** What health and the site show of reboot.json: no session list, no services, only where it stands. */
+export function rebootSummary(rec) {
+  if (!rec || typeof rec !== 'object' || typeof rec.phase !== 'string') return null
+  const n = (v) => (Number.isFinite(v) ? v : null)
+  return { id: String(rec.id ?? ''), phase: rec.phase, reason: String(rec.reason ?? ''), requestedAt: n(rec.requestedAt), backAt: n(rec.backAt), failedAt: n(rec.failedAt), error: rec.error ? String(rec.error).slice(0, 300) : null }
+}
+
+/** `CB_BOOTTIME` (tests): ms, or text like `sysctl -n kern.boottime`; otherwise the sysctl text itself. */
+export const bootTimeFrom = (env, sysctlText) => (env ? (/^\d+$/.test(env) ? Number(env) : bootTimeOf(env)) : bootTimeOf(sysctlText))
+
 const TMP_RE = /^\/(private\/)?tmp\//
 
 /**

@@ -22,6 +22,7 @@ var (
 	hostAwakeRe    = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/awake$`)
 	hostCompactRe  = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/compact$`)
 	hostUpdateRe   = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/update$`)
+	hostRebootRe   = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/reboot$`)
 	hostDelegateRe = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/delegate$`)
 	hostCheckRe    = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/check$`)
 	hostStatusRe   = regexp.MustCompile(`^/api/hosts/([a-zA-Z0-9-]+)/status$`)
@@ -569,6 +570,49 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		record(mstr(h, "uid"), m[1], M{"level": "info", "area": "update", "text": "자동 업데이트 " + said + byOperator(uid, h)})
 		jsonRes(res, 200, M{"ok": true, "mode": r["mode"], "from": r["from"], "to": r["to"], "skipBusy": r["skipBusy"] != false})
+		return true
+	}
+	// 정비 재부팅 (REQ-F-884, IF-279). {policy} sets when this Mac may restart itself (like the update policy);
+	// {now:true} restarts it now, its owner only: an operator never restarts someone else's Mac.
+	if m := hostRebootRe.FindStringSubmatch(p); post && m != nil {
+		b := body(req, 1024)
+		h := readableHost(uid, m[1])
+		if now, _ := b["now"].(bool); now {
+			ownHost(uid, m[1])
+			if !online(m[1]) {
+				refuse(409, NOT_CONNECTED)
+			}
+			r := ask(m[1], M{"t": "rebootNow"}, 30_000)
+			if !truthy(r["ok"]) {
+				record(mstr(h, "uid"), m[1], M{"level": "warn", "area": "reboot", "text": "지금 재부팅 거절: " + jsSliceTo(jsStringU(r["error"]), 300)})
+				refuse(409, orStr(r["error"], "재부팅하지 못했습니다(에이전트가 이 기능보다 오래된 버전일 수 있어요)"))
+			}
+			record(mstr(h, "uid"), m[1], M{"level": "warn", "area": "reboot", "text": "지금 재부팅을 요청함"})
+			jsonRes(res, 200, M{"ok": true, "id": r["id"]})
+			return true
+		}
+		pol, _ := b["policy"].(M)
+		cmd, bad := rebootPolicyCmd(pol)
+		if bad != "" {
+			refuse(400, bad)
+		}
+		if !online(m[1]) {
+			refuse(409, NOT_CONNECTED)
+		}
+		r := ask(m[1], cmd, 30_000)
+		if !truthy(r["ok"]) {
+			refuse(409, orStr(r["error"], "정비 재부팅 설정을 바꾸지 못했습니다(에이전트가 이 기능보다 오래된 버전일 수 있어요)"))
+		}
+		said := "꺼짐"
+		if truthy(r["on"]) {
+			said = []string{"일", "월", "화", "수", "목", "금", "토"}[int(jsNumber(r["day"]))%7] + "요일 " + numStr(jsNumber(r["from"])) + "~" + numStr(jsNumber(r["to"])) + "시"
+		}
+		record(mstr(h, "uid"), m[1], M{"level": "info", "area": "reboot", "text": "정비 재부팅 " + said + byOperator(uid, h)})
+		out := M{"ok": true}
+		for _, k := range []string{"on", "day", "from", "to", "minClones", "minFreeGB", "failMin"} {
+			out[k] = r[k]
+		}
+		jsonRes(res, 200, out)
 		return true
 	}
 	if m := hostDelegateRe.FindStringSubmatch(p); post && m != nil {

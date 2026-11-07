@@ -165,6 +165,8 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | compact | window | | |
 | updatePolicy | mode, from, to, skipBusy | | |
 | updateNow | — | | |
+| rebootPolicy(SPEC 1.473, 정비 재부팅) | on, day, from, to, minClones, minFreeGB, failMin | 켤 때 맥이 재부팅 뒤 돌아올 수 있는지 다시 본다 | |
+| rebootNow(SPEC 1.473, 지금 재부팅) | — | 맥을 다시 켜는 일은 되돌릴 수 없어 `warn` 에서도 서명이 없으면 거절(`always`, trust remove 와 같음). 맥이 세션 상태로 막을지 다시 본다 | |
 | disk(prune·clean·trash) | op, id, path, paths | | |
 | trust(remove) | id | | |
 | tidyStop(세션 정리의 손으로 내리기) | sids | holds 는 서버 것(지킬 세션만 늘어남) | holds |

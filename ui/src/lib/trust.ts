@@ -408,6 +408,14 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     if (op === 'background') return [{ h, t: 'background', i: { on: body.on === true } }]
     if (op === 'awake') return [{ h, t: 'awake', i: { ...(typeof body.idle === 'boolean' ? { idle: body.idle } : {}), ...(typeof body.lid === 'boolean' ? { lid: body.lid } : {}) } }]
     if (op === 'compact') return [{ h, t: 'compact', i: { window: body.window ?? null } }]
+    // 정비 재부팅 (REQ-F-884): the policy's fields as sent, or 지금 재부팅.
+    if (op === 'reboot') {
+      if (body.now === true) return [{ h, t: 'rebootNow', i: {} }]
+      const p = (body.policy ?? {}) as Body
+      const i: Body = {}
+      for (const k of ['on', 'day', 'from', 'to', 'minClones', 'minFreeGB', 'failMin']) if (p[k] !== undefined) i[k] = p[k]
+      return [{ h, t: 'rebootPolicy', i }]
+    }
     if (op === 'update') return body.now === true ? [{ h, t: 'updateNow', i: {} }] : [{ h, t: 'updatePolicy', i: { mode: body.mode, from: body.from, to: body.to, ...(typeof body.skipBusy === 'boolean' ? { skipBusy: body.skipBusy } : {}) } }]
     if (op === 'disk' && ['prune', 'clean', 'trash'].includes(str(body.op))) {
       const i: Body = { op: body.op }
