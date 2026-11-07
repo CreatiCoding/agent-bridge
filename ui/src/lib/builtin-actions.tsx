@@ -5,10 +5,14 @@ import { dispatch, onCancelShown, setDefault, type ActionMap } from './actions'
 import { del, post } from './api'
 import { go } from './router'
 import { toast } from '../kit/overlay'
+import { openInApp } from '../components/link-sheet'
+import { opensInApp } from './in-app'
 
 setDefault('session.open', ({ sid, replace }) => go({ name: 'session', id: sid }, { replace }))
-setDefault('link.open', ({ url, target }) => {
+// A phone or a tablet opens an answer's link in the in-app browser sheet first (REQ-F-879); a computer, a new tab.
+setDefault('link.open', ({ url, from, target }) => {
   if (target === '_self') location.href = url
+  else if (opensInApp(url, from)) openInApp(url)
   else window.open(url, '_blank', 'noopener')
 })
 // Started inside the press (iOS allows a clipboard write only there); the promise says whether it was written.

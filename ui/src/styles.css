@@ -5260,6 +5260,92 @@ body.group-sorting * {
   border: 0;
   background: #fff;
 }
+/* The in-app browser of a touch device (REQ-F-879): a page in reading mode, drawn by this page. */
+.reader {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px 32px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.reader-site {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.reader-title {
+  font-size: 1.5em;
+  line-height: 1.35;
+  margin: 4px 0 16px;
+}
+.reader h2,
+.reader h3 {
+  line-height: 1.4;
+  margin: 20px 0 8px;
+}
+.reader h2 {
+  font-size: 1.25em;
+}
+.reader h3 {
+  font-size: 1.1em;
+}
+.reader p {
+  margin: 0 0 12px;
+}
+.reader .reader-li {
+  padding-left: 16px;
+  position: relative;
+  margin-bottom: 6px;
+}
+.reader .reader-li::before {
+  content: '•';
+  position: absolute;
+  left: 2px;
+  color: var(--muted);
+}
+.reader pre {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow-x: auto;
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.reader blockquote {
+  margin: 0 0 12px;
+  padding: 2px 12px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+.reader img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 12px;
+  border-radius: 6px;
+}
+.reader-empty {
+  color: var(--muted);
+}
+.reader-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 12px;
+}
+.reader-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
 .preview-msg {
   margin: auto;
   padding: 24px 16px;

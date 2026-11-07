@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.466',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '휴대폰·태블릿에서 답·리포트·가이드·설정의 링크를 화면 안 시트로 먼저 띄운다. 보통 페이지는 읽기 모드(서버가 받아 제목·본문·그림만 넘기고 화면이 직접 그림, 페이지의 HTML·스크립트는 들어오지 않음), localhost 주소는 그 서버를 띄운 세션의 미리보기로. 아래 "브라우저로 열기"로 새 탭. 로그인·PR·Slack 과 컴퓨터는 그대로 바로 새 탭',
+        refs: ['REQ-F-879', 'REQ-F-822', 'IF-275', 'IF-276'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '읽기 모드의 바깥 요청은 DNS 뒤 실제 접속 주소를 검사해 내부망·루프백·링크 로컬·CGNAT 와 80·443·8080·8443 밖 포트를 거절하고, 환경 프록시를 쓰지 않으며 리디렉트도 같은 검사(5번까지)',
+        refs: ['REQ-S-100'],
+      },
+    ],
+  },
+  {
     version: '1.465',
     date: '2026-11-07',
+    commit: 'cd950fe',
     changes: [
       {
         kind: 'changed',
