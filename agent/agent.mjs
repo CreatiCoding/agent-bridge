@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -3196,7 +3196,7 @@ function sudoSpawn(pw, args, { cwd = HOME, ms = 15_000 } = {}) {
 }
 
 /** A new session in another runner (REQ-F-851): the same checks on the folder as claude's, then codex. */
-async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode }) {
+async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode, realRoot }) {
   try {
     // The sandbox and approval asked for (REQ-F-854), signed while trust is on: one codex does not take is refused.
     const mode = codexModeStr(parseCodexMode(codexMode) ?? (() => { throw new Error('codex 샌드박스·승인 모드가 올바르지 않아요') })())
@@ -3205,18 +3205,21 @@ async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create,
     const want = expandHome(cwd || '~')
     if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
     if (!fs.existsSync(want) && create === true) {
-      fs.mkdirSync(want, { recursive: true })
+      if (realRoot) sharedMake(realRoot, want)
+      else fs.mkdirSync(want, { recursive: true })
       if (typeof base === 'string' && base) rememberMadeDir(sid, want, expandHome(base))
     }
     if (!fs.existsSync(want)) throw Object.assign(new Error(`이 맥에 그 폴더가 없습니다: ${want}`), { missing: true })
     if (!fs.statSync(want).isDirectory()) throw new Error(`폴더가 아닙니다: ${want}`)
     const dir = fs.realpathSync(want)
+    if (realRoot) sharedInside(realRoot, dir)
     const s = { runner: rid, cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(mode ? { codexMode: mode } : {}), ...(/^[\w.-]{1,60}$/.test(model || '') && !/^claude/i.test(model) ? { model } : {}) }
     resetRuntime(s)
     sessions.set(sid, s)
     const onLine = !!prompt && Buffer.byteLength(prompt) <= FIRST_PROMPT_MAX
     if (prompt && !onLine) Object.assign(s, { keepHeld: true, held: [{ id: crypto.randomUUID(), at: Date.now(), text: prompt }] })
     try {
+      if (realRoot) sharedInside(realRoot, dir)
       await launch(sid, s, { prompt: onLine ? prompt : undefined })
     } catch (e) {
       sessions.delete(sid)
@@ -3330,11 +3333,12 @@ async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mo
   try {
     // 공유 디스크 (REQ-F-883): the folder starts under the shared folder, which must already be here. It is never made:
     // a disk that is not mounted is refused, not answered with a local folder of the same name.
-    if (typeof root === 'string' && root) sharedRootCheck(root, cwd, expandHome)
+    // Real paths (1.476): a link on the way that leads outside is refused before a folder is made, and again after.
+    const realRoot = typeof root === 'string' && root ? sharedRootCheck(root, cwd, expandHome) : null
     // Claude Code unless the command names another runner this Mac has (REQ-F-851). Signed while trust is on.
     const rid = pickRunner(runner, runnerIds())
     if (!rid) throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
-    if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode })
+    if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode, realRoot })
     // The server names the session: a name that is a path, or one already here, is not taken (REQ-S-092).
     if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
     if (prompt) prompt = trustText(prompt, sid)
@@ -3342,7 +3346,8 @@ async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mo
     const want = expandHome(cwd || '~')
     if (!path.isAbsolute(want)) throw new Error(`작업 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${cwd}`)
     if (!fs.existsSync(want) && create === true) {
-      fs.mkdirSync(want, { recursive: true })
+      if (realRoot) sharedMake(realRoot, want)
+      else fs.mkdirSync(want, { recursive: true })
       // Made for a hand-over (REQ-F-760): recorded with its base, so it can be deleted when that session closes.
       if (typeof base === 'string' && base) rememberMadeDir(sid, want, expandHome(base))
     }
@@ -3354,6 +3359,7 @@ async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mo
       throw new Error(`폴더를 읽을 권한이 없습니다: ${want} (${e.code}). 데스크탑·문서·다운로드 폴더라면 시스템 설정 → 개인정보 보호 및 보안 → 파일 및 폴더에서 에이전트를 켠 터미널 앱에 권한을 주세요`)
     }
     const dir = fs.realpathSync(want)
+    if (realRoot) sharedInside(realRoot, dir)
     const s = { cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(/^[\w.[\]-]{1,60}$/.test(model || '') ? { model } : {}), ...(EFFORTS.includes(effort) ? { effort } : {}) }
     if (['default', 'acceptEdits', 'plan', 'auto'].includes(mode)) s.mode = mode
     if (chrome === false) s.chrome = false
@@ -3368,6 +3374,8 @@ async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mo
     // Held before claude starts, so the release that follows its start (SessionStart) delivers it.
     if (prompt && !onLine) Object.assign(s, { keepHeld: true, held: [{ id: crypto.randomUUID(), at: Date.now(), text: prompt }] })
     try {
+      // Just before it starts (1.476): a folder on the way swapped for a link since the check is caught here.
+      if (realRoot) sharedInside(realRoot, dir)
       await launch(sid, s, ['--session-id', sid, ...settingsArgs(s), ...(onLine ? [prompt] : [])])
     } catch (e) {
       sessions.delete(sid)

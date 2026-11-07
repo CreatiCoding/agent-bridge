@@ -1345,6 +1345,9 @@ export const lastAnyLine = (text) => lastLineAt(text, () => true)
 /**
  * 공유 디스크 (REQ-F-883): throws unless `root` is a folder on this Mac and `cwd` is it or under it. The shared folder
  * is never made: a disk that is not mounted is refused, not answered with a local folder of the same name.
+ * Compared by real paths (1.476): a link on the way (`<root>/group` → elsewhere) is followed, so a folder that would be
+ * made outside is refused before anything is made. A folder not made yet is judged by the nearest folder that is there.
+ * Returns the shared folder's real path, for `sharedMake` and `sharedInside`.
  */
 export function sharedRootCheck(root, cwd, expandHome) {
   const r = expandHome(String(root)).replace(/(.)\/+$/, '$1')
@@ -1355,5 +1358,73 @@ export function sharedRootCheck(root, cwd, expandHome) {
   } catch {}
   if (!dir) throw new Error(`공유 폴더가 이 맥에 없어요: ${r}. 공유 디스크가 연결(마운트)돼 있는지 확인하세요`)
   const w = path.resolve(expandHome(String(cwd || '~')))
-  if (w !== r && !w.startsWith(r === '/' ? '/' : `${r}/`)) throw new Error(`작업 폴더가 공유 폴더 밖이에요: ${w}`)
+  if (!underDir(r, w)) throw new Error(`작업 폴더가 공유 폴더 밖이에요: ${w}`)
+  const real = fs.realpathSync.native(r)
+  const planned = plannedReal(w)
+  if (!underDir(real, planned)) throw new Error(`작업 폴더가 공유 폴더 밖이에요: ${planned}`)
+  return real
+}
+
+const underDir = (r, d) => d === r || d.startsWith(r === '/' ? '/' : `${r}/`)
+
+/**
+ * The real path `p` has or will have once made: the nearest folder on the way that is there, resolved, then the
+ * names after it. A name that is there but cannot be followed (a link to nothing) is refused: making through it
+ * would land wherever it points.
+ */
+export function plannedReal(p) {
+  let head = path.resolve(p)
+  const rest = []
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(head), ...rest)
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw new Error(`작업 폴더를 확인하지 못했어요: ${head} (${e.code})`)
+    }
+    let there = false
+    try {
+      fs.lstatSync(head)
+      there = true
+    } catch {}
+    if (there) throw new Error(`작업 폴더 경로에 따라갈 수 없는 링크가 있어요: ${head}`)
+    const up = path.dirname(head)
+    if (up === head) throw new Error(`작업 폴더를 확인하지 못했어요: ${p}`)
+    rest.unshift(path.basename(head))
+    head = up
+  }
+}
+
+/** Throws unless `dir`'s real path is under the shared folder's real path `realRoot`; returns that real path. */
+export function sharedInside(realRoot, dir) {
+  const real = fs.realpathSync.native(dir)
+  if (!underDir(realRoot, real)) throw new Error(`작업 폴더가 공유 폴더 밖이에요: ${real}`)
+  return real
+}
+
+/**
+ * Makes `want` under the shared folder one name at a time, checking the real path of each parent before and of each
+ * new folder after, so a link put on the way between the check and the making is caught at the next name.
+ */
+export function sharedMake(realRoot, want) {
+  const missing = []
+  let head = path.resolve(want)
+  for (;;) {
+    try {
+      fs.lstatSync(head)
+      break
+    } catch {}
+    missing.unshift(head)
+    const up = path.dirname(head)
+    if (up === head) break
+    head = up
+  }
+  for (const d of missing) {
+    sharedInside(realRoot, path.dirname(d))
+    try {
+      fs.mkdirSync(d)
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e
+    }
+    sharedInside(realRoot, d)
+  }
 }

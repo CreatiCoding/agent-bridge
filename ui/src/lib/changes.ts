@@ -26,7 +26,20 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.477',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '공유 디스크에서 새 세션을 시작할 때 폴더를 실제 경로로 확인한다: 공유 폴더 안의 링크가 밖을 가리키면 폴더를 만들기 전에 거절하고, 한 단계씩 만들며 다시 보고, 세션(Claude·Codex)을 띄우기 바로 전에도 다시 본다. 전에는 경로 글자만 비교해 링크를 지나 공유 폴더 밖에 폴더가 생길 수 있었다',
+        refs: ['REQ-F-883'],
+      },
+    ],
+  },
+  {
     version: '1.476',
+    commit: '4280195',
     date: '2026-11-08',
     changes: [
       {
