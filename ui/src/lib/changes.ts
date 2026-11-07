@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.455',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: 'Codex 명령 승인 카드에 "Would you like to run the following command?" 만 보이고 명령이 없던 것: 웹 카드가 에이전트가 보낸 화면 내용(context)을 그리지 않았다. 이제 도구 정보가 없는 카드는 그 명령·파일을 열린 카드와 닫힌 카드 모두에 보인다',
+        refs: ['REQ-F-592'],
+      },
+    ],
+  },
+  {
     version: '1.454',
     date: '2026-11-07',
+    commit: '2a1b9f2',
     changes: [
       {
         kind: 'security',

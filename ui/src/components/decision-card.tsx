@@ -98,6 +98,10 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
           <div className="dcard-detail compact">
             <ToolDetail tool={card.tool} />
           </div>
+        ) : card.context ? (
+          <div className="dcard-detail compact">
+            <pre>{card.context}</pre>
+          </div>
         ) : null}
         <div className="dcard-done">{result || '답함'}</div>
       </div>
@@ -114,9 +118,15 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
       <div className="dcard-title">{card.title}</div>
       {card.description ? <div className="dcard-desc">{card.description}</div> : null}
       {/* Shown in the pop-up too: "Do you want to proceed?" says nothing until the command or file is there. */}
+      {/* A terminal dialog (a codex approval, a Claude Code dialog read off the screen) has no tool: what it asks
+          about is the screen text above its question, sent as context. */}
       {card.tool ? (
         <div className={`dcard-detail${compact ? ' compact' : ''}`}>
           <ToolDetail tool={card.tool} />
+        </div>
+      ) : card.context ? (
+        <div className={`dcard-detail${compact ? ' compact' : ''}`}>
+          <pre>{card.context}</pre>
         </div>
       ) : null}
       {card.plan ? (
