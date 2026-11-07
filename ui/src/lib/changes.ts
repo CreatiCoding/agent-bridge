@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.462',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '결정 카드(권한 요청·질문)를 눌러도 반응이 없어 보이던 것: 답 요청이 12 s 안에 끝나지 않으면 버튼을 다시 풀고 "다시 눌러 주세요" 를 알리며, 보낸 뒤에는 "보냈어요 · 맥이 누르는 중", 페이지 연결이 3 s 넘게 끊기면 "페이지 연결이 끊겨 다시 잇는 중" 을 카드에 보인다.',
+        refs: ['REQ-F-876'],
+      },
+    ],
+  },
+  {
     version: '1.461',
     date: '2026-11-07',
+    commit: '69e0977',
     changes: [
       {
         kind: 'fixed',

@@ -1,7 +1,10 @@
 // A decision the terminal is waiting for, with the choices that are on screen right now. A press sends the
 // option's number; the Mac presses it only if that dialog is still up (agent/agent.mjs answerCard).
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Markdown } from '../lib/markdown'
+import { useStore } from '../lib/store'
+import { ANSWER_WAIT_MS, LATE, LATE_NOTE, pressNote, withDeadline } from '../lib/card-press'
+import { toast } from '../kit/overlay'
 import type { Card, Session } from '../lib/types'
 import { Button, Icon } from '../kit'
 import { act, command, inSlack } from './session-menu'
@@ -69,9 +72,29 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
     // The card as it is drawn; an old agent's option without a kind is "other" (allowing is "not deny").
     const o = typeof n === 'number' ? card.options?.find((x) => x.n === n) : undefined
     const option = n === 'esc' ? { n, label: 'Esc', kind: 'deny' } : n === 'enter' ? { n, label: '확정', kind: 'other' } : { n, label: o?.label ?? '', kind: o?.kind ?? 'other' }
-    await act(() => dispatch('permission.answer', { sid: session.id, known: true, card: { id: card.id, kind: card.kind, ...(card.title ? { title: card.title } : {}), ...(card.tool ? { tool: card.tool } : {}) }, option }))
+    // The request may stall on a weak link with no end (REQ-F-876): after ANSWER_WAIT_MS the buttons come back.
+    // A second press is safe: the Mac answers a card only while that card is still the open one.
+    const r = await withDeadline(
+      act(() => dispatch('permission.answer', { sid: session.id, known: true, card: { id: card.id, kind: card.kind, ...(card.title ? { title: card.title } : {}), ...(card.tool ? { tool: card.tool } : {}) }, option })),
+      ANSWER_WAIT_MS,
+    )
     setBusy(null)
+    if (r === LATE) {
+      last.current = 0
+      toast(LATE_NOTE, { tone: 'bad' })
+    } else if (r != null) setSent({ id: card.id, label: option.label || String(n) })
   }
+  // A card stays open until the Mac's next state comes down the page's stream: say what is happening meanwhile.
+  const [sent, setSent] = useState<{ id: string; label: string } | null>(null)
+  const link = useStore((s) => s.link)
+  const downSince = useStore((s) => s.downSince)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (link === 'live') return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [link])
+  const note = pressNote({ sent: sent?.id === card.id ? sent.label : null, link, downSince, now })
   const label = CARD_LABEL[card.kind] ?? '응답 대기'
   // Worked on in Slack: the card is answered there, and shown here as it is.
   const away = inSlack(session)
@@ -175,6 +198,11 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
             <Button size="sm" tone="ghost" busy={busy === 'esc'} disabled={away} onClick={() => answer('esc')}>
               Esc 로 닫기
             </Button>
+            {note && !away ? (
+              <span className="muted" role="status" style={{ fontSize: 'var(--fs-small)' }}>
+                {note}
+              </span>
+            ) : null}
             {away ? (
               <span className="muted" style={{ fontSize: 'var(--fs-small)' }}>
                 Slack 스레드에서 답해 주세요
