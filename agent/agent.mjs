@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -5218,8 +5218,22 @@ async function diskOp(op, id, where, paths) {
     // diskPath resolves the parent folders only: the folder itself may be a link out of the home folder.
     const scanWhy = diskScanWhy(fs.realpathSync(dir), { home, platform: process.platform })
     if (scanWhy) throw new Error(scanWhy)
-    const ents = fs.readdirSync(dir, { withFileTypes: true }).slice(0, 5000)
     const opts = { home, keep: keptDirs(), sessions: sessionDirs(), platform: process.platform }
+    // A personal folder (REQ-F-887) is read only by child processes with a time limit: macOS may hold the read on a
+    // permission prompt, which would stop the agent itself if it read the folder.
+    if (personalDir(fs.realpathSync(dir), { home, platform: process.platform })) {
+      const real = fs.realpathSync(dir)
+      const [du, ls] = await Promise.all([run('du', ['-skx', '-a', '-d', '1', real], { timeout: 360_000 }), run('/bin/ls', ['-1AF', real], { timeout: 30_000 })])
+      if (!du.out && !ls.out) throw new Error(/not permitted/i.test(du.err + ls.err) ? '이 기기의 에이전트에 이 폴더를 읽을 권한이 없어요(전체 디스크 접근 권한)' : '폴더를 읽지 못했어요(시간 초과)')
+      const items = duItems(real, du.out, ls.out).map((it) => {
+        const why = diskTrashable(path.join(dir, it.name), opts)
+        return { ...it, path: tilde(path.join(dir, it.name)), trashable: !why, ...(why ? { why } : {}) }
+      })
+      items.sort((a, b) => (b.size ?? -1) - (a.size ?? -1))
+      return { path: tilde(dir), parent: dir === home ? null : tilde(path.dirname(dir)), count: items.length, items: items.slice(0, DISK_SCAN_MAX), ...(/not permitted/i.test(du.err) ? { partial: true } : {}) }
+    }
+    const ents = fs.readdirSync(dir, { withFileTypes: true }).slice(0, 5000)
+    const personal = personalDirs(home, process.platform)
     const items = await inTurns(ents, 6, async (e) => {
       const p = path.join(dir, e.name)
       const item = { name: e.name, path: tilde(p), kind: e.isSymbolicLink() ? 'link' : e.isDirectory() ? 'dir' : 'file', size: null }
@@ -5228,6 +5242,7 @@ async function diskOp(op, id, where, paths) {
       if (why) item.why = why
       try {
         if (item.kind !== 'dir') item.size = fs.lstatSync(p).blocks * 512
+        else if (personal.includes(p)) (item.size = await diskSize(p)), (item.personal = true)
         else if (guarded.includes(p)) item.guarded = true
         else if (guarded.some((g) => g.startsWith(`${p}/`))) item.partial = true
         else item.size = await diskSize(p)
@@ -5322,7 +5337,7 @@ async function diskOp(op, id, where, paths) {
       g.oldest = Math.min(g.oldest, c.mtimeMs)
       g.newest = Math.max(g.newest, c.mtimeMs)
     }
-    return { disk: (() => { try { return diskUse(fs.statfsSync(HOME)) } catch { return null } })(), gap: { used, measured, unexplained: used == null ? null : Math.max(0, used - known) }, clones, docker: await dockerNow(), ignored: await ignoredNow(home) }
+    return { disk: (() => { try { return diskUse(fs.statfsSync(HOME)) } catch { return null } })(), gap: { used, measured, unexplained: used == null ? null : Math.max(0, used - known) }, clones, docker: await dockerNow(), ignored: await ignoredNow(home), hidden: await hiddenNow(home, cl) }
   }
   // Removes the clones of one app (id: its folder under X) that no running app has open and that are over an hour old.
   if (op === 'clones') {
@@ -5452,6 +5467,35 @@ async function dockerNow() {
     vm = await inTurns(fs.readdirSync(disks), 2, async (n) => ({ path: tilde(path.join(disks, n)), size: await diskSize(path.join(disks, n)) }))
   } catch {}
   return { leftovers: dockerLeftovers(ps.out), df: types, vm }
+}
+/**
+ * Where df counts space the measured folders do not show (REQ-F-887): the APFS volumes (System, Preboot, VM, …), local
+ * snapshots, the per-user temporary folder (app clones, caches), Docker Desktop's disk file, and the personal folders
+ * (sizes only here). Each is read by a child process with a time limit; what cannot be read is null.
+ */
+async function hiddenNow(home, cl) {
+  if (process.platform !== 'darwin') return null
+  const sz = async (p) => (fs.existsSync(p) ? duBytes((await run('du', ['-skx', p], { timeout: 300_000 })).out) : null)
+  const list = await run('/bin/sh', ['-c', '/usr/sbin/diskutil apfs list -plist | /usr/bin/plutil -convert json -o - -'], { timeout: 60_000 })
+  let volumes = null
+  try {
+    volumes = apfsVolumes(JSON.parse(list.out))
+  } catch {}
+  const snaps = await run('/usr/bin/tmutil', ['listlocalsnapshots', '/'], { timeout: 60_000 })
+  const temp = cl?.x ? path.dirname(cl.x) : null
+  const clones = cl?.x ? await inTurns([...new Set(cl.list.map((c) => c.app))], 2, async (app) => ({ app, size: await sz(path.join(cl.x, app)) })) : []
+  const raw = path.join(home, 'Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw')
+  const st = await run('/usr/bin/stat', ['-f', '%b %z', raw], { timeout: 30_000 })
+  const [blocks, logical] = st.out.split(' ').map(Number)
+  const personal = await inTurns(personalDirs(home, 'darwin'), 2, async (p) => ({ path: tilde(p), size: await sz(p) }))
+  return {
+    volumes,
+    snapshots: snaps.ok ? snapshotCount(snaps.out) : null,
+    temp: temp ? { path: temp, size: await sz(temp) } : null,
+    clones,
+    dockerDesktop: st.ok && Number.isFinite(blocks) ? { path: tilde(raw), size: blocks * 512, max: logical } : null,
+    personal,
+  }
 }
 /** Folders git ignores in the repositories under home, 200 MB and up, biggest first (30), each with whether trash takes it. */
 async function ignoredNow(home) {

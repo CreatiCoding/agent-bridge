@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.479',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'agent'],
+        text: '디스크 관리가 데스크톱·문서·다운로드·사진·동영상·음악 폴더를 열어 안의 이름과 크기를 보인다(보기만, 옮기지 않음). 허용받은 운영자도 볼 수 있고, 허용 확인 창이 이를 알린다',
+        refs: ['REQ-F-887', 'REQ-F-804'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '깊게 찾기가 폴더로 보이지 않는 공간도 잰다: APFS 볼륨별 사용량(시스템·Preboot·VM), 로컬 스냅샷 수, 임시 폴더와 앱 복제본 크기, Docker Desktop 디스크 파일 크기',
+        refs: ['REQ-F-887', 'REQ-F-885'],
+      },
+    ],
+  },
+  {
     version: '1.478',
     date: '2026-11-08',
+    commit: '22454a6',
     changes: [
       {
         kind: 'fixed',

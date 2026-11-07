@@ -112,3 +112,31 @@ test('AC-1671 an operator\'s own session reaches another person\'s Mac only whil
     await srv.stop()
   }
 })
+
+test('AC-1675 personal folders open for listing, mail · messages · app data stay closed, and du lines become items', async () => {
+  const { diskScanWhy, personalDir, duItems, diskTrashable } = await import('../../agent/guard.mjs')
+  const H = '/Users/u'
+  const o = { home: H, platform: 'darwin' }
+  for (const d of ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music']) {
+    assert.equal(diskScanWhy(`${H}/${d}`, o), null, d)
+    assert.equal(personalDir(`${H}/${d}/x/y`, o), `${H}/${d}`)
+  }
+  for (const d of ['Library/Mail', 'Library/Messages', 'Library/Containers', '.Trash']) assert.match(diskScanWhy(`${H}/${d}`, o), /지키는/, d)
+  assert.equal(personalDir(`${H}/Downloadsx`, o), null)
+  assert.equal(personalDir(`${H}/Downloads`, { home: H, platform: 'linux' }), null)
+  assert.match(diskTrashable(`${H}/Downloads/a.dmg`, { ...o, keep: [], sessions: [] }), /macOS 가 지키는/, '보기만, 휴지통으로는 안 옮김')
+  const du = `8\t${H}/Downloads/a.dmg\n16\t${H}/Downloads/sub\n4\t${H}/Downloads/sub/x\n24\t${H}/Downloads\n`
+  assert.deepEqual(duItems(`${H}/Downloads`, du, 'a.dmg\nsub/\n'), [{ name: 'a.dmg', kind: 'file', size: 8192 }, { name: 'sub', kind: 'dir', size: 16384 }])
+})
+
+test('AC-1676 the APFS container with the Data volume, its volumes biggest first, and local snapshots counted', async () => {
+  const { apfsVolumes, snapshotCount } = await import('../../agent/guard.mjs')
+  const j = { Containers: [
+    { CapacityCeiling: 5, CapacityFree: 1, Volumes: [{ Name: 'Recovery', Roles: ['Recovery'], CapacityInUse: 2 }] },
+    { CapacityCeiling: 245, CapacityFree: 94, Volumes: [{ Name: 'Macintosh HD', Roles: ['System'], CapacityInUse: 12 }, { Name: 'Macintosh HD - Data', Roles: ['Data'], CapacityInUse: 126 }, { Name: 'VM', Roles: ['VM'], CapacityInUse: 1 }] },
+  ] }
+  assert.deepEqual(apfsVolumes(j), { total: 245, free: 94, volumes: [{ name: 'Macintosh HD - Data', role: 'Data', used: 126 }, { name: 'Macintosh HD', role: 'System', used: 12 }, { name: 'VM', role: 'VM', used: 1 }] })
+  assert.equal(apfsVolumes({}), null)
+  assert.equal(snapshotCount('Snapshots for disk /:\ncom.apple.TimeMachine.2026-11-08-010203.local\ncom.apple.os.update-ABC\n'), 2)
+  assert.equal(snapshotCount(''), 0)
+})

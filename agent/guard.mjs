@@ -760,9 +760,58 @@ export function diskTrashable(real, { home, keep = [], sessions = [], platform }
 export function diskScanWhy(real, { home, platform }) {
   const rel = path.relative(home, real)
   if (rel.startsWith('..') || path.isAbsolute(rel)) return '홈 폴더 밖을 가리키는 링크라 열지 않아요'
+  if (personalDir(real, { home, platform })) return null
   for (const d of guardedDirs(home, platform)) if (real === d || real.startsWith(`${d}${path.sep}`)) return 'macOS 가 지키는 폴더라 열지 않아요'
   return null
 }
+
+/**
+ * The person's own folders macOS guards (REQ-F-887): Desktop, Documents, Downloads, Pictures, Movies, Music. Unlike
+ * mail, messages or app data they hold what the person put there, so the disk page lists them (the owner, or the
+ * operator the owner granted 디스크 정리 도움) — read by a child process with a time limit, since macOS may hold the
+ * read on a permission prompt. Nothing in them is moved to the Trash from the page.
+ */
+export const PERSONAL_DIRS = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music']
+export const personalDirs = (home, platform) => (platform === 'darwin' ? PERSONAL_DIRS.map((d) => path.join(home, d)) : [])
+/** The personal folder `p` is in (or is), or null. */
+export const personalDir = (p, { home, platform }) => personalDirs(home, platform).find((d) => p === d || p.startsWith(`${d}${path.sep}`)) ?? null
+
+/**
+ * `du -sk -a -d 1 <dir>` and `ls -1AF <dir>` of one folder into its items: {name, kind, size}. The folder's own du line
+ * and anything whose name would leave the folder are left out.
+ */
+export function duItems(dir, duOut, lsOut) {
+  const kinds = new Map()
+  for (const l of String(lsOut ?? '').split('\n')) {
+    if (!l) continue
+    const m = /^(.*?)([/@*=|%]?)$/.exec(l)
+    kinds.set(m[1], m[2] === '/' ? 'dir' : m[2] === '@' ? 'link' : 'file')
+  }
+  const out = []
+  for (const l of String(duOut ?? '').split('\n')) {
+    const m = /^(\d+)\t(.*)$/.exec(l)
+    if (!m || path.dirname(m[2]) !== dir) continue
+    const name = path.basename(m[2])
+    if (!name || name === '.' || name === '..') continue
+    out.push({ name, kind: kinds.get(name) ?? 'file', size: Number(m[1]) * 1024 })
+  }
+  return out
+}
+
+/**
+ * `diskutil apfs list -plist` (as JSON): the container holding the Data volume, each volume with what it uses. The
+ * System, Preboot, VM and Recovery volumes are where df counts space no folder under / shows.
+ */
+export function apfsVolumes(j) {
+  const cs = Array.isArray(j?.Containers) ? j.Containers : []
+  const c = cs.find((x) => (x?.Volumes ?? []).some((v) => (v?.Roles ?? []).includes('Data')))
+  if (!c) return null
+  const vols = c.Volumes.map((v) => ({ name: String(v?.Name ?? ''), role: String((v?.Roles ?? [])[0] ?? ''), used: Number(v?.CapacityInUse) || 0 }))
+  return { total: Number(c.CapacityCeiling) || null, free: Number(c.CapacityFree) || null, volumes: vols.sort((a, b) => b.used - a.used) }
+}
+
+/** `tmutil listlocalsnapshots /`: how many local snapshots (their space is in the volume's use, not in any folder). */
+export const snapshotCount = (out) => String(out ?? '').split('\n').filter((l) => /com\.apple\.TimeMachine\.|^com\.apple\./.test(l.trim())).length
 
 /** `du -sk` output's first number, in bytes, or null. */
 export const duBytes = (out) => {

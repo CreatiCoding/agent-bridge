@@ -33,6 +33,8 @@ interface Item {
   why?: string
   guarded?: boolean
   partial?: boolean
+  /** A personal folder (Downloads, Documents, …, REQ-F-887): listed, never moved from here. */
+  personal?: boolean
 }
 interface Worktree {
   repo: string
@@ -315,6 +317,7 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
                     <span className="stack" style={{ gap: 4 }}>
                       <span>
                         {it.guarded ? 'macOS 가 지키는 폴더 · 재지 않음' : it.partial ? '안에 보호 폴더가 있어 열어서 봐요' : it.size == null ? '크기를 읽지 못함' : bytes(it.size)}
+                        {it.personal ? ' · 개인 폴더 · 보기만' : ''}
                         {/* At the home folder itself every item says the same "right under home" reason: said once above instead. */}
                         {!it.trashable && it.why && !it.guarded && scan.parent ? ` · ${it.why}` : ''}
                       </span>

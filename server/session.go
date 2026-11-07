@@ -703,7 +703,7 @@ var _ = regexp.MustCompile
 var _ = time.Second
 
 // DISK_WAITS: how long each 디스크 관리 op may take on the Mac (REQ-F-801·802·885). An op missing here is refused.
-var DISK_WAITS = map[string]int64{"info": 240_000, "scan": 240_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000, "probe": 600_000, "clones": 300_000, "docker": 900_000}
+var DISK_WAITS = map[string]int64{"info": 240_000, "scan": 420_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000, "probe": 900_000, "clones": 300_000, "docker": 900_000}
 
 // diskRun: one 디스크 관리 op on a host, for its owner or the operator it is granted to (diskHost), from the page
 // (IF-251) or a session's bridge MCP disk tools (REQ-F-886). What removes something is kept in the owner's host log.

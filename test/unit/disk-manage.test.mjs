@@ -184,5 +184,6 @@ test('diskScanWhy: 홈 밖이나 macOS 가 지키는 폴더를 가리키는 링�
   assert.match(diskScanWhy('/Users/other', o), /홈 폴더 밖/)
   assert.match(diskScanWhy('/Users/u2/x', o), /홈 폴더 밖/, '이름이 홈으로 시작하는 다른 폴더')
   assert.match(diskScanWhy(`${H}/Library/Messages`, o), /지키는/)
-  assert.match(diskScanWhy(`${H}/Documents/a`, o), /지키는/)
+  assert.equal(diskScanWhy(`${H}/Documents/a`, o), null, '개인 폴더는 연다 (REQ-F-887)')
+  assert.match(diskScanWhy(`${H}/Library/Containers/x`, o), /지키는/)
 })
