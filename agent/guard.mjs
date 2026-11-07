@@ -777,7 +777,7 @@ export const personalDirs = (home, platform) => (platform === 'darwin' ? PERSONA
 export const personalDir = (p, { home, platform }) => personalDirs(home, platform).find((d) => p === d || p.startsWith(`${d}${path.sep}`)) ?? null
 
 /**
- * `du -sk -a -d 1 <dir>` and `ls -1AF <dir>` of one folder into its items: {name, kind, size}. The folder's own du line
+ * `find <dir> -mindepth 1 -maxdepth 1 -exec du -skx {} +` and `ls -1AF <dir>` of one folder into its items: {name, kind, size}. The folder's own du line
  * and anything whose name would leave the folder are left out.
  */
 export function duItems(dir, duOut, lsOut) {

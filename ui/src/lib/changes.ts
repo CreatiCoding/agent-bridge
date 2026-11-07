@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.480',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '개인 폴더(다운로드·문서 등)를 열면 목록이 비던 것: macOS du 가 쓴 옵션 조합을 받지 않았다. 항목마다 재도록 고쳤다',
+        refs: ['REQ-F-887'],
+      },
+    ],
+  },
+  {
     version: '1.479',
     date: '2026-11-08',
+    commit: 'abf34b3',
     changes: [
       {
         kind: 'changed',

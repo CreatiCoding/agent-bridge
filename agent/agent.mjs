@@ -5223,7 +5223,8 @@ async function diskOp(op, id, where, paths) {
     // permission prompt, which would stop the agent itself if it read the folder.
     if (personalDir(fs.realpathSync(dir), { home, platform: process.platform })) {
       const real = fs.realpathSync(dir)
-      const [du, ls] = await Promise.all([run('du', ['-skx', '-a', '-d', '1', real], { timeout: 360_000 }), run('/bin/ls', ['-1AF', real], { timeout: 30_000 })])
+      // macOS du refuses -a with -d (a usage error that listed nothing): find sizes each item under it instead.
+      const [du, ls] = await Promise.all([run('/usr/bin/find', [real, '-mindepth', '1', '-maxdepth', '1', '-exec', 'du', '-skx', '{}', '+'], { timeout: 360_000 }), run('/bin/ls', ['-1AF', real], { timeout: 30_000 })])
       if (!du.out && !ls.out) throw new Error(/not permitted/i.test(du.err + ls.err) ? '이 기기의 에이전트에 이 폴더를 읽을 권한이 없어요(전체 디스크 접근 권한)' : '폴더를 읽지 못했어요(시간 초과)')
       const items = duItems(real, du.out, ls.out).map((it) => {
         const why = diskTrashable(path.join(dir, it.name), opts)
