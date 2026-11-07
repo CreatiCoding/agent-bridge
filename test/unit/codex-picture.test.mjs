@@ -33,15 +33,15 @@ test('안내의 예시 경로를 페이지가 그림으로 알아본다', () => 
   assert.deepEqual(ko, ['/tmp/RN-빌드-쇼핑제외-비교.png'])
 })
 
-test('오지 않은 그림은 한 번 다시 묻고, 그래도 안 오면 다시 버튼이 있는 칸', () => {
+test('오지 않은 그림은 3초·10초 뒤 두 번 다시 묻고, 그래도 안 오면 다시 버튼이 있는 칸', () => {
   const at = view.indexOf('function Thumb(')
   assert.ok(at >= 0)
   const body = view.slice(at, view.indexOf('const THUMB_RETRY_MS', at))
   assert.match(body, /onError=/)
-  assert.match(body, /setTimeout\(\(\) => setTries\(1\), THUMB_RETRY_MS\)/)
+  assert.match(body, /setTimeout\(\(\) => setTries\(tries \+ 1\), THUMB_RETRY_MS\[tries\]\)/)
   assert.match(body, /\?r=\$\{tries\}/)
   assert.match(body, /thumb-gone/)
   assert.match(body, /그림을 불러오지 못했어요/)
-  assert.match(view, /const THUMB_RETRY_MS = 3000/)
+  assert.match(view, /const THUMB_RETRY_MS = \[3000, 10000\]/)
   assert.ok(css.includes('\n.thumb-gone {'))
 })

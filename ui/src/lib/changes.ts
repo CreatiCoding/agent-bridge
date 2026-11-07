@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.458',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server', 'ui'],
+        text: '보낸 그림이 "그림을 불러오지 못했어요" 로 남던 것: 서버가 보낸 메시지의 그림을 메모리 전달 칸에 바로 넣어, 맥에 파일이 닿기 전에도 첫 요청부터 보이게 함. 화면의 자동 다시 묻기는 3초·10초 두 번',
+        refs: ['REQ-F-872', 'IF-006'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '그림 메모리 전달 칸을 사람마다 나눔: 다른 사람이 같은 그림 id 를 물어도 주지 않음',
+        refs: ['IF-006'],
+      },
+    ],
+  },
+  {
     version: '1.457',
     date: '2026-11-07',
+    commit: 'dbc7463',
     changes: [
       {
         kind: 'added',

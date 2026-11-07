@@ -51,7 +51,7 @@ function Thumbs({ ids, onOpen }: { ids: string[]; onOpen: (src: string) => void 
 
 /**
  * A picture sent in the conversation, fetched from the Macs. One that does not come (a Mac whose link dropped for a
- * moment, or no Mac has it) is asked again once after a few seconds, then drawn as a tile that says so and asks
+ * moment, or no Mac has it) is asked again twice, after 3 s and 10 s, then drawn as a tile that says so and asks
  * again when pressed, never as the browser's broken picture.
  */
 function Thumb({ id, onOpen }: { id: string; onOpen: (src: string) => void }) {
@@ -77,13 +77,14 @@ function Thumb({ id, onOpen }: { id: string; onOpen: (src: string) => void }) {
       loading="lazy"
       onClick={() => onOpen(src)}
       onError={() => {
-        if (tries === 0) timer.current = setTimeout(() => setTries(1), THUMB_RETRY_MS)
+        // A picture sent a moment ago, or one whose Mac is coming back: asked again after 3 s, then 10 s.
+        if (tries < THUMB_RETRY_MS.length) timer.current = setTimeout(() => setTries(tries + 1), THUMB_RETRY_MS[tries])
         else setGone(true)
       }}
     />
   )
 }
-const THUMB_RETRY_MS = 3000
+const THUMB_RETRY_MS = [3000, 10000]
 
 // A picture on the Mac that an answer names by its path (a screenshot it took): `/…/a.png`, `~/…/a.jpg`.
 const LOCAL_IMG_RE = /(?:^|[\s`'"(<\[:=*])((?:~|\/)[^\s`'"()<>\[\]*]*\.(?:png|jpe?g|gif|webp))(?=$|[\s`'")>\],.;:!?*])/gi

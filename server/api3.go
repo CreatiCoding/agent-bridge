@@ -1083,6 +1083,11 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 	meta.set("resting", false)
 	for _, f := range files {
 		f.id = imageRef(uid, f.typ, f.data, f.name)
+		// The page draws the message's picture as soon as it is logged, before the send command has reached the Mac
+		// through the bridge tab: it is kept in memory for that while, so the first look does not miss (REQ-F-872 rule 3).
+		if id, ok := f.id.(string); ok {
+			passImage(uid, id, f.typ, decodeB64(f.data))
+		}
 	}
 	id := uuidv4()
 	parts := []string{}

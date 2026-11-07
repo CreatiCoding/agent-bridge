@@ -737,7 +737,8 @@ func decodeB64(s string) []byte {
 	return out
 }
 
-// imgPassing: pictures passed on lately, so a page drawing the same one again does not ask the Mac again.
+// imgPassing: pictures passed on lately, so a page drawing the same one again does not ask the Mac again. Keyed by
+// "<uid>/<id>": a person sees only their own (IF-006), even one whose id another person knows.
 type passed struct {
 	typ   string
 	bytes []byte
@@ -747,9 +748,10 @@ var imgPassing = newOMap[passed]()
 
 const IMG_PASSING_BYTES = 32 * 1024 * 1024
 
-func passImage(id, typ string, b []byte) {
-	imgPassing.Delete(id)
-	imgPassing.Set(id, passed{typ, b})
+func passImage(uid, id, typ string, b []byte) {
+	key := uid + "/" + id
+	imgPassing.Delete(key)
+	imgPassing.Set(key, passed{typ, b})
 	total := 0
 	for _, v := range imgPassing.Values() {
 		total += len(v.bytes)
@@ -765,7 +767,7 @@ func passImage(id, typ string, b []byte) {
 
 // imageFromMacs: a picture from the person's Macs: the one asked first, then the others connected and keeping logs.
 func imageFromMacs(uid, id, first string) *passed {
-	if hit, ok := imgPassing.Get(id); ok {
+	if hit, ok := imgPassing.Get(uid + "/" + id); ok {
 		return &hit
 	}
 	macs := []string{}
@@ -793,7 +795,7 @@ func imageFromMacs(uid, id, first string) *passed {
 			}
 		}
 		got := passed{typ, decodeB64(data)}
-		passImage(id, got.typ, got.bytes)
+		passImage(uid, id, got.typ, got.bytes)
 		return &got
 	}
 	return nil
