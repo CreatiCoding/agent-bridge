@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.459',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '세션 화면: 더보기(게이지)·할 일·여러 줄 입력으로 입력 영역이 커질 때 대화가 맨 아래를 지키지 않아 마지막 줄("생각하는 중")이 패널 밑에 가려지던 것. 맨 아래에서 보던 중이면 다시 맨 아래로 붙인다',
+        refs: ['REQ-F-724'],
+      },
+    ],
+  },
+  {
     version: '1.458',
     date: '2026-11-07',
+    commit: '34520b2',
     changes: [
       {
         kind: 'fixed',

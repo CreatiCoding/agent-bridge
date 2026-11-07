@@ -481,12 +481,20 @@ export function SessionPage({ id }: { id: string }) {
   useLayoutEffect(() => {
     const el = composerEl.current
     if (!el || !pageEl) return
-    const put = () => pageEl.style.setProperty('--composer-h', `${el.offsetHeight}px`)
+    // A taller input (더보기's gauges, the todo list, a second line typed) only grows the room under the last line,
+    // the padding: the conversation's own watcher does not see that, and the last line (생각하는 중) was left under
+    // the card. Held at the bottom again here while the person is there.
+    const put = () => {
+      const h = `${el.offsetHeight}px`
+      if (pageEl.style.getPropertyValue('--composer-h') === h) return
+      pageEl.style.setProperty('--composer-h', h)
+      if (atBottom.current) toBottom()
+    }
     put()
     const ro = new ResizeObserver(put)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [pageEl, drawn])
+  }, [pageEl, drawn, toBottom])
   // 화면 진단 표시: what places the input over the keyboard, measured on the phone (lib/kbdebug).
   const [kbText, setKbText] = useState('')
   const [kbDebug, setKbDebugShown] = useState(kbDebugOn)
