@@ -84,14 +84,20 @@ export function ruleFor(hostname: string, list: LinkRule[] = rules): LinkMode | 
   return best?.mode ?? null
 }
 
-/** How the sheet opens an address: the host's rule, else localhost through the preview and the rest to read. */
-export function modeFor(url: string, base = here(), list: LinkRule[] = rules): LinkMode {
+/**
+ * How the sheet opens an address: the host's rule; with none, on a session's page a snapshot by its Mac (1.470,
+ * localhost too), elsewhere localhost through the preview and the rest to read. `fromRule` says which it was: a
+ * snapshot taken by default goes back to the old way when it fails (link-sheet).
+ */
+export function modeOf(url: string, session: boolean, base = here(), list: LinkRule[] = rules): { mode: LinkMode; fromRule: boolean } {
   const u = parse(url, base)
   const local = localPort(url, base) != null
-  const mode = u ? ruleFor(u.hostname, list) : null
-  if (mode === 'preview' && !local) return 'read'
-  return mode ?? (local ? 'preview' : 'read')
+  const rule = u ? ruleFor(u.hostname, list) : null
+  if (rule === 'preview' && !local) return { mode: 'read', fromRule: true }
+  if (rule) return { mode: rule, fromRule: true }
+  return { mode: session ? 'snapshot' : local ? 'preview' : 'read', fromRule: false }
 }
+export const modeFor = (url: string, base = here(), list: LinkRule[] = rules, session = false): LinkMode => modeOf(url, session, base, list).mode
 
 /** Whether link.open shows this link in the sheet rather than a new tab. */
 export function opensInApp(url: string, from: string, touch = touchDevice(), base = here(), list: LinkRule[] = rules) {

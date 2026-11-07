@@ -48,7 +48,7 @@ export function LinkRuleSettings() {
         ))
       ) : (
         <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-small)' }}>
-          규칙이 없어요. 보통 페이지는 읽기, localhost 는 미리보기로 열려요.
+          규칙이 없어요. 세션 화면에서는 스냅샷(못 만들면 읽기, localhost 는 미리보기), 그 밖에서는 읽기(localhost 는 미리보기)로 열려요.
         </p>
       )}
       <div className="hstack" style={{ flexWrap: 'wrap' }}>

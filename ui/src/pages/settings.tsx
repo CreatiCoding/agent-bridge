@@ -945,7 +945,7 @@ export function SettingsPage({ me, tab, ext, host }:{ me: Me | null; tab: Settin
           <section className="card-box">
             <CardHead
               title="링크 열기"
-              help="폰·태블릿에서 답의 링크를 누르면 뜨는 시트가 사이트마다 어떻게 열지 정해요. 읽기는 서버가 받아 본문만, 스냅샷은 세션의 맥이 Chrome 으로 스크립트까지 실행해 그린 뒤 본문만(세션 화면에서만), 미리보기는 localhost 를 세션 미리보기로, 브라우저는 시트 없이 새 탭이에요. 하위 도메인에도 적용되고 계정에 저장돼요."
+              help="폰·태블릿에서 답의 링크를 누르면 뜨는 시트가 사이트마다 어떻게 열지 정해요. 읽기는 서버가 받아 본문만, 스냅샷은 세션의 맥이 Chrome 으로 스크립트까지 실행해 그린 뒤 본문만(세션 화면에서만), 미리보기는 localhost 를 세션 미리보기로, 브라우저는 시트 없이 새 탭이에요. 하위 도메인에도 적용되고 계정에 저장돼요. 규칙이 없으면 세션 화면에서는 스냅샷, 그 밖에서는 읽기예요."
             />
             <LinkRuleSettings />
           </section>

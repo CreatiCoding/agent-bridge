@@ -3,7 +3,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { imageUrl, localPort, modeFor, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
+import { imageUrl, localPort, modeFor, modeOf, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
 import { snapshotImageUrls, egoSnapshotScript, egoSnapshotResult, EGO_MARK } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
@@ -111,4 +111,17 @@ test('AC-1661: a Mac that does not trust the server takes a snapshot only for th
   assert.equal(m.url, undefined)
   assert.equal(JSON.parse(m.sealed.slice(4, -1)).html, '<p>secret</p>')
   assert.equal(JSON.parse(m.sealed.slice(4, -1)).kind, 'snapshot')
+})
+
+test('AC-1663: with no rule a session’s page takes a snapshot (localhost too) and goes back to the old way when it fails; a rule wins', () => {
+  assert.deepEqual(modeOf('https://other.com/', true, base, []), { mode: 'snapshot', fromRule: false })
+  assert.deepEqual(modeOf('http://localhost:3000/', true, base, []), { mode: 'snapshot', fromRule: false })
+  assert.deepEqual(modeOf('https://other.com/', false, base, []), { mode: 'read', fromRule: false })
+  assert.deepEqual(modeOf('http://localhost:3000/', false, base, []), { mode: 'preview', fromRule: false })
+  assert.deepEqual(modeOf('https://other.com/', true, base, [{ host: 'other.com', mode: 'read' }]), { mode: 'read', fromRule: true })
+  assert.deepEqual(modeOf('http://localhost:3000/', true, base, [{ host: 'localhost', mode: 'preview' }]), { mode: 'preview', fromRule: true })
+  const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(sheet, /if \(fromRule\) return snapshotView\(sid, abs\)/)
+  assert.match(sheet, /if \(local\) return previewView\(url, sid\)/)
+  assert.match(sheet, /스냅샷을 만들지 못해 읽기로 열었어요/)
 })

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.471',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '링크 열기 규칙이 없는 사이트는 세션 화면에서 스냅샷으로 연다(localhost 도). 스냅샷을 못 만들면 읽기(localhost 는 미리보기)로 다시 열고 그렇다고 알린다. 세션 밖 화면은 그대로 읽기',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.470',
     date: '2026-11-08',
+    commit: 'b3cc227',
     changes: [
       {
         kind: 'added',

@@ -9,7 +9,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
-import { imageUrl, localPort, modeFor, readerImg, throughPreview } from '../lib/in-app'
+import { imageUrl, localPort, modeFor, modeOf, readerImg, throughPreview } from '../lib/in-app'
 import { readSnapshot } from '../lib/reader-dom'
 
 /** What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address. */
@@ -56,26 +56,55 @@ interface Block {
 type View =
   | { kind: 'frame'; src: string }
   | { kind: 'image'; src: string }
-  | { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean }
+  | { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string }
 
 type Page = { ok: true; url: string; title: string; site?: string; blocks: Block[]; snapshot?: boolean }
 
 async function load(url: string): Promise<View> {
-  // 링크 열기 규칙 (REQ-F-881): the host's rule, else localhost through the preview and the rest to read.
-  const mode = modeFor(url, location.href)
-  const r = matchRoute(location.pathname + location.search)
-  const sid = r?.name === 'session' ? r.id : null
-  if (mode === 'preview') {
-    if (!sid) throw new Error('폰에서는 맥의 localhost 를 바로 열 수 없어요. 그 서버를 띄운 세션에서 눌러 주세요')
-    const p = await post<{ ok: true; url: string }>(`/api/sessions/${sid}/preview`, { port: localPort(url, location.href) })
-    return { kind: 'frame', src: throughPreview(p.url, url) }
-  }
+  // 링크 열기 규칙 (REQ-F-881): the host's rule; with none, a snapshot on a session's page (1.470), elsewhere
+  // localhost through the preview and the rest to read.
+  const sid = sessionHere()
+  const { mode, fromRule } = modeOf(url, !!sid, location.href)
+  const local = localPort(url, location.href) != null
+  if (mode === 'preview') return previewView(url, sid)
   const img = imageUrl(url, location.href)
-  if (img) return { kind: 'image', src: img }
+  if (img && !(mode === 'snapshot' && local)) return { kind: 'image', src: img }
   const abs = new URL(url, location.href).href
   if (mode === 'snapshot') {
     // Drawn by the session's Mac: only from a session's page.
     if (!sid) throw new Error('스냅샷은 세션 화면에서만 열 수 있어요. 그 세션의 맥이 페이지를 그려요')
+    if (fromRule) return snapshotView(sid, abs)
+    // A snapshot by default (no rule) goes back to the old way when the Mac cannot take it.
+    try {
+      return await snapshotView(sid, abs)
+    } catch (e) {
+      const why = errorText(e)
+      if (local) return previewView(url, sid)
+      const v = await readView(abs)
+      return v.kind === 'read' ? { ...v, note: `스냅샷을 만들지 못해 읽기로 열었어요 (${why})` } : v
+    }
+  }
+  return readView(abs)
+}
+
+const sessionHere = () => {
+  const r = matchRoute(location.pathname + location.search)
+  return r?.name === 'session' ? r.id : null
+}
+
+async function previewView(url: string, sid: string | null): Promise<View> {
+  if (!sid) throw new Error('폰에서는 맥의 localhost 를 바로 열 수 없어요. 그 서버를 띄운 세션에서 눌러 주세요')
+  const p = await post<{ ok: true; url: string }>(`/api/sessions/${sid}/preview`, { port: localPort(url, location.href) })
+  return { kind: 'frame', src: throughPreview(p.url, url) }
+}
+
+async function readView(abs: string): Promise<View> {
+  const p = await get<Page>(`/api/read?u=${encodeURIComponent(abs)}`)
+  return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks }
+}
+
+async function snapshotView(sid: string, abs: string): Promise<View> {
+  {
     // POST, signed by this device for a Mac that does not trust the server (lib/trust intentsFor).
     const p = await post<Snap & { sealed?: string }>(`/api/sessions/${sid}/snapshot`, { url: abs })
     let s: Snap | null = p
@@ -95,8 +124,6 @@ async function load(url: string): Promise<View> {
     const pg = readSnapshot(s.html, s.url, (u) => (typeof images[u] === 'string' && /^data:image\//.test(images[u]) ? images[u] : sealed ? null : readerImg(u)))
     return { kind: 'read', url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
   }
-  const p = await get<Page>(`/api/read?u=${encodeURIComponent(abs)}`)
-  return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks }
 }
 
 function Reading({ v }: { v: Extract<View, { kind: 'read' }> }) {
@@ -110,6 +137,7 @@ function Reading({ v }: { v: Extract<View, { kind: 'read' }> }) {
         {v.snapshot ? '스냅샷 · ' : ''}
         {v.site || host}
       </div>
+      {v.note ? <p className="reader-empty">{v.note}</p> : null}
       {v.title ? <h1 className="reader-title">{v.title}</h1> : null}
       {v.blocks.length ? null : (
         <p className="reader-empty">
@@ -197,7 +225,7 @@ function LinkSheet() {
       {error ? (
         <div className="preview-msg">{error}</div>
       ) : !view ? (
-        <div className="preview-msg">{cur && modeFor(cur.url, location.href) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 1분 걸려요' : '여는 중…'}</div>
+        <div className="preview-msg">{cur && modeFor(cur.url, location.href, undefined, !!sessionHere()) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 1분 걸려요' : '여는 중…'}</div>
       ) : view.kind === 'frame' ? (
         <iframe key={n} className="preview-frame" src={view.src} title={title} allow="clipboard-write; fullscreen" />
       ) : view.kind === 'image' ? (
