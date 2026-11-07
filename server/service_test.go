@@ -4,6 +4,8 @@ package main
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -240,4 +242,98 @@ func TestServiceStartKey(t *testing.T) {
 	}
 	st, _ = post("bad key!")
 	eq(t, st, 400, "a key outside [A-Za-z0-9._:-]{1,128}")
+}
+
+// AC-1646 (REQ-F-873, IF-259): an agent's exposure message is kept cleaned, survives a restart (its file), and the
+// service API hands it back with each host; a host never read says null.
+func TestServiceHostsExposure(t *testing.T) {
+	keepT, keepU, keepA, keepUsers, keepAccess, keepH, keepB, keepD, keepE := SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, hosts, bridges, DATA, exposures
+	defer func() {
+		SERVICE_TOKEN, SERVICE_UID, ALLOWED, users, access, hosts, bridges, DATA, exposures = keepT, keepU, keepA, keepUsers, keepAccess, keepH, keepB, keepD, keepE
+	}()
+	tok := "0123456789abcdef0123456789abcdef"
+	SERVICE_TOKEN, SERVICE_UID, DATA = tok, "gh1", t.TempDir()
+	users, access, hosts, bridges, exposures = newOMap[M](), newOMap[M](), newOMap[M](), newOMap[Sink](), map[string]M{}
+	const a, b = "host-aaaa-1", "host-bbbb-2"
+	withLock(func() {
+		ALLOWED = []string{"svc-one"}
+		users.Set("gh1", M{"login": "svc-one", "name": "svc-one", "avatar": ""})
+		hosts.Set(a, M{"uid": "gh1", "name": "server", "kind": "linux"})
+		hosts.Set(b, M{"uid": "gh1", "name": "맥북", "kind": "macbook"})
+		big := []any{}
+		for i := 0; i < EXPOSURE_PKG_MAX+10; i++ {
+			big = append(big, []any{"p" + itoa(i), "1"})
+		}
+		msg, _ := parseJSON([]byte(`{"t":"exposure","exposure":{"at":1700000000000,"env":{"SECRET":"x"},
+			"os":{"id":"ubuntu","versionId":"24.04","pretty":"Ubuntu 24.04.4 LTS","extra":"no"},
+			"ssh":{"listening":true,"banner":"SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5","passwordAuth":"no","permitRootLogin":"maybe"},
+			"packages":{"ecosystem":"Ubuntu:24.04:LTS","list":[["openssh","1:9.6p1-3ubuntu13.5"],["bad"],[1,2]]},
+			"containers":[{"name":"web","image":"alpine:3.20","ports":"0.0.0.0:2222->22/tcp","os":{"id":"alpine","versionId":"3.20.1","pretty":"Alpine Linux v3.20"},"sshd":true,"env":["A=1"],"packages":{"ecosystem":"Alpine:v3.20","list":[["openssh","9.7_p1-r4"]]}},
+			               {"name":"scratch","image":"vault","ports":"","os":null,"sshd":false,"packages":{"ecosystem":"","list":[]}}],
+			"errors":["docker: ps failed"]}}`))
+		m := msg.(M)
+		asM(m["exposure"])["packages"].(M)["list"] = append(asArr(asM(m["exposure"])["packages"].(M)["list"]), big...)
+		fromAgent["exposure"]("gh1", a, m)
+		fromAgent["exposure"]("gh1", "host-zzzz-9", m) // a host the server does not know: dropped
+	})
+	_, err := os.Stat(filepath.Join(DATA, "exposure", "host-zzzz-9.json"))
+	ok(t, os.IsNotExist(err), "no file for an unknown host")
+	exposures = map[string]M{} // as after a restart: read back from its file
+	r := httptest.NewRequest("GET", "/api/service/hosts", nil)
+	r.Header.Set("Authorization", "Bearer "+tok)
+	req := newReq(r)
+	res := newRes(req)
+	withLock(func() { serviceAPI(req, res, r.URL.Path) })
+	eq(t, res.status, 200, string(res.body))
+	var out struct {
+		Hosts []struct {
+			ID       string `json:"id"`
+			Exposure *struct {
+				At float64 `json:"at"`
+				OS struct {
+					ID, VersionID, Pretty string
+				} `json:"os"`
+				SSH struct {
+					Listening       bool   `json:"listening"`
+					Banner          string `json:"banner"`
+					PasswordAuth    string `json:"passwordAuth"`
+					PermitRootLogin string `json:"permitRootLogin"`
+				} `json:"ssh"`
+				Packages struct {
+					Ecosystem string     `json:"ecosystem"`
+					List      [][]string `json:"list"`
+				} `json:"packages"`
+				Containers []map[string]any `json:"containers"`
+				Errors     []string         `json:"errors"`
+			} `json:"exposure"`
+		} `json:"hosts"`
+	}
+	if err := json.Unmarshal(res.body, &out); err != nil {
+		t.Fatal(err)
+	}
+	eq(t, len(out.Hosts), 2)
+	for _, h := range out.Hosts {
+		if h.ID == b {
+			ok(t, h.Exposure == nil, "never read: null")
+			continue
+		}
+		e := h.Exposure
+		ok(t, e != nil, "kept across a restart")
+		eq(t, e.At, float64(1700000000000))
+		eq(t, e.OS.ID, "ubuntu")
+		eq(t, e.OS.VersionID, "24.04")
+		eq(t, e.SSH.Listening, true)
+		eq(t, e.SSH.Banner, "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.5")
+		eq(t, e.SSH.PasswordAuth, "no")
+		eq(t, e.SSH.PermitRootLogin, "unknown", "a value outside the known ones")
+		eq(t, e.Packages.Ecosystem, "Ubuntu:24.04:LTS")
+		eq(t, len(e.Packages.List), EXPOSURE_PKG_MAX, "malformed pairs dropped, cut at the limit")
+		eq(t, e.Packages.List[0][1], "1:9.6p1-3ubuntu13.5")
+		eq(t, len(e.Containers), 2)
+		eq(t, e.Containers[0]["sshd"], true)
+		eq(t, e.Containers[0]["ports"], "0.0.0.0:2222->22/tcp")
+		eq(t, e.Containers[1]["os"], nil)
+		eq(t, e.Errors[0], "docker: ps failed")
+	}
+	ok(t, !strings.Contains(string(res.body), "SECRET") && !strings.Contains(string(res.body), "A=1") && !strings.Contains(string(res.body), "extra"), "only the known fields")
 }

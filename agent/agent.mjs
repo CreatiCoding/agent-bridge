@@ -29,12 +29,13 @@ import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localO
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
+import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
 import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -1088,6 +1089,37 @@ async function hello() {
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
   emit({ t: 'hello', caps: ['store', 'newAllow'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
+  exposureOnHello()
+}
+
+// ---------- exposure (REQ-F-873) ----------
+
+// What this machine and its containers expose, for the service API's asset check: a minute after the first hello,
+// then every 6 hours, one run at a time. A result that could not go out (no page then) goes with the next hello.
+const exposure = new ExposureRunner()
+let exposureTimer = null
+function sendExposure() {
+  if (!client || !exposure.last || exposure.sent) return
+  emit({ t: 'exposure', exposure: exposure.last })
+  exposure.sent = true
+}
+function exposureTick() {
+  exposureTimer = setTimeout(exposureTick, EXPOSURE_EVERY_MS)
+  exposureTimer.unref?.()
+  const t0 = Date.now()
+  exposure
+    .run()
+    .then((r) => {
+      log('info', 'exposure', `노출 정보 수집 ${Date.now() - t0}ms: ${r.os?.id || '?'} ${r.os?.versionId || ''}, ssh ${r.ssh.listening ? '열림' : '닫힘'}, 패키지 ${r.packages.list.length}개, 컨테이너 ${r.containers.length}개${r.errors.length ? `, 문제 ${r.errors.length}개` : ''}`)
+      sendExposure()
+    })
+    .catch((e) => log('warn', 'exposure', `노출 정보 수집 실패: ${e.message}`))
+}
+function exposureOnHello() {
+  sendExposure()
+  if (exposureTimer || doctorOnly) return
+  exposureTimer = setTimeout(exposureTick, EXPOSURE_FIRST_MS)
+  exposureTimer.unref?.()
 }
 
 // ---------- tmux sessions ----------

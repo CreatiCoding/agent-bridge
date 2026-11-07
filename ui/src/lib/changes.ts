@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.457',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '기기 노출 정보: 에이전트가 1분 뒤와 6시간마다 그 기기(맥·Linux)와 실행 중 도커 컨테이너의 OS, sshd(배너·비밀번호 로그인·root 로그인 설정), 설치 패키지 판을 읽기 전용으로 모아 보내고, 서비스 API 의 GET /api/service/hosts 가 기기마다 exposure 로 돌려준다(자산 점검이 취약한 OpenSSH 등을 찾게). 환경 변수·파일 내용은 보내지 않는다',
+        refs: ['REQ-F-873', 'IF-259', 'REQ-F-799'],
+      },
+    ],
+  },
+  {
     version: '1.456',
     date: '2026-11-07',
+    commit: '180d390',
     changes: [
       {
         kind: 'fixed',
