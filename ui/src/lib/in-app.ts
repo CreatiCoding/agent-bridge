@@ -27,18 +27,86 @@ export function localPort(url: string, base = 'http://x/'): number | null {
   return Number(u.port || (u.protocol === 'https:' ? 443 : 80))
 }
 
+// ---------- 링크 열기 규칙 (REQ-F-881) ----------
+// The account's rules (설정 → 이 기기 → 링크 열기): per host, how the sheet opens a link. Kept here as well as on the
+// server: link.open must decide inside the press (iOS opens a new tab only there), so nothing is fetched then.
+export type LinkMode = 'read' | 'snapshot' | 'preview' | 'browser'
+export interface LinkRule {
+  host: string
+  mode: LinkMode
+}
+export const LINK_MODES: { value: LinkMode; label: string }[] = [
+  { value: 'read', label: '읽기' },
+  { value: 'snapshot', label: '스냅샷' },
+  { value: 'preview', label: '미리보기' },
+  { value: 'browser', label: '브라우저' },
+]
+/** 미리보기 is the session's local preview: only a Mac's own address opens that way. */
+export const LOCAL_RULE_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0'])
+const RULES_KEY = 'cb2.linkRules'
+let rules: LinkRule[] = (() => {
+  try {
+    const v = JSON.parse(localStorage.getItem(RULES_KEY) ?? '[]')
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+})()
+export const getLinkRules = () => rules
+export function setLinkRules(v: LinkRule[] | undefined) {
+  rules = Array.isArray(v) ? v : []
+  try {
+    if (rules.length) localStorage.setItem(RULES_KEY, JSON.stringify(rules))
+    else localStorage.removeItem(RULES_KEY)
+  } catch {}
+}
+
+/** What the person typed as a rule's host: a pasted address gives its host name. Null when it is not one. */
+export function ruleHost(text: string): string | null {
+  let s = text.trim().toLowerCase()
+  if (!s) return null
+  if (/^[a-z][a-z0-9+.-]*:\/\//.test(s)) {
+    const u = parse(s, 'http://x/')
+    if (!u) return null
+    s = u.hostname
+  }
+  s = s.replace(/[/:?#].*$/, '').replace(/\.$/, '')
+  return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(s) ? s : null
+}
+
+/** The rule for a host: its own, else the closest parent domain's ("example.com" covers "a.example.com"). */
+export function ruleFor(hostname: string, list: LinkRule[] = rules): LinkMode | null {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  let best: LinkRule | null = null
+  for (const r of list) {
+    if ((h === r.host || h.endsWith('.' + r.host)) && (!best || r.host.length > best.host.length)) best = r
+  }
+  return best?.mode ?? null
+}
+
+/** How the sheet opens an address: the host's rule, else localhost through the preview and the rest to read. */
+export function modeFor(url: string, base = here(), list: LinkRule[] = rules): LinkMode {
+  const u = parse(url, base)
+  const local = localPort(url, base) != null
+  const mode = u ? ruleFor(u.hostname, list) : null
+  if (mode === 'preview' && !local) return 'read'
+  return mode ?? (local ? 'preview' : 'read')
+}
+
 /** Whether link.open shows this link in the sheet rather than a new tab. */
-export function opensInApp(url: string, from: string, touch = touchDevice(), base = here()) {
+export function opensInApp(url: string, from: string, touch = touchDevice(), base = here(), list: LinkRule[] = rules) {
   if (!touch || !IN_APP_FROM.has(from)) return false
   const u = parse(url, base)
   if (!u || (u.protocol !== 'http:' && u.protocol !== 'https:')) return false
   // This site's own address: a picture shows in the sheet; a page of it is not read through the reader.
   if (u.origin === new URL(base).origin) return IMAGE.test(u.pathname) || u.pathname.includes('/img/')
+  // A host the person sends to the browser (규칙 브라우저), except a picture, which still shows as one.
+  if (ruleFor(u.hostname, list) === 'browser' && !IMAGE.test(u.pathname)) return false
   return true
 }
 
 /** A picture fetched through the server: the page's policy lets pictures come from this site only. */
-export const readerImg = (src: string) => `/api/read/img?u=${encodeURIComponent(src)}`
+export const readerImg = (src: string) => (/^data:image\//.test(src) ? src : `/api/read/img?u=${encodeURIComponent(src)}`)
 
 /** The address a link to a picture shows as one picture, or null when the link is a page. */
 export function imageUrl(url: string, base = here()): string | null {

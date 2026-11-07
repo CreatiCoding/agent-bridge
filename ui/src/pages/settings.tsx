@@ -13,6 +13,7 @@ import { appVersion } from '../lib/app-version'
 import { kbDebugOn, setKbDebug } from '../lib/kbdebug'
 import { PushToggle, PushWhen } from '../components/push'
 import { TrustPanel } from '../components/trust-panel'
+import { LinkRuleSettings } from '../components/link-rules'
 import { SlackPlaces } from '../components/slack-places'
 import { AccountsPanel } from './accounts'
 import { VoiceSettings } from './voice-settings'
@@ -938,6 +939,15 @@ export function SettingsPage({ me, tab, ext, host }:{ me: Me | null; tab: Settin
           <section className="card-box">
             <CardHead title="아이콘" help="계정에 저장돼요. 이 계정으로 연 모든 기기에 같이 적용돼요. 채움은 아이콘 칸 안에서 그림이 차지하는 정도예요." />
             <IconSettings initial={getIcons()} />
+          </section>
+          ) : null}
+          {at === 'device' ? (
+          <section className="card-box">
+            <CardHead
+              title="링크 열기"
+              help="폰·태블릿에서 답의 링크를 누르면 뜨는 시트가 사이트마다 어떻게 열지 정해요. 읽기는 서버가 받아 본문만, 스냅샷은 세션의 맥이 Chrome 으로 스크립트까지 실행해 그린 뒤 본문만(세션 화면에서만), 미리보기는 localhost 를 세션 미리보기로, 브라우저는 시트 없이 새 탭이에요. 하위 도메인에도 적용되고 계정에 저장돼요."
+            />
+            <LinkRuleSettings />
           </section>
           ) : null}
           {at === 'plugins' ? <ExtSettings /> : null}

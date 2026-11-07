@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.468',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '설정 → 이 기기 → 링크 열기: 폰·태블릿의 인앱 시트가 사이트(호스트, 하위 도메인 포함)마다 읽기·스냅샷·미리보기(localhost 만)·브라우저 중 어떻게 열지 정한다. 계정에 저장돼 모든 기기에 적용. 브라우저로 둔 사이트는 시트 없이 바로 새 탭',
+        refs: ['REQ-F-881', 'REQ-F-879', 'IF-277'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '스냅샷: 세션 화면에서 그 세션의 맥이 헤드리스 Chrome(버리는 프로필)으로 페이지를 열어 스크립트까지 실행하고, 그려진 DOM 에서 제목·본문·그림만 뽑아 읽기 모드처럼 보인다. 스크립트로 그리는 페이지와 맥의 localhost 앱도 읽힌다. 서버를 믿지 않는 모드(enforce)에서는 꺼진다',
+        refs: ['REQ-F-881', 'IF-278'],
+      },
+    ],
+  },
+  {
     version: '1.467',
     date: '2026-11-08',
+    commit: '1ce8c37',
     changes: [
       {
         kind: 'added',

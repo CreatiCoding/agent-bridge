@@ -123,7 +123,7 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		return true
 	}
 	if get && p == "/api/me" {
-		out := M{"uid": uid, "provider": providerOf(uid), "user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf(), "extensions": extList(uid)}
+		out := M{"uid": uid, "provider": providerOf(uid), "user": users.Val(uid), "admin": isAdmin(uid), "version": VERSION, "origin": originOf(req), "source": SOURCE_URL, "icons": cleanIcons(prefsOf(uid)["icons"]), "linkRules": cleanLinkRules(prefsOf(uid)["linkRules"]), "voice": cleanVoice(prefsOf(uid)["voice"]), "features": featuresOf(), "extensions": extList(uid)}
 		if u0, ok := users.Get(uid); !ok || u0 == nil {
 			out["user"] = nil
 		}
@@ -757,6 +757,8 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		savePrefs(uid)
 		jsonRes(res, 200, M{"ok": true, "hosts": list()})
 		return true
+	case "/api/prefs/linkrules":
+		return apiLinkRules(req, res, uid, get, post)
 	case "/api/prefs/icons":
 		if get {
 			jsonRes(res, 200, cleanIcons(prefsOf(uid)["icons"]))

@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -4267,6 +4267,52 @@ const commands = {
     }
   },
   /**
+   * 스냅샷 (REQ-F-881): a page as this Mac renders it, for the in-app browser sheet of a phone. A headless Chrome of
+   * a throwaway profile (never the link's ~/.claude-bridge/browser, which is signed in to the site) opens the
+   * address, lets its scripts run for a while (--virtual-time-budget) and prints the rendered DOM. Pictures of the
+   * page's own origin are read here too, since the server cannot reach this Mac's localhost; the server turns the
+   * DOM into text and pictures (readerParse), so none of the page's HTML reaches the screen.
+   */
+  async snapshot({ reqId, url }) {
+    const fail = (error) => emit({ t: 'snapshot', reqId, ok: false, error })
+    let page
+    try {
+      page = new URL(String(url ?? ''))
+    } catch {}
+    if (!page || (page.protocol !== 'http:' && page.protocol !== 'https:')) return fail('http(s) 주소만 스냅샷으로 열 수 있어요')
+    if (!CHROME_BIN) return fail(`이 맥에 Chrome 이 없어서 스냅샷을 만들 수 없어요. ${CHROME_FIX}`)
+    if (snapshotsRunning >= SNAPSHOT_PARALLEL) return fail('스냅샷을 이미 만드는 중이에요. 잠시 뒤에 다시 해 주세요')
+    snapshotsRunning++
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
+    try {
+      const html = await new Promise((resolve, reject) => {
+        const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+        const child = spawn(CHROME_BIN, args, { stdio: ['ignore', 'pipe', 'ignore'] })
+        const parts = []
+        let size = 0
+        const timer = setTimeout(() => (child.kill('SIGKILL'), reject(new Error('페이지를 그리는 데 너무 오래 걸려요'))), SNAPSHOT_TIMEOUT_MS)
+        child.stdout.on('data', (d) => {
+          size += d.length
+          if (size > SNAPSHOT_HTML_MAX) return child.kill('SIGKILL'), clearTimeout(timer), reject(new Error('페이지가 너무 커서 스냅샷으로 못 열어요'))
+          parts.push(d)
+        })
+        child.on('error', (e) => (clearTimeout(timer), reject(new Error(`Chrome 을 띄우지 못했어요 (${e.code ?? e.message})`))))
+        child.on('close', () => {
+          clearTimeout(timer)
+          const out = Buffer.concat(parts).toString('utf8')
+          if (!out.trim()) reject(new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요'))
+          else resolve(out)
+        })
+      })
+      emit({ t: 'snapshot', reqId, ok: true, url: page.href, html, images: await snapshotImages(html, page) })
+    } catch (e) {
+      fail(e.message)
+    } finally {
+      snapshotsRunning--
+      fs.rm(profile, { recursive: true, force: true }, () => {})
+    }
+  },
+  /**
    * What this folder can call with a slash:the person's own skills and commands, the project's (this folder and
    * the ones above it, up to home), and enabled plugins'. The same name is kept once.
    */
@@ -6220,6 +6266,31 @@ const CHROME_BIN =
 // Not snap's Chromium: a snap may not write under a hidden folder of the home (~/.claude-bridge/browser).
 const CHROME_FIX = IS_MAC ? 'Chrome 을 설치하세요: https://www.google.com/chrome' : 'Google Chrome 을 설치하세요: wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo apt install -y /tmp/chrome.deb'
 const BG_PROFILE = path.join(STATE_DIR, 'browser')
+// 스냅샷 (REQ-F-881, the `snapshot` command): how long the page's scripts may run, how long Chrome may take in
+// all, the most of the rendered DOM passed on, and how many at once.
+const SNAPSHOT_BUDGET_MS = 8_000
+const SNAPSHOT_TIMEOUT_MS = 30_000
+const SNAPSHOT_HTML_MAX = 3 * 1024 * 1024
+const SNAPSHOT_PARALLEL = 2
+let snapshotsRunning = 0
+const SNAPSHOT_IMG_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
+/** The page's own pictures as data: addresses, by their full address ({} when none could be read). */
+async function snapshotImages(html, page) {
+  const out = {}
+  let total = 0
+  for (const src of snapshotImageUrls(html, page)) {
+    try {
+      const r = await fetch(src, { signal: AbortSignal.timeout(5_000), redirect: 'error' })
+      const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+      if (!r.ok || !SNAPSHOT_IMG_TYPES.has(type)) continue
+      const bytes = Buffer.from(await r.arrayBuffer())
+      if (bytes.length > SNAPSHOT_IMG_ONE_MAX || total + bytes.length > SNAPSHOT_IMG_ALL_MAX) continue
+      total += bytes.length
+      out[src] = `data:${type};base64,${bytes.toString('base64')}`
+    } catch {}
+  }
+  return out
+}
 /**
  * visible: the Chrome window `link --visible` opened on the same profile, for a person to pass the proxy's sign-in
  * (REQ-F-833). loginNeed: the headless page said the proxy turned it away ({since, why}), until a page links again.

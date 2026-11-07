@@ -373,6 +373,8 @@ export interface Me {
   /** Where this server's source is (REQ-F-791, AGPL-3.0 §13); an older server leaves it out. */
   source?: string
   icons?: IconPrefs
+  /** 링크 열기 규칙 (REQ-F-881); an older server leaves it out. */
+  linkRules?: { host: string; mode: 'read' | 'snapshot' | 'preview' | 'browser' }[]
   voice?: VoicePrefs
   /** What bridge.yaml turned off (REQ-F-812); an older server leaves it out (everything on). */
   features?: Features

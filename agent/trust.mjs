@@ -103,6 +103,8 @@ export function openWith(keyOf, hostId, piece) {
 export const TRUST_CLASS = {
   // the state of the link, and the Mac's copy of the log
   delegated: 'off', sudoans: 'off', sudopass: 'off', sudo: 'off', release: 'off', http: 'off', ws: 'off',
+  // 스냅샷 (REQ-F-881): like the preview's http, the server would name what this Mac's Chrome opens
+  snapshot: 'off',
   sudooff: 'free', log: 'free', putimg: 'free', welcome: 'free', check: 'free', ping: 'free', rehello: 'free', report: 'free', resync: 'free', bg: 'free', models: 'free', update: 'free',
   // the local screen's bundle: checked by the maintainer's signature and a seq that only grows, like update (REQ-F-844)
   localui: 'free',

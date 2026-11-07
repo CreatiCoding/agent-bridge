@@ -3,7 +3,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { imageUrl, localPort, opensInApp, readerImg, throughPreview } from '../../ui/src/lib/in-app.ts'
+import { imageUrl, localPort, modeFor, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
+import { snapshotImageUrls } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
 
@@ -45,4 +46,38 @@ test('link.open’s default asks the sheet before a new tab; the sheet draws dat
   // The only frame is the localhost preview.
   assert.equal((sheet.match(/<iframe/g) ?? []).length, 1)
   assert.match(sheet, /kind: 'frame', src: throughPreview\(/)
+})
+
+// REQ-F-881: per host, how the sheet opens a link.
+test('AC-1659: a host’s rule, its subdomains’ too, the closest one first; none: localhost previews, the rest reads', () => {
+  const rules = [
+    { host: 'example.com', mode: 'snapshot' },
+    { host: 'docs.example.com', mode: 'read' },
+    { host: 'x.com', mode: 'browser' },
+    { host: 'localhost', mode: 'snapshot' },
+  ]
+  assert.equal(ruleFor('a.example.com', rules), 'snapshot')
+  assert.equal(ruleFor('docs.example.com', rules), 'read')
+  assert.equal(ruleFor('notexample.com', rules), null)
+  assert.equal(modeFor('https://www.example.com/p', base, rules), 'snapshot')
+  assert.equal(modeFor('http://localhost:3000/', base, rules), 'snapshot')
+  assert.equal(modeFor('http://localhost:3000/', base, []), 'preview')
+  assert.equal(modeFor('https://other.com/', base, []), 'read')
+  // 미리보기 is a Mac's own address only.
+  assert.equal(modeFor('https://other.com/', base, [{ host: 'other.com', mode: 'preview' }]), 'read')
+  // 브라우저: no sheet, except for a picture.
+  assert.equal(opensInApp('https://x.com/a', 'markdown', true, base, rules), false)
+  assert.equal(opensInApp('https://x.com/a.png', 'markdown', true, base, rules), true)
+  assert.equal(opensInApp('https://example.com/a', 'markdown', true, base, rules), true)
+  assert.equal(ruleHost(' https://Docs.Example.com:8080/a?b '), 'docs.example.com')
+  assert.equal(ruleHost('localhost:3000'), 'localhost')
+  assert.equal(ruleHost('not a host'), null)
+})
+
+test('AC-1660: a snapshot reads the page’s own pictures on the Mac; a data: picture shows as it is', () => {
+  const html = '<img src="/a.png"><img src="data:x" data-src="b.jpg"><img srcset="c.webp 1x, d.webp 2x"><img src="https://cdn.example/x.png"><img src="/a.png">'
+  assert.deepEqual(snapshotImageUrls(html, 'http://localhost:3000/p/q'), ['http://localhost:3000/a.png', 'http://localhost:3000/p/b.jpg', 'http://localhost:3000/p/c.webp'])
+  assert.equal(readerImg('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA')
+  const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(sheet, /\/api\/sessions\/\$\{sid\}\/snapshot\?u=/)
 })

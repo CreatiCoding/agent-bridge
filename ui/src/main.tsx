@@ -8,6 +8,7 @@ import { connect } from './lib/store'
 import type { Me } from './lib/types'
 import { startBackgroundRelay } from './components/relay-status'
 import { setFeatures } from './lib/features'
+import { setLinkRules } from './lib/in-app'
 import { openSession } from './lib/builtin-actions'
 import { claimPrimary } from './lib/primary'
 import { askExtensions, startExtensions } from './lib/ext-host'
@@ -44,6 +45,8 @@ render(null)
 get<Me>('/api/me').then(
   async (me) => {
     if (me.icons) applyIcons(me.icons)
+    // An older server leaves the rules out: keep the ones this browser has.
+    if (me.linkRules) setLinkRules(me.linkRules)
     setFeatures(me.features)
     if (!me.demo && me.linkHere !== false) startBackgroundRelay()
     // Extensions (REQ-F-827): the agreed ones first (up to 1.5 s, none: no wait), then the question about new ones.

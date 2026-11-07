@@ -41,6 +41,42 @@ export function chromeArgs(profile, { mac, headless, flags } = {}) {
   return out
 }
 
+/** 스냅샷 (REQ-F-881): at most this many of the page's pictures, each this big, all of them this big, are read. */
+export const SNAPSHOT_IMG_COUNT = 20
+export const SNAPSHOT_IMG_ONE_MAX = 1024 * 1024
+export const SNAPSHOT_IMG_ALL_MAX = 6 * 1024 * 1024
+
+/**
+ * The addresses of a rendered page's pictures that the agent reads for its snapshot: the address the server's reader
+ * takes for each <img> (src; data-src when src is empty or data:; else srcset's first), resolved on the page's
+ * address, and only those of the page's own origin (an app on this Mac's localhost: the server cannot fetch them).
+ * Pictures of other sites the server fetches itself (GET /api/read/img), so none of them is read here.
+ */
+export function snapshotImageUrls(html, page) {
+  const base = page instanceof URL ? page : new URL(String(page))
+  const out = []
+  const attr = (tag, name) => {
+    const m = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag)
+    return (m ? (m[1] ?? m[2] ?? m[3] ?? '') : '').trim()
+  }
+  for (const m of String(html).matchAll(/<img\b[^>]*>/gi)) {
+    let src = attr(m[0], 'src')
+    if (!src || src.startsWith('data:')) src = attr(m[0], 'data-src')
+    if (!src) src = attr(m[0], 'srcset').split(/\s+/)[0] ?? ''
+    if (!src || src.startsWith('data:')) continue
+    let u
+    try {
+      u = new URL(src.replace(/&amp;/g, '&'), base)
+    } catch {
+      continue
+    }
+    if (u.origin !== base.origin || out.includes(u.href)) continue
+    out.push(u.href)
+    if (out.length >= SNAPSHOT_IMG_COUNT) break
+  }
+  return out
+}
+
 /** A folder name inside a session's folder that a move may create (R1-L7): one plain name, never `.` or `..`. */
 export const safeDirName = (s) => typeof s === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(s) && s !== '.' && s !== '..'
 

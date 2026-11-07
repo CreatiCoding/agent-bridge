@@ -8,7 +8,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
-import { imageUrl, localPort, readerImg, throughPreview } from '../lib/in-app'
+import { imageUrl, localPort, modeFor, readerImg, throughPreview } from '../lib/in-app'
 import { matchRoute } from '../lib/router'
 import { Button } from '../kit'
 import { Sheet } from '../kit/overlay'
@@ -51,20 +51,31 @@ interface Block {
 type View =
   | { kind: 'frame'; src: string }
   | { kind: 'image'; src: string }
-  | { kind: 'read'; url: string; title: string; site: string; blocks: Block[] }
+  | { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean }
+
+type Page = { ok: true; url: string; title: string; site?: string; blocks: Block[]; snapshot?: boolean }
 
 async function load(url: string): Promise<View> {
-  const port = localPort(url, location.href)
-  if (port != null) {
-    const r = matchRoute(location.pathname + location.search)
-    if (r?.name !== 'session') throw new Error('폰에서는 맥의 localhost 를 바로 열 수 없어요. 그 서버를 띄운 세션에서 눌러 주세요')
-    const p = await post<{ ok: true; url: string }>(`/api/sessions/${r.id}/preview`, { port })
+  // 링크 열기 규칙 (REQ-F-881): the host's rule, else localhost through the preview and the rest to read.
+  const mode = modeFor(url, location.href)
+  const r = matchRoute(location.pathname + location.search)
+  const sid = r?.name === 'session' ? r.id : null
+  if (mode === 'preview') {
+    if (!sid) throw new Error('폰에서는 맥의 localhost 를 바로 열 수 없어요. 그 서버를 띄운 세션에서 눌러 주세요')
+    const p = await post<{ ok: true; url: string }>(`/api/sessions/${sid}/preview`, { port: localPort(url, location.href) })
     return { kind: 'frame', src: throughPreview(p.url, url) }
   }
   const img = imageUrl(url, location.href)
   if (img) return { kind: 'image', src: img }
-  const r = await get<{ ok: true; url: string; title: string; site?: string; blocks: Block[] }>(`/api/read?u=${encodeURIComponent(new URL(url, location.href).href)}`)
-  return { kind: 'read', url: r.url, title: r.title, site: r.site ?? '', blocks: r.blocks }
+  const abs = new URL(url, location.href).href
+  if (mode === 'snapshot') {
+    // Drawn by the session's Mac: only from a session's page.
+    if (!sid) throw new Error('스냅샷은 세션 화면에서만 열 수 있어요. 그 세션의 맥이 페이지를 그려요')
+    const p = await get<Page>(`/api/sessions/${sid}/snapshot?u=${encodeURIComponent(abs)}`)
+    return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks, snapshot: true }
+  }
+  const p = await get<Page>(`/api/read?u=${encodeURIComponent(abs)}`)
+  return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks }
 }
 
 function Reading({ v }: { v: Extract<View, { kind: 'read' }> }) {
@@ -74,9 +85,18 @@ function Reading({ v }: { v: Extract<View, { kind: 'read' }> }) {
   } catch {}
   return (
     <article className="reader">
-      <div className="reader-site">{v.site || host}</div>
+      <div className="reader-site">
+        {v.snapshot ? '스냅샷 · ' : ''}
+        {v.site || host}
+      </div>
       {v.title ? <h1 className="reader-title">{v.title}</h1> : null}
-      {v.blocks.length ? null : <p className="reader-empty">읽을 본문을 찾지 못했어요. 스크립트로 그리는 페이지일 수 있어요. 브라우저로 열어 주세요</p>}
+      {v.blocks.length ? null : (
+        <p className="reader-empty">
+          {v.snapshot
+            ? '맥에서 그린 페이지에서도 읽을 본문을 찾지 못했어요. 브라우저로 열어 주세요'
+            : '읽을 본문을 찾지 못했어요. 스크립트로 그리는 페이지일 수 있어요. 설정 → 이 기기 → 링크 열기에서 이 사이트를 스냅샷으로 두거나 브라우저로 열어 주세요'}
+        </p>
+      )}
       {v.blocks.map((b, i) => {
         // The page's own first heading usually repeats its title.
         if (b.t === 'h1' && b.text === v.title) return null
@@ -156,7 +176,7 @@ function LinkSheet() {
       {error ? (
         <div className="preview-msg">{error}</div>
       ) : !view ? (
-        <div className="preview-msg">여는 중…</div>
+        <div className="preview-msg">{cur && modeFor(cur.url, location.href) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 30초 걸려요' : '여는 중…'}</div>
       ) : view.kind === 'frame' ? (
         <iframe key={n} className="preview-frame" src={view.src} title={title} allow="clipboard-write; fullscreen" />
       ) : view.kind === 'image' ? (

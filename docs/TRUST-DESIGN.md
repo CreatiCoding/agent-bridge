@@ -178,7 +178,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 ### 5.5 명령 분류표 (에이전트 `commands` 전부)
 
 - **서명 필요**: §5.3 표의 명령.
-- **끔**(`enforce` 거부): `release`, `sudo`, `sudopass`, `account`(op≠list), `http`, `ws`, `delegated`, `sudoans`. 그리고 `welcome` 의 남의 세션 kill 은 `enforce` 에서 하지 않는다.
+- **끔**(`enforce` 거부): `release`, `sudo`, `sudopass`, `account`(op≠list), `http`, `ws`, `delegated`, `sudoans`, `snapshot`(스냅샷, SPEC 1.468). 그리고 `welcome` 의 남의 세션 kill 은 `enforce` 에서 하지 않는다.
 - **서명**(1.408): `adopt` 는 `{conv, cwd}` 를 서명하고, 맥은 대화 기록(jsonl)에 적힌 cwd 가 서명한 cwd 와 realpath 로 같을 때만 연다. 서버가 넣은 sysPrompt·routing 은 버린다.
 - **자유**(서명 없이): 
   - 상태: `ping`, `rehello`, `check`, `report`, `resync`, `welcome`(kill 없이), `models`, `sudooff`(비밀번호를 잊기만), `bg`(`enforce` 에서는 세는 수만 기록하고 새로고침을 일으키지 않음).
