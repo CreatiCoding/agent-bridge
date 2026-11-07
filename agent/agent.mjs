@@ -6278,22 +6278,29 @@ let snapshotsRunning = 0
 // ego lite's command (ego-browser), where its installer puts it: the agent runs under launchd with a short PATH.
 const EGO_BIN = [...String(process.env.PATH ?? '').split(':').filter(Boolean), path.join(HOME, '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin'].map((d) => path.join(d, 'ego-browser')).find((p) => fs.existsSync(p)) ?? null
 
-/** A child's stdout up to max bytes within ms; rejects with why. stdin is written once and closed. */
-function runCapture(bin, args, { input, max, ms, slow, big, gone }) {
+/**
+ * A child's stdout (and stderr too with both) up to max bytes within ms; rejects with why. stdin is written once and
+ * closed. ego-browser prints a script's console.log on stderr (seen with 0.6.2.9), so its result is read from both.
+ */
+function runCapture(bin, args, { input, max, ms, slow, big, gone, both }) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] })
-    const parts = []
+    const child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', both ? 'pipe' : 'ignore'] })
+    // Kept apart, joined at the end: chunks of the two streams would cut into each other's lines.
+    const out = []
+    const err = []
     let size = 0
     let done = false
     const end = (f) => (done ? undefined : ((done = true), clearTimeout(timer), f()))
     const timer = setTimeout(() => end(() => (child.kill('SIGKILL'), reject(new Error(slow)))), ms)
-    child.stdout.on('data', (d) => {
+    const take = (parts) => (d) => {
       size += d.length
       if (size > max) return end(() => (child.kill('SIGKILL'), reject(new Error(big))))
       parts.push(d)
-    })
+    }
+    child.stdout.on('data', take(out))
+    if (both) child.stderr.on('data', take(err))
     child.on('error', (e) => end(() => reject(new Error(`${gone} (${e.code ?? e.message})`))))
-    child.on('close', () => end(() => resolve(Buffer.concat(parts).toString('utf8'))))
+    child.on('close', () => end(() => resolve(Buffer.concat(out).toString('utf8') + (both ? `\n${Buffer.concat(err).toString('utf8')}` : ''))))
     if (input !== undefined) {
       child.stdin.on('error', () => {})
       child.stdin.end(input)
@@ -6305,7 +6312,7 @@ function runCapture(bin, args, { input, max, ms, slow, big, gone }) {
 async function egoSnapshot(page, reqId) {
   const name = `cb-snapshot-${String(reqId ?? crypto.randomUUID()).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12)}`
   const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS })
-  const out = await runCapture(EGO_BIN, ['nodejs'], { input: script, max: 16 * 1024 * 1024, ms: SNAPSHOT_EGO_TIMEOUT_MS, slow: 'ego lite 가 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'ego-browser 를 띄우지 못했어요' })
+  const out = await runCapture(EGO_BIN, ['nodejs'], { input: script, max: 16 * 1024 * 1024, ms: SNAPSHOT_EGO_TIMEOUT_MS, slow: 'ego lite 가 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'ego-browser 를 띄우지 못했어요', both: true })
   const r = egoSnapshotResult(out)
   if (!r) throw new Error(`ego lite 가 결과를 주지 않았어요: ${out.trim().split('\n').pop()?.slice(0, 200) ?? ''}`)
   return r
