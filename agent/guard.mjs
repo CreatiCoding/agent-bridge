@@ -863,6 +863,154 @@ export const inUpdateWindow = (hour, from, to) => (from < to ? hour >= from && h
  */
 export const updateDue = (policy, hour, now = false, busy = false) => !!now || policy.mode === 'always' || (inUpdateWindow(hour, policy.from, policy.to) && !(policy.skipBusy && busy))
 
+// ---------- 정비 재부팅: a Mac restarted on purpose, at a quiet hour, for what only a restart gives back ----------
+// Chrome copies itself into the per-user X folder at launch (com.google.Chrome.code_sign_clone) and removes the copy
+// only when it quits normally; a Chrome that is killed (automation) leaves it, and only the OS clears that folder, at
+// boot. One Mac had 111 of them (about 29 GB) after 49 days up. These decide when and what; agent.mjs does it.
+
+export const REBOOT_DEFAULT = Object.freeze({ on: false, day: 0, from: 4, to: 6, minClones: 40, minFreeGB: 30, failMin: 10 })
+const dayOk = (d) => Number.isInteger(d) && d >= 0 && d <= 6
+const countOk = (n) => Number.isInteger(n) && n >= 0
+const failOk = (m) => Number.isInteger(m) && m >= 2 && m <= 60
+
+/**
+ * The policy kept in agent.json, defaults filled in. Off unless turned on. `day` 0 (Sunday) ~ 6 and [from, to) is the
+ * window; minClones / minFreeGB are the two reasons to restart, 0 turning that one off (both 0: every week).
+ */
+export function rebootPolicyOf(c) {
+  const D = REBOOT_DEFAULT
+  const win = hourOk(c?.from) && hourOk(c?.to) && c.from !== c.to
+  return {
+    on: c?.on === true,
+    day: dayOk(c?.day) ? c.day : D.day,
+    from: win ? c.from : D.from,
+    to: win ? c.to : D.to,
+    minClones: countOk(c?.minClones) ? c.minClones : D.minClones,
+    minFreeGB: countOk(c?.minFreeGB) ? c.minFreeGB : D.minFreeGB,
+    failMin: failOk(c?.failMin) ? c.failMin : D.failMin,
+  }
+}
+
+/** Why a policy the site sends is refused, or null when it is fine. */
+export function rebootPolicyError(p) {
+  if (typeof p?.on !== 'boolean') return 'on 은 참·거짓이에요'
+  if (!dayOk(p.day)) return '요일은 0(일)~6(토)이에요'
+  if (!hourOk(p.from) || !hourOk(p.to)) return '재부팅 시간은 0~23시예요'
+  if (p.from === p.to) return '시작과 끝 시간이 같아요'
+  if (!countOk(p.minClones)) return 'minClones 는 0 이상의 정수예요'
+  if (!countOk(p.minFreeGB)) return 'minFreeGB 는 0 이상의 정수예요'
+  if (p.failMin !== undefined && !failOk(p.failMin)) return 'failMin 은 2~60분이에요'
+  return null
+}
+
+/**
+ * Why the Mac should restart now ({day, hour} local), or null. A window past midnight (22~2) belongs to the day it
+ * starts on, so 1 o'clock on Monday is Sunday's window. A fact that could not be read (null) is no reason.
+ */
+export function rebootWhy(policy, at, facts = {}) {
+  if (!policy?.on || !inUpdateWindow(at.hour, policy.from, policy.to)) return null
+  const day = policy.from > policy.to && at.hour < policy.to ? (at.day + 6) % 7 : at.day
+  if (day !== policy.day) return null
+  const why = []
+  if (policy.minClones && Number.isFinite(facts.clones) && facts.clones >= policy.minClones) why.push(`Chrome 복제본 ${facts.clones}개(기준 ${policy.minClones}개)`)
+  if (policy.minFreeGB && Number.isFinite(facts.freeGB) && facts.freeGB < policy.minFreeGB) why.push(`남은 공간 ${facts.freeGB}GB(기준 ${policy.minFreeGB}GB)`)
+  if (!policy.minClones && !policy.minFreeGB) why.push('매주 정해진 재부팅')
+  return why.length ? why.join(', ') : null
+}
+
+/** What keeps the Mac from restarting now, one line each; empty when nothing does. */
+export function rebootBlockers(sessions) {
+  const out = []
+  for (const s of sessions ?? []) {
+    const n = s.name || s.id || '세션'
+    if (s.working) out.push(`${n}: 턴이 도는 중`)
+    if (s.bg > 0) out.push(`${n}: 백그라운드 작업 ${s.bg}개`)
+    if (s.waiting) out.push(`${n}: 답을 기다리는 중`)
+    if (s.card) out.push(`${n}: 열린 카드`)
+    if (s.delegating > 0) out.push(`${n}: 다른 맥에 맡긴 일 ${s.delegating}개`)
+    if (s.launching) out.push(`${n}: 뜨는 중`)
+  }
+  return out
+}
+
+/**
+ * Why this Mac would not come back by itself after a restart, one line each; empty when it would. `autoLoginUser`
+ * is `defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser`, `fileVault` is `fdesetup status`
+ * (neither needs sudo), `background` the headless link mode: without it nothing opens the link page after boot.
+ */
+export function rebootPreflight({ user, autoLoginUser, fileVault, background }) {
+  const out = []
+  if (String(autoLoginUser ?? '').trim() !== user) out.push(`자동 로그인이 ${user} 로 켜져 있지 않아요: 재부팅 뒤 로그인 화면에서 멈춰요`)
+  if (!/FileVault is Off/.test(String(fileVault ?? ''))) out.push('FileVault 가 꺼져 있지 않아요(또는 확인하지 못했어요): 재부팅 뒤 디스크 잠금 화면에서 멈춰요')
+  if (!background) out.push('헤드리스 연동 모드가 꺼져 있어요: 재부팅 뒤 사이트와 다시 이을 길이 없어요')
+  return out
+}
+
+/** Chrome's clone folder, a sibling of DARWIN_USER_TEMP_DIR (`getconf DARWIN_USER_TEMP_DIR`, …/T/): …/X/com.google.Chrome.code_sign_clone. */
+export const chromeCloneDir = (tempDir) => path.join(path.dirname(String(tempDir).replace(/\/+$/, '')), 'X', 'com.google.Chrome.code_sign_clone')
+
+/** `sysctl -n kern.boottime` ("{ sec = 1794070800, usec = 12 } Sun Nov  8 02:00:00 2026") in ms, or null. */
+export function bootTimeOf(text) {
+  const m = /sec = (\d+), usec = (\d+)/.exec(String(text ?? ''))
+  return m ? Number(m[1]) * 1000 + Math.floor(Number(m[2]) / 1000) : null
+}
+
+/**
+ * Where a restart asked for (reboot.json, phase 'requested' at requestedAt ms) stands: 'back' once the Mac booted
+ * after it, 'failed' when failMin minutes went by without a boot (an unsaved document's dialog stops a restart),
+ * 'waiting' before that; any other record its own phase, no record null.
+ */
+export function rebootPhase(rec, bootAt, now, failMin = REBOOT_DEFAULT.failMin) {
+  if (rec?.phase !== 'requested' || !Number.isFinite(rec.requestedAt)) return rec?.phase ?? null
+  if (Number.isFinite(bootAt) && bootAt > rec.requestedAt) return 'back'
+  return now - rec.requestedAt > failMin * 60_000 ? 'failed' : 'waiting'
+}
+
+/**
+ * The same checks before and after, side by side. services: label -> {pid} from `launchctl list` (a pid: running;
+ * none: loaded, not running); docker: 'running' | 'stopped' | null; clones and freeGB are only shown.
+ */
+export function rebootDiff(before = {}, after = {}) {
+  const lines = []
+  const state = (s) => (s?.pid ? '실행 중' : s ? '등록됨(멈춤)' : '없음')
+  for (const [label, b] of Object.entries(before.services ?? {})) {
+    const a = after.services?.[label]
+    lines.push({ what: label, before: state(b), after: state(a), ok: b?.pid ? !!a?.pid : !!a })
+  }
+  if (before.docker) lines.push({ what: 'Docker', before: before.docker, after: after.docker ?? '확인 못 함', ok: before.docker !== 'running' || after.docker === 'running' })
+  const shown = (v, unit) => (Number.isFinite(v) ? `${v}${unit}` : '확인 못 함')
+  if (before.clones !== undefined) lines.push({ what: 'Chrome 복제본', before: shown(before.clones, '개'), after: shown(after.clones, '개'), ok: true })
+  if (before.freeGB !== undefined) lines.push({ what: '남은 공간', before: shown(before.freeGB, 'GB'), after: shown(after.freeGB, 'GB'), ok: true })
+  return { lines, bad: lines.filter((l) => !l.ok).length }
+}
+
+const TMP_RE = /^\/(private\/)?tmp\//
+
+/**
+ * Which sessions saved just before the restart to open again, and why the rest are not: one closed, asleep or moved
+ * to another Mac stays so; one whose conversation already runs (`running`, conversation ids) is not opened twice;
+ * one whose folder is gone is not started there (a /tmp folder does not outlive a boot); at most `max`.
+ */
+export function rebootResumeList(saved, { running = [], exists = () => true, max = 10 } = {}) {
+  const seen = new Set(running)
+  const resume = []
+  const skip = []
+  for (const s of saved ?? []) {
+    let why = null
+    if (!s?.conv) why = '대화 id 가 없어요'
+    else if (s.closed || s.sleeping || s.moved) why = '닫았거나 쉬거나 옮긴 세션이에요'
+    else if (seen.has(s.conv)) why = '이미 떠 있어요'
+    else if (!exists(s.cwd)) why = TMP_RE.test(String(s.cwd)) ? '/tmp 안의 폴더라 재부팅으로 사라졌어요' : '작업 폴더가 없어요'
+    else if (resume.length >= max) why = `한 번에 ${max}개까지만 다시 열어요`
+    if (why) skip.push({ sid: s?.sid ?? null, why })
+    else {
+      resume.push(s)
+      seen.add(s.conv)
+    }
+  }
+  return { resume, skip }
+}
+
 // ---------- 모델 라우팅 (REQ-F-834): the session-only subagents a session is started with when the person turned it on ----------
 
 /** What the main session must keep for itself: said in every worker's description, so it is not handed down. */
