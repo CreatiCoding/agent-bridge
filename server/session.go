@@ -227,6 +227,11 @@ func startSession(uid string, b M, req *Req) string {
 	if b["chrome"] == false {
 		cmd["chrome"] = false
 	}
+	// 공유 디스크 (REQ-F-883): the shared folder the session starts under. The Mac refuses when it is not there (the disk
+	// not mounted) instead of making it, and when the folder is not under it.
+	if root := cleanFolderBase(b["root"]); root != "" {
+		cmd["root"] = root
+	}
 	// 전부 허용 rides on new for a Mac that takes it there (REQ-F-860): signed with it while trust is on.
 	allowAll := jsSliceTo(orStr(b["mode"]), 20) == "allowAll"
 	if autoAllow {

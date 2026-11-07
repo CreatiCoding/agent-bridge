@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.472',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '설정 → 새 세션 "공유 디스크"에 맥마다 같은 디스크의 경로를 적으면, 새 세션 화면의 "공유 디스크" 스위치로 <공유 폴더>/<그룹>/<월일>-<id> 새 폴더에서 시작한다',
+        refs: ['REQ-F-883', 'IF-191', 'IF-192'],
+      },
+      {
+        kind: 'added',
+        scope: ['server', 'agent'],
+        text: 'bridge MCP delegate 에 shared: 맡을 맥의 공유 폴더 아래 새 폴더에서 시작하고 닫혀도 지우지 않는다. hosts 는 맥마다 sharedFolder 를 준다',
+        refs: ['REQ-F-883', 'IF-260', 'REQ-F-760'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '공유 폴더가 맥에 없으면(디스크가 마운트되지 않음) 같은 이름의 로컬 폴더를 만들지 않고 시작을 거절한다. new 의 root 는 trust 서명 필드',
+        refs: ['REQ-F-883', 'REQ-S-089'],
+      },
+    ],
+  },
+  {
     version: '1.471',
     date: '2026-11-08',
+    commit: '6718349',
     changes: [
       {
         kind: 'changed',

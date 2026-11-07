@@ -556,8 +556,14 @@ func runDelegate(uid, hostID string, msg M) any {
 	case "hosts":
 		out := []any{}
 		off := delegateOff(uid)
+		shared := asM(launchOf(uid)["shared"])
 		for _, id := range own {
-			out = append(out, M{"name": hosts.Val(id)["name"], "online": online(id), "takesWork": !off[id], "thisMac": id == hostID})
+			// sharedFolder (REQ-F-883): the Mac's path to the shared disk, or null when it names none.
+			var sf any
+			if s, ok := shared[id].(string); ok && s != "" {
+				sf = s
+			}
+			out = append(out, M{"name": hosts.Val(id)["name"], "online": online(id), "takesWork": !off[id], "thisMac": id == hostID, "sharedFolder": sf})
 		}
 		return out
 	case "delegate":
@@ -598,6 +604,18 @@ func runDelegate(uid, hostID string, msg M) any {
 		L := launchOf(uid)
 		given := jsTrim(strOr(a["cwd"], ""))
 		cwd := given
+		// 공유 디스크 (REQ-F-883): shared starts it in a new folder under that Mac's path to the shared disk. Kept when
+		// the session closes (the point is that the other Macs see it), so it is not recorded for deleting.
+		root := ""
+		if a["shared"] == true {
+			if given != "" {
+				throw("cwd 와 shared 는 함께 쓸 수 없어요")
+			}
+			root, _ = asM(L["shared"])[target].(string)
+			if root == "" {
+				throw(hn + " 에는 공유 폴더가 정해져 있지 않아요(설정 → 새 세션 → 공유 디스크)")
+			}
+		}
 		if cwd == "" {
 			var group any
 			for _, g := range groupsList(prefsOf(uid)) {
@@ -606,7 +624,11 @@ func runDelegate(uid, hostID string, msg M) any {
 					break
 				}
 			}
-			cwd = defaultFolder(L["folderBase"], L["folderNoGroup"], group)
+			base := L["folderBase"]
+			if root != "" {
+				base = root
+			}
+			cwd = defaultFolder(base, L["folderNoGroup"], group)
 		}
 		mode := allowModeOf(parent)
 		if mode == "" {
@@ -616,8 +638,12 @@ func runDelegate(uid, hostID string, msg M) any {
 		for k, v := range lm {
 			sb[k] = v
 		}
+		if root != "" {
+			sb["root"] = root
+		}
 		// A folder made for this hand-over may be deleted when it closes; the Mac records it with the base it is under.
-		if given == "" {
+		made := given == "" && root == ""
+		if made {
 			base := cleanFolderBase(L["folderBase"])
 			if base == "" {
 				base = FOLDER_BASE
@@ -626,7 +652,7 @@ func runDelegate(uid, hostID string, msg M) any {
 		}
 		sid := startSession(uid, sb, &Req{internal: true, Header: map[string][]string{}})
 		c, _ := sessions.Get(sid)
-		if given == "" {
+		if made {
 			c.set("madeDir", true)
 			c.set("madeHost", target)
 		}

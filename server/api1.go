@@ -627,6 +627,20 @@ func apiPrefs(req *Req, res *Res, u *url.URL, uid string) bool {
 		if jsTrim(strOr(b["folderBase"], "")) != "" && cleanFolderBase(b["folderBase"]) == "" {
 			refuse(400, "기본 폴더는 ~ 나 / 로 시작하고 .. 이 없어야 해요")
 		}
+		// 공유 디스크 (REQ-F-883): a path given for a Mac must be one to start from, and only the person's own Macs keep one.
+		sent := asM(b["shared"])
+		for _, id := range sortedKeys(sent) {
+			if jsTrim(strOr(sent[id], "")) != "" && cleanFolderBase(sent[id]) == "" {
+				refuse(400, "공유 폴더는 ~ 나 / 로 시작하고 .. 이 없어야 해요")
+			}
+		}
+		own := M{}
+		for id, x := range asM(v["shared"]) {
+			if hosts.Has(id) && mstr(hosts.Val(id), "uid") == uid {
+				own[id] = x
+			}
+		}
+		v["shared"] = own
 		prefsOf(uid)["launch"] = v
 		savePrefs(uid)
 		out := M{"ok": true, "note": "저장했어요. 다음에 띄우는 새 세션과 복제부터 적용돼요."}

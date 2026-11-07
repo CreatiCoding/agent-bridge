@@ -390,6 +390,8 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     if (mode === 'autoAllow' || mode === 'allowAll') Object.assign(i, { autoAllow: true, allowAll: mode === 'allowAll' })
     if (typeof body.account === 'string' && body.account) i.account = body.account
     if (body.chrome === false) i.chrome = false
+    // 공유 디스크 (REQ-F-883): the shared folder it must start under, signed so a server cannot drop the check.
+    if (typeof body.root === 'string' && body.root) i.root = body.root.slice(0, 200)
     // The runner is signed too (REQ-F-851): a server cannot start another program than the one asked for.
     if (typeof body.runner === 'string' && body.runner && body.runner !== 'claude') i.runner = body.runner.slice(0, 16)
     // A Codex session's sandbox and approval too (REQ-F-854): a server cannot loosen what was picked.

@@ -12,7 +12,7 @@ const KEY_FILE = process.env.CB_KEY_FILE || ''
 export const TOOLS = [
   {
     name: 'hosts',
-    description: "The person's Macs this session can hand work to: name, whether it is online, and whether it takes work from other Macs.",
+    description: "The person's Macs this session can hand work to: name, whether it is online, whether it takes work from other Macs, and sharedFolder (that Mac's path to the shared disk, or null).",
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -25,6 +25,7 @@ export const TOOLS = [
         host: { type: 'string', description: 'The Mac, by the name `hosts` lists' },
         task: { type: 'string', description: 'What to do, written for a session that knows nothing of this conversation' },
         cwd: { type: 'string', description: "Folder on that Mac to work in (absolute or ~/…). Default: a new folder under the person's default folder (~/bridge/works/<this session's group>/<MMDD>-<id>)" },
+        shared: { type: 'boolean', description: "Start in a new folder on the shared disk instead (that Mac's sharedFolder from hosts, <sharedFolder>/<group>/<MMDD>-<id>), so the other Macs that mount the same disk see the work. Refused when that Mac names no shared folder or the disk is not mounted there. Not with cwd. The folder is kept when the session closes" },
         wait: { type: 'boolean', description: 'Wait for the answer (default true)' },
         timeout_s: { type: 'number', description: 'How long to wait, 10–1800 seconds (default 600)' },
         model: { type: 'string', description: "Model for that session: an alias (opus, sonnet, haiku, fable) or a full model ID (e.g. claude-sonnet-5-5). Default: the person's default model" },

@@ -456,7 +456,28 @@ func cleanLaunch(v any) M {
 	if fng == "" {
 		fng = FOLDER_NO_GROUP
 	}
-	return M{"model": model, "effort": effort, "mode": mode, "folderBase": fb, "folderNoGroup": fng}
+	return M{"model": model, "effort": effort, "mode": mode, "folderBase": fb, "folderNoGroup": fng, "shared": cleanShared(mget(v, "shared"))}
+}
+
+// SHARED_MAX: how many Macs may name a shared folder (REQ-F-883).
+const SHARED_MAX = 20
+
+var sharedHostRe = regexp.MustCompile(`^[\w-]{1,64}$`)
+
+// cleanShared: 공유 디스크 (REQ-F-883), each Mac's own path to the one shared disk (hostId → folder). A Mac with no
+// path, or one that is not a folder one may start from (cleanFolderBase), is left out.
+func cleanShared(v any) M {
+	out := M{}
+	m := asM(v)
+	for _, id := range sortedKeys(m) {
+		if len(out) >= SHARED_MAX {
+			break
+		}
+		if b := cleanFolderBase(m[id]); b != "" && sharedHostRe.MatchString(id) {
+			out[id] = b
+		}
+	}
+	return out
 }
 
 func launchOf(uid string) M { return cleanLaunch(prefsOf(uid)["launch"]) }

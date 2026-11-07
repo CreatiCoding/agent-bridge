@@ -1230,3 +1230,19 @@ export function lastLineAt(text, pick) {
 export const lastHumanLine = (text) => lastLineAt(text, humanLine)
 export const lastTurnLine = (text) => lastLineAt(text, (o) => o?.type === 'assistant')
 export const lastAnyLine = (text) => lastLineAt(text, () => true)
+
+/**
+ * 공유 디스크 (REQ-F-883): throws unless `root` is a folder on this Mac and `cwd` is it or under it. The shared folder
+ * is never made: a disk that is not mounted is refused, not answered with a local folder of the same name.
+ */
+export function sharedRootCheck(root, cwd, expandHome) {
+  const r = expandHome(String(root)).replace(/(.)\/+$/, '$1')
+  if (!path.isAbsolute(r)) throw new Error(`공유 폴더는 / 또는 ~ 로 시작하는 경로여야 합니다: ${root}`)
+  let dir = false
+  try {
+    dir = fs.statSync(r).isDirectory()
+  } catch {}
+  if (!dir) throw new Error(`공유 폴더가 이 맥에 없어요: ${r}. 공유 디스크가 연결(마운트)돼 있는지 확인하세요`)
+  const w = path.resolve(expandHome(String(cwd || '~')))
+  if (w !== r && !w.startsWith(r === '/' ? '/' : `${r}/`)) throw new Error(`작업 폴더가 공유 폴더 밖이에요: ${w}`)
+}

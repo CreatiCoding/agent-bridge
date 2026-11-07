@@ -6,6 +6,7 @@ import { CHANGES, type ChangeKind } from '../lib/changes'
 import { applyIcons, getIcons, getTheme, setTheme, type Theme } from '../lib/local'
 import { back, go, href, type SettingsTab } from '../lib/router'
 import { shownName, type IconPrefs, type Me, type Options } from '../lib/types'
+import { NONE, useStore } from '../lib/store'
 import { Badge, Button, CardHead, Empty, Field, Help, Icon, IconButton, LoadError, NO_AUTOFILL, Segmented, Spinner, Switch, useWide } from '../kit'
 import { chooseDialog, Sheet, toast } from '../kit/overlay'
 import { inHomeApp, safariHref } from '../lib/safari'
@@ -174,6 +175,8 @@ export interface Launch {
   mode: string
   folderBase: string
   folderNoGroup: string
+  /** 공유 디스크 (REQ-F-883): each Mac's path to the shared disk, by host id. */
+  shared?: Record<string, string>
 }
 
 /**
@@ -184,6 +187,7 @@ export interface Launch {
 function LaunchDefaults({ opts, initial }: { opts: Options | null; initial: Launch }) {
   const [v, setV] = useState<Launch>(initial)
   const [saving, setSaving] = useState(false)
+  const hosts = useStore((s) => s.state?.hosts ?? NONE)
   if (!opts) return <p className="muted">목록을 읽지 못했어요.</p>
   // A saved model the list no longer offers is still shown, so saving does not silently drop it.
   const models = opts.models.some((m) => m.value === v.model) || !v.model ? opts.models : [...opts.models, { label: v.model, value: v.model }]
@@ -232,6 +236,27 @@ function LaunchDefaults({ opts, initial }: { opts: Options | null; initial: Laun
       <Field label="그룹이 없을 때" hint="그룹 없이 만든 세션이 들어가는 폴더 이름">
         <input className="input" {...NO_AUTOFILL} value={v.folderNoGroup} onChange={(e) => setV({ ...v, folderNoGroup: e.target.value })} placeholder="기타" />
       </Field>
+      {hosts.length ? (
+        <Field label="공유 디스크" hint="맥마다 같은 공유 디스크의 폴더를 적으면, 새 세션에서 '공유 디스크'를 켜거나 다른 맥에 맡길 때(shared) 그 아래 <그룹>/<월일>-<id> 를 만들어 시작해요. 디스크가 연결돼 있지 않으면 시작하지 않아요. 폴더는 미리 만들어 두세요(예 /Volumes/Archive/bridge)">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {hosts.map((h) => (
+              <label key={h.id} className="hstack" style={{ gap: 8 }}>
+                <span style={{ minWidth: 96 }}>{h.name}</span>
+                <input
+                  className="input mono grow"
+                  {...NO_AUTOFILL}
+                  value={v.shared?.[h.id] ?? ''}
+                  onChange={(e) => setV({ ...v, shared: { ...(v.shared ?? {}), [h.id]: e.target.value } })}
+                  placeholder="없음"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  aria-label={`${h.name} 의 공유 폴더`}
+                />
+              </label>
+            ))}
+          </div>
+        </Field>
+      ) : null}
       <div className="hstack" style={{ justifyContent: 'flex-end' }}>
         <Button
           tone="primary"
@@ -240,7 +265,7 @@ function LaunchDefaults({ opts, initial }: { opts: Options | null; initial: Laun
             setSaving(true)
             try {
               const r = await post<{ ok: true; note: string } & Launch>('/api/prefs/launch', v)
-              setV({ model: r.model, effort: r.effort, mode: r.mode, folderBase: r.folderBase, folderNoGroup: r.folderNoGroup })
+              setV({ model: r.model, effort: r.effort, mode: r.mode, folderBase: r.folderBase, folderNoGroup: r.folderNoGroup, shared: r.shared ?? {} })
               toast(r.note)
             } catch (e) {
               toast(errorText(e), { tone: 'bad' })

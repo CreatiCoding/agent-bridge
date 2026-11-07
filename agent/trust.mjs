@@ -113,7 +113,7 @@ export const TRUST_CLASS = {
   // actions
   // A codex session's sandbox and approval (REQ-F-854) are signed with it: a server cannot loosen them.
   // 전부 허용 asked for at the start is signed with it (REQ-F-860): the page cannot sign a set for a sid it does not know yet.
-  new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner', 'codexMode', 'autoAllow', 'allowAll'], keep: ['sid', 'prompt'] },
+  new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner', 'codexMode', 'autoAllow', 'allowAll', 'root'], keep: ['sid', 'prompt'] },
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
   // 맥의 대화 가져오기: the conversation and its folder are signed; the Mac opens it only when its transcript was
   // written in that folder (agent.mjs adopt). The server's sysPrompt·routing are dropped, as for new.

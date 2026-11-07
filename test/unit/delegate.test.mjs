@@ -27,7 +27,9 @@ test('MCP 서버: initialize·tools/list·tools/call, 알림에는 답하지 않
   assert.equal(TOOLS.length, 8)
   // Model and effort for the session handed work (1.383): optional, effort one of the launch efforts.
   const ds = TOOLS.find((t) => t.name === 'delegate').inputSchema
-  assert.deepEqual(Object.keys(ds.properties), ['host', 'task', 'cwd', 'wait', 'timeout_s', 'model', 'effort'])
+  assert.deepEqual(Object.keys(ds.properties), ['host', 'task', 'cwd', 'shared', 'wait', 'timeout_s', 'model', 'effort'])
+  // 공유 디스크 (REQ-F-883): shared starts it on the shared disk.
+  assert.equal(ds.properties.shared.type, 'boolean')
   assert.deepEqual(ds.required, ['host', 'task'])
   assert.equal(ds.properties.model.type, 'string')
   assert.deepEqual(ds.properties.effort.enum, ['low', 'medium', 'high', 'xhigh', 'max'])

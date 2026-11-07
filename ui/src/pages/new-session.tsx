@@ -43,7 +43,9 @@ export function NewSessionPage() {
   // 기본 폴더 (REQ-F-763): <기본 폴더>/<그룹>/<MMDD>-<id>, made when it starts. Until the folder is edited or picked.
   const [auto, setAuto] = useState(true)
   const [stamp] = useState(folderStamp)
-  const [folderPrefs, setFolderPrefs] = useState<{ base?: string; noGroup?: string }>({})
+  const [folderPrefs, setFolderPrefs] = useState<{ base?: string; noGroup?: string; shared?: Record<string, string> }>({})
+  // 공유 디스크 (REQ-F-883): start under this Mac's path to the shared disk instead. Remembered on this device.
+  const [onShared, setOnShared] = useState(() => getPref<boolean>('newShared', false) === true)
   const [dirs, setDirs] = useState<Dirs | null>(null)
   const [dirsError, setDirsError] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -67,7 +69,9 @@ export function NewSessionPage() {
   const groups = useStore((s) => s.state?.groups.groups ?? NONE)
   const [groupId, setGroupId] = useState(() => /[?&]group=([\w-]+)/.exec(location.search)?.[1] ?? '')
   const group = groups.find((g) => g.id === groupId)
-  const folder = auto ? defaultFolder(folderPrefs.base, folderPrefs.noGroup, group?.name, stamp) : cwd
+  const sharedBase = host ? folderPrefs.shared?.[host.id] : undefined
+  const useShared = auto && onShared && !!sharedBase
+  const folder = auto ? defaultFolder(useShared ? sharedBase : folderPrefs.base, folderPrefs.noGroup, group?.name, stamp) : cwd
   const [tab, setTab] = useState<'new' | 'adopt'>(() => (presetAdopt().length || location.search.includes('adopt') ? 'adopt' : 'new'))
   // The Claude account on that Mac (설정 → Claude 계정): asked only when it has more than one; the last pick is kept.
   const accounts = host?.accounts ?? []
@@ -90,8 +94,8 @@ export function NewSessionPage() {
   useEffect(() => {
     get<Options>('/api/options').then(setOpts, () => {})
     // The person's defaults (설정 → 새 세션·복제 기본값) are where the form starts; a choice made here already stays.
-    get<{ model: string; effort: string; mode: string; folderBase?: string; folderNoGroup?: string }>('/api/prefs/launch').then(
-      (d) => (setModel((x) => x || d.model), setEffort((x) => x || d.effort), setMode((x) => x || d.mode), setFolderPrefs({ base: d.folderBase, noGroup: d.folderNoGroup })),
+    get<{ model: string; effort: string; mode: string; folderBase?: string; folderNoGroup?: string; shared?: Record<string, string> }>('/api/prefs/launch').then(
+      (d) => (setModel((x) => x || d.model), setEffort((x) => x || d.effort), setMode((x) => x || d.mode), setFolderPrefs({ base: d.folderBase, noGroup: d.folderNoGroup, shared: d.shared })),
       () => {},
     )
   }, [])
@@ -153,7 +157,7 @@ export function NewSessionPage() {
       // message said while the session is still starting and hands it over once it is up.
       const first = attached ? { prompt: '', title: prompt } : { prompt }
       if (!startKey.current) startKey.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, startKey: startKey.current, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, startKey: startKey.current, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(useShared ? { root: sharedBase } : {}), ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       if (claude) setPref('newAccount', account)
@@ -280,7 +284,13 @@ export function NewSessionPage() {
           <div className="folder-list" style={{ marginTop: -8, marginBottom: 16 }}>
             {auto ? (
               <div className="folder-item muted" style={{ flexWrap: 'wrap' }}>
-                <Icon name="folder" /> <span className="grow">새 폴더예요</span>
+                <Icon name="folder" /> <span className="grow">{useShared ? '공유 디스크에 새 폴더예요' : '새 폴더예요'}</span>
+                {sharedBase ? (
+                  <label className="hstack" style={{ gap: 6 }}>
+                    <span>공유 디스크</span>
+                    <Switch checked={onShared} onChange={(on) => (setOnShared(on), setPref('newShared', on))} label="공유 디스크에서 시작" />
+                  </label>
+                ) : null}
                 {recent ? (
                   <Button size="sm" tone="ghost" onClick={() => pick(recent)}>
                     최근: <span className="mono">{recent}</span>
