@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { imageUrl, localPort, modeFor, modeOf, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
-import { snapshotImageUrls, egoSnapshotScript, egoSnapshotResult, EGO_MARK } from '../../agent/guard.mjs'
+import { snapshotImageUrls, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
 
@@ -124,4 +124,14 @@ test('AC-1663: with no rule a session’s page takes a snapshot (localhost too) 
   assert.match(sheet, /if \(fromRule\) return snapshotView\(sid, abs\)/)
   assert.match(sheet, /if \(local\) return previewView\(url, sid\)/)
   assert.match(sheet, /스냅샷을 만들지 못해 읽기로 열었어요/)
+})
+
+test('AC-1668: ego lite’s snapshot waits for the page to go quiet in the page, not for ego’s networkidle', () => {
+  const s = egoSnapshotScript({ name: 'cb-snapshot-ab12', url: 'https://example.com/', budgetMs: 8000, gotoMs: 15000 })
+  assert.doesNotMatch(s, /networkidle/)
+  assert.ok(s.includes(`page.waitForFunction(${EGO_QUIET}, undefined, { timeout: 8000 })`))
+  assert.doesNotThrow(() => new Function(`return (${EGO_QUIET})`))
+  assert.match(EGO_QUIET, /document\.readyState !== "complete"/)
+  assert.match(EGO_QUIET, /getEntriesByType\("resource"\)/)
+  assert.match(EGO_QUIET, />= 500/)
 })

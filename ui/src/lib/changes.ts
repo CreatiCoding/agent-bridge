@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.474',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'ego lite 스냅샷이 조용한 페이지에서도 8초를 기다리던 것: 첫 탭의 새 탭 페이지 요청이 남아 networkidle 이 끝나지 않았다. 페이지 안에서 로드 완료·0.5초 새 요청 없음을 보고 넘어간다(example.com 8.4초 → 0.9초)',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.473',
     date: '2026-11-08',
+    commit: '58f559f',
     changes: [
       {
         kind: 'added',

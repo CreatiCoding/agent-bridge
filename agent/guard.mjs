@@ -83,8 +83,25 @@ export function snapshotImageUrls(html, page) {
 export const EGO_MARK = 'CB-SNAPSHOT '
 
 /**
+ * Whether the page has gone quiet, judged in the page (waitForFunction polls it): loaded, and no new resource for
+ * EGO_QUIET_MS by the page's own performance record. Not ego's networkidle: a new task space's first page starts on
+ * the new tab page, and its chrome://new-tab-page/ scripts stay "in flight" for ego after the page moves on, so
+ * networkidle waited out the whole budget on every quiet page (8 s on example.com, seen 1.474).
+ */
+export const EGO_QUIET_MS = 500
+export const EGO_QUIET = `() => {
+  if (document.readyState !== "complete") return false
+  const rs = performance.getEntriesByType("resource")
+  const now = performance.now()
+  const q = (window.__cbQuiet ||= { n: -1, at: now })
+  if (rs.length !== q.n) { q.n = rs.length; q.at = now; return false }
+  const last = rs.reduce((m, r) => Math.max(m, r.responseEnd || 0), 0)
+  return now - q.at >= ${EGO_QUIET_MS} && now - last >= ${EGO_QUIET_MS}
+}`
+
+/**
  * The script `ego-browser nodejs` runs for a snapshot (stdin): a task space of its own name, the address opened in
- * its page, a wait for the network to go quiet (budgetMs at most), then in the page the rendered DOM and the page's
+ * its page, a wait for the page to go quiet (EGO_QUIET, budgetMs at most), then in the page the rendered DOM and the page's
  * own-origin pictures fetched with its cookies (credentials: include) as data: addresses. The task space is always
  * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
  */
@@ -123,7 +140,7 @@ let out
 try {
   const page = task.page("p1")
   await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
-  try { await page.waitForLoadState("networkidle", { timeout: ${Number(budgetMs)}, idleMs: 500 }) } catch {}
+  try { await page.waitForFunction(${EGO_QUIET}, undefined, { timeout: ${Number(budgetMs)} }) } catch {}
   out = await page.evaluate(${inPage}, ${JSON.stringify(opts)})
 } finally {
   await task.finish({ keep: [] })
