@@ -9,7 +9,8 @@ import { parseApproval } from '../../agent/codex.mjs'
 const src = readFileSync(new URL('../../ui/src/components/decision-card.tsx', import.meta.url), 'utf8')
 
 test('열린 카드와 닫힌 카드 모두 tool 이 없으면 context 를 <pre> 로 보인다', () => {
-  const shown = src.match(/: card\.context \? \(\s*<div className=[^>]*dcard-detail[^>]*>\s*<pre>\{card\.context\}<\/pre>/g) ?? []
+  // Colored by approvalTokens since 1.465 (REQ-F-878); the text itself is unchanged (tool-view.test.mjs).
+  const shown = src.match(/: card\.context \? \(\s*<div className=[^>]*dcard-detail[^>]*>\s*<pre>\{toks\(approvalTokens\(card\.context\)\)\}<\/pre>/g) ?? []
   assert.equal(shown.length, 2)
 })
 

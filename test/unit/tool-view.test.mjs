@@ -99,3 +99,20 @@ test('toolFace: an exec row as Bash with its output; the same row gives the same
   const bash = { name: 'Bash', label: 'ls', input: '{"command":"ls"}', done: true, output: '[]' }
   assert.equal(toolFace(bash), bash)
 })
+
+test('codex approval context: label heads, then the $ command colored across terminal wraps (REQ-F-878)', async () => {
+  const { approvalTokens } = await import('../../ui/src/lib/tool-view.ts')
+  const ctx = 'Environment: local\nReason: 연결을 확인하겠습니다.\n$ ssh -o ConnectTimeout=10 h \'stat\'; sudo -u w curl --unix-socket /run/a-\nb/gocd.sock'
+  const t = approvalTokens(ctx)
+  assert.equal(t.map((x) => x.t).join(''), ctx)
+  assert.deepEqual(t.filter((x) => x.k === 'key').map((x) => x.t), ['Environment:', 'Reason:'])
+  assert.deepEqual(t.filter((x) => x.k === 'cmd').map((x) => x.t), ['ssh', 'sudo'])
+  assert.ok(t.some((x) => x.k === 'flag' && x.t === '--unix-socket'))
+  assert.ok(t.some((x) => x.k === 'str' && x.t === "'stat'"))
+  // the wrap is part of the path, not a new command
+  assert.ok(t.some((x) => x.t === 'b/gocd.sock' && !x.k))
+  // no command: plain lines, text kept
+  const plain = 'Allow edits to\nfoo.ts'
+  assert.equal(approvalTokens(plain).map((x) => x.t).join(''), plain)
+  assert.equal(approvalTokens(plain).some((x) => x.k === 'cmd'), false)
+})

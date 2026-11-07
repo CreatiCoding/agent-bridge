@@ -235,6 +235,33 @@ export function shellTokens(src: string): Tok[] {
   return out
 }
 
+/**
+ * A codex approval's screen text (a card's context) as tokens: "Label:" heads before the command, then everything
+ * from the first "$ " line on as one shell command, the same split the agent judges it by (agent/codex.mjs
+ * codexAutoAnswer). Those lines are the terminal's wraps, cut mid-word ("/run/a-" + "b.sock"), so a line break inside
+ * the command does not start a new command: the words are found as if it were a space, then cut from the real text.
+ */
+export function approvalTokens(context: string): Tok[] {
+  const lines = context.split('\n')
+  const at = lines.findIndex((l) => l.startsWith('$ '))
+  const out: Tok[] = []
+  for (const [i, l] of (at < 0 ? lines : lines.slice(0, at)).entries()) {
+    const m = /^([A-Z][\w ]{0,30}:)(\s.*|)$/.exec(l)
+    if (m) out.push({ t: m[1], k: 'key' }, { t: m[2] })
+    else out.push({ t: l })
+    if (at >= 0 || i < lines.length - 1) out.push({ t: '\n' })
+  }
+  if (at < 0) return out
+  const cmd = lines.slice(at).join('\n').slice(2)
+  out.push({ t: '$ ', k: 'op' })
+  let pos = 0
+  for (const tok of shellTokens(cmd.replace(/\n/g, ' '))) {
+    out.push({ ...tok, t: cmd.slice(pos, pos + tok.t.length) })
+    pos += tok.t.length
+  }
+  return out
+}
+
 /** JSON text as tokens: keys, strings, numbers, true/false/null. */
 export function jsonTokens(src: string): Tok[] {
   const out: Tok[] = []

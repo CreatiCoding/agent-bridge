@@ -9,13 +9,17 @@ import type { Card, Session } from '../lib/types'
 import { Button, Icon, Spinner } from '../kit'
 import { act, command, inSlack } from './session-menu'
 import { dispatch } from '../lib/actions'
+import { approvalTokens, shellTokens, type Tok } from '../lib/tool-view'
+
+// Colored like an opened tool row (tool-detail.tsx) so a command reads at a glance before it is allowed (REQ-F-878).
+const toks = (ts: Tok[]) => ts.map((t, i) => (t.k ? <span key={i} className={`tk-${t.k}`}>{t.t}</span> : t.t))
 
 export const CARD_LABEL: Record<string, string> = { permission: '권한 요청', question: '질문', plan: '플랜 승인', dialog: '터미널 확인', keyed: '터미널 확인', stuck: '지시 대기' }
 
 function ToolDetail({ tool }: { tool: NonNullable<Card['tool']> }) {
   const input = (tool.input ?? {}) as Record<string, unknown>
   const name = tool.name
-  if (name === 'Bash' && typeof input.command === 'string') return <pre>{input.command}</pre>
+  if (name === 'Bash' && typeof input.command === 'string') return <pre>{toks(shellTokens(input.command))}</pre>
   if ((name === 'Edit' || name === 'MultiEdit') && typeof input.file_path === 'string') {
     const edits = (Array.isArray(input.edits) ? input.edits : [input]) as { old_string?: string; new_string?: string }[]
     return (
@@ -123,7 +127,7 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
           </div>
         ) : card.context ? (
           <div className="dcard-detail compact">
-            <pre>{card.context}</pre>
+            <pre>{toks(approvalTokens(card.context))}</pre>
           </div>
         ) : null}
         <div className="dcard-done">{result || '답함'}</div>
@@ -149,7 +153,7 @@ export function DecisionCard({ session, card, closed, result, compact }: { sessi
         </div>
       ) : card.context ? (
         <div className={`dcard-detail${compact ? ' compact' : ''}`}>
-          <pre>{card.context}</pre>
+          <pre>{toks(approvalTokens(card.context))}</pre>
         </div>
       ) : null}
       {card.plan ? (

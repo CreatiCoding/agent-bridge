@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.465',
+    date: '2026-11-07',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '권한 요청 카드의 명령을 대화의 도구 상자처럼 색으로 나눠 보임(명령 이름·옵션·문자열·연산자). Codex 승인 카드는 Environment:·Reason: 머리를 칠하고, 터미널이 접은 줄도 한 명령으로 칠한다',
+        refs: ['REQ-F-878'],
+      },
+    ],
+  },
+  {
     version: '1.464',
     date: '2026-11-07',
+    commit: '74bb5e6',
     changes: [
       {
         kind: 'fixed',
