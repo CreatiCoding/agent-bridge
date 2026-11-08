@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.501',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '실행기 전환 중 거절된 두 번째 전환이나 잘못된 전환 요청이 진행 중인 첫 전환의 잠금(switching)을 풀던 것: 그 뒤의 전환이 첫 전환과 겹쳐 터미널을 다시 내리고, 다시 열기·보낸 글도 잠금 없이 지나갈 수 있었다. 이제 잠금을 세운 호출만 푼다',
+        refs: ['REQ-F-891'],
+      },
+    ],
+  },
+  {
     version: '1.500',
     date: '2026-11-08',
+    commit: '1036f5f',
     changes: [
       {
         kind: 'added',

@@ -3362,6 +3362,9 @@ async function adoptCodex(reqId, sid, { conv, cwd, autoPush, sysPrompt, codexMod
  */
 async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll, signed }) {
   const s = sessions.get(sid)
+  // Only the call that set the guard takes it off: a refused call (a second switch, a bad runner) leaves another
+  // call's switch guarded (1.501: the finally took it off for every call, so a third switch ran beside the first).
+  let locked = false
   try {
     if (!s || s.closed) throw new Error('이 맥에 그 세션이 없어요')
     if (!safeConvId(sid)) throw new Error('세션 id 가 올바르지 않아요')
@@ -3378,6 +3381,7 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     // From here until the new runner is up, nothing else starts, types into or reopens this session (a second
     // switch is refused, a message is held for the new runner, a close is seen after the terminal goes).
     s.switching = true
+    locked = true
     // What the runner it leaves needs to go on later.
     const mine = from === 'claude'
       ? { conv: s.conv || sid, ...(s.transcript ? { transcript: s.transcript } : {}), ...(s.account ? { account: s.account } : {}), ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), ...(s.chrome === false ? { chrome: false } : {}) }
@@ -3457,7 +3461,7 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     log('error', 'switch', `실행기를 바꾸지 못함: ${e.message}`, sid)
     emit({ t: 'opened', reqId, sid, ok: false, error: e instanceof SessionClosed ? '전환하는 사이 세션이 닫혔어요' : e.message })
   } finally {
-    if (s) delete s.switching
+    if (locked) delete s.switching
   }
 }
 
