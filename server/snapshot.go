@@ -15,7 +15,8 @@ import (
 const (
 	LINK_RULES_MAX  = 50
 	SNAPSHOT_MS     = 75_000 // the agent: ego lite 30 s, then Chrome 30 s, then the pictures 8 s
-	SNAPSHOT_IMGMAX = 8 << 20
+	SNAPSHOT_IMGMAX = 12 << 20
+	SNAPSHOT_CSSMAX = 4 << 20
 )
 
 var LINK_MODES = []string{"read", "snapshot", "preview", "browser"}
@@ -138,7 +139,22 @@ func snapshotAnswer(r M, target string) M {
 		total += len(d)
 		images[k] = d
 	}
-	return M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "via": r["via"]}
+	// The page's style sheets by address (1.488): text, http(s) addresses, SNAPSHOT_CSSMAX in all.
+	css := M{}
+	ctotal := 0
+	for k, v := range asM(r["css"]) {
+		t, isText := v.(string)
+		if !isText || !(strings.HasPrefix(k, "https://") || strings.HasPrefix(k, "http://")) || ctotal+len(t) > SNAPSHOT_CSSMAX {
+			continue
+		}
+		ctotal += len(t)
+		css[k] = t
+	}
+	width, _ := r["width"].(float64)
+	if width < 0 || width > 10000 {
+		width = 0
+	}
+	return M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "css": css, "width": int(width), "via": r["via"]}
 }
 
 var snapshotDataRe = regexp.MustCompile(`^data:image/(png|jpeg|gif|webp|avif);base64,[A-Za-z0-9+/=]+$`)

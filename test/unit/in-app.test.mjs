@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { imageUrl, localPort, modeFor, modeOf, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
-import { snapshotImageUrls, snapshotUserAgent, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET } from '../../agent/guard.mjs'
+import { snapshotImageUrls, snapshotUserAgent, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_IMG_COUNT, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
 
@@ -43,9 +43,12 @@ test('link.open’s default asks the sheet before a new tab; the sheet draws dat
   assert.match(sheet, /openLink\(outside, 'inapp'\)/)
   assert.match(sheet, /\/api\/read\?u=/)
   assert.doesNotMatch(sheet, /dangerouslySetInnerHTML|innerHTML/)
-  // The only frame is the localhost preview.
-  assert.equal((sheet.match(/<iframe/g) ?? []).length, 1)
+  // Two frames: the localhost preview, and the snapshot as the page looked (1.488), which runs nothing and has no
+  // origin of its own (sandbox without allow-scripts or allow-same-origin).
+  assert.equal((sheet.match(/<iframe/g) ?? []).length, 2)
   assert.match(sheet, /kind: 'frame', src: throughPreview\(/)
+  assert.match(sheet, /sandbox="allow-popups allow-popups-to-escape-sandbox"\s+referrerPolicy="no-referrer"\s+srcDoc=\{v\.doc\}/)
+  assert.doesNotMatch(sheet, /allow-scripts|allow-same-origin/)
 })
 
 // REQ-F-881: per host, how the sheet opens a link.
@@ -97,7 +100,7 @@ test('AC-1661: ego lite’s script opens the address, finishes its task space, a
   assert.match(s, /credentials: "include"/)
   // The in-page function is valid JavaScript.
   assert.doesNotThrow(() => new Function(`return (${s.slice(s.indexOf('page.evaluate(') + 14, s.lastIndexOf(', {"count"'))})`))
-  assert.deepEqual(egoSnapshotResult(`[ego] hello\n${EGO_MARK}{"url":"https://e/","html":"<p>a</p>","images":{"https://e/a.png":"data:image/png;base64,AA"}}\n`), { url: 'https://e/', html: '<p>a</p>', images: { 'https://e/a.png': 'data:image/png;base64,AA' } })
+  assert.deepEqual(egoSnapshotResult(`[ego] hello\n${EGO_MARK}{"url":"https://e/","html":"<p>a</p>","images":{"https://e/a.png":"data:image/png;base64,AA"}}\n`), { url: 'https://e/', html: '<p>a</p>', images: { 'https://e/a.png': 'data:image/png;base64,AA' }, css: {}, width: 0 })
   assert.equal(egoSnapshotResult('no result'), null)
   assert.equal(egoSnapshotResult(`${EGO_MARK}{"html":1}`), null)
 })
@@ -163,4 +166,37 @@ test('AC-1685: a sealed snapshot this device cannot open says which step failed'
   assert.match(sheet, /풀었지만 내용이 깨졌어요/)
   assert.match(sheet, /스냅샷이 아닌 답이에요/)
   assert.match(sheet, /다른 세션의 스냅샷이에요/)
+})
+
+test('AC-1687: a snapshot carries the page’s style sheets and the pictures they name, ready for a frame that fetches nothing', () => {
+  const page = 'https://www.example.com/a/b.html'
+  const html = `<link rel="preload" href="/x.css"><link href="/s/one.css" rel="stylesheet"><link rel='stylesheet alternate' href='two.css?v=1&amp;x=2'><link rel=stylesheet href="javascript:alert(1)">`
+  assert.deepEqual(snapshotSheetUrls(html, page), ['https://www.example.com/s/one.css', 'https://www.example.com/a/two.css?v=1&x=2'])
+  const css = cssReady(`@import "base.css"; @font-face{font-family:x;src:url(f.woff2)} .a{background:url('../i/bg.png')} .b{background:url(data:image/png;base64,AA)} .c{mask:url(#m)}`, 'https://cdn.example.com/css/site.css')
+  assert.doesNotMatch(css, /font-face/)
+  assert.match(css, /@import url\("https:\/\/cdn\.example\.com\/css\/base\.css"\)/)
+  assert.match(css, /url\("https:\/\/cdn\.example\.com\/i\/bg\.png"\)/)
+  assert.match(css, /url\(data:image\/png;base64,AA\)/)
+  assert.match(css, /url\(#m\)/)
+  assert.deepEqual(cssImports(css), ['https://cdn.example.com/css/base.css'])
+  // Pictures only: not the @import sheet, not fonts.
+  assert.deepEqual(cssImageUrls([css, '.d{background:url("https://x/f.woff2")}']), ['https://cdn.example.com/i/bg.png'])
+  assert.equal(SNAPSHOT_IMG_COUNT, 80)
+  // ego lite reads the sheets the page may read and writes script-made rules into their <style>, and the page's width.
+  const s = egoSnapshotScript({ name: 'n', url: 'https://a/', budgetMs: 8000, gotoMs: 15000 })
+  assert.match(s, /document\.styleSheets/)
+  assert.match(s, /sh\.ownerNode\.textContent = text/)
+  assert.match(s, /width: document\.documentElement\.scrollWidth/)
+  // The agent asks as a browser would, sends css and width, and seals them with the page.
+  const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(agent, /referer: String\(page\)/)
+  assert.match(agent, /emit\(\{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, css, width: r\.width \|\| 0, via \}\)/)
+  const trust = readFileSync(new URL('../../agent/trust.mjs', import.meta.url), 'utf8')
+  assert.match(trust, /css: m\.css \?\? \{\}, width: m\.width \?\? 0/)
+  // The screen puts it together with nothing left that runs or fetches.
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /script, noscript, iframe, frame, frameset, object, embed, applet, portal, base, meta\[http-equiv\]/)
+  assert.match(sp, /new DOMParser\(\)\.parseFromString/)
+  assert.match(sp, /\/\^on\/i\.test\(a\.name\)/)
+  assert.match(sp, /a\.setAttribute\('target', '_blank'\)/)
 })

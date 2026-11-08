@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.488',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'agent', 'server'],
+        text: '스냅샷이 글만 뽑은 읽기 모양이 아니라 페이지가 보이던 모양으로 열린다. 맥이 CSS 와 그림까지 담아 보내고, 폰은 스크립트 없이 아무것도 받아 오지 않는 틀에 띄운다. 시트 아래 "읽기 모양" 으로 전처럼 볼 수 있다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.487',
     date: '2026-11-08',
+    commit: 'a6a0632',
     changes: [
       {
         kind: 'fixed',

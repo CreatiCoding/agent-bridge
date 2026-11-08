@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -4319,8 +4319,9 @@ const commands = {
         r = await chromeSnapshot(page)
       }
       if (r.html.length > SNAPSHOT_HTML_MAX) return fail('페이지가 너무 커서 스냅샷으로 못 열어요')
-      const images = await snapshotImages(r.html, r.url, r.images)
-      emit({ t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, via })
+      const css = await snapshotCss(r.html, r.url, r.css)
+      const images = await snapshotImages(r.html, r.url, r.images, cssImageUrls([...Object.values(css), ...inlineStyles(r.html, r.url)]))
+      emit({ t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, css, width: r.width || 0, via })
     } catch (e) {
       fail(e.message)
     } finally {
@@ -6611,6 +6612,16 @@ async function egoSnapshot(page, reqId) {
   return r
 }
 
+/**
+ * How the agent asks for a snapshot's sheets and pictures (1.488): as the browser that drew the page would, with its
+ * User-Agent and the page as Referer. Sites' bot walls turn away a bare request: coupang.com's CDN answered 403 to
+ * node's fetch and to a User-Agent alone, 200 with both (seen on creco-macmini).
+ */
+async function snapshotHeaders(page, accept) {
+  const ua = snapshotUserAgent(CHROME_BIN ? await chromeVersionOnce() : '', IS_MAC) || snapshotUserAgent('Chrome 140.0.0.0', IS_MAC)
+  return { 'user-agent': ua, accept, 'accept-language': 'ko-KR,ko;q=0.9,en;q=0.8', referer: String(page) }
+}
+
 /** `<chrome> --version`, asked once ('' when Chrome does not answer within 10 s). */
 let chromeVersion = null
 function chromeVersionOnce() {
@@ -6618,7 +6629,7 @@ function chromeVersionOnce() {
   return chromeVersion
 }
 
-/** The page through a headless Chrome of a throwaway profile: {url, html, images: {}}. */
+/** The page through a headless Chrome of a throwaway profile: {url, html, images: {}, css: {}, width} (its window is 412 wide). */
 async function chromeSnapshot(page) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
   try {
@@ -6626,17 +6637,64 @@ async function chromeSnapshot(page) {
     const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
     const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
-    return { url: page.href, html, images: {} }
+    return { url: page.href, html, images: {}, css: {}, width: 412 }
   } finally {
     fs.rm(profile, { recursive: true, force: true }, () => {})
   }
 }
 
 /**
+ * The page's style sheets as text by address, made ready (guard cssReady) (1.488): what the browser already read
+ * (have, ego), the rest of the linked sheets read here without cookies, all at once within SNAPSHOT_IMG_FETCH_MS,
+ * one level of @import put in front of the sheet that imports it, within the size limits.
+ */
+async function snapshotCss(html, pageUrl, have = {}) {
+  const out = {}
+  let total = 0
+  const keep = (href, text) => {
+    if (typeof text !== 'string' || text.length > SNAPSHOT_CSS_ONE_MAX || total + text.length > SNAPSHOT_CSS_ALL_MAX) return
+    total += text.length
+    out[href] = text
+  }
+  const read = async (href) => {
+    try {
+      const r = await fetch(href, { headers: await snapshotHeaders(pageUrl, 'text/css,*/*;q=0.1'), signal: AbortSignal.timeout(SNAPSHOT_IMG_FETCH_MS), redirect: 'follow' })
+      const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+      if (!r.ok || (type && type !== 'text/css' && type !== 'text/plain')) return null
+      const text = await r.text()
+      return text.length > SNAPSHOT_CSS_ONE_MAX ? null : cssReady(text, r.url || href)
+    } catch {
+      return null
+    }
+  }
+  for (const [href, text] of Object.entries(have)) {
+    if (/^https?:/i.test(href)) keep(href, cssReady(text, href))
+  }
+  const want = snapshotSheetUrls(html, pageUrl).filter((u) => out[u] === undefined)
+  const got = await Promise.all(want.map(async (href) => [href, await read(href)]))
+  for (const [href, text] of got) if (text != null) keep(href, text)
+  // @import: the imported sheets' text goes in front of the sheet (one level; a frame cannot fetch them).
+  for (const [href, text] of Object.entries(out)) {
+    const imps = cssImports(text).slice(0, 10)
+    if (!imps.length) continue
+    const parts = await Promise.all(imps.map(read))
+    const add = parts.filter((t) => t != null).join('\n')
+    if (add && total + add.length <= SNAPSHOT_CSS_ALL_MAX) {
+      total += add.length
+      out[href] = `${add}\n${text}`
+    }
+  }
+  return out
+}
+
+/** The text of a page's own <style> elements, made ready on its address (their url(...) pictures go too). */
+const inlineStyles = (html, pageUrl) => [...String(html).matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => cssReady(m[1], pageUrl))
+
+/**
  * The page's pictures as data: addresses by their full address: what the browser already read (have, with the page's
  * cookies), the rest read here without cookies, all at once within SNAPSHOT_IMG_FETCH_MS, within the size limits.
  */
-async function snapshotImages(html, pageUrl, have = {}) {
+async function snapshotImages(html, pageUrl, have = {}, more = []) {
   const out = {}
   let total = 0
   for (const [k, v] of Object.entries(have)) {
@@ -6645,11 +6703,11 @@ async function snapshotImages(html, pageUrl, have = {}) {
     total += v.length
     out[k] = v
   }
-  const want = snapshotImageUrls(html, pageUrl).filter((u) => !out[u])
+  const want = [...new Set([...snapshotImageUrls(html, pageUrl), ...more])].filter((u) => !out[u])
   const got = await Promise.all(
     want.map(async (src) => {
       try {
-        const r = await fetch(src, { signal: AbortSignal.timeout(SNAPSHOT_IMG_FETCH_MS), redirect: 'follow' })
+        const r = await fetch(src, { headers: await snapshotHeaders(pageUrl, 'image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5'), signal: AbortSignal.timeout(SNAPSHOT_IMG_FETCH_MS), redirect: 'follow' })
         const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
         if (!r.ok || !SNAPSHOT_IMG_TYPES.includes(type)) return null
         const bytes = Buffer.from(await r.arrayBuffer())

@@ -57,3 +57,13 @@ func TestSnapshotAnswer(t *testing.T) {
 	sealed := snapshotAnswer(M{"ok": true, "sealed": "⟦bt1:abcd0123:xyz⟧"}, "https://a/")
 	ok(t, sealed["sealed"] == "⟦bt1:abcd0123:xyz⟧" && sealed["html"] == nil, "a sealed piece as it came")
 }
+
+// AC-1687: the page's style sheets (text, http(s) addresses) and its width go with the page (1.488).
+func TestSnapshotAnswerCSS(t *testing.T) {
+	a := snapshotAnswer(M{"ok": true, "html": "<p>a</p>", "css": M{"https://cdn/a.css": ".a{}", "javascript:x": ".b{}", "https://cdn/n.css": 3.0}, "width": 1280.0}, "https://a/")
+	css := asM(a["css"])
+	ok(t, len(css) == 1 && css["https://cdn/a.css"] == ".a{}", "only text sheets by http(s) address")
+	ok(t, a["width"] == 1280, "the page's width")
+	b := snapshotAnswer(M{"ok": true, "html": "<p>a</p>", "width": 99999.0}, "https://a/")
+	ok(t, b["width"] == 0 && len(asM(b["css"])) == 0, "a width out of range is 0; no sheets is empty")
+}

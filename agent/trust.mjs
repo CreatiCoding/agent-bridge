@@ -673,10 +673,11 @@ export function sealOut(msg, seal) {
     case 'snapshot':
       // 스냅샷 (1.469): the page, its address and its pictures in one piece bound to the session; the screen reads it.
       if (typeof m.html === 'string') {
-        m.sealed = S(JSON.stringify({ kind: 'snapshot', sid, url: m.url, html: m.html, images: m.images ?? {}, via: m.via }))
+        m.sealed = S(JSON.stringify({ kind: 'snapshot', sid, url: m.url, html: m.html, images: m.images ?? {}, css: m.css ?? {}, width: m.width ?? 0, via: m.via }))
         delete m.url
         delete m.html
         delete m.images
+        delete m.css
       }
       if (m.error !== undefined) m.error = S(m.error)
       break

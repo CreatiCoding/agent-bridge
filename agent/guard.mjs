@@ -54,9 +54,9 @@ export function snapshotUserAgent(version, mac) {
 }
 
 /** 스냅샷 (REQ-F-881): at most this many of the page's pictures, each this big, all of them this big, are read. */
-export const SNAPSHOT_IMG_COUNT = 20
+export const SNAPSHOT_IMG_COUNT = 80
 export const SNAPSHOT_IMG_ONE_MAX = 1024 * 1024
-export const SNAPSHOT_IMG_ALL_MAX = 6 * 1024 * 1024
+export const SNAPSHOT_IMG_ALL_MAX = 8 * 1024 * 1024
 
 export const SNAPSHOT_IMG_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']
 
@@ -91,6 +91,79 @@ export function snapshotImageUrls(html, page) {
   return out
 }
 
+/**
+ * 스냅샷의 원본 모양 (1.488): the page's style sheets are read on the Mac and go with the page, so the screen draws it
+ * with nothing fetched from anywhere (the site's CSP lets a frame have inline styles and data: pictures only).
+ * At most this many sheets, each this big, all of them this big; at most this many pictures named in them.
+ */
+export const SNAPSHOT_CSS_COUNT = 30
+export const SNAPSHOT_CSS_ONE_MAX = 1024 * 1024
+export const SNAPSHOT_CSS_ALL_MAX = 3 * 1024 * 1024
+export const SNAPSHOT_CSS_IMG_COUNT = 30
+
+/** The style sheets a page links (<link rel=stylesheet href>), resolved on its address, http(s), in page order. */
+export function snapshotSheetUrls(html, page) {
+  const base = page instanceof URL ? page : new URL(String(page))
+  const out = []
+  for (const m of String(html).matchAll(/<link\b[^>]*>/gi)) {
+    const rel = /\srel\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[0])
+    if (!rel || !/(^|\s)stylesheet(\s|$)/i.test(rel[1] ?? rel[2] ?? rel[3] ?? '')) continue
+    const href = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[0])
+    if (!href) continue
+    let u
+    try {
+      u = new URL((href[1] ?? href[2] ?? href[3] ?? '').trim().replace(/&amp;/g, '&'), base)
+    } catch {
+      continue
+    }
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || out.includes(u.href)) continue
+    out.push(u.href)
+    if (out.length >= SNAPSHOT_CSS_COUNT) break
+  }
+  return out
+}
+
+/**
+ * A sheet made ready to travel: @font-face rules dropped (a frame cannot load fonts; the page falls back to the
+ * device's), every url(...) resolved on the sheet's own address (the screen cannot know it later).
+ */
+export function cssReady(text, base) {
+  const b = base instanceof URL ? base : new URL(String(base))
+  return String(text)
+    .replace(/@font-face\s*\{[^}]*\}/gi, '')
+    .replace(/@import\s+(["'])([^"']*)\1/gi, (_, q, u) => `@import url("${u}")`)
+    .replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s]*))\s*\)/gi, (all, a, c, d) => {
+      const raw = (a ?? c ?? d ?? '').trim()
+      if (!raw || raw.startsWith('data:') || raw.startsWith('#')) return all
+      try {
+        return `url("${new URL(raw, b).href.replace(/"/g, '%22')}")`
+      } catch {
+        return all
+      }
+    })
+}
+
+/** The @import addresses of a sheet already made ready (absolute), in order. */
+export function cssImports(text) {
+  const out = []
+  for (const m of String(text).matchAll(/@import\s+(?:url\(\s*"([^"]*)"\s*\)|"([^"]*)"|'([^']*)')[^;]*;/gi)) out.push(m[1] ?? m[2] ?? m[3])
+  return out.filter((u) => /^https?:/i.test(u))
+}
+
+/** The http(s) pictures named by url(...) in sheets made ready, not fonts, at most SNAPSHOT_CSS_IMG_COUNT. */
+export function cssImageUrls(texts) {
+  const out = []
+  for (const t of texts) {
+    // @import names a sheet, not a picture.
+    for (const m of String(t).replace(/@import[^;]*;/gi, '').matchAll(/url\("(https?:[^"]+)"\)/gi)) {
+      if (/\.(woff2?|ttf|otf|eot)(\?|#|$)/i.test(m[1]) || out.includes(m[1])) continue
+      out.push(m[1])
+      if (out.length >= SNAPSHOT_CSS_IMG_COUNT) return out
+    }
+  }
+  return out
+}
+
 /** The marker in front of the one line an ego-browser snapshot script prints its result on. */
 export const EGO_MARK = 'CB-SNAPSHOT '
 
@@ -118,7 +191,7 @@ export const EGO_QUIET = `() => {
  * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
  */
 export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
-  const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES }
+  const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES, cssAll: SNAPSHOT_CSS_ALL_MAX }
   const inPage = `async (o) => {
   const pick = (img) => {
     let s = img.getAttribute("src") || ""
@@ -144,8 +217,22 @@ export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
       images[u.href] = await new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = rej; f.readAsDataURL(b) })
     } catch {}
   }
+  // The page's styles (1.488): sheets this page may read go as text by address; a <style> filled by script
+  // (CSS-in-JS, insertRule) has no text of its own, so its rules are written into it before the DOM is read.
+  const css = {}
+  let cssTotal = 0
+  for (const sh of Array.from(document.styleSheets)) {
+    let text = ""
+    try { text = Array.from(sh.cssRules).map((r) => r.cssText).join("\\n") } catch { continue }
+    if (sh.href) {
+      if (css[sh.href] === undefined && cssTotal + text.length <= o.cssAll) { css[sh.href] = text; cssTotal += text.length }
+    } else if (sh.ownerNode && sh.ownerNode.tagName === "STYLE" && !sh.ownerNode.textContent.trim() && cssTotal + text.length <= o.cssAll) {
+      sh.ownerNode.textContent = text
+      cssTotal += text.length
+    }
+  }
   const dt = document.doctype ? "<!DOCTYPE " + document.doctype.name + ">" : ""
-  return { url: location.href, html: dt + document.documentElement.outerHTML, images }
+  return { url: location.href, html: dt + document.documentElement.outerHTML, images, css, width: document.documentElement.scrollWidth }
 }`
   return `const task = await taskSpace(${JSON.stringify(name)})
 let out
@@ -170,7 +257,10 @@ export function egoSnapshotResult(stdout) {
   if (!line) return null
   try {
     const v = JSON.parse(line.slice(EGO_MARK.length))
-    return v && typeof v.html === 'string' && typeof v.url === 'string' ? { url: v.url, html: v.html, images: v.images && typeof v.images === 'object' ? v.images : {} } : null
+    if (!v || typeof v.html !== 'string' || typeof v.url !== 'string') return null
+    const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
+    const width = Number.isFinite(v.width) && v.width > 0 ? Math.round(v.width) : 0
+    return { url: v.url, html: v.html, images: obj(v.images), css: obj(v.css), width }
   } catch {
     return null
   }

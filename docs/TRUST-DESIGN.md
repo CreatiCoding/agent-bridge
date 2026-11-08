@@ -237,7 +237,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | attachment(1.401) | id·세션·이름·종류·크기·바이트를 한 조각 `sealed` 로(화면이 안의 id·sid 확인), 오류 | id, size |
 | convread(1.401) | text, error(단, 봉인 중에는 아예 거절해 글을 보내지 않음) | |
 | image, img, export | data | |
-| snapshot(SPEC 1.469) | url·html·images·via 를 `{kind:"snapshot", sid, …}` 한 조각 `sealed` 로, error | ok |
+| snapshot(SPEC 1.469, 1.488 css·width) | url·html·images·css·width·via 를 `{kind:"snapshot", sid, …}` 한 조각 `sealed` 로, error | ok |
 | btw | answer | |
 | voice | text 와 그 녹음의 SHA-256 을 한 조각에(`{"text","audioH"}` 를 JSON 으로) | |
 | recent | 대화마다 title·first·last·cwd | |

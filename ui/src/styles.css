@@ -5260,6 +5260,22 @@ body.group-sorting * {
   border: 0;
   background: #fff;
 }
+/* 스냅샷 as the page looked (REQ-F-881, 1.488): laid out at the page's width, scaled to the sheet. */
+.snapshot-box {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+}
+.snapshot-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+}
 /* The in-app browser of a touch device (REQ-F-879): a page in reading mode, drawn by this page. */
 .reader {
   flex: 1;

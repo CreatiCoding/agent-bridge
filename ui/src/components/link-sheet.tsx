@@ -5,15 +5,19 @@
 // 스냅샷 (REQ-F-881) is the page the session's Mac rendered, read here by lib/reader-dom.
 // http://localhost:<port> is a Mac's own app, made of scripts: when the session on screen started that server, it
 // shows through the site's preview origin in a frame (the same address 로컬 서버 열기 uses, REQ-F-727).
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
 import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
 import { imageUrl, localPort, modeFor, modeOf, readerImg, throughPreview } from '../lib/in-app'
 import { readSnapshot } from '../lib/reader-dom'
+import { snapshotPage } from '../lib/snapshot-page'
 
-/** What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address. */
-type Snap = { url: string; html: string; images?: Record<string, string>; via?: string }
+/**
+ * What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address, its style
+ * sheets as text by address and the page's width (1.488).
+ */
+type Snap = { url: string; html: string; images?: Record<string, string>; css?: Record<string, string>; width?: number; via?: string }
 import { matchRoute } from '../lib/router'
 import { LOCKED } from '../lib/trust'
 import { Button } from '../kit'
@@ -58,6 +62,8 @@ type View =
   | { kind: 'frame'; src: string }
   | { kind: 'image'; src: string }
   | { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string }
+  // 스냅샷 as the page looked (1.488): one self-contained document, and the same page in reading mode.
+  | { kind: 'page'; url: string; doc: string; width: number; read: { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string } }
 
 type Page = { ok: true; url: string; title: string; site?: string; blocks: Block[]; snapshot?: boolean }
 
@@ -136,8 +142,43 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
     const sealed = p.sealed !== undefined
     // Pictures the Mac read come as data:; the rest only when the server already saw the page (not sealed).
     const pg = readSnapshot(s.html, s.url, (u) => (typeof images[u] === 'string' && /^data:image\//.test(images[u]) ? images[u] : sealed ? null : readerImg(u)))
-    return { kind: 'read', url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
+    const read = { kind: 'read' as const, url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
+    const css = s.css && typeof s.css === 'object' ? s.css : {}
+    const width = typeof s.width === 'number' && s.width > 0 && s.width <= 10000 ? s.width : 0
+    return { kind: 'page', url: s.url, doc: snapshotPage({ url: s.url, html: s.html, images, css }), width, read }
   }
+}
+
+/**
+ * The page as the Mac drew it (1.488), in a frame that runs nothing and loads nothing (lib/snapshot-page), laid out
+ * at the page's own width and scaled to the sheet, as a phone's browser shows a wide page.
+ */
+function PageFrame({ v, title }: { v: Extract<View, { kind: 'page' }>; title: string }) {
+  const box = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const pw = Math.max(v.width, size.w)
+  const k = size.w && pw ? size.w / pw : 1
+  return (
+    <div ref={box} className="snapshot-box">
+      {size.w ? (
+        <iframe
+          className="snapshot-frame"
+          sandbox="allow-popups allow-popups-to-escape-sandbox"
+          referrerPolicy="no-referrer"
+          srcDoc={v.doc}
+          title={title}
+          style={{ width: pw, height: size.h / k, transform: `scale(${k})` }}
+        />
+      ) : null}
+    </div>
+  )
 }
 
 function Reading({ v }: { v: Extract<View, { kind: 'read' }> }) {
@@ -197,9 +238,12 @@ function LinkSheet() {
   const [view, setView] = useState<View | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [n, setN] = useState(0)
+  // 읽기 모양: a snapshot shown in reading mode instead of as the page looked (1.488).
+  const [plain, setPlain] = useState(false)
   useEffect(() => {
     if (!cur) return
     setView(null)
+    setPlain(false)
     setError(null)
     let gone = false
     load(cur.url).then(
@@ -229,6 +273,11 @@ function LinkSheet() {
           <Button size="sm" icon="refresh" disabled={!view && !error} onClick={() => setN((k) => k + 1)}>
             다시 불러오기
           </Button>
+          {view?.kind === 'page' ? (
+            <Button size="sm" onClick={() => setPlain((p) => !p)}>
+              {plain ? '원본 모양' : '읽기 모양'}
+            </Button>
+          ) : null}
           <span className="grow" />
           <Button size="sm" tone="primary" icon="link" disabled={!outside} onClick={() => outside && openLink(outside, 'inapp')}>
             브라우저로 열기
@@ -242,6 +291,12 @@ function LinkSheet() {
         <div className="preview-msg">{cur && modeFor(cur.url, location.href, undefined, !!sessionHere()) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 1분 걸려요' : '여는 중…'}</div>
       ) : view.kind === 'frame' ? (
         <iframe key={n} className="preview-frame" src={view.src} title={title} allow="clipboard-write; fullscreen" />
+      ) : view.kind === 'page' ? (
+        plain ? (
+          <Reading v={view.read} />
+        ) : (
+          <PageFrame key={n} v={view} title={title} />
+        )
       ) : view.kind === 'image' ? (
         <div className="reader-image">
           <img src={view.src} alt="" referrerPolicy="no-referrer" />
