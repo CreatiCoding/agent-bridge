@@ -2,7 +2,8 @@
 // document for a sandboxed frame. Its style sheets come as <style>, its pictures (and those its styles name) as
 // data:, and everything that would run or reach out is taken away: scripts, frames, plugins, <base>, refresh, every
 // address left over. The frame has no scripts and no origin of its own (sandbox without allow-scripts or
-// allow-same-origin), and it keeps this site's CSP, which lets it load nothing but inline styles and data: pictures.
+// allow-same-origin), and it carries its own CSP (SNAPSHOT_CSP, 1.490) on top of this site's, which still lets a style
+// fetch from this site: under both it loads nothing but inline styles and data: pictures.
 // Links open in a new tab (allow-popups). DOMParser builds an inert document: nothing in it runs or loads here.
 
 export interface SnapshotParts {
@@ -17,6 +18,68 @@ const DATA_IMG = /^data:image\/(png|jpeg|gif|webp|avif);base64,/
 const NO_IMG = 'data:,'
 const URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s]*))\s*\)/gi
 const DROP = 'script, noscript, iframe, frame, frameset, object, embed, applet, portal, base, meta[http-equiv], template'
+/**
+ * The document's own policy (1.490), first in its <head> so it holds before anything of the page is read: inline
+ * styles and data: pictures, nothing else. The site's CSP the frame inherits still lets a style fetch from this
+ * site ('self'), and the frame's sandbox does not stop styles fetching: this does, whatever this file failed to strip.
+ */
+export const SNAPSHOT_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
+/** An at-keyword's name after the @, CSS escapes included (`@\69mport` is @import). */
+const AT_NAME = /(?:[\w-]|\\[0-9a-fA-F]{1,6}[ \t\r\n\f]?|\\[^\r\n\f0-9a-fA-F])+/y
+const unescapeCss = (s: string) =>
+  s.replace(/\\([0-9a-fA-F]{1,6})[ \t\r\n\f]?|\\(.)/g, (_, h?: string, c?: string) => {
+    if (c !== undefined) return c
+    const n = parseInt(h ?? '', 16)
+    return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '�'
+  })
+/** Where a quoted string that starts at i ends (after its closing quote, or at a line end or the end). */
+const endOfString = (t: string, i: number) => {
+  const q = t[i]
+  for (let j = i + 1; j < t.length; j++) {
+    if (t[j] === '\\') j++
+    else if (t[j] === q) return j + 1
+    else if (t[j] === '\n' || t[j] === '\r' || t[j] === '\f') return j
+  }
+  return t.length
+}
+const endOfComment = (t: string, i: number) => {
+  const e = t.indexOf('*/', i + 2)
+  return e < 0 ? t.length : e + 2
+}
+/**
+ * Every @import rule taken out (1.490): `@import "a"`, `@import url(a)`, in any case and with CSS escapes. Strings and
+ * comments are stepped over, so an "@import" inside one is left alone and a cut never eats a comment's end.
+ */
+export function dropImports(t: string): string {
+  let out = ''
+  let from = 0
+  let i = 0
+  while (i < t.length) {
+    const c = t[i]
+    if (c === '/' && t[i + 1] === '*') i = endOfComment(t, i)
+    else if (c === '"' || c === "'") i = endOfString(t, i)
+    else if (c === '\\') i += 2
+    else if (c === '@') {
+      AT_NAME.lastIndex = i + 1
+      const m = AT_NAME.exec(t)
+      if (!m || unescapeCss(m[0]).toLowerCase() !== 'import') {
+        i += 1 + (m ? m[0].length : 0)
+        continue
+      }
+      out += t.slice(from, i)
+      let j = i + 1 + m[0].length
+      while (j < t.length && t[j] !== ';' && t[j] !== '{' && t[j] !== '}') {
+        if (t[j] === '"' || t[j] === "'") j = endOfString(t, j)
+        else if (t[j] === '/' && t[j + 1] === '*') j = endOfComment(t, j)
+        else j += t[j] === '\\' ? 2 : 1
+      }
+      if (t[j] === ';') j++
+      i = from = j
+    } else i++
+  }
+  return out + t.slice(from)
+}
 
 export function snapshotPage(s: SnapshotParts): string {
   const images = s.images ?? {}
@@ -43,7 +106,7 @@ export function snapshotPage(s: SnapshotParts): string {
     return `var(${v})`
   }
   const styled = (text: string, base = s.url) =>
-    text.replace(URL_RE, (all, a?: string, b?: string, c?: string) => {
+    dropImports(text).replace(URL_RE, (all, a?: string, b?: string, c?: string) => {
       const raw = (a ?? b ?? c ?? '').trim()
       if (raw.startsWith('#')) return all
       if (raw.startsWith('data:')) return DATA_IMG.test(raw) ? all : `url("${NO_IMG}")`
@@ -114,6 +177,10 @@ export function snapshotPage(s: SnapshotParts): string {
   meta.setAttribute('name', 'referrer')
   meta.setAttribute('content', 'no-referrer')
   head.prepend(meta)
+  const policy = doc.createElement('meta')
+  policy.setAttribute('http-equiv', 'Content-Security-Policy')
+  policy.setAttribute('content', SNAPSHOT_CSP)
+  head.prepend(policy)
   const cs = doc.createElement('meta')
   cs.setAttribute('charset', 'utf-8')
   head.prepend(cs)

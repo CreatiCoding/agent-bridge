@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.490',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: '원본 모양 스냅샷이 스타일의 @import 와 background 속성으로 이 사이트에 요청을 보내던 것: 문서 맨 앞에 자기 CSP(default-src \'none\', 인라인 스타일·data: 그림만)를 두고 모든 스타일에서 @import 를 뺀다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.489',
     date: '2026-11-08',
+    commit: '0904823',
     changes: [
       {
         kind: 'fixed',

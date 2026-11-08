@@ -207,3 +207,24 @@ test('AC-1688: a picture of the page’s styles is written once, on :root, and n
   assert.match(sp, /return `var\(\$\{v\}\)`/)
   assert.match(sp, /`:root\{\$\{\[\.\.\.vars\]\.map\(\(\[d, v\]\) => `\$\{v\}:url\("\$\{d\}"\)`\)\.join\(';'\)\}\}`/)
 })
+
+test('AC-1689: a snapshot document carries its own CSP first and has no @import left', async () => {
+  const { dropImports, SNAPSHOT_CSP } = await import('../../ui/src/lib/snapshot-page.ts')
+  assert.equal(dropImports('@import "http://a/x";p{color:red}'), 'p{color:red}')
+  assert.equal(dropImports("@import url(http://a/x) screen; p{}"), ' p{}')
+  assert.equal(dropImports("@IMPORT 'a';p{}"), 'p{}')
+  assert.equal(dropImports('@\\69mport "a";p{}'), 'p{}')
+  assert.equal(dropImports('@\\000069 mport "a";p{}'), 'p{}')
+  assert.equal(dropImports('@im\\port "a";p{}'), 'p{}')
+  assert.equal(dropImports('p{} @import "a;b"; q{}'), 'p{}  q{}')
+  // Left alone: an "@import" inside a comment or a string, other at-rules, and a cut never eats past its rule.
+  assert.equal(dropImports('/* @import "a"; */p{}'), '/* @import "a"; */p{}')
+  assert.equal(dropImports('p::after{content:"@import x;"}'), 'p::after{content:"@import x;"}')
+  assert.equal(dropImports('@media screen{p{color:red}}@importx{}'), '@media screen{p{color:red}}@importx{}')
+  assert.equal(dropImports('@import "a" p{color:red}'), '{color:red}')
+  assert.match(SNAPSHOT_CSP, /^default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'$/)
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /dropImports\(text\)\.replace\(URL_RE/)
+  // Prepended last so it lands right after <meta charset>, before every element of the page.
+  assert.match(sp, /policy\.setAttribute\('http-equiv', 'Content-Security-Policy'\)[\s\S]*head\.prepend\(policy\)\n  const cs = doc\.createElement\('meta'\)/)
+})
