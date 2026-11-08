@@ -346,3 +346,72 @@ test('AC-1711 a write id is forgotten only by age: more writes never push one ou
   assert.equal(runs().length, 1)
   assert.equal(a.status('slack', 'req-full-00000').state, 'done')
 })
+
+// 저장하지 못한 닫힘 (AC-1712, 1.504): an id closed only in memory is never answered none, however often it is asked;
+// none comes once the closed id is on disk. Once none was answered, the held signature never runs, restart or not.
+/** Writes in dir fail with EACCES until the returned function is called: by mode 0500, or (root ignores modes) by save. */
+function blockWrites(dir, a) {
+  fs.chmodSync(dir, 0o500)
+  let blocked = false
+  try {
+    fs.writeFileSync(path.join(dir, 'probe'), '')
+    fs.rmSync(path.join(dir, 'probe'))
+  } catch {
+    blocked = true
+  }
+  if (!blocked)
+    a.save = () => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    }
+  return () => {
+    fs.chmodSync(dir, 0o700)
+    delete a.save
+  }
+}
+test('AC-1712 save fails → same id asked again → restart → held signature: none never without disk, never runs after none', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  const held = await pageCall(t, dev, { ...W, requestId: 'req-unsaved-01' })
+  let a = new Adapters({ stateDir: dir })
+  const answers = []
+  const unblock = blockWrites(dir, a) // EACCES: adapters-journal.json.tmp cannot be written
+  try {
+    for (let i = 0; i < 3; i++) answers.push(a.status('slack', 'req-unsaved-01'))
+    // Still refused in this process while it is not on disk.
+    assert.equal((await a.call({ ...W, requestId: 'req-unsaved-01' })).code, 'request-closed')
+  } finally {
+    unblock()
+  }
+  assert.deepEqual(answers.map((x) => [x.state, x.code]), [['unknown', 'journal'], ['unknown', 'journal'], ['unknown', 'journal']])
+  // The disk is back: asked again, the record is written first, then none.
+  const back = a.status('slack', 'req-unsaved-01')
+  assert.equal(back.state, 'none')
+  answers.push(back)
+  a = new Adapters({ stateDir: dir }) // 에이전트 재시작
+  const t2 = new Trust({ stateDir: dir, hostId: 'host-a' })
+  const late = await run(t2, a, gate(t2, held))
+  assert.equal(late.code, 'request-closed', JSON.stringify(late))
+  assert.equal(runs().length, 0, 'none 을 한 번이라도 답했으면 실행 0회')
+})
+
+test('AC-1712 save keeps failing: every answer is unknown, never none; after a restart the id was never promised', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  const held = await pageCall(t, dev, { ...W, requestId: 'req-unsaved-02' })
+  let a = new Adapters({ stateDir: dir })
+  const answers = []
+  const unblock = blockWrites(dir, a)
+  try {
+    for (let i = 0; i < 5; i++) answers.push(a.status('slack', 'req-unsaved-02').state)
+  } finally {
+    unblock()
+  }
+  assert.ok(!answers.includes('none'), JSON.stringify(answers))
+  a = new Adapters({ stateDir: dir })
+  const t2 = new Trust({ stateDir: dir, hostId: 'host-a' })
+  // Never promised none: it may run now, which is what unknown said.
+  assert.equal((await run(t2, a, gate(t2, held))).state, 'done')
+  assert.equal(runs().length, 1)
+})

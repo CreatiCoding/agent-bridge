@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.504',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '로컬 어댑터: status 가 닫힌 기록을 디스크에 쓰지 못한 뒤 같은 id 를 다시 물으면 none 이라 답해, 재시작 뒤 붙잡아 둔 서명이 실행되던 것을 고쳤다. 쓰지 못한 닫힌 id 는 다시 저장에 성공해야 none 이고, 그 전에는 계속 unknown(journal). 메모리에서는 그대로 실행을 막는다',
+        refs: ['REQ-S-101', 'REQ-F-893'],
+      },
+    ],
+  },
+  {
     version: '1.503',
     date: '2026-11-09',
+    commit: '1476ca0',
     changes: [
       {
         kind: 'security',

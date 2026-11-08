@@ -103,6 +103,8 @@ export class Adapters {
     this.file = path.join(stateDir, 'adapters-journal.json')
     this.running = new Map() // ext|requestId → Promise of the outcome, in this process
     this.reads = new Map() // ext|requestId → a read's outcome, in memory only
+    // ext|requestId closed in memory but not yet on disk (a save failed): refused here, never answered none (1.504).
+    this.unsaved = new Set()
     this.journal = this.load()
   }
   load() {
@@ -157,6 +159,8 @@ export class Adapters {
     fs.mkdirSync(this.stateDir, { recursive: true })
     fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.journal), { mode: 0o600 })
     fs.renameSync(`${this.file}.tmp`, this.file)
+    // Everything in memory is on disk now, the ids a failed save left behind too.
+    this.unsaved.clear()
   }
   /** This extension's actions on this Mac, and the adapters that could not be read (for its owner to fix). */
   list(ext) {
@@ -176,20 +180,27 @@ export class Adapters {
     const k = `${ext}|${requestId}`
     if (this.running.has(k)) return { state: 'running' }
     const e = this.journal[k] ?? this.reads.get(k)
-    if (e?.state === 'closed') return { state: 'none', at: this.now() }
-    if (e) return this.view(e, false)
     const cannot = (code, why) => ({ state: 'unknown', code, error: `${why}. 이 요청 id 가 나중에 실행되지 않는다고 약속할 수 없어요. 잠시 뒤 다시 확인하거나 새 id 로 보내기 전에 결과를 확인하세요` })
+    // none only for a closed id that is on disk: one a failed save left in memory is written first (1.504).
+    if (e?.state === 'closed') return this.unsaved.has(k) && !this.persist() ? cannot('journal', '어댑터 기록을 디스크에 쓰지 못했어요') : { state: 'none', at: this.now() }
+    if (e) return this.view(e, false)
     if (this.lost()) return cannot('journal-lost', '어댑터 기록을 읽지 못해 5 분 동안 확인할 수 없어요')
     if (this.kept(true) >= CLOSED_KEEP) return cannot('closed-full', `닫아 둔 요청 id 가 ${CLOSED_KEEP}개로 가득해요`)
     this.journal[k] = { ext, state: 'closed', at: this.now() }
+    // Not written: still refused in this process (the entry stays), but a restart would forget it: not promised.
+    this.unsaved.add(k)
+    if (!this.persist()) return cannot('journal', '어댑터 기록을 디스크에 쓰지 못했어요')
+    return { state: 'none', at: this.now() }
+  }
+  /** save(), true once it is on disk. */
+  persist() {
     try {
       this.save()
+      return true
     } catch (err) {
-      // Still refused in this process (the entry stays), but a restart would forget it: not promised.
       this.log('warn', `어댑터 기록을 쓰지 못했어요: ${err.message}`)
-      return cannot('journal', '어댑터 기록을 디스크에 쓰지 못했어요')
+      return false
     }
-    return { state: 'none', at: this.now() }
   }
   view(e, replayed) {
     const base = { state: e.state === 'running' && e.boot !== BOOT ? 'unknown' : e.state, action: e.action, ...(replayed ? { replayed: true } : {}) }
