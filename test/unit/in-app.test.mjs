@@ -148,3 +148,9 @@ test('AC-1677: the snapshot’s headless Chrome sends a windowed Chrome’s User
   assert.match(agent, /snapshotUserAgent\(await chromeVersionOnce\(\), IS_MAC\)/)
   assert.match(agent, /`--user-agent=\$\{ua\}`/)
 })
+
+test('AC-1679: a default snapshot that fails, then reading that fails too, shows both reasons', () => {
+  const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(sheet, /readView\(abs\)\.catch\(/)
+  assert.ok(sheet.includes('스냅샷을 만들지 못했어요 (${why}). 읽기로도 못 열었어요 ('))
+})

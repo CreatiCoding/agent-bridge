@@ -80,7 +80,10 @@ async function load(url: string): Promise<View> {
     } catch (e) {
       const why = errorText(e)
       if (local) return previewView(url, sid)
-      const v = await readView(abs)
+      // Both reasons when reading fails too (1.483): a site that turns away the server (403) would hide the snapshot's.
+      const v = await readView(abs).catch((r) => {
+        throw new Error(`스냅샷을 만들지 못했어요 (${why}). 읽기로도 못 열었어요 (${errorText(r)})`)
+      })
       return v.kind === 'read' ? { ...v, note: `스냅샷을 만들지 못해 읽기로 열었어요 (${why})` } : v
     }
   }

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.483',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '세션 화면에서 쿠팡처럼 서버 접근을 막는 링크를 열면 403 만 보이던 것: 스냅샷이 왜 실패했는지도 함께 보인다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.482',
     date: '2026-11-08',
+    commit: 'd50c72a',
     changes: [
       {
         kind: 'security',
