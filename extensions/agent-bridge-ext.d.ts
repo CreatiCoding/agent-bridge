@@ -207,6 +207,7 @@ export interface SlotContexts {
   'message.metadata': MessageCtx
   'session.timeline.before': SessionCtx
   'session.timeline.after': SessionCtx
+  'session.panel': PanelCtx
   'host-list.toolbar': { hosts: HostInfo[] }
   'host-card.actions': { host: HostInfo }
   'host-card.badges': { host: HostInfo }
@@ -227,7 +228,7 @@ export interface SlotContexts {
 }
 export type SlotName = keyof SlotContexts
 /** How a slot's added items are drawn (bridge.version.slots): see SlotItems for each one's shape. */
-export type SlotKind = 'own' | 'action' | 'menu' | 'section' | 'badge' | 'data'
+export type SlotKind = 'own' | 'action' | 'menu' | 'section' | 'badge' | 'data' | 'panel'
 
 /** What the slot contexts of REQ-F-865 carry. Read only: act through actions.dispatch and your own routes. */
 export interface ListCtx {
@@ -246,6 +247,15 @@ export interface SessionCtx {
   wide: boolean
   /** In a pane of a split screen (each pane is its own frame). */
   pane: boolean
+}
+/**
+ * session.panel (REQ-F-892): what a panel's render reads with useSlotContext. `place` is where it is drawn now: the
+ * dock beside the conversation (960 px or wider, per pane of a split screen) or a sheet on a narrower screen.
+ */
+export interface PanelCtx extends SessionCtx {
+  place: 'dock' | 'sheet'
+  /** Folds the panel (the topbar's button opens it again). */
+  close: () => void
 }
 export interface MessageCtx {
   sid: string
@@ -372,6 +382,22 @@ export interface ActionItem<C = unknown> extends ItemBase {
 export interface RenderItem extends ItemBase {
   render: () => ReactNode
 }
+/**
+ * session.panel (REQ-F-892): a panel beside the conversation, opened from its button in the session's topbar (several
+ * panels share one button with a menu). One is open at a time, remembered on this device; the person resizes the dock
+ * (PANEL_MIN 260 px .. PANEL_MAX 720 px, at most 60% of the screen) and the width is kept per panel.
+ */
+export interface PanelItem extends ItemBase {
+  label: string
+  icon: IconName
+  /** On the topbar's button. */
+  badge?: number | 'dot' | 'new' | null
+  /** The dock's first width in px; the person's own width wins. */
+  width?: number
+  visible?: (ctx: SessionCtx) => boolean
+  /** Drawn as a component under PanelCtx; the panel scrolls, so a long list needs no scroller of its own. */
+  render: () => ReactNode
+}
 /** app.status.items: background work as a chip (busy: a spinner, tone: done or failed). */
 export interface StatusItem extends ActionItem<{ route: string }> {
   tone?: 'ok' | 'bad'
@@ -426,6 +452,7 @@ export interface SlotItems {
   'message.metadata': RenderItem
   'session.timeline.before': RenderItem
   'session.timeline.after': RenderItem
+  'session.panel': PanelItem
   'host-list.toolbar': ActionItem<SlotContexts['host-list.toolbar']>
   'host-card.actions': ActionItem<SlotContexts['host-card.actions']>
   'host-card.badges': RenderItem
@@ -475,6 +502,7 @@ export interface BuiltinIds {
   'message.metadata': never
   'session.timeline.before': never
   'session.timeline.after': never
+  'session.panel': never
   'host-list.toolbar': never
   'host-card.actions': never
   'host-card.badges': never

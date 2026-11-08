@@ -5,7 +5,8 @@
 /**
  * How each slot's added items are drawn (REQ-F-865): `action` buttons in a row (more than fit go into a ⋯ menu),
  * `menu` rows in a menu, `section` drawings stacked, `badge` drawings inline (two, then +n), `data` read by the page
- * (a notice, a settings tab, a page). The first six are drawn their own way (REQ-F-824, REQ-F-863).
+ * (a notice, a settings tab, a page), `panel` one open at a time beside the conversation (REQ-F-892). The first six
+ * are drawn their own way (REQ-F-824, REQ-F-863).
  */
 export const SLOT_KIND = {
   'composer.actions': 'own',
@@ -35,6 +36,8 @@ export const SLOT_KIND = {
   'message.metadata': 'section',
   'session.timeline.before': 'section',
   'session.timeline.after': 'section',
+  // A panel beside the conversation (REQ-F-892): a dock on a wide screen, a sheet on a narrow one.
+  'session.panel': 'panel',
   // hosts, adopting, a new session, files
   'host-list.toolbar': 'action',
   'host-card.actions': 'action',
@@ -180,6 +183,7 @@ function shapeOf(slot: SlotName, i: SlotItem) {
   const kind = SLOT_KIND[slot]
   if (kind === 'action' || kind === 'menu') need(str('label') && str('icon') && fn('run'), 'label·icon·run')
   else if (kind === 'section' || kind === 'badge') need(fn('render'), 'render')
+  else if (kind === 'panel') need(str('label') && str('icon') && fn('render'), 'label·icon·render')
   else if (slot === 'notification.items') need(str('title'), 'title')
   else if (slot === 'settings.tabs' || slot === 'app.routes') {
     need(str(slot === 'app.routes' ? 'title' : 'label') && fn('render'), slot === 'app.routes' ? 'title·render' : 'label·render')

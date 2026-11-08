@@ -8,5 +8,5 @@ extensionApi: 1
 entry: ./dist/index.js
 uses:
   actions: [composer.submit, renderer.block, session.done]
-  slots: [composer.actions, session.menu, session-list.row.badges, settings.section, app.rail.items, app.menu.items, session.header.actions, app.routes]
+  slots: [composer.actions, session.menu, session-list.row.badges, settings.section, app.rail.items, app.menu.items, session.header.actions, session.panel, app.routes]
 # Server routes and hooks: see extensions/README.md (no routes here, so it runs on any server).

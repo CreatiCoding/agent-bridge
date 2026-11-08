@@ -42,6 +42,38 @@ export default function setup(bridge: Bridge) {
 }
 ```
 
+## 세션 옆 패널 (`session.panel`)
+
+대화 옆에 익스텐션 화면을 둔다(REQ-F-892). 세션 위 막대에 버튼이 생기고(패널이 여럿이면 버튼 하나에 메뉴), 누르면 열고 닫는다.
+
+- 화면 폭이 960 px 이상이면 대화 오른쪽 도크, 좁으면(휴대폰, 좁은 분할 칸) 시트로 연다. 분할 화면은 칸마다 따로다.
+- 사람이 왼쪽 가장자리를 끌어(키보드는 ←·→) 폭을 260~720 px(화면의 60% 까지)로 바꾼다. 열린 패널과 패널마다의 폭은 이 기기에 남는다.
+- 지원 여부는 `bridge.slots.supported('session.panel')` 로 본다. `extension.yaml` 의 `uses.slots` 에 `session.panel` 을 적는다.
+
+```ts
+if (bridge.slots.supported('session.panel'))
+  bridge.slots.register('session.panel', {
+    id: 'thread',
+    label: '스레드',
+    icon: 'doc',
+    width: 380, // 처음 폭, 사람이 바꾼 폭이 이긴다
+    visible: (ctx) => !ctx.session.closed,
+    render: () => {
+      const ctx = bridge.slots.useSlotContext<PanelCtx>() // {sid, session, wide, pane, place: 'dock'|'sheet', close()}
+      return <Thread sid={ctx.sid} />
+    },
+  })
+```
+
+## AI 의 결과를 익스텐션으로 받기
+
+전용 통로는 아직 없다. 지금 되는 길:
+
+- 답 안의 전용 코드블록(예: ```` ```slack-draft ````)을 `bridge.actions.around('renderer.block', …)` 로 받아 그리거나 패널로 넘긴다. 쓰는 중인 블록은 `closed: false` 라 다 쓴 블록만 골라 쓸 수 있다.
+- 턴이 끝날 때 `session.done` 을 `after` 로 받고, 열린 페이지가 여럿이어도 `bridge.events.claim(event)` 로 한 번만 처리한다. 화면이 닫혀 있을 때의 결과는 `server.hooks` 의 `session.done.after` webhook 으로 자기 서버가 받아 둔다.
+
+맥의 파일·명령을 익스텐션이 직접 부르는 길은 없다. 바깥 데이터는 아래의 서버 라우트(자기 서버)로 받는다.
+
 ## 서버 라우트와 훅
 
 브라우저는 바깥으로 연결할 수 없으므로 바깥 데이터는 서버가 중계한다. `extension.yaml`:

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.499',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '익스텐션 slot session.panel: 세션 대화 오른쪽에 익스텐션 패널을 둔다. 960 px 이상은 도크(가장자리를 끌거나 ←·→ 로 260~720 px, 열린 패널과 폭을 이 기기에 기억), 좁으면 시트. 분할 칸마다 따로, slots.supported 로 지원 여부 확인',
+        refs: ['REQ-F-892', 'REQ-F-865'],
+      },
+    ],
+  },
+  {
     version: '1.498',
     date: '2026-11-08',
+    commit: '45c0e61',
     changes: [
       {
         kind: 'security',

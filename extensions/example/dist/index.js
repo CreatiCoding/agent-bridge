@@ -100,6 +100,17 @@ export default function setup(bridge) {
             icon: 'doc',
             run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
         });
+    // session.panel (REQ-F-892): the note beside the conversation; saving keeps the panel open.
+    if (bridge.slots.supported('session.panel'))
+        bridge.slots.register('session.panel', {
+            id: 'note',
+            label: t('noteTitle'),
+            icon: 'doc',
+            render: () => {
+                const ctx = bridge.slots.useSlotContext();
+                return h(NoteSheet, { key: ctx.sid, sid: ctx.sid, close: () => { } });
+            },
+        });
     function NotesPage() {
         const keys = useNoted();
         const sessions = bridge.useSessions();

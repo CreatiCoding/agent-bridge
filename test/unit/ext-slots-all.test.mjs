@@ -10,8 +10,8 @@ const ROOT = new URL('../../', import.meta.url).pathname
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8')
 const walk = (d) => readdirSync(path.join(ROOT, d)).flatMap((n) => (statSync(path.join(ROOT, d, n)).isDirectory() ? walk(`${d}/${n}`) : [`${d}/${n}`]))
 
-test('slot 42개, 서버가 받는 이름과 같다', () => {
-  assert.equal(SLOTS.length, 42)
+test('slot 43개, 서버가 받는 이름과 같다', () => {
+  assert.equal(SLOTS.length, 43)
   const go = /EXT_SLOTS\s+= \[\]string\{([^}]*)\}/.exec(read('server/ext.go'))[1]
   assert.deepEqual(go.split(',').map((x) => x.trim().replace(/"/g, '')), [...SLOTS])
 })
@@ -37,13 +37,15 @@ test('종류마다 필요한 칸이 없으면 등록할 때 거절한다', () =>
   assert.throws(() => register('notification.items', { id: 'a' }), /title/)
   assert.throws(() => register('app.routes', { id: 'Bad Id', title: 't', render() {} }), /id\(/)
   assert.throws(() => register('settings.tabs', { id: 'x', render() {} }), /label·render/)
+  assert.throws(() => register('session.panel', { id: 'p', label: 'Slack', render() {} }), /label·icon·render/)
   const offs = [
     register('session.header.actions', { id: 'a', label: 'x', icon: 'doc', run() {} }, 'ext'),
     register('composer.status', { id: 'a', render: () => null }, 'ext'),
     register('app.routes', { id: 'notes', title: 't', render: () => null }, 'ext'),
+    register('session.panel', { id: 'thread', label: 'Slack', icon: 'doc', render: () => null }, 'ext'),
   ]
   offs.forEach((f) => f())
-  for (const [n, k] of Object.entries(SLOT_KIND)) assert.ok(['own', 'action', 'menu', 'section', 'badge', 'data'].includes(k), n)
+  for (const [n, k] of Object.entries(SLOT_KIND)) assert.ok(['own', 'action', 'menu', 'section', 'badge', 'data', 'panel'].includes(k), n)
 })
 
 test('새 세션의 익스텐션 값(ext)은 서버로 가지 않는다', () => {
@@ -56,4 +58,19 @@ test('익스텐션 화면·설정 탭 주소를 서버와 화면이 함께 안�
   const r = read('ui/src/lib/router.ts')
   assert.match(r, /name: 'ext', ext: m\[1\], page: m\[2\]/)
   assert.match(r, /name: 'settings', ext: \{ ext: m\[1\], id: m\[2\] \}/)
+})
+
+test('세션 보조 패널(session.panel): 넓으면 도크, 좁으면 시트, 열린 것과 폭을 이 기기에 둔다', () => {
+  assert.equal(SLOT_KIND['session.panel'], 'panel')
+  const p = read('ui/src/components/session-panel.tsx')
+  assert.match(p, /PANEL_DOCK = '\(min-width: 960px\)'/)
+  assert.match(p, /PANEL_MIN = 260/)
+  assert.match(p, /PANEL_MAX = 720/)
+  assert.match(p, /<Sheet open onClose=\{close\}/)
+  assert.match(p, /setPref\('extPanel'/)
+  assert.match(p, /extPanelW\./)
+  assert.match(p, /role="separator"/)
+  const page = read('ui/src/pages/session-page.tsx')
+  assert.match(page, /<PanelToggle panels=\{panels\} \/>/)
+  assert.match(page, /<SessionPanel panels=\{panels\} ctx=\{slotCtx\}/)
 })

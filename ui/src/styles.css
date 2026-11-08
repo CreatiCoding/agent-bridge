@@ -3002,6 +3002,79 @@ li.done > .todo-mark {
     transition: none;
   }
 }
+/* session.panel (REQ-F-892): an extension's panel docked right of the conversation (and of the to-do panel), at
+   --ext-w wide; its left edge resizes it. Narrower than 960 px it is a sheet instead (ext-panel-sheet). */
+.ext-dock {
+  flex: none;
+  position: relative;
+  z-index: 4;
+  display: flex;
+  min-width: 0;
+}
+.ext-resize {
+  flex: none;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+}
+.ext-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 4px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.ext-resize:hover::after,
+.ext-resize:focus-visible::after {
+  background: var(--muted);
+}
+.ext-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 22px);
+  margin: 12px 12px 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.ext-panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 6px 6px 14px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.ext-panel-head b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.ext-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+.main.sess:has(.ext-dock) .composer {
+  padding-right: calc(12px + var(--ext-w, 0px));
+}
+@media (min-width: 1180px) {
+  .main.sess:has(.todo-dock.open):has(.ext-dock) .composer {
+    padding-right: calc(12px + 312px + var(--ext-w, 0px));
+  }
+}
 .todo-panel-head {
   display: flex;
   gap: 8px;

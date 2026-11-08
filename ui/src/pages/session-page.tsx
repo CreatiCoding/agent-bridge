@@ -1,6 +1,6 @@
 // One conversation: the header, the log (newest at the bottom, older pages on the way up), what Claude is
 // writing now, and the input with what is around it.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { errorText } from '../lib/api'
 import { kbDebugOn, kbDebugText } from '../lib/kbdebug'
 import { bytes, clock, duration, folderPath, shortLabel, tokens } from '../lib/format'
@@ -22,6 +22,7 @@ import { CacheSheet, DocSheet, Gauges, gaugesHigh, PrChips, ScreenSheet, setTodo
 import { act, askTodos as askSessionTodos, canSlack, command, inSlack, lightCopy, moveTo, refresh, rename, resume, sessionMenu, sessionPost, toBridge, todoBlocked, trimLog } from '../components/session-menu'
 import { TimelineView, Writing } from '../components/timeline-view'
 import { SlotActions, SlotBadges, SlotSections } from '../components/slot-parts'
+import { PanelToggle, SessionPanel, useSessionPanels } from '../components/session-panel'
 import { DecisionCard } from '../components/decision-card'
 import { LockScreen, useUnlocked } from '../components/lock'
 import { SessionTabs, useGroupTabs } from '../components/session-tabs'
@@ -463,6 +464,9 @@ export function SessionPage({ id }: { id: string }) {
   const [showJump, setShowJump] = useState(false)
   const [pending, setPending] = useState<Pending[]>([])
   const [sheet, setSheet] = useState<'settings' | 'screen' | 'doc' | 'sessionmd' | 'cache' | null>(null)
+  // session.panel (REQ-F-892): the extensions' panels, and how wide the open one's dock is (the input steps aside).
+  const panels = useSessionPanels(s ? { sid: s.id, session: s, wide, pane: inPane } : null)
+  const [extW, setExtW] = useState(0)
   /** The localhost server shown inside the page (another device than its Mac). */
   const [server, setServer] = useState<Server | null>(null)
   // A phone folds what is under the input but the model and the warnings (더보기); it remembers which way it was left.
@@ -769,7 +773,7 @@ export function SessionPage({ id }: { id: string }) {
   // session.header.*, session.banner, session.timeline.* (REQ-F-865): the session this page shows.
   const slotCtx = { sid: s.id, session: s, wide, pane: inPane }
   return (
-    <div className={`main sess${s.delegatedBy && !s.closed ? ' driven' : ''}`} ref={setPageEl}>
+    <div className={`main sess${s.delegatedBy && !s.closed ? ' driven' : ''}`} ref={setPageEl} style={extW ? ({ '--ext-w': `${extW}px` } as CSSProperties) : undefined}>
       {kbDebug ? <pre className="kbdebug">{kbText}</pre> : null}
       {wide ? <SessionTabs id={s.id} /> : null}
       <div className="topbar">
@@ -814,6 +818,8 @@ export function SessionPage({ id }: { id: string }) {
         {/* A phone has 새로고침 in the ⋯ menu. */}
         {wide ? <IconButton icon="list" label="할 일" className="todo-toggle" active={todoShown} aria-pressed={todoShown} onClick={() => showTodos(!todoShown)} /> : null}
         {wide ? <IconButton icon="refresh" label="새로고침" title="대화 그대로 다시 열기" onClick={() => void refresh(s)} disabled={!!disabled || !s.state.alive} /> : null}
+        {/* session.panel (REQ-F-892): the extensions' panels beside the conversation, opened from here. */}
+        <PanelToggle panels={panels} />
         <SlotActions slot="session.header.actions" ctx={slotCtx} max={wide ? 3 : 1} />
         {/* split-pane.actions (REQ-F-865): each pane of a split is this page in its own frame; its bar is the pane's. */}
         {inPane ? <SlotActions slot="split-pane.actions" ctx={slotCtx} max={2} /> : null}
@@ -895,6 +901,7 @@ export function SessionPage({ id }: { id: string }) {
           <TodoPanel items={todoItems} onRemove={todoHidden.remove} onClose={() => showTodos(false)} onAsk={askTodos} onRun={runTodos} disabled={disabled} noTool={noTodosTool} />
         </div>
       ) : null}
+      <SessionPanel panels={panels} ctx={slotCtx} onWidth={setExtW} />
       </div>
       {showJump ? (
         <div className="jump" style={{ bottom: 'calc(var(--composer-h, 120px) + var(--kb-lift, 0px) + 12px)' }}>

@@ -4,10 +4,11 @@
 //  - session-list.row.badges + data.shared: a badge on the sessions that have a note
 //  - app.rail.items + app.menu.items + slots.update: the number of notes on the rail and in the phone's menu
 //  - session.header.actions + app.routes + bridge.version: a note button over a session, and a page of all notes
+//  - session.panel: the same note beside the conversation (a dock on a wide screen, a sheet on a narrow one)
 //  - settings.section: a switch for the turn-end notice
 //  - session.done + events.claim: that notice, once per person however many pages are open
 //  - renderer.block: a ```checklist block drawn as check boxes
-import type { Bridge, ComposerCtx, SessionDone, SessionMenuCtx, Session } from '../../agent-bridge-ext'
+import type { Bridge, ComposerCtx, PanelCtx, SessionDone, SessionMenuCtx, Session } from '../../agent-bridge-ext'
 import { Fragment, h, setReact } from './jsx.js'
 
 export default function setup(bridge: Bridge) {
@@ -113,6 +114,17 @@ export default function setup(bridge: Bridge) {
       label: t('note'),
       icon: 'doc',
       run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
+    })
+  // session.panel (REQ-F-892): the note beside the conversation; saving keeps the panel open.
+  if (bridge.slots.supported('session.panel'))
+    bridge.slots.register('session.panel', {
+      id: 'note',
+      label: t('noteTitle'),
+      icon: 'doc',
+      render: () => {
+        const ctx = bridge.slots.useSlotContext<PanelCtx>()
+        return <NoteSheet key={ctx.sid} sid={ctx.sid} close={() => {}} />
+      },
     })
   function NotesPage() {
     const keys = useNoted()
