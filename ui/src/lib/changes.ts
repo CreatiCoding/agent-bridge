@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.494',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '맡긴 세션의 턴 끝을 받아들이기까지 기다리는 시간(기본 5초)을 환경변수 BRIDGE_DELEGATE_SETTLE_MS 로 바꿀 수 있다. 기본값과 동작은 그대로',
+        refs: ['REQ-F-760'],
+      },
+    ],
+  },
+  {
     version: '1.493',
     date: '2026-11-08',
+    commit: '1237ac7',
     changes: [
       {
         kind: 'fixed',

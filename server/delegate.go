@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -13,7 +14,6 @@ const (
 	DELEGATE_MAX        = 3
 	DELEGATE_GROUP      = "Bridge 맡긴 세션"
 	DELEGATE_WAIT_MAX   = 1_800_000
-	DELEGATE_SETTLE_MS  = 5000
 	DELEGATE_ASK_MS     = 30_000
 	DELEGATE_REPORT_MAX = 6000
 	// 1.390: a delegated session whose answer was handed over closes itself, leaves the list at once, and the
@@ -316,10 +316,20 @@ func waitTurn(meta *Sess, since float64, ms float64) M {
 var followTimers = map[string]*Timer{}
 var arrowPrefixRe = re(`^↪\s*`)
 
+// DELEGATE_SETTLE_MS: how long a turn must stay ended (idle·ended with an answer) before it counts, as the Mac reports
+// the turn's end before the transcript line with its answer (1.198, 1.241). BRIDGE_DELEGATE_SETTLE_MS (a positive
+// integer, ms) changes it; the unit tests use a short one so they do not wait out 5 s per turn (1.494).
+var DELEGATE_SETTLE_MS = func() float64 {
+	if n, err := strconv.Atoi(env("BRIDGE_DELEGATE_SETTLE_MS")); err == nil && n > 0 {
+		return float64(n)
+	}
+	return 5000
+}()
+
 // followDelegate: a session that was handed work and finished a turn tells the session that handed it over (1.236).
 func followDelegate(c *Sess) {
 	clearTimeout(followTimers[c.id()])
-	followTimers[c.id()] = setTimeout(DELEGATE_SETTLE_MS*time.Millisecond, func() {
+	followTimers[c.id()] = setTimeout(time.Duration(DELEGATE_SETTLE_MS)*time.Millisecond, func() {
 		delete(followTimers, c.id())
 		parent, ok := sessions.Get(strOr(c.get("delegatedBy"), ""))
 		if truthy(c.get("closed")) || !ok || truthy(parent.get("closed")) || parent.uid() != c.uid() || awaited[c.id()] > 0 {

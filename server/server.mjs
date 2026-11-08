@@ -3135,7 +3135,7 @@ function delegateState(meta, since) {
   return { state, phase, ...(state === 'waiting' && meta.card?.title ? { waitingOn: String(meta.card.title).slice(0, 200) } : {}), answer: answer.length > 20_000 ? `${answer.slice(0, 20_000)}\n…(잘림)` : answer }
 }
 /** How long a turn must stay ended before it counts: a session is briefly idle between tool calls too. */
-const DELEGATE_SETTLE_MS = 5000
+const DELEGATE_SETTLE_MS = Number(process.env.BRIDGE_DELEGATE_SETTLE_MS) || 5000
 /** sid → tool calls waiting on that session right now. In memory only: a call does not outlive the server. */
 const awaited = new Map()
 async function waitTurn(meta, since, ms) {
