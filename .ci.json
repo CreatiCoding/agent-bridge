@@ -9,8 +9,7 @@
       ],
       "timeout": "40m",
       "steps": [
-        "ci-par vuln-check unslop-check 'cd ui && corepack yarn install --immutable && corepack yarn build'",
-        "npm test"
+        "ci-par vuln-check unslop-check 'cd ui && corepack yarn install --immutable && corepack yarn build && cd .. && npm run test:node' 'npm run test:go'"
       ],
       "deploy": [
         "lG2IYJW9GYsNHjd4rUjbL",
