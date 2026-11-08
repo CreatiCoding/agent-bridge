@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.481',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '쿠팡처럼 봇을 막는 사이트가 Chrome 스냅샷을 Access Denied 로 막던 것: 헤드리스 Chrome 이 자기 이름을 HeadlessChrome 으로 밝혔다. 창 있는 Chrome 과 같은 이름을 보내도록 고쳤다(ego lite 가 없는 맥·Linux)',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.480',
     date: '2026-11-08',
+    commit: '37d5df4',
     changes: [
       {
         kind: 'fixed',

@@ -41,6 +41,18 @@ export function chromeArgs(profile, { mac, headless, flags } = {}) {
   return out
 }
 
+/**
+ * The User-Agent the snapshot's headless Chrome sends (1.481): the one a windowed Chrome of this version sends.
+ * Headless Chrome names itself "HeadlessChrome/<v>", and bot walls (coupang.com's Akamai) answer that name alone with
+ * "Access Denied". `version` is `<chrome> --version` ("Google Chrome 156.0.8078.47"); '' when no version is in it.
+ */
+export function snapshotUserAgent(version, mac) {
+  const major = /(\d+)\.\d+\.\d+/.exec(String(version ?? ''))?.[1]
+  if (!major) return ''
+  const os = mac ? 'Macintosh; Intel Mac OS X 10_15_7' : 'X11; Linux x86_64'
+  return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`
+}
+
 /** 스냅샷 (REQ-F-881): at most this many of the page's pictures, each this big, all of them this big, are read. */
 export const SNAPSHOT_IMG_COUNT = 20
 export const SNAPSHOT_IMG_ONE_MAX = 1024 * 1024

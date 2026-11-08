@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -6573,11 +6573,19 @@ async function egoSnapshot(page, reqId) {
   return r
 }
 
+/** `<chrome> --version`, asked once ('' when Chrome does not answer within 10 s). */
+let chromeVersion = null
+function chromeVersionOnce() {
+  chromeVersion ??= new Promise((done) => execFile(CHROME_BIN, ['--version'], { timeout: 10_000 }, (err, out) => done(err ? '' : String(out))))
+  return chromeVersion
+}
+
 /** The page through a headless Chrome of a throwaway profile: {url, html, images: {}}. */
 async function chromeSnapshot(page) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
   try {
-    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+    const ua = snapshotUserAgent(await chromeVersionOnce(), IS_MAC)
+    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
     const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
     return { url: page.href, html, images: {} }

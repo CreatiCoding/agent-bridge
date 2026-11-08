@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { imageUrl, localPort, modeFor, modeOf, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
-import { snapshotImageUrls, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET } from '../../agent/guard.mjs'
+import { snapshotImageUrls, snapshotUserAgent, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
 
@@ -134,4 +134,17 @@ test('AC-1668: ego lite’s snapshot waits for the page to go quiet in the page,
   assert.match(EGO_QUIET, /document\.readyState !== "complete"/)
   assert.match(EGO_QUIET, /getEntriesByType\("resource"\)/)
   assert.match(EGO_QUIET, />= 500/)
+})
+
+test('AC-1677: the snapshot’s headless Chrome sends a windowed Chrome’s User-Agent, without "Headless"', () => {
+  const mac = snapshotUserAgent('Google Chrome 156.0.8078.47\n', true)
+  assert.equal(mac, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36')
+  const linux = snapshotUserAgent('Chromium 120.0.6099.71 snap', false)
+  assert.equal(linux, 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+  assert.equal(snapshotUserAgent('', false), '')
+  assert.equal(snapshotUserAgent(undefined, true), '')
+  for (const ua of [mac, linux]) assert.doesNotMatch(ua, /Headless/)
+  const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(agent, /snapshotUserAgent\(await chromeVersionOnce\(\), IS_MAC\)/)
+  assert.match(agent, /`--user-agent=\$\{ua\}`/)
 })
