@@ -114,11 +114,17 @@ func sessionSnapshot(req *Req, res *Res, meta *Sess) {
 	if !truthy(r["ok"]) {
 		refuse(502, orStr(r["error"], "맥에서 페이지를 그리지 못했어요"))
 	}
-	if sealed := jsStringU(r["sealed"]); sealed != "" {
-		jsonRes(res, 200, M{"ok": true, "sealed": sealed})
-		return
+	jsonRes(res, 200, snapshotAnswer(r, target))
+}
+
+// snapshotAnswer: what the screen gets from the Mac's answer r (ok): the sealed piece as it came, or the page.
+// Only a string is a sealed piece (1.487): jsStringU of a missing one is "undefined", which went out as a "sealed"
+// answer no device could open, so a Mac that does not seal never showed its snapshot.
+func snapshotAnswer(r M, target string) M {
+	if sealed, _ := r["sealed"].(string); sealed != "" {
+		return M{"ok": true, "sealed": sealed}
 	}
-	html := jsStringU(r["html"])
+	html, _ := r["html"].(string)
 	if len(html) > READER_MAX_HTML {
 		refuse(502, "페이지가 너무 커서 스냅샷으로 못 열어요")
 	}
@@ -132,7 +138,7 @@ func sessionSnapshot(req *Req, res *Res, meta *Sess) {
 		total += len(d)
 		images[k] = d
 	}
-	jsonRes(res, 200, M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "via": r["via"]})
+	return M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "via": r["via"]}
 }
 
 var snapshotDataRe = regexp.MustCompile(`^data:image/(png|jpeg|gif|webp|avif);base64,[A-Za-z0-9+/=]+$`)

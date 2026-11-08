@@ -46,3 +46,14 @@ func TestSnapshotRoute(t *testing.T) {
 	code, _ := callAPI(t, "POST", "/api/sessions/nope/snapshot", `{"url":"https://example.com/"}`)
 	ok(t, code == 404, "no such session")
 }
+
+// AC-1686: a Mac that does not seal answers with the page, not a "sealed" piece of the word "undefined" (1.487).
+func TestSnapshotAnswer(t *testing.T) {
+	plain := snapshotAnswer(M{"ok": true, "url": "https://www.coupang.com/", "html": "<title>쿠팡</title>", "images": M{"a": "data:image/png;base64,AAAA", "b": "https://x/y.png"}, "via": "ego"}, "https://www.coupang.com/")
+	_, has := plain["sealed"]
+	ok(t, !has, "no sealed key for a plain answer")
+	ok(t, plain["html"] == "<title>쿠팡</title>" && plain["via"] == "ego", "the page passed on")
+	ok(t, len(asM(plain["images"])) == 1, "only data: pictures")
+	sealed := snapshotAnswer(M{"ok": true, "sealed": "⟦bt1:abcd0123:xyz⟧"}, "https://a/")
+	ok(t, sealed["sealed"] == "⟦bt1:abcd0123:xyz⟧" && sealed["html"] == nil, "a sealed piece as it came")
+}

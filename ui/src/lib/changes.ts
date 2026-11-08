@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.487',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '봉인하지 않는 맥의 스냅샷이 "풀 수 없는 스냅샷"으로 실패해 읽기(쿠팡은 403)로 넘어가던 것: 서버가 없는 봉인을 "undefined" 글자로 넘겼다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.486',
     date: '2026-11-08',
+    commit: 'a7adffd',
     changes: [
       {
         kind: 'changed',
