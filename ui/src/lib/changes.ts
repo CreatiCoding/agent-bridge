@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.501',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui', 'server', 'agent'],
+        text: '서명 필수(enforce)·봉인 맥에서 로컬 어댑터: 짝지은 기기의 페이지가 호출을 익스텐션·세션·맥·작업·읽기/쓰기·requestId·입력 해시로 서명하고 입력을 그 세션에 봉인한다. 맥은 서명대로만 실행하고 결과·오류·stderr 를 그 호출에 묶은 봉인 조각으로 낸다(call·status·다시 준 결과 모두). 서버가 바꾼 요청·다시 보낸 서명·다른 세션이나 맥 대상은 거절',
+        refs: ['REQ-S-101', 'REQ-F-893'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui', 'agent'],
+        text: '어댑터 status 의 none 은 그 requestId 를 5 분 닫는다(나중에 오면 refused request-closed, 새 id 로 다시). 봉인 맥의 답이 아닌 것은 쓰기 unknown(claimed 에 서버의 state)·읽기 결과 없음. 짝지은 맥의 쓰기는 사람이 누른 뒤 10 초 안에만 보낸다(needs-gesture). features 에 adapters.signed, list 에 signs·signed·seals',
+        refs: ['REQ-S-101', 'REQ-F-893'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '서명을 확인하는 맥의 에이전트가 서명된 어댑터 호출(adapterSign)을 모르면 보내지 않고 unsupported',
+        refs: ['REQ-S-101'],
+      },
+    ],
+  },
+  {
     version: '1.500',
     date: '2026-11-08',
+    commit: '1036f5f',
     changes: [
       {
         kind: 'added',

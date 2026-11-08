@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -158,4 +159,49 @@ func TestExtAdapterCall(t *testing.T) {
 	_, r = adapterPost(t, "", `{"sid":"sa","action":"thread.reply","requestId":"req-00000005"}`)
 	eq(t, r["state"], "offline")
 	eq(t, len(s.sent), n)
+}
+
+// AC-1709 (REQ-S-101): a Mac that checks signatures gets a signed call as the page made it — op call, inputJ as it
+// came (never the plain input), the page's signature for that very call — and its sealed outcome whole; an agent
+// that does not know signed calls gets nothing.
+func TestExtAdapterSigned(t *testing.T) {
+	piece := "⟦bt1:0123abcd:" + strings.Repeat("A", 2000) + "⟧"
+	var answer M
+	s := withAdapterExt(t, func(cmd M) M { return answer })
+	withLock(func() { hosts.Val("h1")["trust"] = M{"mode": "enforce", "seal": true} })
+
+	// enforce and an agent without adapterSign: unsupported, nothing sent (the protection is never lowered).
+	n := len(s.sent)
+	_, r := adapterPost(t, "", `{"sid":"sa","action":"thread.reply","inputJ":"{}","requestId":"req-00000011"}`)
+	eq(t, r["state"], "unsupported")
+	ok(t, strings.Contains(mstr(r, "error"), "보호를 낮추지 않고"), mstr(r, "error"))
+	eq(t, len(s.sent), n)
+
+	withLock(func() { live("h1")["caps"] = []any{"store", "adapters", "adapterSign"} })
+	tok := `{"v":1,"h":"h1","d":"dev","ts":1,"n":1,"t":"adapter","i":{"op":"call","sid":"sa","requestId":"req-00000012"}}`
+	hdr, _ := json.Marshal([]M{{"p": tok, "s": "sig"}})
+	withLock(func() { queueTrustAuth("u1", base64.RawURLEncoding.EncodeToString(hdr)) })
+	answer = M{"t": "adapter", "ok": true, "state": "done", "result": M{"plain": "leak"}, "sealed": piece, "error": "x " + piece, "at": float64(5)}
+	_, r = adapterPost(t, "", `{"sid":"sa","action":"thread.reply","input":{"no":1},"inputJ":"`+piece+`","requestId":"req-00000012"}`)
+	cmd := s.sent[len(s.sent)-1]
+	eq(t, cmd["op"], "call")
+	eq(t, mstr(cmd, "inputJ"), piece, "inputJ 는 받은 그대로")
+	ok(t, cmd["input"] == nil, "inputJ 가 있으면 평문 input 은 보내지 않음")
+	eq(t, mstr(asM(cmd["auth"]), "p"), tok, "그 호출의 서명이 붙음")
+	eq(t, mstr(r, "sealed"), piece, "봉인 조각은 자르지 않고 그대로")
+	ok(t, r["result"] == nil, "봉인 조각이 있으면 평문 result 는 버림")
+	eq(t, mstr(r, "error"), "x "+piece, "봉인 조각이 든 오류는 500 바이트에서 자르지 않음")
+	eq(t, jsNumber(r["at"]), float64(5))
+
+	// The Mac refused it before running (no or a wrong signature): refused, not unknown.
+	answer = M{"t": "error", "code": "trust-refused", "message": "🔒 거부"}
+	_, r = adapterPost(t, "", `{"sid":"sa","action":"thread.reply","inputJ":"{}","requestId":"req-00000013"}`)
+	eq(t, r["state"], "refused")
+	eq(t, r["code"], "trust")
+
+	// list says whether the Mac checks signatures and whether its agent knows signed calls.
+	answer = M{"t": "adapter", "ok": true, "actions": M{"thread.read": "read"}, "problems": []any{}}
+	_, r = adapterPost(t, "/list", `{"sid":"sa"}`)
+	eq(t, r["signs"], true)
+	eq(t, r["signed"], true)
 }

@@ -16,6 +16,11 @@ const (
 	ADAPTER_ASK_MS     = 130_000 // the agent's longest adapter run (120 s) and the way there and back
 	ADAPTER_WRITES_MIN = 30      // writes a minute, per person and extension
 	ADAPTER_ACTIONS    = 64      // actions one extension may declare
+	// inputJ (REQ-S-101): the input as the page signed it, a sealed piece while sealing (base64 and its wrapping).
+	ADAPTER_INJ_MAX = ADAPTER_IN_MAX*2 + 1024
+	// A sealed outcome (the agent's 512KB result, sealed) and a sealed error are passed on whole, never cut.
+	ADAPTER_SEALED_MAX    = 1024 * 1024
+	ADAPTER_SEALED_ERRMAX = 8 * 1024
 )
 
 var (
@@ -72,7 +77,7 @@ func extAdapter(req *Req, res *Res, uid string, d *extDef, sub string) {
 	if len(d.Adapters) == 0 {
 		refuse(403, "이 익스텐션은 extension.yaml 에 adapters 를 적지 않았어요")
 	}
-	b := body(req, ADAPTER_IN_MAX+32*1024)
+	b := body(req, ADAPTER_INJ_MAX+32*1024)
 	meta := ownSession(uid, mstr(b, "sid"))
 	hostID := meta.host()
 	out := func(m M) { jsonRes(res, 200, m) }
@@ -82,6 +87,13 @@ func extAdapter(req *Req, res *Res, uid string, d *extDef, sub string) {
 	}
 	if !hostHasCap(hostID, "adapters") {
 		out(M{"ok": false, "state": "unsupported", "error": "그 맥의 에이전트가 아직 로컬 어댑터를 몰라요. 에이전트를 업데이트해 주세요"})
+		return
+	}
+	// A Mac that checks signatures (trust warn·enforce), or a call the page signed, needs an agent that knows signed
+	// calls (REQ-S-101): an older one would refuse it, or run it without its signature and seal. Never sent there.
+	inputJ, inJ := b["inputJ"].(string)
+	if (hostSigns(hostID) || inJ) && !hostHasCap(hostID, "adapterSign") {
+		out(M{"ok": false, "state": "unsupported", "error": "그 맥의 에이전트가 서명된 어댑터 호출을 몰라요(신뢰 모드). 보호를 낮추지 않고 실행하지 않았어요. 에이전트를 업데이트해 주세요"})
 		return
 	}
 	switch sub {
@@ -102,10 +114,11 @@ func extAdapter(req *Req, res *Res, uid string, d *extDef, sub string) {
 		problems := []any{}
 		for _, p := range asArr(r["problems"]) {
 			if len(problems) < 20 {
-				problems = append(problems, M{"name": jsSliceTo(mstr(asM(p), "name"), 32), "error": jsSliceTo(mstr(asM(p), "error"), 200)})
+				problems = append(problems, M{"name": jsSliceTo(mstr(asM(p), "name"), 32), "error": adapterErr(mstr(asM(p), "error"), 200)})
 			}
 		}
-		out(M{"ok": true, "state": "done", "actions": actions, "problems": problems})
+		// signs: the Mac checks signatures; signed: its agent knows signed calls (REQ-S-101).
+		out(M{"ok": true, "state": "done", "actions": actions, "problems": problems, "signs": hostSigns(hostID), "signed": hostHasCap(hostID, "adapterSign")})
 		return
 	case "status":
 		rid := mstr(b, "requestId")
@@ -132,13 +145,25 @@ func extAdapter(req *Req, res *Res, uid string, d *extDef, sub string) {
 	if !adapterReqRe.MatchString(rid) {
 		refuse(400, "requestId 는 영문·숫자·_·- 8~64자예요")
 	}
-	if len(jsonStr(b["input"])) > ADAPTER_IN_MAX {
+	if inJ && len(inputJ) > ADAPTER_INJ_MAX || !inJ && len(jsonStr(b["input"])) > ADAPTER_IN_MAX {
 		refuse(413, "입력이 64KB 를 넘어요")
 	}
 	if access == "write" && hit("ext-adapter-w|"+uid+"|"+d.ID, ADAPTER_WRITES_MIN) {
 		refuse(429, "쓰기 작업이 너무 많아요. 잠시 뒤에 다시 해 주세요")
 	}
-	r := ask(hostID, M{"t": "adapter", "ext": d.ID, "action": action, "access": access, "input": b["input"], "requestId": rid, "sid": meta.id()}, ADAPTER_ASK_MS)
+	// op call: what the page's signature names (attachTrustAuth matches it). inputJ goes as it came, input otherwise.
+	cmd := M{"t": "adapter", "op": "call", "ext": d.ID, "action": action, "access": access, "requestId": rid, "sid": meta.id()}
+	if inJ {
+		cmd["inputJ"] = inputJ
+	} else {
+		cmd["input"] = b["input"]
+	}
+	r := ask(hostID, cmd, ADAPTER_ASK_MS)
+	// The Mac refused it before running (trust: no or a wrong signature): nothing ran there.
+	if !truthy(r["ok"]) && mstr(r, "code") == "trust-refused" {
+		out(M{"ok": false, "state": "refused", "code": "trust", "requestId": rid, "error": adapterErr(orStr(r["error"], "맥이 거절했어요"), 500)})
+		return
+	}
 	if !truthy(r["ok"]) {
 		e := orStr(r["error"], "맥에서 답을 받지 못했어요")
 		if e == NOT_CONNECTED {
@@ -170,8 +195,16 @@ func adapterOutcome(r M, rid string) M {
 	}
 	for _, k := range []string{"error", "code", "action"} {
 		if v := mstr(r, k); v != "" {
-			o[k] = jsSliceTo(strings.TrimSpace(v), 500)
+			o[k] = adapterErr(strings.TrimSpace(v), 500)
 		}
+	}
+	// A sealing Mac's outcome in one piece (REQ-S-101): passed on whole; the page reads only it.
+	if v := mstr(r, "sealed"); v != "" && len(v) <= ADAPTER_SEALED_MAX && adapterSealRe.MatchString(v) {
+		o["sealed"] = v
+		delete(o, "result")
+	}
+	if at, ok := r["at"].(float64); ok {
+		o["at"] = at
 	}
 	for _, k := range []string{"replayed", "resultDropped"} {
 		if truthy(r[k]) {
@@ -180,3 +213,15 @@ func adapterOutcome(r M, rid string) M {
 	}
 	return o
 }
+
+// adapterErr: a text cut to n bytes, but one that holds a sealed piece is kept whole (up to ADAPTER_SEALED_ERRMAX),
+// since a cut piece could no longer be opened.
+func adapterErr(v string, n int) string {
+	if strings.Contains(v, sealOpen) {
+		return jsSliceTo(v, ADAPTER_SEALED_ERRMAX)
+	}
+	return jsSliceTo(v, n)
+}
+
+// adapterSealRe: exactly one sealed piece ⟦bt1:<kid>:<body>⟧.
+var adapterSealRe = regexp.MustCompile(`^⟦bt1:[0-9a-f]{8}:[A-Za-z0-9_-]{38,}⟧$`)

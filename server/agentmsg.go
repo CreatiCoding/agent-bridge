@@ -1074,7 +1074,12 @@ func reply(msg M, from string) bool {
 	clearTimeout(p.gotTimer)
 	delete(pending, id)
 	if msg["t"] == "error" {
-		p.resolve(M{"ok": false, "error": jsStringU(msg["message"])})
+		r := M{"ok": false, "error": jsStringU(msg["message"])}
+		// trust-refused: the Mac refused it before anything ran (agent trustRefuse, REQ-S-101).
+		if c := mstr(msg, "code"); c == "trust-refused" {
+			r["code"] = c
+		}
+		p.resolve(r)
 	} else {
 		p.resolve(msg)
 	}

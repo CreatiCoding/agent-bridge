@@ -30,7 +30,7 @@ import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './lo
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
-import { Adapters } from './adapters.mjs'
+import { Adapters, adapterInput } from './adapters.mjs'
 import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, codexEffortOk, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
@@ -854,7 +854,8 @@ function trustRefuse(cmd, why) {
   log('warn', 'trust', `거부: ${cmd.t}${cmd.op ? `/${cmd.op}` : ''} (${why})`, cmd.sid)
   trust.audit(`refused ${cmd.t}${cmd.op ? `/${cmd.op}` : ''}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}: ${why}`)
   const message = `🔒 이 맥은 짝지은 기기가 서명한 명령만 받아요: ${cmd.t} 거부 (${why})`
-  emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message })
+  // code (plain): the server tells a refusal before anything ran from a lost answer (ext_adapter.go).
+  emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, code: 'trust-refused', message })
   if (cmd.sid && sessions.has(cmd.sid) && !cmd.reqId) toast(cmd.sid, message)
   return null
 }
@@ -1089,7 +1090,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 
@@ -4622,13 +4623,20 @@ const commands = {
    * (adapters.mjs). op list: the extension's actions here; op status: what became of a request id; else run it.
    * The outcome is in state (done, failed, refused, unknown, running, none); ok is false only when this broke.
    */
-  async adapter({ reqId, op, ext, action, access, input, requestId, sid }) {
-    if (op === 'list') return emit({ t: 'adapter', reqId, ok: true, ...adapters.list(ext) })
-    if (op === 'status') return emit({ t: 'adapter', reqId, ok: true, ...adapters.status(ext, requestId) })
+  async adapter(cmd) {
+    const { reqId, op, ext, action, access, requestId, sid } = cmd
+    // ext, requestId and sid ride in the reply so a sealing Mac binds the outcome to them (trust.mjs sealOut, REQ-S-101).
+    const tag = { t: 'adapter', reqId, ext: String(ext ?? '').slice(0, 32), ...(typeof requestId === 'string' ? { requestId: requestId.slice(0, 64) } : {}), ...(typeof sid === 'string' && sid ? { sid } : {}) }
+    if (op === 'list') return emit({ ...tag, ok: true, ...adapters.list(ext) })
+    if (op === 'status') return emit({ ...tag, ok: true, ...adapters.status(ext, requestId) })
+    // In enforce only a call the page signed gets here (trustGate), rebuilt from the signature: inputJ is the text
+    // whose hash was signed, sealed for this session while sealing.
+    const got = adapterInput(cmd, (t) => trustText(t, sid))
+    if (got.error) return emit({ ...tag, ok: true, state: 'refused', code: 'bad-input', error: got.error })
     // A closed session is no longer here: the call still goes, without its folder.
     const s = sid ? sessions.get(sid) : null
-    log('info', 'adapter', `${String(ext).slice(0, 32)} ${String(action).slice(0, 64)} (${access === 'write' ? '쓰기' : '읽기'})`, sid)
-    emit({ t: 'adapter', reqId, ok: true, ...(await adapters.call({ ext, action, access, input, requestId, sid, cwd: s?.cwd })) })
+    log('info', 'adapter', `${String(ext).slice(0, 32)} ${String(action).slice(0, 64)} (${access === 'write' ? '쓰기' : '읽기'}${cmd.signed ? ', 서명' : ''})`, sid)
+    emit({ ...tag, ok: true, ...(await adapters.call({ ext, action, access, input: got.input, requestId, sid, cwd: s?.cwd })) })
   },
   /** The folders under a path on this Mac, for choosing where a new session works. Names only, never contents. */
   dirs({ reqId, path: where }) {
