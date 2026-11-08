@@ -5,6 +5,9 @@
 //  - app.rail.items + app.menu.items + slots.update: the number of notes on the rail and in the phone's menu
 //  - session.header.actions + app.routes + bridge.version: a note button over a session, and a page of all notes
 //  - session.panel: the same note beside the conversation (a dock on a wide screen, a sheet on a narrow one)
+//  - panels.open + session.open: the header button opens that panel; entering a session with a note opens it,
+//    unless the person folded it there
+//  - adapters: the panel's "맥에 남기기" calls the local adapter note.save (adapter/ in this folder) on the Mac
 //  - settings.section: a switch for the turn-end notice
 //  - session.done + events.claim: that notice, once per person however many pages are open
 //  - renderer.block: a ```checklist block drawn as check boxes
@@ -48,7 +51,39 @@ export default function setup(bridge: Bridge) {
   // Every page that shows the list shares one fetch of which sessions have a note.
   const useNoted = () => bridge.data.shared('noted', () => notes.list('note.'), 30_000) ?? []
 
-  function NoteSheet({ sid, close }: { sid: string; close: () => void }) {
+  const has = (f: string) => (bridge.version.features ?? []).includes(f)
+
+  // 로컬 어댑터 (REQ-F-893): the note written to a file on the session's Mac by adapter/adapter.mjs. A lost answer is
+  // unknown: the button asks the Mac with the same requestId instead of saving again.
+  function SaveOnMac({ sid, text }: { sid: string; text: string }) {
+    const [busy, setBusy] = useState(false)
+    const [pending, setPending] = useState<string | null>(null)
+    const run = async () => {
+      setBusy(true)
+      try {
+        const r = pending ? await bridge.adapters.status(sid, pending) : await bridge.adapters.call(sid, 'note.save', { text })
+        if (r.state === 'unknown' || r.state === 'running') {
+          setPending(r.requestId ?? null)
+          bridge.ui.toast(t('macUnknown'), { tone: 'bad' })
+          return
+        }
+        setPending(null)
+        if (r.state === 'done') bridge.ui.toast(t('macSaved'), { tone: 'ok' })
+        // none: it never reached the Mac, so pressing again is safe.
+        else if (r.state === 'none') bridge.ui.toast(t('macNone'), { tone: 'bad' })
+        else bridge.ui.toast(r.error ?? r.state, { tone: 'bad' })
+      } finally {
+        setBusy(false)
+      }
+    }
+    return (
+      <Button tone="ghost" block busy={busy} disabled={!text.trim()} onClick={() => void run()}>
+        {pending ? t('macCheck') : t('macSave')}
+      </Button>
+    )
+  }
+
+  function NoteSheet({ sid, close, onMac }: { sid: string; close: () => void; onMac?: boolean }) {
     const [text, setText] = useState('')
     const [version, setVersion] = useState<number | undefined>()
     useEffect(() => {
@@ -74,6 +109,7 @@ export default function setup(bridge: Bridge) {
         <Button tone="primary" block onClick={() => void save()}>
           {t('save')}
         </Button>
+        {onMac && has('adapters') ? <SaveOnMac sid={sid} text={text} /> : null}
       </>
     )
   }
@@ -113,7 +149,8 @@ export default function setup(bridge: Bridge) {
       id: 'note',
       label: t('note'),
       icon: 'doc',
-      run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
+      // Where the page can, the header button opens the panel (a sheet on a phone) instead of a separate sheet.
+      run: (ctx) => (has('panels') ? bridge.panels.open({ sid: ctx.sid, id: 'note' }) : bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') })),
     })
   // session.panel (REQ-F-892): the note beside the conversation; saving keeps the panel open.
   if (bridge.slots.supported('session.panel'))
@@ -123,8 +160,13 @@ export default function setup(bridge: Bridge) {
       icon: 'doc',
       render: () => {
         const ctx = bridge.slots.useSlotContext<PanelCtx>()
-        return <NoteSheet key={ctx.sid} sid={ctx.sid} close={() => {}} />
+        return <NoteSheet key={ctx.sid} sid={ctx.sid} close={() => {}} onMac />
       },
+    })
+  // panels.open (REQ-F-894): entering a session that has a note opens its panel, unless the person folded it there.
+  if (has('panels'))
+    bridge.actions.after('session.open', (a) => {
+      void notes.get(noteKey(a.sid)).then((it) => it && bridge.panels.open({ sid: a.sid, id: 'note' }, { unlessClosed: true }), () => {})
     })
   function NotesPage() {
     const keys = useNoted()

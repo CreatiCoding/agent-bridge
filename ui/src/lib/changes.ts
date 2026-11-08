@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.500',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '익스텐션 로컬 어댑터: bridge.adapters.call·status·list 로 세션의 맥에 맥 주인이 설치한 어댑터(~/.claude-bridge/adapters/<이름>/adapter.json)의 작업을 서버를 거쳐 부른다. extension.yaml adapters: 에 작업마다 read·write, 결과는 state(done·failed·refused·unknown·offline·unsupported). 쓰기는 같은 requestId 를 두 번 실행하지 않고, 답이 없으면 unknown 으로 알려 같은 id 로 상태를 묻는다. 신뢰 모드 enforce 에서는 거절',
+        refs: ['REQ-F-893'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '익스텐션이 자기 세션 패널을 코드로 연다: bridge.panels.open·close·state·useState·subscribe, unlessClosed 면 사람이 그 세션에서 닫은 패널은 다시 열지 않음. 열린 패널을 세션마다 기억(분할 칸은 그 세션만), 지원 여부는 bridge.version.features',
+        refs: ['REQ-F-894', 'REQ-F-892'],
+      },
+    ],
+  },
+  {
     version: '1.499',
     date: '2026-11-08',
+    commit: '9c6a74d',
     changes: [
       {
         kind: 'added',

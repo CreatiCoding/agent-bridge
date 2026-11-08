@@ -595,6 +595,43 @@ export interface Store {
   list: (prefix?: string) => Promise<string[]>
 }
 
+// ---------- 로컬 어댑터 (REQ-F-893) ----------
+
+/**
+ * done: it ran and result is its stdout's JSON. failed: it did not work (or did not start). refused: not allowed or
+ * not installed, nothing ran. offline: the session's Mac is not connected, nothing ran. unsupported: that Mac's agent
+ * is older. unknown: a write was sent and no answer came: it may have run; ask status with the same requestId, and
+ * never send it again under a new id without knowing. running: still running. none (status only): never arrived.
+ */
+export type AdapterState = 'done' | 'failed' | 'refused' | 'unknown' | 'running' | 'none' | 'offline' | 'unsupported'
+export interface AdapterOutcome {
+  ok: boolean
+  state: AdapterState
+  requestId?: string
+  result?: unknown
+  error?: string
+  code?: string
+  /** The Mac had this requestId already: this is its first outcome, it did not run again. */
+  replayed?: true
+  /** A write's result was bigger than the Mac keeps for a replay (16KB): done, result null. */
+  resultDropped?: true
+}
+
+/** A panel of this extension in one session (REQ-F-894). */
+export interface PanelTarget {
+  sid: string
+  /** The id the session.panel item was registered with. */
+  id: string
+}
+export interface PanelState {
+  /** This panel is the open one in that session (shown once it is registered and visible). */
+  open: boolean
+  /** Another panel is open there. */
+  other: boolean
+  /** The person folded this panel in that session since it was last opened. */
+  closedByUser: boolean
+}
+
 // ---------- the bridge object (§8.3) ----------
 
 export interface Bridge {
@@ -626,8 +663,38 @@ export interface Bridge {
     /** Whether this page has the slot: an older page may not, so check before register to fall back. */
     supported: (slot: string) => boolean
   }
-  /** What this page gives: the API number and every slot with how it is drawn. */
-  version: { extensionApi: number; slots: { name: SlotName; kind: SlotKind }[] }
+  /**
+   * What this page gives: the API number, every slot with how it is drawn, and the newer parts by name
+   * ('panels': bridge.panels, 'adapters': bridge.adapters). An older page has no features: check before use.
+   */
+  version: { extensionApi: number; slots: { name: SlotName; kind: SlotKind }[]; features: string[] }
+  /** This extension's own session.panel items (uses.slots session.panel). One panel is open per session. */
+  panels: {
+    /**
+     * Opens it in that session (a dock where there is room, a sheet on a phone); only that session's pane changes.
+     * unlessClosed: not if the person folded it there; use it for automatic opening. False when it did not open.
+     */
+    open: (t: PanelTarget, opts?: { unlessClosed?: boolean }) => boolean
+    /** Folds it in that session if it is the open one; false otherwise. */
+    close: (t: PanelTarget) => boolean
+    state: (t: PanelTarget) => PanelState
+    /** A hook: drawn again when it changes. */
+    useState: (t: PanelTarget) => PanelState
+    /** Called after any session's open panel changes. */
+    subscribe: (fn: () => void) => () => void
+  }
+  /**
+   * Actions of a local adapter on the Mac of a session (extension.yaml adapters:, and the Mac's owner installed it in
+   * ~/.claude-bridge/adapters). Never throws for an outcome (only for an action the yaml lacks); never sends again.
+   */
+  adapters: {
+    requestId: () => string
+    /** requestId: give your own to keep it across a reload (a write's retry after unknown must reuse it). */
+    call: (sid: string, action: string, input?: unknown, opts?: { requestId?: string }) => Promise<AdapterOutcome>
+    status: (sid: string, requestId: string) => Promise<AdapterOutcome>
+    /** The declared actions that Mac has, and the adapters there it could not read. */
+    list: (sid: string) => Promise<AdapterOutcome & { actions?: Record<string, 'read' | 'write'>; problems?: { name: string; error: string }[] }>
+  }
   /** The session list's search text. */
   list: { filter: () => string; setFilter: (text: string) => void; useFilter: () => string }
   /** This extension's pages (app.routes). */

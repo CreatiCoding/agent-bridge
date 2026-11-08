@@ -8,5 +8,10 @@
   "notifyDone": "Tell me when a turn ends",
   "notifyHint": "When on, this browser tells you once when a session's turn ends",
   "done": "Turn ended",
-  "notes": "Sessions with a note"
+  "notes": "Sessions with a note",
+  "macSave": "Keep on the Mac",
+  "macSaved": "Kept on the Mac",
+  "macUnknown": "No answer from the Mac. Check whether it was kept",
+  "macCheck": "Check whether it was kept",
+  "macNone": "It did not reach the Mac. Press again"
 }

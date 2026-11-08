@@ -28,7 +28,7 @@ test('공개 타입이 모든 slot 의 컨텍스트·항목·내장 id 를 싣�
   const d = read('extensions/agent-bridge-ext.d.ts')
   for (const n of SLOTS) assert.ok(d.split(`'${n}':`).length - 1 >= 3, n)
   assert.match(d, /supported: \(slot: string\) => boolean/)
-  assert.match(d, /version: \{ extensionApi: number; slots: \{ name: SlotName; kind: SlotKind \}\[\] \}/)
+  assert.match(d, /version: \{ extensionApi: number; slots: \{ name: SlotName; kind: SlotKind \}\[\]; features: string\[\] \}/)
 })
 
 test('종류마다 필요한 칸이 없으면 등록할 때 거절한다', () => {

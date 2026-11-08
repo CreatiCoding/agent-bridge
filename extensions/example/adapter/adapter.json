@@ -1,0 +1,6 @@
+{
+  "ext": "example",
+  "command": ["node", "adapter.mjs"],
+  "actions": { "note.save": "write", "note.list": "read" },
+  "timeoutMs": 10000
+}

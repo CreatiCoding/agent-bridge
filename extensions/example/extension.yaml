@@ -7,6 +7,10 @@ version: 0.1.0
 extensionApi: 1
 entry: ./dist/index.js
 uses:
-  actions: [composer.submit, renderer.block, session.done]
+  actions: [composer.submit, renderer.block, session.done, session.open]
   slots: [composer.actions, session.menu, session-list.row.badges, settings.section, app.rail.items, app.menu.items, session.header.actions, session.panel, app.routes]
 # Server routes and hooks: see extensions/README.md (no routes here, so it runs on any server).
+# Local adapter actions on the session's Mac (REQ-F-893); the Mac's owner installs adapter/ there (see adapter/README.md).
+adapters:
+  note.save: write
+  note.list: read

@@ -30,12 +30,13 @@ import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './lo
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
+import { Adapters } from './adapters.mjs'
 import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, codexEffortOk, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -1088,9 +1089,12 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
+
+// 로컬 어댑터 (REQ-F-893): the owner's programs in ~/.claude-bridge/adapters, called by an extension's page.
+const adapters = new Adapters({ stateDir: STATE_DIR, log: (level, text) => log(level, 'adapter', text) })
 
 // ---------- exposure (REQ-F-873) ----------
 
@@ -4613,6 +4617,19 @@ const commands = {
     answer ||= last
     emit(answer ? { t: 'btw', reqId, ok: true, answer } : { t: 'btw', reqId, ok: false, error: '답을 화면에서 읽지 못했어요. 화면을 확인하세요' })
   },
+  /**
+   * 로컬 어댑터 (REQ-F-893): an extension's page calls an action of an adapter this Mac's owner installed
+   * (adapters.mjs). op list: the extension's actions here; op status: what became of a request id; else run it.
+   * The outcome is in state (done, failed, refused, unknown, running, none); ok is false only when this broke.
+   */
+  async adapter({ reqId, op, ext, action, access, input, requestId, sid }) {
+    if (op === 'list') return emit({ t: 'adapter', reqId, ok: true, ...adapters.list(ext) })
+    if (op === 'status') return emit({ t: 'adapter', reqId, ok: true, ...adapters.status(ext, requestId) })
+    // A closed session is no longer here: the call still goes, without its folder.
+    const s = sid ? sessions.get(sid) : null
+    log('info', 'adapter', `${String(ext).slice(0, 32)} ${String(action).slice(0, 64)} (${access === 'write' ? '쓰기' : '읽기'})`, sid)
+    emit({ t: 'adapter', reqId, ok: true, ...(await adapters.call({ ext, action, access, input, requestId, sid, cwd: s?.cwd })) })
+  },
   /** The folders under a path on this Mac, for choosing where a new session works. Names only, never contents. */
   dirs({ reqId, path: where }) {
     try {
@@ -8013,7 +8030,7 @@ const server = http.createServer(async (req, res) => {
     // Signed by a paired device, or not run at all, while this Mac does not trust the server (REQ-S-091).
     cmd = trustGate(cmd)
     if (!cmd) return
-    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export'].includes(cmd.t)
+    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter'].includes(cmd.t)
     if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
     if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)
     try {

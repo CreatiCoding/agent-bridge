@@ -1,7 +1,9 @@
 // The session.panel slot (REQ-F-892): an extension's panel beside the conversation. Where there is room it is a dock
 // on the right that can be resized and folded; where there is not (a phone, a narrow pane) it is a sheet. One panel
 // is open at a time, remembered on this device; each pane of a split screen is its own page and has its own.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+// Which one is open is kept per session (REQ-F-894): the person's last choice is the default for a session nobody
+// chose for, and an extension may open or close its own panel in one session (bridge.panels) without touching others.
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Icon, IconButton, useMedia, type IconName } from '../kit'
 import { openMenu, Sheet } from '../kit/overlay'
 import { getPref, setPref } from '../lib/local'
@@ -38,6 +40,77 @@ const PANEL_DEFAULT = 360
 const keyOf = (i: PanelItem) => `${String(i.extId ?? '')}/${i.id}`
 const clampW = (w: number) => Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.min(w, innerWidth * 0.6))))
 
+// ---------- which panel is open, per session (REQ-F-894) ----------
+
+/** Sessions remembered, the latest kept. */
+const PANEL_KEEP = 200
+type PanelMemo = { per: Record<string, string>; closed: Record<string, number> }
+let memo: PanelMemo | null = null
+const memoOf = (): PanelMemo => (memo ??= { per: { ...getPref<Record<string, string>>('extPanelSid', {}) }, closed: { ...getPref<Record<string, number>>('extPanelClosed', {}) } })
+const panelSubs = new Set<() => void>()
+let panelVer = 0
+const trim = <V,>(o: Record<string, V>) => Object.fromEntries(Object.entries(o).slice(-PANEL_KEEP))
+function changed() {
+  const m = memoOf()
+  m.per = trim(m.per)
+  m.closed = trim(m.closed)
+  setPref('extPanelSid', m.per)
+  setPref('extPanelClosed', m.closed)
+  panelVer++
+  for (const f of panelSubs) f()
+}
+/** The open panel's key (`<ext>/<id>`, '' for none) in a session: its own, else the person's last choice. */
+export function panelOpenKey(sid: string) {
+  const m = memoOf()
+  return sid in m.per ? m.per[sid] : getPref('extPanel', '')
+}
+export function subscribePanels(f: () => void) {
+  panelSubs.add(f)
+  return () => void panelSubs.delete(f)
+}
+const usePanelVer = () => useSyncExternalStore(subscribePanels, () => panelVer)
+/** The person opened (key) or folded ('') a panel in a session. Folding is remembered against automatic opening. */
+function personSets(sid: string, key: string) {
+  const m = memoOf()
+  const was = panelOpenKey(sid)
+  delete m.per[sid]
+  m.per[sid] = key
+  if (!key && was) m.closed[`${sid}|${was}`] = Date.now()
+  if (key) delete m.closed[`${sid}|${key}`]
+  setPref('extPanel', key || null)
+  changed()
+}
+/**
+ * An extension opens its own panel in a session (bridge.panels.open). unlessClosed: not when the person folded that
+ * panel in that session, so an automatic open (a link added, the session entered) never fights the person.
+ */
+export function extOpenPanel(sid: string, key: string, unlessClosed = false) {
+  const m = memoOf()
+  if (unlessClosed && m.closed[`${sid}|${key}`]) return false
+  delete m.per[sid]
+  m.per[sid] = key
+  delete m.closed[`${sid}|${key}`]
+  changed()
+  return true
+}
+/** An extension folds its own panel in a session; another extension's open panel is left alone. */
+export function extClosePanel(sid: string, key: string) {
+  if (panelOpenKey(sid) !== key) return false
+  const m = memoOf()
+  delete m.per[sid]
+  m.per[sid] = ''
+  changed()
+  return true
+}
+export function panelStateOf(sid: string, key: string) {
+  const open = panelOpenKey(sid)
+  return { open: open === key, other: !!open && open !== key, closedByUser: !!memoOf().closed[`${sid}|${key}`] }
+}
+export function usePanelState(sid: string, key: string) {
+  usePanelVer()
+  return panelStateOf(sid, key)
+}
+
 /** The panels visible for this session, and the open one (null when folded). */
 export function useSessionPanels(ctx: SessionSlotCtx | null) {
   const all = useAdded<PanelItem>('session.panel')
@@ -51,12 +124,12 @@ export function useSessionPanels(ctx: SessionSlotCtx | null) {
       return false
     }
   })
-  const [openKey, setOpenKey] = useState<string>(() => getPref('extPanel', ''))
+  usePanelVer()
+  const sid = ctx?.sid ?? ''
+  const openKey = sid ? panelOpenKey(sid) : ''
   const open = list.find((i) => keyOf(i) === openKey) ?? null
   const set = (i: PanelItem | null) => {
-    const k = i ? keyOf(i) : ''
-    setOpenKey(k)
-    setPref('extPanel', k || null)
+    if (sid) personSets(sid, i ? keyOf(i) : '')
   }
   return { list, open, set }
 }

@@ -63,6 +63,7 @@ type extDef struct {
 	Files                         map[string][]byte
 	Hash                          string
 	Quiet                         []quietRule // messages.quiet (REQ-F-850)
+	Adapters                      [][2]string // adapters: action and read|write (REQ-F-893)
 	Err                           string      // why it is not loaded ("" when it is)
 }
 
@@ -245,7 +246,7 @@ func (d *extDef) load(getenv func(string) string) (err error) {
 			err = refused(bad)
 		}
 	}()
-	top := []string{"id", "name", "version", "extensionApi", "entry", "uses", "server", "messages"}
+	top := []string{"id", "name", "version", "extensionApi", "entry", "uses", "server", "messages", "adapters"}
 	for _, kv := range root.pairs {
 		if !contains(top, kv.key) {
 			return &yamlErr{kv.line, "모르는 키 " + kv.key + " (받는 키: " + strings.Join(top, ", ") + ")"}
@@ -325,6 +326,12 @@ func (d *extDef) load(getenv func(string) string) (err error) {
 	d.Quiet = []quietRule{}
 	if m := root.get("messages"); m != nil && !m.null {
 		if err := d.readMessages(m, str); err != nil {
+			return err
+		}
+	}
+	d.Adapters = [][2]string{}
+	if a := root.get("adapters"); a != nil && !a.null {
+		if err := d.readAdapters(a); err != nil {
 			return err
 		}
 	}
@@ -556,7 +563,7 @@ func extList(uid string) []any {
 		}
 		sort.Slice(hooks, func(i, j int) bool { return jsonStr(hooks[i]) < jsonStr(hooks[j]) })
 		o := orderedObj{{"id", d.ID}, {"name", d.Name}, {"version", d.Version}, {"entry", "/ext/" + d.ID + "/" + d.Hash + "/" + d.Entry}, {"hash", d.Hash},
-			{"extensionApi", d.API}, {"uses", orderedObj{{"actions", d.Actions}, {"slots", d.Slots}}}, {"routes", routes}, {"hooks", hooks}, {"quiet", quietList(d)}, {"quietAgreed", quietAgreed(uid, d)}, {"storesData", true},
+			{"extensionApi", d.API}, {"uses", orderedObj{{"actions", d.Actions}, {"slots", d.Slots}}}, {"routes", routes}, {"hooks", hooks}, {"quiet", quietList(d)}, {"adapters", d.adapterList()}, {"quietAgreed", quietAgreed(uid, d)}, {"storesData", true},
 			{"consented", d.Err == "" && (!cfgOn("extensionConsent") || c[d.ID] == d.Hash)}}
 		if d.Err != "" {
 			o = append(o, kv{"loadError", d.Err})

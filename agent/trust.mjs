@@ -157,6 +157,9 @@ export const TRUST_CLASS = {
   tidyRun: 'free',
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
+  // 로컬 어댑터 (REQ-F-893): its input and result are not sealed and a write acts outside this Mac, so while the
+  // Mac does not trust the server (enforce) it is refused; warn runs it with a warning.
+  adapter: 'off',
   // by op
   // 깊게 찾기 (REQ-F-885, 9): probe only measures; clones and docker remove things, so they are signed like clean.
   // 공유 디스크만 보기 (REQ-F-888, 10): shared only measures the one path the server names, like info.

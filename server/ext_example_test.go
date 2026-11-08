@@ -28,7 +28,9 @@ func TestExtExample(t *testing.T) {
 	eq(t, d.Err, "")
 	eq(t, d.ID, "example")
 	eq(t, d.Entry, "dist/index.js")
-	eq(t, strings.Join(d.Actions, ","), "composer.submit,renderer.block,session.done")
+	eq(t, strings.Join(d.Actions, ","), "composer.submit,renderer.block,session.done,session.open")
+	// REQ-F-893: the note kept on the Mac by the adapter in adapter/.
+	jeq(t, d.Adapters, `[["note.save","write"],["note.list","read"]]`)
 	eq(t, strings.Join(d.Slots, ","), "composer.actions,session.menu,session-list.row.badges,settings.section,app.rail.items,app.menu.items,session.header.actions,session.panel,app.routes")
 	for n := range d.Files {
 		ok(t, !strings.HasPrefix(n, "node_modules/") && !strings.HasPrefix(n, ".git/") && n != ".gitignore", n)

@@ -18,6 +18,7 @@ import * as kitAll from '../kit'
 import { chooseDialog, confirmDialog, openMenu, promptDialog, Sheet, toast, type MenuEntry } from '../kit/overlay'
 import { loadTrust, pairedHosts } from './trust'
 import { setQuietRules } from './quiet'
+import { extClosePanel, extOpenPanel, panelStateOf, subscribePanels, usePanelState } from '../components/session-panel'
 
 export interface ExtInfo {
   id: string
@@ -32,6 +33,8 @@ export interface ExtInfo {
   /** messages.quiet (REQ-F-850): the ends that make an answer quiet, and whether this person agreed to them. */
   quiet?: { suffix: string; label: string }[]
   quietAgreed?: boolean
+  /** adapters (REQ-F-893): the actions on the Mac this extension may call, each read or write. */
+  adapters?: { action: string; access: 'read' | 'write' }[]
   storesData: boolean
   consented: boolean
   loadError?: string
@@ -40,6 +43,21 @@ export interface ExtInfo {
 
 /** The extensionApi this page gives; a newer one is not loaded. */
 export const EXT_API = 1
+/** What this page has beyond extensionApi 1's first form (bridge.version.features): an older page lacks the name. */
+export const EXT_FEATURES = ['panels', 'adapters']
+
+/** 로컬 어댑터 (REQ-F-893): what became of one call. */
+export type AdapterState = 'done' | 'failed' | 'refused' | 'unknown' | 'running' | 'none' | 'offline' | 'unsupported'
+export interface AdapterOutcome {
+  ok: boolean
+  state: AdapterState
+  requestId?: string
+  result?: unknown
+  error?: string
+  code?: string
+  replayed?: true
+  resultDropped?: true
+}
 const EVENTS = ['session.done', 'decision.waiting', 'decision.answered']
 // The events' shape is the server's (REQ-F-817); the page only passes them on, so it takes the published types.
 type ExtEvents = import('../../../extensions/agent-bridge-ext').EventMap
@@ -200,6 +218,26 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
     list: (prefix = '') => call<{ keys: string[] }>('GET', `${base(scope)}?prefix=${encodeURIComponent(prefix)}`).then((r) => r.keys),
   })
   const callPath = (p: string) => `/api/ext/${owner}/call${p.startsWith('/') ? p : `/${p}`}`
+  // 로컬 어댑터 (REQ-F-893): never sent twice by the page. A write whose answer did not come back is unknown, not
+  // failed: status(sid, requestId) asks the Mac later, and the same requestId never runs again there.
+  const accessOf = (action: string) => {
+    const a = x.adapters?.find((d) => d.action === action)?.access
+    if (!a) throw new Error(`extension.yaml 의 adapters 에 ${action} 가 없어요`)
+    return a
+  }
+  const adapterPost = async (sub: string, body: Record<string, unknown>, write: boolean): Promise<AdapterOutcome> => {
+    const requestId = typeof body.requestId === 'string' ? body.requestId : undefined
+    try {
+      return await call<AdapterOutcome>('POST', `/api/ext/${owner}/adapter${sub}`, body)
+    } catch (e) {
+      const status = (e as { status?: number }).status
+      const error = e instanceof Error ? e.message : String(e)
+      // The server said no before sending it on: nothing ran.
+      if (status && status >= 400 && status < 500) return { ok: false, state: 'refused', requestId, error }
+      return { ok: false, state: write ? 'unknown' : 'failed', requestId, error: write ? `${error} — 실행됐는지 알 수 없어요` : error }
+    }
+  }
+  const panelKey = (id: string) => `${owner}/${id}`
   const user = { uid: me.uid ?? '', login: me.user.login, provider: me.provider ?? 'github', admin: me.admin }
   return {
     React,
@@ -233,8 +271,27 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
       /** Whether this page has the slot (an older page may not): check before register to fall back. */
       supported: (slot: string) => (slots.SLOTS as readonly string[]).includes(slot),
     },
-    /** What this page gives (REQ-F-865): the API number and every slot with how it is drawn. */
-    version: { extensionApi: EXT_API, slots: slots.SLOTS.map((name) => ({ name, kind: slots.SLOT_KIND[name] })) },
+    /** What this page gives (REQ-F-865): the API number, every slot with how it is drawn, and the newer parts. */
+    version: { extensionApi: EXT_API, slots: slots.SLOTS.map((name) => ({ name, kind: slots.SLOT_KIND[name] })), features: EXT_FEATURES },
+    /** This extension's own session.panel items, opened and folded in one session (REQ-F-894). */
+    panels: {
+      open: (t: { sid: string; id: string }, o: { unlessClosed?: boolean } = {}) => (usesSlot('session.panel'), extOpenPanel(t.sid, panelKey(t.id), !!o.unlessClosed)),
+      close: (t: { sid: string; id: string }) => (usesSlot('session.panel'), extClosePanel(t.sid, panelKey(t.id))),
+      state: (t: { sid: string; id: string }) => panelStateOf(t.sid, panelKey(t.id)),
+      useState: (t: { sid: string; id: string }) => usePanelState(t.sid, panelKey(t.id)),
+      subscribe: (fn: () => void) => subscribePanels(fn),
+    },
+    /** 로컬 어댑터 (REQ-F-893): actions of an adapter on the Mac of a session, through the server. */
+    adapters: {
+      /** A fresh id for call: keep it to ask status after a lost answer. */
+      requestId: () => crypto.randomUUID(),
+      call: (sid: string, action: string, input?: unknown, o: { requestId?: string } = {}) => {
+        const access = accessOf(action)
+        return adapterPost('', { sid, action, access, input: input ?? null, requestId: o.requestId ?? crypto.randomUUID() }, access === 'write')
+      },
+      status: (sid: string, requestId: string) => adapterPost('/status', { sid, requestId }, false),
+      list: (sid: string) => adapterPost('/list', { sid }, false) as Promise<AdapterOutcome & { actions?: Record<string, 'read' | 'write'>; problems?: { name: string; error: string }[] }>,
+    },
     /** The session list's search (REQ-F-865): read and change what the list is filtered by. */
     list: {
       filter: getListFilter,
@@ -444,6 +501,7 @@ export function ConsentText({ x }: { x: ExtInfo }) {
           답을 접어요: 끝이 {x.quiet.map((q) => `"${q.suffix}"`).join(', ')} 인 Claude 의 답은 한 줄로 접히고 새 답 표시·알림 웹훅·Slack 글을 내지 않아요. 접힌 답은 펼쳐 볼 수 있어요.
         </div>
       ) : null}
+      {x.adapters?.length ? <div className="muted">맥의 로컬 어댑터 작업: {x.adapters.map((a) => `${a.action}(${a.access === 'write' ? '쓰기' : '읽기'})`).join(', ')}</div> : null}
       {x.routes.length || x.hooks.length ? <div className="muted">보내는 곳: {[...new Set([...x.routes.map((r) => r.upstream), ...x.hooks.map((h) => h.url)])].join(', ')}</div> : null}
       <div className="muted">운영자가 이 서버에 설치했어요. 바뀌면 다시 물어요.</div>
     </div>

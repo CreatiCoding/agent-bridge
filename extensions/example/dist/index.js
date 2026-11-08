@@ -32,7 +32,37 @@ export default function setup(bridge) {
     // ---------- a note per session ----------
     // Every page that shows the list shares one fetch of which sessions have a note.
     const useNoted = () => bridge.data.shared('noted', () => notes.list('note.'), 30_000) ?? [];
-    function NoteSheet({ sid, close }) {
+    const has = (f) => (bridge.version.features ?? []).includes(f);
+    // 로컬 어댑터 (REQ-F-893): the note written to a file on the session's Mac by adapter/adapter.mjs. A lost answer is
+    // unknown: the button asks the Mac with the same requestId instead of saving again.
+    function SaveOnMac({ sid, text }) {
+        const [busy, setBusy] = useState(false);
+        const [pending, setPending] = useState(null);
+        const run = async () => {
+            setBusy(true);
+            try {
+                const r = pending ? await bridge.adapters.status(sid, pending) : await bridge.adapters.call(sid, 'note.save', { text });
+                if (r.state === 'unknown' || r.state === 'running') {
+                    setPending(r.requestId ?? null);
+                    bridge.ui.toast(t('macUnknown'), { tone: 'bad' });
+                    return;
+                }
+                setPending(null);
+                if (r.state === 'done')
+                    bridge.ui.toast(t('macSaved'), { tone: 'ok' });
+                // none: it never reached the Mac, so pressing again is safe.
+                else if (r.state === 'none')
+                    bridge.ui.toast(t('macNone'), { tone: 'bad' });
+                else
+                    bridge.ui.toast(r.error ?? r.state, { tone: 'bad' });
+            }
+            finally {
+                setBusy(false);
+            }
+        };
+        return (h(Button, { tone: "ghost", block: true, busy: busy, disabled: !text.trim(), onClick: () => void run() }, pending ? t('macCheck') : t('macSave')));
+    }
+    function NoteSheet({ sid, close, onMac }) {
         const [text, setText] = useState('');
         const [version, setVersion] = useState();
         useEffect(() => {
@@ -56,7 +86,8 @@ export default function setup(bridge) {
         return (h(Fragment, null,
             h(Field, null,
                 h(TextField, { value: text, onChange: setText, rows: 5, placeholder: t('notePlaceholder'), autoFocus: true })),
-            h(Button, { tone: "primary", block: true, onClick: () => void save() }, t('save'))));
+            h(Button, { tone: "primary", block: true, onClick: () => void save() }, t('save')),
+            onMac && has('adapters') ? h(SaveOnMac, { sid: sid, text: text }) : null));
     }
     bridge.slots.register('session.menu', {
         id: 'note',
@@ -98,7 +129,8 @@ export default function setup(bridge) {
             id: 'note',
             label: t('note'),
             icon: 'doc',
-            run: (ctx) => bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') }),
+            // Where the page can, the header button opens the panel (a sheet on a phone) instead of a separate sheet.
+            run: (ctx) => (has('panels') ? bridge.panels.open({ sid: ctx.sid, id: 'note' }) : bridge.ui.sheet.open(NoteSheet, { sid: ctx.sid }, { title: t('noteTitle') })),
         });
     // session.panel (REQ-F-892): the note beside the conversation; saving keeps the panel open.
     if (bridge.slots.supported('session.panel'))
@@ -108,8 +140,13 @@ export default function setup(bridge) {
             icon: 'doc',
             render: () => {
                 const ctx = bridge.slots.useSlotContext();
-                return h(NoteSheet, { key: ctx.sid, sid: ctx.sid, close: () => { } });
+                return h(NoteSheet, { key: ctx.sid, sid: ctx.sid, close: () => { }, onMac: true });
             },
+        });
+    // panels.open (REQ-F-894): entering a session that has a note opens its panel, unless the person folded it there.
+    if (has('panels'))
+        bridge.actions.after('session.open', (a) => {
+            void notes.get(noteKey(a.sid)).then((it) => it && bridge.panels.open({ sid: a.sid, id: 'note' }, { unlessClosed: true }), () => { });
         });
     function NotesPage() {
         const keys = useNoted();

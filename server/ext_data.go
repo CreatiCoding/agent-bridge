@@ -420,7 +420,7 @@ func extForget(uid string) {
 
 // ---------- dispatch ----------
 
-var extRestRe = regexp.MustCompile(`^/(storage/(user|server)|secrets|call|events/([0-9a-f]{8,64})/claim)(?:/(.*))?$`)
+var extRestRe = regexp.MustCompile(`^/(storage/(user|server)|secrets|call|adapter|events/([0-9a-f]{8,64})/claim)(?:/(.*))?$`)
 
 func extApiAgreed(req *Req, res *Res, u *url.URL, uid string, d *extDef, rest string) {
 	m := extRestRe.FindStringSubmatch(rest)
@@ -432,6 +432,8 @@ func extApiAgreed(req *Req, res *Res, u *url.URL, uid string, d *extDef, rest st
 		extStorage(req, res, u, uid, d, m[2], m[4])
 	case m[1] == "secrets":
 		extSecrets(req, res, uid, d, m[4])
+	case m[1] == "adapter":
+		extAdapter(req, res, uid, d, m[4])
 	case m[1] == "call":
 		// The path as sent (escaped), so an encoded / or .. is seen.
 		raw := strings.TrimPrefix(u.EscapedPath(), "/api/ext/"+d.ID+"/call")
