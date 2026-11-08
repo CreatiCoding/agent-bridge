@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.493',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '머리글로 인증하는 프록시 뒤나 잠근 세션에서 대화의 그림·경로 그림·크게 보기·제보 그림이 보이지 않던 것: 그림을 <img src> 로 직접 받지 않고 다른 요청과 같은 fetch(잠금 토큰·로그인 확인)로 받아 blob: 주소로 그린다. 다시 묻기는 브라우저 캐시와 받아 둔 그림을 건너뛰고 새로 받는다',
+        refs: ['REQ-F-890', 'REQ-F-872', 'REQ-F-703'],
+      },
+    ],
+  },
+  {
     version: '1.492',
     date: '2026-11-08',
+    commit: 'bdadfca',
     changes: [
       {
         kind: 'changed',

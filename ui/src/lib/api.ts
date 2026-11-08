@@ -62,4 +62,32 @@ export const getSealed = <T>(path: string, signal?: AbortSignal) => call<T>('GET
 export const post = <T = { ok: true; note?: string }>(path: string, body: unknown = {}) => call<T>('POST', path, body)
 export const del = <T = { ok: true }>(path: string) => call<T>('DELETE', path)
 
-export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
+/**
+ * A picture (or any file) from a route, as a Blob, through the same door as every other request: this origin's
+ * cookie, the session's lock token, the login check. An <img src> sends none of the headers, so behind a proxy that
+ * wants one, or on a locked session, the browser drew nothing (REQ-F-890). `fresh` skips the browser's cache (a retry).
+ */
+export async function getBlob(path: string, fresh = false, signal?: AbortSignal): Promise<Blob> {
+  const sid = sessionOfPath(path)
+  const token = sid ? tokenOf(sid) : null
+  let res: Response
+  try {
+    res = await fetch(path, { credentials: 'same-origin', cache: fresh ? 'reload' : 'default', headers: token ? { 'X-Lock': token } : {}, signal })
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    throw new ApiError(0, '서버에 닿지 못했어요. 연결을 확인해 주세요')
+  }
+  if (res.status === 401) {
+    location.reload()
+    throw new ApiError(401, '로그인이 필요해요')
+  }
+  if (res.status === 423 && sid && token) setToken(sid, null)
+  if (!res.ok) {
+    // Only the failure's sentence is read; an answer cut off leaves the plain one.
+    const data: Record<string, unknown> | null = (res.headers.get('content-type') ?? '').includes('application/json') ? await res.json().catch(() => null) : null
+    throw new ApiError(res.status, String(data?.error ?? `요청이 실패했어요 (${res.status})`), data ?? {})
+  }
+  return res.blob()
+}
+
+export const errorText =(e: unknown) => (e instanceof Error ? e.message : String(e))

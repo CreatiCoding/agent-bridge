@@ -2,6 +2,7 @@
 // its own account of itself (debug.ts) with it, and the server adds the Macs' state and logs (REQ-F-735).
 import { Fragment, useRef, useState } from 'react'
 import { del, errorText, get, post } from '../lib/api'
+import { ApiImg } from '../lib/api-img'
 import { clientDebug } from '../lib/debug'
 import { ago } from '../lib/format'
 import { shrinkImage } from '../lib/image'
@@ -265,7 +266,7 @@ function PastList({ list, onRetry, onRemove }: { list: Past[] | null | undefined
             <span className="report-pics">
               {r.images.map((name) => (
                 <a key={name} href={`/api/reports/${r.id}/img/${name}`} target="_blank" rel="noreferrer" onClick={linkClick(`/api/reports/${r.id}/img/${name}`, 'report')}>
-                  <img src={`/api/reports/${r.id}/img/${name}`} alt="" />
+                  <ApiImg src={`/api/reports/${r.id}/img/${name}`} alt="" />
                 </a>
               ))}
             </span>

@@ -39,7 +39,8 @@ test('오지 않은 그림은 3초·10초 뒤 두 번 다시 묻고, 그래도 �
   const body = view.slice(at, view.indexOf('const THUMB_RETRY_MS', at))
   assert.match(body, /onError=/)
   assert.match(body, /setTimeout\(\(\) => setTries\(tries \+ 1\), THUMB_RETRY_MS\[tries\]\)/)
-  assert.match(body, /\?r=\$\{tries\}/)
+  // A try after the first asks past the browser's cache (getBlob fresh), REQ-F-890.
+  assert.match(body, /<ApiImg[\s\S]*attempt=\{tries\}/)
   assert.match(body, /thumb-gone/)
   assert.match(body, /그림을 불러오지 못했어요/)
   assert.match(view, /const THUMB_RETRY_MS = \[3000, 10000\]/)

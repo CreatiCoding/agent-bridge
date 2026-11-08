@@ -17,11 +17,14 @@ import { ToolDetail } from './tool-detail'
 import { toolFace } from '../lib/tool-view'
 import { copyText, openSession } from '../lib/builtin-actions'
 import { errorText, get } from '../lib/api'
+import { ApiImg, useImageSrc } from '../lib/api-img'
 import { actionsVersion, watchActions } from '../lib/actions'
 import { messageShown, quietFor } from '../lib/quiet'
 
+/** A picture made big. A server route is fetched like the thumbnails (the same blob when one shows it). */
 export function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
   const [zoom, setZoom] = useState(1)
+  const { url, failed } = useImageSrc(src)
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     addEventListener('keydown', k)
@@ -29,7 +32,13 @@ export function ImageViewer({ src, onClose }: { src: string; onClose: () => void
   }, [onClose])
   return createPortal(
     <div className="viewer" onClick={(e) => e.target === e.currentTarget && onClose()} onWheel={(e) => setZoom((z) => Math.min(5, Math.max(1, z - e.deltaY / 400)))}>
-      <img src={src} alt="" style={{ transform: `scale(${zoom})` }} onDoubleClick={() => setZoom((z) => (z > 1 ? 1 : 2.5))} />
+      {url ? (
+        <img src={url} alt="" style={{ transform: `scale(${zoom})` }} onDoubleClick={() => setZoom((z) => (z > 1 ? 1 : 2.5))} />
+      ) : failed ? (
+        <span className="muted">그림을 불러오지 못했어요</span>
+      ) : (
+        <Spinner />
+      )}
       <IconButton icon="close" label="닫기" onClick={onClose} />
     </div>,
     document.body,
@@ -59,8 +68,8 @@ function Thumb({ id, onOpen }: { id: string; onOpen: (src: string) => void }) {
   const [gone, setGone] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
-  // A new query each try: the browser does not hand back the answer that failed.
-  const src = tries ? `${img(id)}?r=${tries}` : img(id)
+  // Fetched through getBlob (REQ-F-890); a try after the first skips the browser's cache.
+  const src = img(id)
   if (gone)
     return (
       <button type="button" className="thumb thumb-gone" title="그림을 다시 불러와요" onClick={() => (setGone(false), setTries((t) => t + 1))}>
@@ -70,9 +79,10 @@ function Thumb({ id, onOpen }: { id: string; onOpen: (src: string) => void }) {
       </button>
     )
   return (
-    <img
+    <ApiImg
       className="thumb"
       src={src}
+      attempt={tries}
       alt="첨부한 그림"
       loading="lazy"
       onClick={() => onOpen(src)}
@@ -99,7 +109,7 @@ function LocalThumbs({ session, paths, onOpen }: { session: Session; paths: stri
   return (
     <div className="thumbs">
       {shown.map((p) => (
-        <img key={p} className="thumb" src={src(p)} alt={p.split('/').pop()} title={p} loading="lazy" onClick={() => onOpen(src(p))} onError={() => setGone((g) => [...g, p])} />
+        <ApiImg key={p} className="thumb" src={src(p)} alt={p.split('/').pop()} title={p} loading="lazy" onClick={() => onOpen(src(p))} onError={() => setGone((g) => (g.includes(p) ? g : [...g, p]))} />
       ))}
     </div>
   )

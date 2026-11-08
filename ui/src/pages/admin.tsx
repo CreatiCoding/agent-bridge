@@ -1,6 +1,7 @@
 // For operators: who may sign in, and how every user's Macs are doing. Conversations are not visible here.
 import { useEffect, useState } from 'react'
 import { del, errorText, get, post } from '../lib/api'
+import { ApiImg } from '../lib/api-img'
 import { ago, batteryLine, batteryLow, bytes, duration, hostBattery, sysLine, type Battery, type SysUse } from '../lib/format'
 import { getPref, setPref } from '../lib/local'
 import { back, go } from '../lib/router'
@@ -271,7 +272,7 @@ export function ReportPage({ id }: { id: string }) {
                 <div className="report-pics big">
                   {r.images.map((n) => (
                     <button key={n} type="button" onClick={() => setZoom(img(n))} aria-label="크게 보기">
-                      <img src={img(n)} alt="" loading="lazy" />
+                      <ApiImg src={img(n)} alt="" loading="lazy" />
                     </button>
                   ))}
                 </div>
@@ -351,7 +352,7 @@ export function ReportPage({ id }: { id: string }) {
       </div>
       {zoom ? (
         <button type="button" className="report-zoom" onClick={() => setZoom(null)} aria-label="닫기">
-          <img src={zoom} alt="" />
+          <ApiImg src={zoom} alt="" />
         </button>
       ) : null}
     </div>
