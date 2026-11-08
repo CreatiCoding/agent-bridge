@@ -228,3 +228,17 @@ test('AC-1689: a snapshot document carries its own CSP first and has no @import 
   // Prepended last so it lands right after <meta charset>, before every element of the page.
   assert.match(sp, /policy\.setAttribute\('http-equiv', 'Content-Security-Policy'\)[\s\S]*head\.prepend\(policy\)\n  const cs = doc\.createElement\('meta'\)/)
 })
+
+test('AC-1696: a snapshot frame that does not load in time says so, and a report carries the last snapshots', () => {
+  const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(ls, /const SNAPSHOT_FRAME_MS = 10_000/)
+  assert.match(ls, /onLoad=\{loaded\}/)
+  assert.match(ls, /setState\(\(s\) => \(s === 'waiting' \? 'late' : s\)\)/)
+  assert.match(ls, /원본 모양을 \{SNAPSHOT_FRAME_MS \/ 1000\}초 안에 그리지 못했어요/)
+  assert.match(ls, /읽기 모양으로 보기/)
+  // The host only, never the whole address.
+  assert.match(ls, /site = new URL\(s\.url\)\.host/)
+  const dbg = readFileSync(new URL('../../ui/src/lib/debug.ts', import.meta.url), 'utf8')
+  assert.match(dbg, /const SNAPS_MAX = 5/)
+  assert.match(dbg, /snapshots: snaps\.map/)
+})

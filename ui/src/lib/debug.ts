@@ -16,6 +16,20 @@ addEventListener('unhandledrejection', (e) => keep('rejection', say(e.reason)))
 const consoleError = console.error.bind(console)
 console.error = (...a: unknown[]) => (keep('console', a.map(say).join(' ')), consoleError(...a))
 
+/**
+ * The last snapshots shown as the page looked (REQ-F-881, 1.495): how big the document was and whether its frame
+ * opened, so a report of a blank snapshot says what the phone was given. The site's host only, never the address.
+ */
+export type SnapNote = { at: number; site: string; bytes: number; width: number; via: string | null; sealed: boolean; images: number; css: number; frame: 'waiting' | 'loaded' | 'late'; ms: number | null }
+const SNAPS_MAX = 5
+const snaps: SnapNote[] = []
+export function noteSnapshot(n: Omit<SnapNote, 'at' | 'frame' | 'ms'>): SnapNote {
+  const s: SnapNote = { at: Date.now(), ...n, frame: 'waiting', ms: null }
+  snaps.push(s)
+  if (snaps.length > SNAPS_MAX) snaps.shift()
+  return s
+}
+
 const media = (q: string) => matchMedia(q).matches
 const nav = navigator as Navigator & { deviceMemory?: number; connection?: { effectiveType?: string; rtt?: number; downlink?: number; saveData?: boolean }; standalone?: boolean }
 
@@ -38,5 +52,6 @@ export function clientDebug(sid: string | null) {
     link: { state: st.link, mode: st.mode, downSince: st.downSince ?? null },
     session: s ? { id: s.id, title: s.title, phase: s.state.phase, alive: s.state.alive, closed: s.closed } : null,
     errors: [...seen],
+    snapshots: snaps.map((s) => ({ ...s })),
   }
 }

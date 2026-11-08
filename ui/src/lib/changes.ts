@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.495',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '원본 모양 스냅샷의 틀이 10초 안에 열리지 않으면 흰 화면으로 두지 않고 "원본 모양을 10초 안에 그리지 못했어요 (문서 크기, 폭)"와 "읽기 모양으로 보기" 버튼을 보인다',
+        refs: ['REQ-F-881'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '제보의 화면 정보에 최근 원본 모양 스냅샷 5개(사이트 host, 문서 크기, 폭, 그린 브라우저, 봉인 여부, 그림·시트 수, 틀이 열렸는지와 걸린 시간)를 싣는다. 주소 전체는 싣지 않는다',
+        refs: ['REQ-F-735', 'REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.494',
     date: '2026-11-08',
+    commit: '5457a99',
     changes: [
       {
         kind: 'changed',

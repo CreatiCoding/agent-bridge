@@ -12,6 +12,7 @@ import { openLink } from '../lib/builtin-actions'
 import { imageUrl, localPort, modeFor, modeOf, readerImg, throughPreview } from '../lib/in-app'
 import { readSnapshot } from '../lib/reader-dom'
 import { snapshotPage } from '../lib/snapshot-page'
+import { noteSnapshot, type SnapNote } from '../lib/debug'
 
 /**
  * What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address, its style
@@ -63,7 +64,7 @@ type View =
   | { kind: 'image'; src: string }
   | { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string }
   // 스냅샷 as the page looked (1.488): one self-contained document, and the same page in reading mode.
-  | { kind: 'page'; url: string; doc: string; width: number; read: { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string } }
+  | { kind: 'page'; url: string; doc: string; width: number; note: SnapNote; read: { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string } }
 
 type Page = { ok: true; url: string; title: string; site?: string; blocks: Block[]; snapshot?: boolean }
 
@@ -145,7 +146,13 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
     const read = { kind: 'read' as const, url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
     const css = s.css && typeof s.css === 'object' ? s.css : {}
     const width = typeof s.width === 'number' && s.width > 0 && s.width <= 10000 ? s.width : 0
-    return { kind: 'page', url: s.url, doc: snapshotPage({ url: s.url, html: s.html, images, css }), width, read }
+    const doc = snapshotPage({ url: s.url, html: s.html, images, css })
+    let site = ''
+    try {
+      site = new URL(s.url).host
+    } catch {}
+    const note = noteSnapshot({ site, bytes: doc.length, width, via: typeof s.via === 'string' ? s.via.slice(0, 20) : null, sealed, images: Object.keys(images).length, css: Object.keys(css).length })
+    return { kind: 'page', url: s.url, doc, width, note, read }
   }
 }
 
@@ -153,9 +160,16 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
  * The page as the Mac drew it (1.488), in a frame that runs nothing and loads nothing (lib/snapshot-page), laid out
  * at the page's own width and scaled to the sheet, as a phone's browser shows a wide page.
  */
-function PageFrame({ v, title }: { v: Extract<View, { kind: 'page' }>; title: string }) {
+/** How long the snapshot's frame has to open before the sheet says so instead of staying white (1.495). */
+const SNAPSHOT_FRAME_MS = 10_000
+
+function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
+  // Whether the frame opened (1.495): it runs nothing and has no origin of its own, so its load event is all this
+  // page can know of it. Not opened in time, the sheet tells so over it; a late load still takes the notice away.
+  const [state, setState] = useState<'waiting' | 'loaded' | 'late'>('waiting')
+  const started = useRef(0)
   useEffect(() => {
     const el = box.current
     if (!el) return
@@ -163,19 +177,45 @@ function PageFrame({ v, title }: { v: Extract<View, { kind: 'page' }>; title: st
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  const shown = size.w > 0
+  useEffect(() => {
+    if (!shown) return
+    started.current = performance.now()
+    const t = setTimeout(() => {
+      setState((s) => (s === 'waiting' ? 'late' : s))
+      if (v.note.frame === 'waiting') v.note.frame = 'late'
+    }, SNAPSHOT_FRAME_MS)
+    return () => clearTimeout(t)
+  }, [shown, v])
+  const loaded = () => {
+    setState('loaded')
+    v.note.frame = 'loaded'
+    v.note.ms = Math.round(performance.now() - started.current)
+  }
   const pw = Math.max(v.width, size.w)
   const k = size.w && pw ? size.w / pw : 1
   return (
     <div ref={box} className="snapshot-box">
-      {size.w ? (
+      {shown ? (
         <iframe
           className="snapshot-frame"
           sandbox="allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="no-referrer"
           srcDoc={v.doc}
           title={title}
+          onLoad={loaded}
           style={{ width: pw, height: size.h / k, transform: `scale(${k})` }}
         />
+      ) : null}
+      {state === 'late' ? (
+        <div className="snapshot-late" role="alert">
+          <p>
+            원본 모양을 {SNAPSHOT_FRAME_MS / 1000}초 안에 그리지 못했어요 ({(v.doc.length / 1048576).toFixed(1)} MB, 폭 {pw}px). 읽기 모양으로 보거나 브라우저로 열어 주세요
+          </p>
+          <Button size="sm" onClick={onPlain}>
+            읽기 모양으로 보기
+          </Button>
+        </div>
       ) : null}
     </div>
   )
@@ -295,7 +335,7 @@ function LinkSheet() {
         plain ? (
           <Reading v={view.read} />
         ) : (
-          <PageFrame key={n} v={view} title={title} />
+          <PageFrame key={n} v={view} title={title} onPlain={() => setPlain(true)} />
         )
       ) : view.kind === 'image' ? (
         <div className="reader-image">
