@@ -110,7 +110,7 @@ test('AC-1671 the bridge MCP offers disk_hosts · disk_look · disk_clean, and l
   const look = TOOLS.find((t) => t.name === 'disk_look')
   const clean = TOOLS.find((t) => t.name === 'disk_clean')
   assert.ok(TOOLS.some((t) => t.name === 'disk_hosts'))
-  assert.deepEqual(look.inputSchema.properties.op.enum, ['info', 'scan', 'worktrees', 'probe'])
+  assert.deepEqual(look.inputSchema.properties.op.enum, ['info', 'shared', 'scan', 'worktrees', 'probe'])
   assert.deepEqual(clean.inputSchema.properties.op.enum, ['clean', 'trash', 'prune', 'clones', 'docker'])
   const asked = []
   const r = await handle({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'disk_look', arguments: { host: 'h1', op: 'probe' } } }, async (name, args) => (asked.push([name, args]), { ok: 1 }))

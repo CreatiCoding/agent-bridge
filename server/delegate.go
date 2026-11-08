@@ -875,7 +875,7 @@ var _ = regexp.MustCompile
 
 // DISK_TOOL_OPS: which disk ops each bridge MCP disk tool may ask for (REQ-F-886). disk_look never removes anything.
 var DISK_TOOL_OPS = map[string][]string{
-	"disk_look":  {"info", "scan", "worktrees", "probe"},
+	"disk_look":  {"info", "shared", "scan", "worktrees", "probe"},
 	"disk_clean": {"clean", "trash", "prune", "clones", "docker"},
 }
 

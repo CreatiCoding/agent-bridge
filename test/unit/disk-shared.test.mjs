@@ -6,7 +6,8 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { SHARED_PROBE_SCRIPT, sharedDiskOf, fsTypeKind, macMountKind } from '../../agent/guard.mjs'
+import { classOf, TRUST_VERSION } from '../../agent/trust.mjs'
+import { SHARED_PROBE_SCRIPT, sharedDiskOf, sharedOnly, fsTypeKind, macMountKind } from '../../agent/guard.mjs'
 
 const probe = (p) => JSON.parse(execFileSync(process.execPath, ['-e', SHARED_PROBE_SCRIPT, p, os.homedir()], { encoding: 'utf8' }))
 
@@ -90,4 +91,37 @@ test('new session: the shared-disk switch is on unless turned off on this device
   assert.match(src, /getPref<boolean>\('newShared', true\) !== false/)
   assert.match(src, /setPref\('newShared', on\)/)
   assert.match(src, /const useShared = auto && onShared && !!sharedBase/)
+})
+
+test('op shared (1.485): the answer is only { shared }, null when no usable path', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-shared-'))
+  const r = sharedOnly(sharedDiskOf(dir, probe(dir), 'local'))
+  assert.deepEqual(Object.keys(r), ['shared'])
+  assert.equal(r.shared.path, dir)
+  assert.equal(r.shared.mounted, true)
+  assert.deepEqual(sharedOnly(sharedDiskOf('/mnt/m3', null)), { shared: { path: '/mnt/m3', mounted: false, disk: null, kind: null, sameAsHome: false, why: '응답이 없어요(시간 초과)' } })
+  assert.deepEqual(sharedOnly(null), { shared: null })
+  assert.deepEqual(sharedOnly(sharedDiskOf(undefined, null)), { shared: null })
+  fs.rmSync(dir, { recursive: true })
+})
+
+test('op shared (1.485): the agent answers it with the timed shared probe alone, and the MCP disk_look offers it', () => {
+  const agent = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(agent, /if \(op === 'shared'\) return sharedOnly\(await sharedDisk\(shared\)\.catch\(\(\) => null\)\)/)
+  const mcp = fs.readFileSync(new URL('../../agent/mcp.mjs', import.meta.url), 'utf8')
+  assert.match(mcp, /enum: \['info', 'shared', 'scan', 'worktrees', 'probe'\]/)
+})
+
+test('disk page (1.485): asks op shared when it opens, one block that the info answer replaces', () => {
+  const src = fs.readFileSync(new URL('../../ui/src/pages/host-disk.tsx', import.meta.url), 'utf8')
+  assert.match(src, /disk\(hostId, \{ op: 'shared' \}\)/)
+  assert.match(src, /const sharedNow = info\?\.shared \?\? early/)
+  assert.equal(src.match(/<SharedDisk /g).length, 1)
+  assert.match(src, /'재는 중'/)
+  assert.match(src, /'확인 못 함'/)
+})
+
+test('op shared (1.485): trust takes it as it comes, like info (TRUST_VERSION 10)', () => {
+  assert.equal(classOf({ t: 'disk', op: 'shared', shared: '/mnt/m3' }), 'free')
+  assert.ok(TRUST_VERSION >= 10)
 })

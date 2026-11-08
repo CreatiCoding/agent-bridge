@@ -647,6 +647,14 @@ export function sharedDiskOf(where, probe, kind = null) {
   return { path: where, mounted: true, disk: diskUse(probe.st), kind: kind === 'network' || kind === 'local' ? kind : null, sameAsHome }
 }
 
+/**
+ * The answer to the light `shared` disk op (1.485): only `{ shared }`, never the caches or a folder scan. null when
+ * the server sent no usable path (the page then shows nothing).
+ */
+export function sharedOnly(sh) {
+  return { shared: sh && typeof sh === 'object' ? sh : null }
+}
+
 /** How old a key gets before it changes by itself (1.319, REQ-S-083). */
 export const KEY_ROTATE_MS = 24 * 3600_000
 

@@ -703,7 +703,8 @@ var _ = regexp.MustCompile
 var _ = time.Second
 
 // DISK_WAITS: how long each 디스크 관리 op may take on the Mac (REQ-F-801·802·885). An op missing here is refused.
-var DISK_WAITS = map[string]int64{"info": 240_000, "scan": 420_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000, "probe": 900_000, "clones": 300_000, "docker": 900_000}
+// shared is the light look at the shared disk alone (REQ-F-888, 1.485): the agent's own 8 s probe plus `mount`.
+var DISK_WAITS = map[string]int64{"info": 240_000, "shared": 30_000, "scan": 420_000, "clean": 600_000, "trash": 180_000, "worktrees": 300_000, "prune": 600_000, "probe": 900_000, "clones": 300_000, "docker": 900_000}
 
 // diskRun: one 디스크 관리 op on a host, for its owner or the operator it is granted to (diskHost), from the page
 // (IF-251) or a session's bridge MCP disk tools (REQ-F-886). What removes something is kept in the owner's host log.
@@ -714,10 +715,14 @@ func diskRun(uid, hostID string, b M) M {
 	if !known {
 		refuse(400, "모르는 동작이에요")
 	}
+	cmd := diskCmd(mstr(h, "uid"), hostID, op, b)
+	// A Mac with no shared disk set is not asked: the page shows no shared block for it.
+	if op == "shared" && cmd["shared"] == nil {
+		return M{"shared": nil}
+	}
 	if !online(hostID) {
 		refuse(409, NOT_CONNECTED)
 	}
-	cmd := diskCmd(mstr(h, "uid"), hostID, op, b)
 	r := ask(hostID, cmd, wait)
 	if text, removes := diskLogText(op, jsString(cmd["id"])); removes {
 		if !truthy(r["ok"]) {
@@ -734,11 +739,11 @@ func diskRun(uid, hostID string, b M) M {
 	return out
 }
 
-// diskCmd: the disk command sent to the Mac. info carries the Mac's shared-disk path from its owner's new-session
-// settings (REQ-F-888): the server's prefs are the only place it is kept, so the agent stores no copy of it.
+// diskCmd: the disk command sent to the Mac. info and shared carry the Mac's shared-disk path from its owner's
+// new-session settings (REQ-F-888): the server's prefs are the only place it is kept, so the agent stores no copy of it.
 func diskCmd(owner, hostID, op string, b M) M {
 	cmd := M{"t": "disk", "op": op}
-	if op == "info" {
+	if op == "info" || op == "shared" {
 		if s, ok := asM(launchOf(owner)["shared"])[hostID].(string); ok && s != "" {
 			cmd["shared"] = s
 		}

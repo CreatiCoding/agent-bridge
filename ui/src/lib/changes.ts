@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.485',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'server', 'agent'],
+        text: '디스크 관리 칸을 열자마자 공유 디스크가 보인다: 가벼운 disk op shared 로 공유 디스크만 재고(8초, 캐시·폴더 스캔 없음), 재는 동안 "재는 중", 답이 없으면 "확인 못 함". 공간 보기를 누르면 그 값으로 같은 블록을 갱신한다. 공유 디스크가 없는 맥은 서버가 맥에 묻지 않고 블록도 없다',
+        refs: ['REQ-F-888', 'IF-251', 'REQ-F-886'],
+      },
+    ],
+  },
+  {
     version: '1.484',
     date: '2026-11-08',
+    commit: 'eb6f711',
     changes: [
       {
         kind: 'added',

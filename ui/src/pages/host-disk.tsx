@@ -2,7 +2,7 @@
 // tool), and its home folder by size, where an item can be moved to the Trash. The agent decides what each action may
 // touch; this page only names a cache id or a path inside the home folder. The host's owner only.
 import { SlotActions } from '../components/slot-parts'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorText, post } from '../lib/api'
 import { dispatch, isCancel } from '../lib/actions'
 import { openSession } from '../lib/builtin-actions'
@@ -97,12 +97,27 @@ function UseBar({ d }: { d: { pct: number; total: number; avail: number } }) {
   )
 }
 
-/** 공유 디스크 (REQ-F-888): its path, whether this host reaches it, local or network, and how full it is. */
-function SharedDisk({ s }: { s: Shared }) {
+/**
+ * 공유 디스크 (REQ-F-888): its path, whether this host reaches it, local or network, and how full it is. 'wait' while
+ * the light look (op shared) is still out, 'fail' when it did not come back (an older agent, a timeout).
+ */
+function SharedDisk({ s }: { s: Shared | 'wait' | 'fail' }) {
+  const head = <h3 style={{ margin: '8px 0 0', fontSize: 'var(--fs-medium)' }}>공유 디스크</h3>
+  if (s === 'wait' || s === 'fail')
+    return (
+      <div className="stack" style={{ gap: 6 }}>
+        {head}
+        <Row
+          left={s === 'wait' ? <Spinner /> : <Icon name="folder" />}
+          title={s === 'wait' ? '재는 중' : '확인 못 함'}
+          sub={s === 'wait' ? '연결돼 있는지 보고 있어요' : '이 기기에서 답을 받지 못했어요'}
+        />
+      </div>
+    )
   const kind = s.sameAsHome ? '홈과 같은 디스크' : s.kind === 'network' ? '네트워크' : s.kind === 'local' ? '외장' : null
   return (
     <div className="stack" style={{ gap: 6 }}>
-      <h3 style={{ margin: '8px 0 0', fontSize: 'var(--fs-medium)' }}>공유 디스크</h3>
+      {head}
       <Row
         left={<Icon name="folder" />}
         title={<code style={{ wordBreak: 'break-all' }}>{s.path}</code>}
@@ -134,6 +149,24 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
   // granted 디스크 정리 도움 (REQ-F-804) does not get it. A host that is mine is in my own state.
   const own = useStore((s) => !!s.state?.hosts.some((x) => x.id === hostId))
   const startKey = useRef('')
+  // 공유 디스크 as soon as the box opens (REQ-F-888, 1.485): the light op shared, not the heavy info. The server answers
+  // null at once, asking nothing of the Mac, when no shared disk is set for it; 'wait' shows only if it takes a while.
+  const [early, setEarly] = useState<Shared | 'wait' | 'fail' | null>(null)
+  useEffect(() => {
+    if (!online) return
+    let live = true
+    const slow = setTimeout(() => live && setEarly((e) => e ?? 'wait'), 400)
+    disk(hostId, { op: 'shared' })
+      .then((r) => live && setEarly((r as { shared?: Shared | null }).shared ?? null))
+      .catch(() => live && setEarly('fail'))
+      .finally(() => clearTimeout(slow))
+    return () => {
+      live = false
+      clearTimeout(slow)
+    }
+  }, [hostId, online])
+  // The info answer, once there, is the newer look at the same disk: one block, its value.
+  const sharedNow = info?.shared ?? early
   const raw = info?.disk ?? sys?.disk ?? null
   const d = raw && raw.pct != null && raw.total != null ? { pct: raw.pct, total: raw.total, avail: raw.avail ?? 0 } : null
 
@@ -249,7 +282,7 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
     <section className="card-box">
       <CardHead title={title} help="비워도 다시 만들어지는 캐시를 비우고, 홈 폴더에서 큰 것을 찾아 휴지통으로 옮겨요. 휴지통으로 옮긴 것은 되살릴 수 있고, 휴지통을 비워야 공간이 늘어요." />
       {d ? <UseBar d={d} /> : null}
-      {info?.shared ? <SharedDisk s={info.shared} /> : null}
+      {sharedNow ? <SharedDisk s={sharedNow} /> : null}
       {online && own ? (
         <Row
           left={<Icon name="search" />}

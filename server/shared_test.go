@@ -60,4 +60,38 @@ func TestDiskCmdShared(t *testing.T) {
 	eq(t, jsonStr(info), `{"t":"disk","op":"info","shared":"/Volumes/M3/bridge/works"}`)
 	eq(t, jsonStr(scan), `{"t":"disk","op":"scan","path":"~"}`)
 	eq(t, jsonStr(other), `{"t":"disk","op":"info"}`)
+	// 1.485: the light op shared carries the same path, and nothing else of the body.
+	var sh M
+	withLock(func() { sh = diskCmd("gh1", "h1", "shared", M{"path": "~", "id": "x"}) })
+	eq(t, jsonStr(sh), `{"t":"disk","id":"x","op":"shared","path":"~","shared":"/Volumes/M3/bridge/works"}`)
+}
+
+// REQ-F-888 (1.485): op shared is a known disk op with the info's access rules. A Mac with no shared disk set is not
+// asked at all; disk_look may ask for it, disk_clean may not; someone who may not see the host is refused like info.
+func TestDiskRunShared(t *testing.T) {
+	parent, r := delegateSetup(t)
+	ok(t, DISK_WAITS["shared"] > 0 && DISK_WAITS["shared"] < DISK_WAITS["info"], "shared 는 info 보다 짧게 기다려요")
+	ok(t, contains(DISK_TOOL_OPS["disk_look"], "shared") && !contains(DISK_TOOL_OPS["disk_clean"], "shared"), "disk_look 만 shared")
+	var out any
+	var err error
+	withLock(func() { err = try(func() { out = diskRun("gh1", "h2", M{"op": "shared"}) }) })
+	ok(t, err == nil, "주인은 받아요")
+	eq(t, jsonStr(out), `{"shared":null}`)
+	eq(t, len(r.sent), 0)
+	withLock(func() {
+		err = try(func() {
+			out = runDiskTool("gh1", parent.host(), M{"sid": "p1", "op": "disk_look", "args": M{"host": "h2", "op": "shared"}})
+		})
+	})
+	ok(t, err == nil, "disk_look shared")
+	eq(t, jsonStr(out), `{"shared":null}`)
+	withLock(func() {
+		err = try(func() {
+			runDiskTool("gh1", parent.host(), M{"sid": "p1", "op": "disk_clean", "args": M{"host": "h2", "op": "shared"}})
+		})
+	})
+	ok(t, err != nil && strings.Contains(err.Error(), "disk_clean 로는 shared 를 할 수 없어요"), "disk_clean 은 못 해요")
+	withLock(func() { err = try(func() { diskRun("gh9", "h2", M{"op": "shared"}) }) })
+	ok(t, err != nil && strings.Contains(err.Error(), "호스트가 없습니다"), "남의 기기는 info 처럼 막혀요")
+	eq(t, len(r.sent), 0)
 }
