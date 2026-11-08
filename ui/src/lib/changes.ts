@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.486',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '봉인된 스냅샷을 이 기기에서 못 열 때 열쇠·내용·세션 중 어디서 막혔는지 함께 보인다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.485',
     date: '2026-11-08',
+    commit: '31eb16a',
     changes: [
       {
         kind: 'changed',

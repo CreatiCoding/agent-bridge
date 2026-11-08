@@ -15,6 +15,7 @@ import { readSnapshot } from '../lib/reader-dom'
 /** What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address. */
 type Snap = { url: string; html: string; images?: Record<string, string>; via?: string }
 import { matchRoute } from '../lib/router'
+import { LOCKED } from '../lib/trust'
 import { Button } from '../kit'
 import { Sheet } from '../kit/overlay'
 
@@ -114,11 +115,21 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
     // A sealing Mac's answer is one piece (opened by api.ts): it must be a snapshot of this session.
     if (p.sealed !== undefined) {
       s = null
-      try {
-        const o = JSON.parse(p.sealed) as Snap & { kind?: string; sid?: string }
-        if (o.kind === 'snapshot' && o.sid === sid) s = o
-      } catch {}
-      if (!s) throw new Error('이 기기에서는 풀 수 없는 스냅샷이에요')
+      // Which step failed (1.486): the key, the contents, or whose snapshot it is.
+      let why = ''
+      const t = String(p.sealed)
+      if (t === LOCKED || t.startsWith('⟦bt')) why = '이 기기에 그 맥의 열쇠가 없거나 잠금을 풀지 못했어요'
+      else {
+        try {
+          const o = JSON.parse(t) as Snap & { kind?: string; sid?: string }
+          if (o.kind !== 'snapshot') why = `스냅샷이 아닌 답이에요 (${String(o.kind).slice(0, 20)})`
+          else if (o.sid !== sid) why = `다른 세션의 스냅샷이에요 (${String(o.sid).slice(0, 8)} ≠ ${sid.slice(0, 8)})`
+          else s = o
+        } catch {
+          why = `풀었지만 내용이 깨졌어요 (${t.length.toLocaleString()}자, 끝: ${JSON.stringify(t.slice(-12))})`
+        }
+      }
+      if (!s) throw new Error(`이 기기에서는 풀 수 없는 스냅샷이에요: ${why}`)
     }
     if (typeof s.html !== 'string' || typeof s.url !== 'string') throw new Error('맥에서 페이지를 그리지 못했어요')
     const images = s.images && typeof s.images === 'object' ? s.images : {}

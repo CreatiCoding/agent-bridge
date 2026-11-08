@@ -81,7 +81,8 @@ test('AC-1660: a snapshot reads all the page’s pictures on the Mac; a data: pi
   const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
   // POST (signed), the sealed piece checked for this session, read on the screen.
   assert.match(sheet, /post<[^>]+>\(`\/api\/sessions\/\$\{sid\}\/snapshot`, \{ url: abs \}\)/)
-  assert.match(sheet, /o\.kind === 'snapshot' && o\.sid === sid/)
+  assert.match(sheet, /o\.kind !== 'snapshot'/)
+  assert.match(sheet, /o\.sid !== sid/)
   assert.match(sheet, /readSnapshot\(s\.html, s\.url,/)
   assert.doesNotMatch(sheet, /dangerouslySetInnerHTML|innerHTML/)
   const trust = readFileSync(new URL('../../ui/src/lib/trust.ts', import.meta.url), 'utf8')
@@ -153,4 +154,13 @@ test('AC-1679: a default snapshot that fails, then reading that fails too, shows
   const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
   assert.match(sheet, /readView\(abs\)\.catch\(/)
   assert.ok(sheet.includes('스냅샷을 만들지 못했어요 (${why}). 읽기로도 못 열었어요 ('))
+})
+
+test('AC-1685: a sealed snapshot this device cannot open says which step failed', () => {
+  const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.ok(sheet.includes('이 기기에서는 풀 수 없는 스냅샷이에요: ${why}'))
+  assert.match(sheet, /t === LOCKED/)
+  assert.match(sheet, /풀었지만 내용이 깨졌어요/)
+  assert.match(sheet, /스냅샷이 아닌 답이에요/)
+  assert.match(sheet, /다른 세션의 스냅샷이에요/)
 })
