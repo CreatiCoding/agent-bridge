@@ -2,6 +2,7 @@
 // and the demo Mac answering through the server's own paths.
 import { test, before, after, afterEach, describe } from 'node:test'
 import assert from 'node:assert/strict'
+import { FLUSH_ENV, flushed } from './flush.mjs'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
 
@@ -362,11 +363,11 @@ describe('demo limits and lasting sign-ins', () => {
 
 describe('demo state on disk', () => {
   test('the demo account and its Mac are never written to users.json or hosts.json', async () => {
-    const srv = await startServer({ env: DEMO })
+    const srv = await startServer({ env: { ...DEMO, ...FLUSH_ENV } })
     try {
       assert.equal((await demoLogin(srv)).status, 302)
       await srv.login('alice')
-      await new Promise((r) => setTimeout(r, 5600))
+      await flushed()
       const fs = await import('node:fs')
       const users = JSON.parse(fs.readFileSync(`${srv.data}/users.json`, 'utf8'))
       const hosts = JSON.parse(fs.readFileSync(`${srv.data}/hosts.json`, 'utf8'))

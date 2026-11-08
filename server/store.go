@@ -248,7 +248,7 @@ func asArr(v any) []any {
 }
 
 func startFlushing() {
-	setInterval(META_FLUSH_MS*time.Millisecond, flushToDisk)
+	setInterval(time.Duration(META_FLUSH_MS)*time.Millisecond, flushToDisk)
 	ch := make(chan os.Signal, 2)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 	go func() {

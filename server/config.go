@@ -57,17 +57,26 @@ var (
 	WEB_HASH             string
 )
 
+// META_FLUSH_MS: how often what changed in memory (sessions' meta.json, users, hosts, access requests) is written to
+// disk. BRIDGE_META_FLUSH_MS (a positive integer, ms) changes it; the unit tests use a short one so they do not wait
+// out 5 s for a file to appear (1.496).
+var META_FLUSH_MS = func() int {
+	if n, err := strconv.Atoi(env("BRIDGE_META_FLUSH_MS")); err == nil && n > 0 {
+		return n
+	}
+	return 5_000
+}()
+
 var SKILLS_REPO_RE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
 
 const (
-	HEARTBEAT_MS  = 15_000
-	STALE_MS      = 50_000
-	GOT_MS        = 12_000
-	LOGIN_DAYS    = 30
-	META_FLUSH_MS = 5_000
-	EVENTS_PAGE   = 500
-	LOG_ROTATE    = 5 * 1024 * 1024
-	LOG_VIEW      = 400
+	HEARTBEAT_MS = 15_000
+	STALE_MS     = 50_000
+	GOT_MS       = 12_000
+	LOGIN_DAYS   = 30
+	EVENTS_PAGE  = 500
+	LOG_ROTATE   = 5 * 1024 * 1024
+	LOG_VIEW     = 400
 )
 
 var CACHE_KINDS = []string{"start", "cold", "idle", "model", "compact", "other"}

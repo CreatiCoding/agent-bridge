@@ -112,7 +112,7 @@ const TRACE = process.env.BRIDGE_TRACE === '1'
 const GUIDE_DOKPLOY_URL = (process.env.BRIDGE_GUIDE_DOKPLOY_URL || 'https://<Dokploy 주소>').replace(/\/+$/, '')
 const trace = (hostId, text) => TRACE && console.log(`${new Date().toISOString()} TRACE user=${users[hosts[hostId]?.uid]?.login} host=${hosts[hostId]?.name} ${text}`)
 const LOGIN_DAYS = 30
-const META_FLUSH_MS = 5_000
+const META_FLUSH_MS = Number(process.env.BRIDGE_META_FLUSH_MS) || 5_000
 /** One page of a conversation's events: what a page asks for when it opens a session or scrolls back. */
 const EVENTS_PAGE = 500
 /** The files that make up the agent; install.sh downloads exactly these. */

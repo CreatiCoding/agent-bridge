@@ -41,8 +41,15 @@ test('연동 스트림이 잠깐 끊겼다 다시 붙으면 끊김으로 보이�
     assert.ok((await infos(A)).some((t) => /^연동 페이지가 \d+\.\d초 끊겼다가 다시 연결됨$/.test(t)), JSON.stringify(await infos(A)))
 
     // The page is told to reconnect in 1 s, not EventSource's 3 s.
+    // It is the stream's first line: read only until it shows (the next chunk may be a heartbeat many seconds away).
     const again = await reopen(a, A)
-    assert.match(again.first + new TextDecoder().decode((await again.reader.read()).value ?? new Uint8Array()), /retry: 1000/)
+    let head = again.first
+    while (!/retry: 1000/.test(head)) {
+      const { value, done } = await again.reader.read()
+      if (done) break
+      head += new TextDecoder().decode(value)
+    }
+    assert.match(head, /retry: 1000/)
     await back.reader.cancel().catch(() => {})
 
     // Away past the grace: shown as disconnected and logged once.

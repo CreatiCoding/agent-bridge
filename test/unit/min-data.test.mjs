@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { FLUSH_ENV, flushed } from './flush.mjs'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
 
@@ -12,7 +13,7 @@ const A = 'aaaaaaaa-0000-4000-8000-00000000000a'
 const uidOf = (s) => fs.readdirSync(path.join(s.data, 'u')).find((u) => !u.startsWith('demo'))
 
 test('작업 폴더·맥 로그·호스트 정보가 인증 정보·지침 본문·이메일·hostname 없이 남는다 (1.271)', async () => {
-  const s = await startServer({ seed: { 'logins.json': { deadbeef: { uid: 'gh1', exp: Date.now() - 1000 } } } })
+  const s = await startServer({ seed: { 'logins.json': { deadbeef: { uid: 'gh1', exp: Date.now() - 1000 } } }, env: FLUSH_ENV })
   let a
   try {
     await s.login('alice')
@@ -29,7 +30,7 @@ test('작업 폴더·맥 로그·호스트 정보가 인증 정보·지침 본�
     // The account e-mail is still shown while the Mac is connected.
     const st = await s.api('alice', `/api/hosts/${A}/status`)
     assert.equal(st.json.host.accounts[0].email, 'me@example.com')
-    await sleep(6500)
+    await flushed()
     const uid = uidOf(s)
     const meta = JSON.parse(fs.readFileSync(path.join(s.data, 'u', uid, 's', sid, 'meta.json'), 'utf8'))
     assert.equal(meta.folder.repos[0].origin, 'https://github.com/o/r.git')
@@ -51,9 +52,9 @@ test('작업 폴더·맥 로그·호스트 정보가 인증 정보·지침 본�
 test('저장돼 있던 작업 폴더의 토큰은 시작할 때 지워지고 지침 본문은 _legacy 로 옮겨진다 (1.271)', async () => {
   const sid = 'bbbbbbbb-0000-4000-8000-00000000000b'
   const seedMeta = { id: sid, uid: 'gh9', hostId: A, cwd: '/Users/x', title: 't', lines: 0, seq: 0, folder: { git: true, files: { 'AGENTS.md': '메모' }, repos: [{ dir: '.', origin: 'https://u:tok_old@github.com/o/r.git' }] } }
-  const s = await startServer({ seed: { [`u/gh9/s/${sid}/meta.json`]: seedMeta } })
+  const s = await startServer({ seed: { [`u/gh9/s/${sid}/meta.json`]: seedMeta }, env: FLUSH_ENV })
   try {
-    await sleep(6000)
+    await flushed()
     const meta = JSON.parse(fs.readFileSync(path.join(s.data, 'u', 'gh9', 's', sid, 'meta.json'), 'utf8'))
     assert.equal(meta.folder.repos[0].origin, 'https://github.com/o/r.git')
     assert.deepEqual(meta.folder.files, {})

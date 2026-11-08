@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { FLUSH_ENV, flushed } from './flush.mjs'
 import { startServer } from './server-harness.mjs'
 
 const DAY = 86_400_000
@@ -25,7 +26,7 @@ const oldStuff = (now) => ({
 
 test('기한이 지난 알림·제보·접근 요청은 새 기한이 시작된 뒤 것이면 저절로 지워진다 (1.272)', async () => {
   const now = Date.now()
-  const s = await startServer({ seed: { ...oldStuff(now), 'retention.json': { since: now - 365 * DAY } } })
+  const s = await startServer({ seed: { ...oldStuff(now), 'retention.json': { since: now - 365 * DAY } }, env: FLUSH_ENV })
   try {
     await s.login('alice')
     const notices = (await s.api('alice', '/api/notices')).json.notices
@@ -33,7 +34,7 @@ test('기한이 지난 알림·제보·접근 요청은 새 기한이 시작된 
     await sleep(2500)
     assert.ok(!fs.existsSync(path.join(s.data, 'reports/r-old-0001.json')))
     assert.ok(fs.existsSync(path.join(s.data, 'reports/r-new-0001.json')))
-    await sleep(5500)
+    await flushed()
     const access = JSON.parse(fs.readFileSync(path.join(s.data, 'access.json'), 'utf8'))
     assert.deepEqual(Object.keys(access).sort(), ['newwait', 'oldok'])
   } finally {

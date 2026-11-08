@@ -7,6 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { EventStore, saveLineImages, imageId } from '../../agent/store.mjs'
 import { sessionStats, addStats, cleanStats, prLinks } from '../../agent/stats.mjs'
+import { FLUSH_ENV, flushed } from './flush.mjs'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
 
@@ -95,6 +96,7 @@ test('3a: 맥이 기록을 맡을 수 있으면 서버가 있던 기록·그림�
       [`u/dev-alice/s/${SID}/meta.json`]: { id: SID, uid: 'dev-alice', hostId: A, cwd: '/w', lines: 0, seq: 1203, lastAt: 1, createdAt: 1 },
       [`u/dev-alice/s/${SID}/events.jsonl`]: events.map((e) => `${JSON.stringify(e)}\n`).join(''),
     },
+    env: FLUSH_ENV,
   })
   let a
   try {
@@ -122,7 +124,7 @@ test('3a: 맥이 기록을 맡을 수 있으면 서버가 있던 기록·그림�
     assert.equal(seqs.length, 1203)
     assert.equal(pic.id, img)
     assert.equal(pic.data, PNG)
-    await new Promise((r) => setTimeout(r, 6000))
+    await flushed()
     const meta = JSON.parse(fs.readFileSync(path.join(s.data, `u/dev-alice/s/${SID}/meta.json`), 'utf8'))
     assert.equal(meta.agentLog, true)
     // A new event goes down too, numbered after the old ones.
@@ -131,7 +133,7 @@ test('3a: 맥이 기록을 맡을 수 있으면 서버가 있던 기록·그림�
     assert.equal(live.events[0].seq, 1204)
     // Numbers from the Mac are kept and never sent to the page.
     await a.up({ t: 'stats', sid: SID, stats: { spans: [[1, 2]], open: null, lastAt: 2, hours: {} }, prs: ['https://github.com/o/r/pull/1', 'javascript:x'] })
-    await new Promise((r) => setTimeout(r, 6000))
+    await flushed()
     const m2 = JSON.parse(fs.readFileSync(path.join(s.data, `u/dev-alice/s/${SID}/meta.json`), 'utf8'))
     assert.deepEqual(m2.prLinks, ['https://github.com/o/r/pull/1'])
     assert.deepEqual(m2.stats.spans, [[1, 2]])

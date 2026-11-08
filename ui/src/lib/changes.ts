@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.496',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '바뀐 기록을 파일에 쓰는 주기(기본 5초)를 환경변수 BRIDGE_META_FLUSH_MS 로 바꿀 수 있다. 기본값과 동작은 그대로',
+        refs: ['REQ-F-056'],
+      },
+    ],
+  },
+  {
     version: '1.495',
     date: '2026-11-08',
+    commit: '9ec4c92',
     changes: [
       {
         kind: 'fixed',
