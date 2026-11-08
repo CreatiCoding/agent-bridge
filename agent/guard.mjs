@@ -586,6 +586,67 @@ export function diskUse(st) {
   return { total: st.blocks * st.bsize, used, avail, pct: Math.round((1000 * used) / (used + avail)) / 10 }
 }
 
+// ---------- 공유 디스크 보기 (REQ-F-888) ----------
+
+/**
+ * Read by a child process (`node -e SHARED_PROBE_SCRIPT <path> <home>`): a network mount that stops answering holds
+ * the reading thread, so the agent itself never touches the shared path. Prints one JSON line: whether it is a folder,
+ * its real path, its device and the home folder's, and its statfs numbers.
+ */
+export const SHARED_PROBE_SCRIPT = `const fs=require('fs');const [,p,home]=process.argv;const o={dir:false};
+try{const s=fs.statSync(p);o.dir=s.isDirectory();o.dev=s.dev;o.real=fs.realpathSync(p)}catch(e){o.code=e.code||'ERR'}
+if(o.dir){try{const t=fs.statfsSync(p);o.st={type:t.type,bsize:t.bsize,blocks:t.blocks,bfree:t.bfree,bavail:t.bavail}}catch{}}
+try{o.homeDev=fs.statSync(home).dev}catch{}
+process.stdout.write(JSON.stringify(o))`
+
+/** How long the shared path may take to answer before it counts as not connected. */
+export const SHARED_PROBE_MS = 8000
+
+// Linux statfs f_type magic numbers (linux/magic.h and the file systems' own headers).
+const FS_NETWORK = [0xff534d42 /* cifs */, 0xfe534d42 /* smb2 */, 0x517b /* smb */, 0x6969 /* nfs */, 0x564c /* ncp */, 0x00c36400 /* ceph */, 0x5346414f /* afs */, 0x73757245 /* coda */, 0x01021997 /* 9p */]
+const FS_LOCAL = [0xef53 /* ext2-4 */, 0x58465342 /* xfs */, 0x9123683e /* btrfs */, 0x2fc12fc1 /* zfs */, 0xf2f52010 /* f2fs */, 0x4d44 /* vfat */, 0x2011bab0 /* exfat */, 0x5346544e /* ntfs */, 0x7366746e /* ntfs3 */, 0x482b /* hfsplus */, 0x3153464a /* jfs */, 0x52654973 /* reiserfs */, 0x01021994 /* tmpfs */, 0x794c7630 /* overlay */]
+
+/** A Linux file system's kind from its statfs type: 'network', 'local', or null when it is not known (fuse, …). */
+export function fsTypeKind(type) {
+  if ((typeof type !== 'number' || !Number.isInteger(type)) && typeof type !== 'bigint') return null
+  const t = Number(BigInt.asUintN(32, BigInt(type)))
+  return FS_NETWORK.includes(t) ? 'network' : FS_LOCAL.includes(t) ? 'local' : null
+}
+
+const MAC_NETWORK_FS = ['smbfs', 'nfs', 'afpfs', 'webdav', 'cifs', 'ftp']
+
+/**
+ * A macOS path's kind from `mount` output: the mount it is under (the longest mount point that holds it) is
+ * 'network' by its file system (smbfs, nfs, …), 'local' when it says local, else null.
+ */
+export function macMountKind(out, real) {
+  if (typeof out !== 'string' || typeof real !== 'string' || !real.startsWith('/')) return null
+  let best = null
+  for (const line of out.split('\n')) {
+    const m = /^.+? on (\/.*?) \(([^()]*)\)$/.exec(line.trim())
+    if (!m) continue
+    const mp = m[1]
+    const under = mp === '/' || real === mp || real.startsWith(`${mp}/`)
+    if (under && (!best || mp.length > best.mp.length)) best = { mp, opts: m[2].split(',').map((x) => x.trim()) }
+  }
+  if (!best) return null
+  if (MAC_NETWORK_FS.includes(best.opts[0])) return 'network'
+  return best.opts.includes('local') ? 'local' : null
+}
+
+/**
+ * The shared disk's line in the disk info (REQ-F-888), from what the child read (`probe`, null when it did not answer
+ * in time) and the kind found for it. A path that is missing or not a folder is not connected, never an error.
+ */
+export function sharedDiskOf(where, probe, kind = null) {
+  if (typeof where !== 'string' || !where) return null
+  const off = (why) => ({ path: where, mounted: false, disk: null, kind: null, sameAsHome: false, why })
+  if (!probe) return off('응답이 없어요(시간 초과)')
+  if (!probe.dir) return off(!probe.code ? '폴더가 아니에요' : probe.code === 'ENOENT' || probe.code === 'ENOTDIR' ? '경로가 없어요' : `읽지 못했어요(${probe.code})`)
+  const sameAsHome = probe.dev != null && probe.dev === probe.homeDev
+  return { path: where, mounted: true, disk: diskUse(probe.st), kind: kind === 'network' || kind === 'local' ? kind : null, sameAsHome }
+}
+
 /** How old a key gets before it changes by itself (1.319, REQ-S-083). */
 export const KEY_ROTATE_MS = 24 * 3600_000
 

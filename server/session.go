@@ -717,7 +717,32 @@ func diskRun(uid, hostID string, b M) M {
 	if !online(hostID) {
 		refuse(409, NOT_CONNECTED)
 	}
+	cmd := diskCmd(mstr(h, "uid"), hostID, op, b)
+	r := ask(hostID, cmd, wait)
+	if text, removes := diskLogText(op, jsString(cmd["id"])); removes {
+		if !truthy(r["ok"]) {
+			text += " 실패: " + jsStringU(r["error"])
+		}
+		record(mstr(h, "uid"), hostID, M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text + byOperator(uid, h)})
+	}
+	if !truthy(r["ok"]) {
+		refuse(409, orStr(r["error"], "디스크 정보를 받지 못했어요"))
+	}
+	out := shallow(r)
+	delete(out, "reqId")
+	delete(out, "t")
+	return out
+}
+
+// diskCmd: the disk command sent to the Mac. info carries the Mac's shared-disk path from its owner's new-session
+// settings (REQ-F-888): the server's prefs are the only place it is kept, so the agent stores no copy of it.
+func diskCmd(owner, hostID, op string, b M) M {
 	cmd := M{"t": "disk", "op": op}
+	if op == "info" {
+		if s, ok := asM(launchOf(owner)["shared"])[hostID].(string); ok && s != "" {
+			cmd["shared"] = s
+		}
+	}
 	if s, ok := b["id"].(string); ok && len(s) <= 64 {
 		cmd["id"] = s
 	}
@@ -733,20 +758,7 @@ func diskRun(uid, hostID string, b M) M {
 		}
 		cmd["paths"] = list
 	}
-	r := ask(hostID, cmd, wait)
-	if text, removes := diskLogText(op, jsString(cmd["id"])); removes {
-		if !truthy(r["ok"]) {
-			text += " 실패: " + jsStringU(r["error"])
-		}
-		record(mstr(h, "uid"), hostID, M{"level": okOr(r, "info", "warn"), "area": "disk", "text": text + byOperator(uid, h)})
-	}
-	if !truthy(r["ok"]) {
-		refuse(409, orStr(r["error"], "디스크 정보를 받지 못했어요"))
-	}
-	out := shallow(r)
-	delete(out, "reqId")
-	delete(out, "t")
-	return out
+	return cmd
 }
 
 // diskLogText: the host log line for an op that removes something, and whether it is one.

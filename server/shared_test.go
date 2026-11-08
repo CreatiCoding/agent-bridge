@@ -44,3 +44,20 @@ func TestDelegateShared(t *testing.T) {
 	e = refused(M{"host": "맥미니", "task": "일", "shared": true, "cwd": "~/x"})
 	ok(t, strings.Contains(e, "cwd 와 shared 는 함께 쓸 수 없어요"), "cwd 와 함께: "+e)
 }
+
+// REQ-F-888: the disk info command carries the Mac's shared-disk path from its owner's prefs, and only info does.
+func TestDiskCmdShared(t *testing.T) {
+	delegateSetup(t)
+	withLock(func() {
+		prefsOf("gh1")["launch"] = M{"shared": M{"h1": "/Volumes/M3/bridge/works"}}
+	})
+	var info, scan, other M
+	withLock(func() {
+		info = diskCmd("gh1", "h1", "info", M{})
+		scan = diskCmd("gh1", "h1", "scan", M{"path": "~"})
+		other = diskCmd("gh1", "h2", "info", M{})
+	})
+	eq(t, jsonStr(info), `{"t":"disk","op":"info","shared":"/Volumes/M3/bridge/works"}`)
+	eq(t, jsonStr(scan), `{"t":"disk","op":"scan","path":"~"}`)
+	eq(t, jsonStr(other), `{"t":"disk","op":"info"}`)
+}

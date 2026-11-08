@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.484',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '디스크 관리에 공유 디스크: 공간 보기를 누르면 홈 디스크 막대 아래에 그 맥의 공유 디스크 경로, 연결 상태, 외장·네트워크, 사용량을 보인다(보기만). 멈춘 네트워크 마운트는 8초 뒤 연결 안 됨으로',
+        refs: ['REQ-F-888', 'IF-251'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '새 세션의 "공유 디스크" 스위치가 기본으로 켜져 있다. 끈 기기는 그대로 기억하고, 공유 디스크가 없는 맥은 전처럼 기본 폴더로 시작한다',
+        refs: ['REQ-F-883'],
+      },
+    ],
+  },
+  {
     version: '1.483',
     date: '2026-11-08',
+    commit: '551d570',
     changes: [
       {
         kind: 'fixed',

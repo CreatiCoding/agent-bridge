@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -4126,9 +4126,9 @@ const commands = {
     }
   },
   /** 디스크 관리 (REQ-F-801): `info` · `scan` · `clean` · `trash`. Only the owner's page asks (server ownHost). */
-  async disk({ reqId, op, id, path: where, paths }) {
+  async disk({ reqId, op, id, path: where, paths, shared }) {
     try {
-      emit({ t: 'disk', reqId, ok: true, ...(await diskOp(op, id, where, paths)) })
+      emit({ t: 'disk', reqId, ok: true, ...(await diskOp(op, id, where, paths, shared)) })
     } catch (e) {
       log('warn', 'disk', e.message)
       emit({ t: 'disk', reqId, ok: false, error: e.message })
@@ -5196,20 +5196,68 @@ function worktreeGone(w, repo) {
   log('info', 'disk', `정리한 worktree ${path.basename(abs)} 를 세션 ${w.sessions?.length ?? 0}개에 알림`)
 }
 
-async function diskOp(op, id, where, paths) {
+/**
+ * 공유 디스크 보기 (REQ-F-888): the shared path the server named with info, read by a child process with a time
+ * limit (SHARED_PROBE_SCRIPT), so a network mount that stops answering never holds the agent. Only measures: nothing
+ * on the shared disk is offered for removal. Linux tells a network mount by its statfs type, macOS by `mount`.
+ */
+async function sharedDisk(where) {
+  if (typeof where !== 'string' || !where.startsWith('/') || where.length > 4096) return null
+  const probe = await new Promise((resolve) => {
+    let out = ''
+    let done = false
+    const finish = (v) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      resolve(v)
+    }
+    const child = spawn(process.execPath, ['-e', SHARED_PROBE_SCRIPT, where, HOME], { stdio: ['ignore', 'pipe', 'ignore'] })
+    // A child held by a mount that does not answer may not end even when killed: the answer does not wait for it.
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {}
+      child.unref()
+      finish(null)
+    }, SHARED_PROBE_MS)
+    child.stdout.on('data', (b) => (out += b))
+    child.on('error', () => finish(null))
+    child.on('close', () => {
+      try {
+        finish(JSON.parse(out))
+      } catch {
+        finish(null)
+      }
+    })
+  })
+  let kind = null
+  if (probe?.dir) {
+    if (process.platform === 'linux') kind = fsTypeKind(probe.st?.type)
+    else if (process.platform === 'darwin') {
+      const m = await run('/sbin/mount', [], { timeout: 5000 })
+      kind = m.ok ? macMountKind(m.out, probe.real ?? where) : null
+    }
+  }
+  return sharedDiskOf(where, probe, kind)
+}
+
+async function diskOp(op, id, where, paths, shared) {
   const home = fs.realpathSync(HOME)
   if (op === 'info') {
     let disk = null
     try {
       disk = diskUse(fs.statfsSync(HOME))
     } catch {}
+    const sharedNow = sharedDisk(shared).catch(() => null)
     const caches = await inTurns(diskCaches(home, process.platform), 4, async (c) => {
       const there = c.paths.filter((p) => fs.existsSync(p))
       if (!there.length) return null
       const sizes = await Promise.all(there.map(diskSize))
       return { id: c.id, title: c.title, where: there.map(tilde), size: sizes.every((x) => x == null) ? null : sizes.reduce((a, b) => a + (b ?? 0), 0), irreversible: !!c.irreversible }
     })
-    return { disk, caches: caches.filter(Boolean), trash: tilde(trashDir(home, process.platform)) }
+    const sh = await sharedNow
+    return { disk, caches: caches.filter(Boolean), trash: tilde(trashDir(home, process.platform)), ...(sh ? { shared: sh } : {}) }
   }
   if (op === 'scan') {
     const dir = diskPath(where)

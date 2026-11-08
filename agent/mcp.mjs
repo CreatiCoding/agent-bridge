@@ -126,7 +126,7 @@ export const TOOLS = [
   {
     name: 'disk_look',
     description:
-      "Look at a Mac's disk without changing anything. op: info (usage and caches that can be emptied, with sizes), scan (a folder inside the home folder, biggest first; path ~/… ), worktrees (git worktrees and whether each is merged and clean), probe (deep look: how much df counts that the main folders do not add up to, app clones left when an app was killed, Docker's failed containers / reclaimable images / VM disk, and folders git ignores of 200 MB or more). Takes up to several minutes. Report what you find to the person as candidates; never treat it as permission to clean.",
+      "Look at a Mac's disk without changing anything. op: info (usage and caches that can be emptied, with sizes; and, when the person set a shared disk for that Mac, shared: its path, whether it is connected, its usage, local or network — shown only, never cleaned), scan (a folder inside the home folder, biggest first; path ~/… ), worktrees (git worktrees and whether each is merged and clean), probe (deep look: how much df counts that the main folders do not add up to, app clones left when an app was killed, Docker's failed containers / reclaimable images / VM disk, and folders git ignores of 200 MB or more). Takes up to several minutes. Report what you find to the person as candidates; never treat it as permission to clean.",
     inputSchema: {
       type: 'object',
       properties: {

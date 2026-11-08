@@ -44,8 +44,9 @@ export function NewSessionPage() {
   const [auto, setAuto] = useState(true)
   const [stamp] = useState(folderStamp)
   const [folderPrefs, setFolderPrefs] = useState<{ base?: string; noGroup?: string; shared?: Record<string, string> }>({})
-  // 공유 디스크 (REQ-F-883): start under this Mac's path to the shared disk instead. Remembered on this device.
-  const [onShared, setOnShared] = useState(() => getPref<boolean>('newShared', false) === true)
+  // 공유 디스크 (REQ-F-883): start under this Mac's path to the shared disk instead. On until it is turned off on this
+  // device, which is remembered (1.484). A host with no shared path still starts in the normal folder (useShared).
+  const [onShared, setOnShared] = useState(() => getPref<boolean>('newShared', true) !== false)
   const [dirs, setDirs] = useState<Dirs | null>(null)
   const [dirsError, setDirsError] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')

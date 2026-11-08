@@ -19,10 +19,26 @@ interface Cache {
   size: number | null
   irreversible: boolean
 }
+interface Use {
+  total: number
+  used: number
+  avail: number
+  pct: number
+}
+/** 공유 디스크 (REQ-F-888): only when the person set a shared disk for this host; shown, never cleaned from here. */
+interface Shared {
+  path: string
+  mounted: boolean
+  disk: Use | null
+  kind: 'local' | 'network' | null
+  sameAsHome: boolean
+  why?: string
+}
 interface Info {
-  disk: { total: number; used: number; avail: number; pct: number } | null
+  disk: Use | null
   caches: Cache[]
   trash: string
+  shared?: Shared
 }
 interface Item {
   name: string
@@ -62,6 +78,43 @@ function Bar({ pct, tone }: { pct: number; tone?: 'amber' | 'red' }) {
   return (
     <div style={{ height: 6, borderRadius: 3, background: 'var(--line)', overflow: 'hidden' }} aria-hidden>
       <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: '100%', background: color }} />
+    </div>
+  )
+}
+
+/** How full a disk is: the share used, what is left of the whole, and its bar. */
+function UseBar({ d }: { d: { pct: number; total: number; avail: number } }) {
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="hstack" style={{ justifyContent: 'space-between' }}>
+        <b>{Math.round(d.pct)}% 사용</b>
+        <span className="muted">
+          {bytes(d.avail)} 남음 / {bytes(d.total)}
+        </span>
+      </div>
+      <Bar pct={d.pct} tone={d.pct >= 95 ? 'red' : d.pct >= 85 ? 'amber' : undefined} />
+    </div>
+  )
+}
+
+/** 공유 디스크 (REQ-F-888): its path, whether this host reaches it, local or network, and how full it is. */
+function SharedDisk({ s }: { s: Shared }) {
+  const kind = s.sameAsHome ? '홈과 같은 디스크' : s.kind === 'network' ? '네트워크' : s.kind === 'local' ? '외장' : null
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <h3 style={{ margin: '8px 0 0', fontSize: 'var(--fs-medium)' }}>공유 디스크</h3>
+      <Row
+        left={<Icon name="folder" />}
+        title={<code style={{ wordBreak: 'break-all' }}>{s.path}</code>}
+        sub={
+          <span>
+            <span className={`dot dot-${s.mounted ? 'green' : 'grey'}`} /> {s.mounted ? '연결됨' : `연결 안 됨${s.why ? ` · ${s.why}` : ''}`}
+            {s.mounted && kind ? ` · ${kind}` : ''}
+          </span>
+        }
+      />
+      {/* On the home disk the bar above already is this one. */}
+      {s.mounted && s.disk && !s.sameAsHome ? <UseBar d={s.disk} /> : null}
     </div>
   )
 }
@@ -195,17 +248,8 @@ export function DiskBox({ hostId, online, sys, title = '디스크 관리' }: { h
   return (
     <section className="card-box">
       <CardHead title={title} help="비워도 다시 만들어지는 캐시를 비우고, 홈 폴더에서 큰 것을 찾아 휴지통으로 옮겨요. 휴지통으로 옮긴 것은 되살릴 수 있고, 휴지통을 비워야 공간이 늘어요." />
-      {d ? (
-        <div className="stack" style={{ gap: 6 }}>
-          <div className="hstack" style={{ justifyContent: 'space-between' }}>
-            <b>{Math.round(d.pct)}% 사용</b>
-            <span className="muted">
-              {bytes(d.avail)} 남음 / {bytes(d.total)}
-            </span>
-          </div>
-          <Bar pct={d.pct} tone={d.pct >= 95 ? 'red' : d.pct >= 85 ? 'amber' : undefined} />
-        </div>
-      ) : null}
+      {d ? <UseBar d={d} /> : null}
+      {info?.shared ? <SharedDisk s={info.shared} /> : null}
       {online && own ? (
         <Row
           left={<Icon name="search" />}
