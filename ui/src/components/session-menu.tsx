@@ -14,7 +14,7 @@ import { tokenOf } from '../lib/locks'
 import { clearLock, lockSession, relock } from './lock'
 import { confirmCopyMode } from './auto-allow-confirm'
 import { openCwd } from './cwd-sheet'
-import { handoffBlocked, openHandoff } from './codex-handoff'
+import { handoffBlocked, openHandoff, switchTarget } from './codex-handoff'
 import { TODO_ASK, TODO_REASK } from './session-extras'
 import { closeSession, openLink, openSession, sendMessage } from '../lib/builtin-actions'
 import { isCancel, type Cancel } from '../lib/actions'
@@ -384,9 +384,11 @@ function sessionMenuAll(s: Session, opts: { groups?: { id: string; name: string 
     ...(featureOn('sessionMove') ? [{ id: 'move-host', label: others.length ? '다른 맥으로 옮기기' : '다른 맥으로 옮기기 (다른 맥 없음)', icon: 'move' as const, disabled: !alive || !others.length || s.state.phase === 'busy', onSelect: () => moveTo(s) }] : []),
     // Shown where the Mac has more than one Claude account (설정 → Claude 계정).
     ...((host?.accounts?.length ?? 0) > 1 ? [{ id: 'move-account', label: '다른 계정으로 옮기기', icon: 'user' as const, hint: `지금: ${accountOf(s)?.name ?? '기본 계정'}`, disabled: !alive || s.state.phase === 'busy', onSelect: () => moveAccount(s) }] : []),
-    // Codex 로 이어서 작업 (REQ-F-857): a Claude Code session, where one of the person's Macs has Codex (a Mac without
-    // it says so on the item).
-    ...(runnerOf(s) === 'claude' && (getStore().state?.hosts ?? []).some((h) => h.runners?.some((r) => r.id === 'codex')) ? [{ id: 'to-codex', label: 'Codex 로 이어서 작업', icon: 'forward' as const, hint: handoffBlocked(s) ?? '요약을 넘겨 같은 폴더에서 Codex 가 이어서', disabled: !!handoffBlocked(s), onSelect: () => openHandoff(s) }] : []),
+    // 실행기 전환 (REQ-F-891): a Claude Code session where one of the person's Macs has Codex (a Mac without it says so
+    // on the item), and every Codex session the other way. The same session goes on: nothing is copied.
+    ...(runnerOf(s) === 'codex' || (runnerOf(s) === 'claude' && (getStore().state?.hosts ?? []).some((h) => h.runners?.some((r) => r.id === 'codex')))
+      ? [{ id: switchTarget(s) === 'codex' ? 'to-codex' : 'to-claude', label: `${switchTarget(s) === 'codex' ? 'Codex' : 'Claude Code'} 로 전환`, icon: 'forward' as const, hint: handoffBlocked(s) ?? '요약을 넘겨 이 세션에서 이어서', disabled: !!handoffBlocked(s), onSelect: () => openHandoff(s) }]
+      : []),
     { id: 'move-cwd', label: '작업 폴더 바꾸기', icon: 'folder', hint: '같은 맥의 다른 폴더에서 이어서', disabled: !live || away || s.state.phase === 'busy', onSelect: () => openCwd(s) },
     ...(seat ? [seat] : []),
     'sep',

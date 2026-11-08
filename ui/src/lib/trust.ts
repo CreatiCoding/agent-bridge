@@ -371,6 +371,11 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     else if (op === 'snapshot') xs = [{ t: 'snapshot', i: { sid, url: str(body.url) } }]
     else if (op === 'retract') xs = await retractI(s, h)
     else if (op === 'resume') xs = [{ t: 'open', i: { sid } }]
+    // 실행기 전환 (REQ-F-891): the runner, Codex's sandbox and approval, and 전부 허용 as asked here.
+    else if (op === 'switch' && (body.runner === 'claude' || body.runner === 'codex')) {
+      const mode = str(body.mode)
+      xs = [{ t: 'switch', i: { sid, runner: body.runner, ...(body.runner === 'codex' && typeof body.codexMode === 'string' && body.codexMode ? { codexMode: body.codexMode.slice(0, 60) } : {}), ...(mode === 'autoAllow' || mode === 'allowAll' ? { autoAllow: true, allowAll: mode === 'allowAll' } : {}) } }]
+    }
     else if (op === 'settings') {
       if (typeof body.autoPush === 'boolean') xs.push({ t: 'set', i: { sid, autoPush: body.autoPush } })
       if (typeof body.autoAllow === 'boolean') xs.push(setAllow(sid, body.autoAllow, body.allowAll === true))

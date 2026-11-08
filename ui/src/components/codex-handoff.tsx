@@ -1,13 +1,15 @@
-// Codex 로 이어서 작업 (REQ-F-857): a Claude Code session's work goes on in a new Codex session in the same folder of
-// the same Mac. The Claude session writes the hand-over summary (it knows the whole conversation, compacted parts
-// too); the person reads and edits it, picks Codex's own sandbox and approval, and the Codex session starts with the
-// summary as its first message. The Claude conversation stays as it is, and the two sessions link each other.
+// 실행기 전환 (REQ-F-891; before it Codex 로 이어서 작업, REQ-F-857, which started a second session): a session's work
+// goes on in the other runner (Claude Code ↔ Codex) in the same session: same id, same place in the list, same
+// conversation on the page, same folder of the same Mac. The session writes the hand-over summary (it knows the whole
+// conversation, compacted parts too); the person reads and edits it, picks Codex's own sandbox and approval when it
+// goes to Codex, the Mac switches the runner (POST /switch), and the summary is sent as the first message to the new
+// runner. The runner it leaves keeps its conversation on the Mac: switching back resumes it.
 // 한 번에 넘기기 (REQ-F-861): opened with `auto` (a conversation brought over from the Mac's list with "Codex 로"),
-// the sheet asks for the summary as soon as the session rests and starts the Codex session as soon as a handoff
-// block comes back, so the whole move is one press. The person can still turn that off and read the summary first.
+// the sheet asks for the summary as soon as the session rests and switches as soon as a handoff block comes back, so
+// the whole move is one press. The person can still turn that off and read the summary first.
 import { useEffect, useRef, useState } from 'react'
 import { errorText, get } from '../lib/api'
-import { isCancel, dispatch } from '../lib/actions'
+import { isCancel } from '../lib/actions'
 import { openSession, sendMessage } from '../lib/builtin-actions'
 import { codexAllowed } from '../lib/codex-mode'
 import { folderPath } from '../lib/format'
@@ -21,23 +23,27 @@ import { Sheet, toast } from '../kit/overlay'
 import { CodexAllowField, CodexModeFields } from './codex-mode'
 import { confirmLaunchMode } from './auto-allow-confirm'
 import { act, sessionPost } from './session-menu'
-import { HANDOFF_ASK, HANDOFF_HEAD, summaryAfterAsk } from '../lib/handoff'
+import { RUNNER_NAMES, handoffAsk, handoffHead, otherRunner, summaryAfterAsk, type SwitchRunner } from '../lib/handoff'
 
 /**
- * Opens the sheet for a session from anywhere (its ⋯ menu). `auto` asks for the summary once the session rests and
- * starts Codex when it comes (한 번에 넘기기); without it the person's last choice of the switch decides the start.
+ * Opens the sheet for a session from anywhere (its ⋯ menu, a right click on its row). `auto` asks for the summary
+ * once the session rests and switches when it comes (한 번에 넘기기); without it the person's last choice decides.
  */
 export const openHandoff = (s: Session | string, opts: { auto?: boolean } = {}) =>
   dispatchEvent(new CustomEvent('cb-handoff', { detail: { id: typeof s === 'string' ? s : s.id, auto: !!opts.auto } }))
 
-/** Why a session cannot be handed to Codex now, or null when it can (the menu item's hint). */
+/** The runner a session switches to: the other one. */
+export const switchTarget = (s: Session): SwitchRunner => otherRunner(runnerOf(s))
+
+/** Why a session cannot switch runner now, or null when it can (the menu item's hint). */
 export function handoffBlocked(s: Session): string | null {
-  if (runnerOf(s) !== 'claude') return 'Claude Code 세션만'
-  if (s.locked) return '잠긴 세션은 못 넘겨요'
+  const from = runnerOf(s)
+  if (from !== 'claude' && from !== 'codex') return 'Claude Code·Codex 세션만'
+  if (s.locked) return '잠긴 세션은 못 바꿔요'
   if (s.seat?.where === 'slack') return 'Slack 에서 작업 중'
   const host = (getStore().state?.hosts ?? []).find((h) => h.id === s.hostId)
   if (!host?.online) return '맥이 연결돼 있지 않아요'
-  if (!host.runners?.some((r) => r.id === 'codex')) return '이 맥에 Codex 가 없어요 (codex·tmux 필요)'
+  if (from === 'claude' && !host.runners?.some((r) => r.id === 'codex')) return '이 맥에 Codex 가 없어요 (codex·tmux 필요)'
   if (!s.state.alive) return '세션을 먼저 열어야 해요'
   return null
 }
@@ -45,7 +51,6 @@ export function handoffBlocked(s: Session): string | null {
 /** How long the sheet waits for the summary. */
 const ASK_MS = 15 * 60_000
 const POLL_MS = 2000
-const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 /** All the events after `after`, page by page. */
 async function eventsAfter(sid: string, after: number) {
@@ -90,8 +95,12 @@ export function HandoffSheet() {
   autoRef.current = auto
   const [autoAsk, setAutoAsk] = useState(false)
   const [autoGo, setAutoGo] = useState(false)
-  // One key per opening: a second press, or a retry after a lost answer, gets the same Codex session (REQ-F-857).
-  const key = useRef('')
+  // Which way it goes: the runner the session runs now, and the other one.
+  const from: SwitchRunner = s && runnerOf(s) === 'codex' ? 'codex' : 'claude'
+  const to = otherRunner(from)
+  const toCodex = to === 'codex'
+  const fromName = RUNNER_NAMES[from]
+  const toName = RUNNER_NAMES[to]
   const asking = useRef(0)
   const starting = useRef(false)
   // Codex's own sandbox and approval, picked here: Claude Code's permission mode does not carry over.
@@ -99,7 +108,7 @@ export function HandoffSheet() {
   const [modePick, setModePick] = useState(() => getPref('handoffCodexMode', ''))
   const codexMode = codexAllowed(modePick)
   const [allowPick, setAllowPick] = useState(() => getPref('handoffCodexAllow', ''))
-  const canAllow = !!codex?.caps.includes('autoAllow')
+  const canAllow = toCodex && !!codex?.caps.includes('autoAllow')
   const codexAllow = canAllow && (allowPick === 'autoAllow' || allowPick === 'allowAll') ? allowPick : ''
 
   const close = () => {
@@ -116,7 +125,6 @@ export function HandoffSheet() {
   const [opened, setOpened] = useState<string | null>(null)
   if (s && opened !== s.id) {
     setOpened(s.id)
-    key.current = newKey()
     setStep('ready')
     setSummary('')
     setNote(null)
@@ -159,7 +167,7 @@ export function HandoffSheet() {
     setNote(null)
     try {
       const base = (await get<EventsPage>(`/api/sessions/${s.id}/events?after=1000000000000000`)).last
-      const r = await sendMessage(s.id, HANDOFF_ASK)
+      const r = await sendMessage(s.id, handoffAsk(to))
       if (isCancel(r)) return n === asking.current && setStep('ready')
       const until = Date.now() + ASK_MS
       let seen: Ev[] = []
@@ -177,9 +185,9 @@ export function HandoffSheet() {
         if (got.asked && got.summary && now === 'idle' && (got.block || still >= 2)) {
           setSummary(got.summary)
           setStep('edit')
-          // Only a real handoff block starts Codex by itself; plain last words are shown to read first.
+          // Only a real handoff block switches by itself; plain last words are shown to read first.
           if (autoRef.current && got.block) setAutoGo(true)
-          else if (autoRef.current) setNote('요약이 정해진 모양이 아니라 바로 시작하지 않았어요. 읽어 보고 시작해 주세요.')
+          else if (autoRef.current) setNote('요약이 정해진 모양이 아니라 바로 바꾸지 않았어요. 읽어 보고 전환해 주세요.')
           return
         }
       }
@@ -230,36 +238,33 @@ export function HandoffSheet() {
     starting.current = true
     setBusy(true)
     try {
-      if (!(await confirmLaunchMode(codexAllow))) return
-      const r = await dispatch('session.create', {
-        hostId: host.id,
-        cwd: s.cwd,
-        prompt: `${HANDOFF_HEAD}\n\n${text}`,
-        runner: 'codex',
-        model: '',
-        effort: '',
-        mode: codexAllow,
-        ...(codexMode ? { codexMode } : {}),
-        create: false,
-        handoffFrom: s.id,
-        handoffKey: key.current,
+      if (toCodex && !(await confirmLaunchMode(codexAllow))) return
+      // The same session goes on in the other runner (REQ-F-891): no new session is made.
+      const r = await sessionPost<{ ok: true; resumed?: boolean }>(s, 'switch', {
+        runner: to,
+        ...(toCodex ? { codexMode } : {}),
+        ...(codexAllow ? { mode: codexAllow } : {}),
       })
-      if (isCancel(r)) return
-      setPref('handoffCodexMode', codexMode)
-      if (canAllow) setPref('handoffCodexAllow', codexAllow)
-      toast('Codex 세션을 띄웠어요. Claude 세션은 그대로 남아요')
+      if (toCodex) {
+        setPref('handoffCodexMode', codexMode)
+        if (canAllow) setPref('handoffCodexAllow', codexAllow)
+      }
+      // The summary is its first message, sent like any other (signed and sealed as one); it waits while it starts.
+      const sent = await sendMessage(s.id, `${handoffHead(from, to, !!r.resumed)}\n\n${text}`).catch((e) => (toast(`요약을 보내지 못했어요: ${errorText(e)} · 시트에서 복사해 직접 보내 주세요`, { tone: 'bad' }), null))
+      if (sent == null || isCancel(sent)) return
+      toast(`${toName} 로 바꿨어요. 같은 세션에서 이어서 해요`)
       close()
-      openSession(r.sid, 'handoff')
+      openSession(s.id, 'handoff')
     } catch (e) {
-      // The Claude session is untouched; the summary stays here to try again.
-      toast(`Codex 세션을 시작하지 못했어요: ${errorText(e)}`, { tone: 'bad' })
+      // The session is untouched (or back on its runner); the summary stays here to try again.
+      toast(`${toName} 로 바꾸지 못했어요: ${errorText(e)}`, { tone: 'bad' })
     } finally {
       starting.current = false
       setBusy(false)
     }
   }
 
-  // ...and Codex starts on the render that has the summary, with the sandbox and approval shown in the sheet now.
+  // ...and the switch runs on the render that has the summary, with the sandbox and approval shown in the sheet now.
   useEffect(() => {
     if (autoGo && step === 'edit') {
       setAutoGo(false)
@@ -277,27 +282,28 @@ export function HandoffSheet() {
 
   const modeFields = (
     <>
-      <p className="muted">Codex 의 권한은 여기서 따로 골라요. Claude 세션의 권한 모드는 옮기지 않아요.</p>
+      <p className="muted">Codex 의 권한은 여기서 따로 골라요. Claude Code 의 권한 모드는 옮기지 않아요.</p>
       <CodexModeFields value={codexMode} onChange={setModePick} />
       {canAllow ? <CodexAllowField value={codexAllow} onChange={setAllowPick} /> : null}
     </>
   )
+  const claudeNote = <p className="muted">Claude Code 는 이 세션에서 예전에 쓰던 모델·권한 모드로 다시 떠요. 처음이면 기본값이에요.</p>
 
   const folder = s ? folderPath(s.cwd, s.home) : ''
   return (
     <Sheet
       open={!!s}
       onClose={close}
-      title="Codex 로 이어서 작업"
+      title={`${toName} 로 전환`}
       footer={
         <div className="dialog-buttons">
           <Button onClick={close}>취소</Button>
           {step === 'edit' ? (
-            <Button tone="primary" busy={busy} disabled={!summary.trim() || working || !codex} onClick={() => void start()}>
-              Codex 세션 시작
+            <Button tone="primary" busy={busy} disabled={!summary.trim() || working || (toCodex && !codex)} onClick={() => void start()}>
+              {toName} 로 전환
             </Button>
           ) : step === 'ready' ? (
-            <Button tone="primary" disabled={working || !codex} onClick={() => void ask()}>
+            <Button tone="primary" disabled={working || (toCodex && !codex)} onClick={() => void ask()}>
               요약 만들기
             </Button>
           ) : null}
@@ -307,18 +313,18 @@ export function HandoffSheet() {
       {s ? (
         <>
           <p className="muted" style={{ marginTop: 0 }}>
-            <b>{titleOf(s)}</b> 의 작업을 같은 맥·같은 폴더의 새 Codex 세션이 이어받아요. Claude 대화는 그대로 남고, 두 세션에 서로 여는 링크가 남아요.
+            <b>{titleOf(s)}</b> 를 {fromName} 에서 {toName} 로 바꿔 <b>이 세션에서</b> 이어서 해요. 새 세션을 만들지 않아요. {fromName} 의 대화는 맥에 남아, 다시 바꾸면 그 대화를 이어서 열어요.
           </p>
           <Field label="작업 폴더" hint="미커밋 변경과 worktree·브랜치를 그대로 두고 같은 폴더에서 이어서 해요">
             <div className="input mono" aria-label="작업 폴더">
               {folder}
             </div>
           </Field>
-          {!codex ? <p className="muted">이 맥에 Codex 가 없어요. 맥에 codex 와 tmux 를 설치하면 쓸 수 있어요.</p> : null}
+          {toCodex && !codex ? <p className="muted">이 맥에 Codex 가 없어요. 맥에 codex 와 tmux 를 설치하면 쓸 수 있어요.</p> : null}
           {working && step !== 'asking' ? (
             <div className="note note-warn">
               <div className="grow">
-                {phase === 'waiting' ? 'Claude 가 답을 기다리고 있어요. 세션에서 답한 뒤 이어서 해요.' : 'Claude 가 지금 작업 중이에요. 두 에이전트가 같은 파일을 함께 고치지 않게, 끝나길 기다리거나 멈춘 뒤에 넘겨요.'}
+                {phase === 'waiting' ? `${fromName} 가 답을 기다리고 있어요. 세션에서 답한 뒤 이어서 해요.` : `${fromName} 가 지금 작업 중이에요. 두 에이전트가 같은 파일을 함께 고치지 않게, 끝나길 기다리거나 멈춘 뒤에 바꿔요.`}
                 <div className="choices">
                   {autoAsk ? (
                     <span className="hstack muted">
@@ -348,14 +354,14 @@ export function HandoffSheet() {
             </div>
           ) : null}
           {step !== 'edit' ? (
-            <Switch label="요약이 오면 바로 Codex 세션 시작" checked={auto} onChange={pickAuto} />
+            <Switch label={`요약이 오면 바로 ${toName} 로 전환`} checked={auto} onChange={pickAuto} />
           ) : null}
           {step === 'ready' && autoAsk ? (
-            <p className="muted">세션이 준비되면 요약을 만들고, 요약이 오면 아래 권한으로 바로 Codex 세션을 시작해요.</p>
+            <p className="muted">세션이 준비되면 요약을 만들고, 요약이 오면 {toCodex ? '아래 권한으로 ' : ''}바로 {toName} 로 바꿔요.</p>
           ) : null}
           {step === 'ready' && !autoAsk ? (
             <p className="muted">
-              "요약 만들기"를 누르면 Claude 에게 목표·요구사항·결정 사항·변경 파일·검증 결과·남은 작업을 정리해 달라고 이 대화에 보내요. 받은 요약은 보내기 전에 고칠 수 있어요.{' '}
+              "요약 만들기"를 누르면 {fromName} 에게 목표·요구사항·결정 사항·변경 파일·검증 결과·남은 작업을 정리해 달라고 이 대화에 보내요. 받은 요약은 보내기 전에 고칠 수 있어요.{' '}
               <Button size="sm" tone="ghost" onClick={() => (setSummary(''), setStep('edit'))}>
                 직접 쓰기
               </Button>
@@ -363,15 +369,15 @@ export function HandoffSheet() {
           ) : null}
           {step === 'asking' ? (
             <div className="hstack muted" style={{ gap: 8 }}>
-              <Spinner size={14} /> Claude 가 인계 요약을 쓰는 중이에요. 이 창을 닫아도 대화에는 남아요.
+              <Spinner size={14} /> {fromName} 가 인계 요약을 쓰는 중이에요. 이 창을 닫아도 대화에는 남아요.
               {phase === 'waiting' ? ' 권한을 묻고 있어요: 세션에서 답해 주세요.' : ''}
             </div>
           ) : null}
-          {step !== 'edit' && auto ? modeFields : null}
+          {step !== 'edit' && auto ? (toCodex ? modeFields : claudeNote) : null}
           {step === 'edit' ? (
             <>
               {note ? <p className="muted">{note}</p> : null}
-              <Field label="넘길 요약" hint="Codex 세션의 첫 메시지가 돼요. 고쳐서 보내도 돼요">
+              <Field label="넘길 요약" hint={`${toName} 에게 보내는 첫 메시지가 돼요. 고쳐서 보내도 돼요`}>
                 <textarea className="input" rows={14} value={summary} onChange={(e) => setSummary(e.target.value)} aria-label="넘길 요약" />
               </Field>
               <div className="hstack" style={{ gap: 8, marginTop: -8, marginBottom: 8 }}>
@@ -379,7 +385,7 @@ export function HandoffSheet() {
                   요약 다시 만들기
                 </Button>
               </div>
-              {modeFields}
+              {toCodex ? modeFields : claudeNote}
             </>
           ) : null}
         </>

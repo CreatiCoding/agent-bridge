@@ -487,7 +487,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(s.past ? { past: s.past } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -922,7 +922,7 @@ function trustRememberClosed(sid, s) {
   try {
     trust.ensure()
     const list = readJson(closedPath, {})
-    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }), ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
+    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }), ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.past ? { past: s.past } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
     const keep = Object.entries(list).sort((a, b) => b[1].at - a[1].at).slice(0, 200)
     writeJson(closedPath, Object.fromEntries(keep))
   } catch (e) {
@@ -1370,7 +1370,8 @@ function codexSync(sid, s) {
     s.rolloutFile = found.file
     saveSessions()
     log('info', 'session', `codex 대화 → ${found.id.slice(0, 8)}`, sid)
-    emit({ t: 'conv', sid, conv: found.id, replay: false })
+    // A session switched over from Claude Code (실행기 전환, REQ-F-891) keeps its name.
+    emit({ t: 'conv', sid, conv: found.id, replay: false, ...(s.past ? { keepTitle: true } : {}) })
   }
   if (!s.rolloutFile || !fs.existsSync(s.rolloutFile)) s.rolloutFile = findRollout(codexRoot(), s.rollout)
   if (!s.rolloutFile) return
@@ -2187,7 +2188,8 @@ function toolTitle(name, input) {
 /** A hook says what happened; the screen and the transcript fill in the rest. */
 async function onHook(sid, ev) {
   const s = sessions.get(sid)
-  if (!s) return
+  // Codex has no hooks: one here is a late one from the claude a 실행기 전환 (REQ-F-891) just stopped.
+  if (!s || !isClaude(s)) return
   s.hooks = true
   s.activityAt = Date.now()
   const name = ev.hook_event_name
@@ -3259,6 +3261,8 @@ async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysProm
     // Its effort (REQ-F-889) the same way: the server's ('' is codex's default) unless trust is on.
     const effort = !trustOn() && typeof codexEffort === 'string' ? codexEffort : (old?.codexEffort ?? record?.codexEffort)
     const s = { runner: 'codex', cwd: dir, autoPush: autoPush !== false, conv: id, rollout: id, rolloutFile: file, sysPrompt: String(sysPrompt ?? old?.sysPrompt ?? '').slice(0, 8000), ...(mode ? { codexMode: mode } : {}), ...(codexEffortOk(effort) ? { codexEffort: effort } : {}), ...((old?.model ?? model) && /^[\w.-]{1,60}$/.test(old?.model ?? model) && !/^claude/i.test(old?.model ?? model) ? { model: old?.model ?? model } : {}) }
+    // What the session ran before (실행기 전환, REQ-F-891) stays with it.
+    if (old?.past || record?.past) s.past = old?.past ?? record?.past
     // The mirror made again from the rollout, and reading resumes at its end: the server has these lines (a resync
     // asks for any it does not).
     s.mirror = {}
@@ -3327,6 +3331,103 @@ async function adoptCodex(reqId, sid, { conv, cwd, autoPush, sysPrompt, codexMod
     agentHook('session.create', sid, dir)
   } catch (e) {
     log('error', 'adopt', `codex 대화를 가져오지 못함: ${e.message}`, sid)
+    emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
+  }
+}
+
+/**
+ * 실행기 전환 (REQ-F-891): the same bridge session goes on in the other runner, in the same terminal name, folder and
+ * conversation on the page: no second session. The runner it leaves keeps its own conversation (`past`), so switching
+ * back resumes that one (`claude --resume`, `codex resume`). The server's copy starts over with the runner's
+ * conversation, as after /clear (`conv`); a resumed conversation's lines were shown before and are sent again without
+ * being drawn (`silent`). Refused while the session works, waits or has messages held: two agents never write at once.
+ * If the new runner does not start, the old one's conversation is put back and the session is left down (reopen it).
+ */
+async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll, signed }) {
+  const s = sessions.get(sid)
+  try {
+    if (!s || s.closed) throw new Error('이 맥에 그 세션이 없어요')
+    if (!safeConvId(sid)) throw new Error('세션 id 가 올바르지 않아요')
+    const from = isClaude(s) ? 'claude' : s.runner
+    if (runner !== 'claude' && runner !== 'codex') throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
+    if (runner === from) throw new Error('이미 그 실행기로 도는 세션이에요')
+    if (runner === 'codex' && !codexVersion) throw new Error('이 맥에서 codex 를 쓸 수 없어요 (설치돼 있지 않거나 응답하지 않아요)')
+    if (s.alive === false || s.launching) throw new Error('세션을 먼저 열어야 해요')
+    if (s.starting || s.turn || s.card?.open || s.wait || s.running?.size) throw new Error('세션이 지금 작업 중이에요. 끝나거나 멈춘 뒤에 바꿔 주세요')
+    if (s.held?.length) throw new Error('세션에 보낼 글이 남아 있어요. 전달되거나 지운 뒤에 바꿔 주세요')
+    // Codex's own sandbox and approval, signed with the switch while trust is on (like new, REQ-F-854).
+    const mode = runner === 'codex' ? codexModeStr(parseCodexMode(codexMode) ?? (() => { throw new Error('codex 샌드박스·승인 모드가 올바르지 않아요') })()) : ''
+    // What the runner it leaves needs to go on later.
+    const mine = from === 'claude'
+      ? { conv: s.conv || sid, ...(s.transcript ? { transcript: s.transcript } : {}), ...(s.account ? { account: s.account } : {}), ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), ...(s.chrome === false ? { chrome: false } : {}) }
+      : { ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }
+    const past = { ...(s.past ?? {}), [from]: mine }
+    const prev = past[runner] ?? {}
+    const base = { cwd: s.cwd, autoPush: s.autoPush !== false, sysPrompt: String(s.sysPrompt ?? '').slice(0, 8000), past, ...(s.routing ? { routing: s.routing } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}) }
+    let t
+    let args
+    let resumed = false
+    if (runner === 'codex') {
+      const id = typeof prev.rollout === 'string' && CODEX_ID_RE.test(prev.rollout) ? prev.rollout : null
+      const file = id ? findRollout(codexRoot(), id) : null
+      t = { ...base, runner: 'codex', conv: file ? id : sid, ...(file ? { rollout: id, rolloutFile: file } : {}), ...(mode ? { codexMode: mode } : {}), ...(codexEffortOk(prev.codexEffort) ? { codexEffort: prev.codexEffort } : {}) }
+      // The mirror is made again from the conversation it resumes, or starts empty for a new one.
+      fs.rmSync(mirrorPath(sid), { force: true })
+      t.mirror = {}
+      if (file) syncMirror({ rollout: file, mirror: mirrorPath(sid), sid, state: t.mirror })
+      resumed = !!file
+      args = {}
+    } else {
+      const acc = typeof prev.account === 'string' && prev.account && safeAccountId(prev.account) && accountDir(prev.account) !== null ? prev.account : ''
+      t = { ...base, conv: sid, ...(acc ? { account: acc } : {}), ...(/^[\w.[\]-]{1,60}$/.test(prev.model || '') ? { model: prev.model } : {}), ...(EFFORTS.includes(prev.effort) ? { effort: prev.effort } : {}), ...(MODES.includes(prev.mode) ? { mode: prev.mode } : {}), ...(prev.chrome === false ? { chrome: false } : {}) }
+      if (safeConvId(prev.conv)) {
+        t.conv = prev.conv
+        const file = transcriptPath(t, sid)
+        const found = fs.existsSync(file) ? file : findTranscript(prev.conv, typeof prev.transcript === 'string' ? prev.transcript : null)
+        if (found && found !== file) (fs.mkdirSync(path.dirname(file), { recursive: true }), fs.copyFileSync(found, file))
+        resumed = !!found
+      }
+      // A session that started in codex has no Claude Code conversation yet: a new one under a new id.
+      if (!resumed) t.conv = crypto.randomUUID()
+      args = resumed ? ['--resume', t.conv, ...settingsArgs(t)] : ['--session-id', t.conv, ...settingsArgs(t)]
+    }
+    const lines = (f) => (fs.existsSync(f) ? (fs.readFileSync(f, 'utf8').match(/\n/g)?.length ?? 0) : 0)
+    const silent = resumed ? lines(transcriptPath(t, sid)) : 0
+    Object.assign(t, { offset: 0, lineNo: 0, skip: 0, lineBase: 0 })
+    // What it wrote last reaches the server before its conversation is left (the copy starts over below).
+    try {
+      tail(sid, s)
+    } catch {}
+    // The runner it leaves goes: its terminal, and what it was doing.
+    clearTimeout(s.slowStart)
+    clearTimeout(s.check?.timer)
+    await tmux('kill-session', '-t', `=${s.tmux}`)
+    resetRuntime(t)
+    sessions.set(sid, t)
+    // The server's copy starts over with this conversation before any of its lines are read.
+    emit({ t: 'conv', sid, conv: t.conv, replay: false, silent, keepTitle: true, runner })
+    try {
+      await launch(sid, t, args)
+    } catch (e) {
+      if (e instanceof SessionClosed) throw e
+      // The old runner's conversation back, the session down: opening it again resumes where it was.
+      Object.assign(s, { offset: 0, lineNo: 0, skip: 0, lineBase: 0, alive: false })
+      resetRuntime(s)
+      sessions.set(sid, s)
+      emit({ t: 'conv', sid, conv: s.conv || sid, replay: false, silent: lines(transcriptPath(s, sid)), keepTitle: true, runner: from })
+      saveSessions()
+      publish(sid, s)
+      throw e
+    }
+    saveSessions()
+    const name = (r) => (r === 'claude' ? CLAUDE.name : RUNNERS[r]?.name ?? r)
+    log('info', 'switch', `${name(from)} → ${name(runner)}${resumed ? ` (예전 대화 ${silent}줄을 이어서)` : ' (새 대화)'}`, sid)
+    note(sid, `🔁 ${name(runner)} 로 전환했어요. ${resumed ? '이 세션에서 예전에 하던 그 대화를 이어서 열었어요.' : '새 대화로 시작했어요.'} ${name(from)} 의 대화는 남아 있어 다시 바꾸면 이어서 열려요.`)
+    // 전부 허용 asked for with the switch rides on it, signed with it (like new, REQ-F-860).
+    if (autoAllow === true && can(t, 'autoAllow', RUNNERS)) await commands.set({ sid, autoAllow: true, allowAll: allowAll === true, signed })
+    emit({ t: 'opened', reqId, sid, ok: true, cwd: t.cwd, warnings: [], account: t.account ?? '', runner, conv: t.conv, resumed })
+  } catch (e) {
+    log('error', 'switch', `실행기를 바꾸지 못함: ${e.message}`, sid)
     emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
   }
 }
@@ -3588,6 +3689,8 @@ const commands = {
     // refused) must not turn it on there.
     if (autoAllow === true && !had && sessions.has(cmd.sid)) await commands.set({ sid: cmd.sid, autoAllow: true, allowAll: allowAll === true, signed })
   },
+  // 실행기 전환 (REQ-F-891): the same session goes on in the other runner.
+  switch: (cmd) => switchRunner(cmd),
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
   async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner, codexMode, codexEffort }) {
     try {
@@ -3649,6 +3752,8 @@ const commands = {
       }
       if (old) await tmux('kill-session', '-t', `=${old.tmux}`)
       const s = { cwd: dir, autoPush: autoPush !== false, autoAllow: !!autoAllow, ...(autoAllow && allowAll === true ? { allowAll: true } : {}), conv: conv || sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(mode ? { mode } : {}), ...(chrome === false ? { chrome: false } : {}), ...(isMdName(mdFile) ? { mdFile } : {}), ...(account ? { account } : {}), ...(cleanRouting(routing) ? { routing: cleanRouting(routing) } : {}) }
+      // What the session ran before (실행기 전환, REQ-F-891) stays with it.
+      if (old?.past || known?.past) s.past = old?.past ?? known.past
       // Moving to another account on this Mac: what Claude Code keeps beside the transcript goes along.
       if (old && (old.account ?? '') !== (account ?? '') && accountDir(old.account ?? '')) {
         const copied = copySessionState(s.conv, accountDir(old.account ?? ''), accountDir(account ?? ''), { keep: isLinked(account) })

@@ -156,6 +156,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | refresh | sid, when | sysPrompt 맥, interrupted 는 맥이 센 백그라운드 작업. `later` 는 서버의 bg 수 대신 맥이 대화 기록에서 직접 센 백그라운드 작업(서버 `trackBackgroundLine` 과 같은 규칙을 에이전트로 옮김)이 0 이고 턴이 끝나면 다시 연다 | |
 | fork | sid | newSid 는 `safeConvId` 이고 맥에 없는 것, launch 없음(원래 세션 설정 그대로), sysPrompt 맥, copyLog 는 정수만. 복사한 기록의 봉인 조각 중 원래 sid 의 것만 방향(`d`)을 그대로 두고 새 sid 로 다시 봉인, 나머지 조각은 `🔒`(`u` 를 `m` 으로 바꾸지 않는다) | newSid, copyLog |
 | lightfork | sid, cut(mode 칸, 잘라 내는 방식) | newSid 같음, launch 없음, sysPrompt 맥 | newSid |
+| switch | sid, runner(claude·codex), codexMode?, autoAllow?, allowAll? | 실행기 전환(REQ-F-891). 맥에 있는 세션만, 쉬는 중(턴·카드·대기·붙잡은 글 없음)일 때만. 돌아가는 실행기의 대화·모델·권한은 맥의 세션 기록(`past`)에서, sysPrompt 맥. 인계 요약은 이 명령에 없고 뒤따르는 서명된 `send` 로 간다 | — |
 | btw | sid, textH | | text |
 | killserver | sid, port | | |
 | snapshot(SPEC 1.469) | sid, url | | 주소를 고르는 것은 기기. 1.468 에는 끔 |

@@ -115,6 +115,9 @@ export const TRUST_CLASS = {
   // 전부 허용 asked for at the start is signed with it (REQ-F-860): the page cannot sign a set for a sid it does not know yet.
   new: { i: ['cwd', 'promptH', 'model', 'effort', 'mode', 'create', 'account', 'chrome', 'autoPush', 'runner', 'codexMode', 'autoAllow', 'allowAll', 'root'], keep: ['sid', 'prompt'] },
   open: { i: ['sid', 'model', 'effort', 'mode'], keep: [] },
+  // 실행기 전환 (REQ-F-891): the runner, Codex's sandbox and approval, and 전부 허용 are signed: a server cannot switch a
+  // session to another program, or loosen what was picked.
+  switch: { i: ['sid', 'runner', 'codexMode', 'autoAllow', 'allowAll'], keep: [] },
   // 맥의 대화 가져오기: the conversation and its folder are signed; the Mac opens it only when its transcript was
   // written in that folder (agent.mjs adopt). The server's sysPrompt·routing are dropped, as for new.
   // A codex conversation names its runner, signed too (REQ-F-853).

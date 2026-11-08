@@ -190,9 +190,20 @@ func init() {
 				return
 			}
 			silent := 0.0
-			if truthy(msg["replay"]) {
-				silent = numOr0(meta.get("lines"))
-				// A resumed copy keeps the name the conversation it copies gave it (REQ-F-467 rule 3).
+			// 실행기 전환 (REQ-F-891): the Mac says how many of the new conversation's first lines were shown before
+			// (a runner's own conversation resumed), and which runner the session runs now.
+			if n, ok := msg["silent"].(float64); ok && n > 0 && !truthy(msg["replay"]) {
+				silent = n
+			}
+			if r, ok := msg["runner"].(string); ok && (r == "claude" || r == "codex") {
+				setRunner(meta, r)
+			}
+			if truthy(msg["replay"]) || truthy(msg["keepTitle"]) {
+				if truthy(msg["replay"]) {
+					silent = numOr0(meta.get("lines"))
+				}
+				// A resumed copy keeps the name the conversation it copies gave it (REQ-F-467 rule 3), and so does a
+				// session that went on in another runner.
 				if meta.str("titleConv") == "" && meta.str("title") != "" {
 					old := meta.str("conv")
 					if old == "" {

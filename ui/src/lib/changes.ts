@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.497',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'server', 'agent'],
+        text: '"Codex 로 이어서 작업"이 새 Codex 세션을 만들던 것을 같은 세션의 실행기 전환으로 바꿈: ⋯ 메뉴(목록·탭 우클릭 포함) "Codex 로 전환"·"Claude Code 로 전환"이 인계 요약을 받은 뒤 그 세션 그대로(id·이름·대화) 실행기를 바꾸고 요약을 다음 글로 보낸다',
+        refs: ['REQ-F-891', 'REQ-F-857', 'IF-280'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '실행기를 떠날 때 그 대화를 세션 기록(past)에 남겨, 다시 돌아오면 claude --resume·codex resume 으로 예전 대화를 이어서 연다. 새 실행기가 뜨지 못하면 원래 대화로 되돌리고 세션을 내려 둔다',
+        refs: ['REQ-F-891', 'IF-281'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server'],
+        text: '맥의 conv 에 silent(이미 보인 앞 줄 수)·keepTitle·runner 를 받아, 전환한 세션의 이름을 지키고 예전 답을 두 번 그리지 않는다',
+        refs: ['REQ-F-891', 'IF-137'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui', 'agent'],
+        text: 'trust 에 switch 명령(sid·runner·codexMode·autoAllow·allowAll 서명)을 더해, 서버가 세션을 다른 프로그램으로 바꾸거나 권한을 넓힐 수 없게 함',
+        refs: ['REQ-F-891', 'REQ-S-089'],
+      },
+    ],
+  },
+  {
     version: '1.496',
     date: '2026-11-08',
+    commit: 'c3dd965',
     changes: [
       {
         kind: 'changed',

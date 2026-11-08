@@ -839,6 +839,9 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 	case "fork":
 		forkOp(res, uid, meta)
 		return true
+	case "switch":
+		switchOp(res, uid, meta, b)
+		return true
 	case "key":
 		needFeature("remoteKeys")
 		keys := []any{}

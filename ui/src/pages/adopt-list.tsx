@@ -134,12 +134,12 @@ export function AdoptList({ hostId }: { hostId: string }) {
     }
   }
 
-  // 한 번에 넘기기 (REQ-F-861): bring it over as a bridge session, then the Codex sheet asks it for the hand-over
-  // summary once it is up and starts the Codex session in the same folder when the summary comes. One press for what
-  // took 이어 가기 → ⋯ Codex 로 이어서 작업 → 요약 만들기 → Codex 세션 시작.
+  // 한 번에 넘기기 (REQ-F-861): bring it over as a bridge session, then the switch sheet asks it for the hand-over
+  // summary once it is up and switches that same session to Codex when the summary comes (실행기 전환, REQ-F-891).
+  // One press for what took 이어 가기 → ⋯ Codex 로 전환 → 요약 만들기 → Codex 로 전환.
   const toCodex = async (c: Conversation) => {
     const ok = await confirmDialog('이 대화를 Codex 로 이어 갈까요?', {
-      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? `1분 안에 이 대화에 쓰인 기록이 있어요. ${busyNote}\n\n` : ''}claude --resume 으로 가져와 Claude 에게 인계 요약을 받고, 요약이 오면 같은 폴더에 Codex 세션을 바로 시작해요. Claude 대화도 bridge 세션으로 남아요.`,
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? `1분 안에 이 대화에 쓰인 기록이 있어요. ${busyNote}\n\n` : ''}claude --resume 으로 가져와 Claude 에게 인계 요약을 받고, 요약이 오면 그 세션을 바로 Codex 로 바꿔 이어서 해요. Claude 대화는 맥에 남아 다시 바꾸면 이어서 열려요.`,
       ok: 'Codex 로 이어 가기',
       danger: c.active,
     })
@@ -299,7 +299,7 @@ export function AdoptList({ hostId }: { hostId: string }) {
         </Button>
       ) : null}
       <p className="muted" style={{ fontSize: 'var(--fs-small)', margin: 0 }}>
-        최근 80개(Codex 는 40개)까지 보여요. 이미 bridge 세션인 대화는 빠져 있어요. 줄을 누르면 하나만 바로 이어 가요.{hasCodex ? ' "Codex 로"는 요약을 받아 같은 폴더의 Codex 세션으로 한 번에 넘겨요.' : ''}
+        최근 80개(Codex 는 40개)까지 보여요. 이미 bridge 세션인 대화는 빠져 있어요. 줄을 누르면 하나만 바로 이어 가요.{hasCodex ? ' "Codex 로"는 가져온 세션이 요약을 쓰고 그 세션 그대로 Codex 로 바뀌어요.' : ''}
       </p>
       <Button tone="ghost" size="sm" icon="refresh" onClick={() => setReads((n) => n + 1)}>
         다시 읽기

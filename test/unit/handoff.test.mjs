@@ -1,7 +1,7 @@
 // REQ-F-857 (AC-1609): the hand-over summary is read back out of the Claude Code session's answer.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { HANDOFF_ASK, HANDOFF_ASK_HEAD, HANDOFF_HEAD, handoffOf, summaryAfterAsk } from '../../ui/src/lib/handoff.ts'
+import { HANDOFF_ASK, HANDOFF_ASK_HEAD, HANDOFF_HEAD, handoffAsk, handoffAskHead, handoffHead, handoffOf, isHandoffAsk, otherRunner, summaryAfterAsk } from '../../ui/src/lib/handoff.ts'
 
 test('handoffOf: the last handoff block, or null', () => {
   assert.equal(handoffOf('확인했어요.\n\n```handoff\n## 목표\nA\n```\n'), '## 목표\nA')
@@ -32,4 +32,23 @@ test('summaryAfterAsk: the answers after the last request', () => {
   assert.equal(summaryAfterAsk([...done, ev(5, { k: 'user', text: '하나 더 고쳐 줘' })]).last, false)
   // A newer request counts, not an older answer.
   assert.deepEqual(summaryAfterAsk([...done, ev(5, { k: 'user', text: HANDOFF_ASK })]), { asked: true, summary: null, last: true, block: false })
+})
+
+// REQ-F-891 (AC-1699): the switch texts go both ways, and a request of the sheet before it is still found.
+test('실행기 전환: the request and head name the runners, both ways', () => {
+  assert.equal(otherRunner('claude'), 'codex')
+  assert.equal(otherRunner('codex'), 'claude')
+  assert.match(handoffAskHead('claude'), /Claude Code 가 이어서/)
+  assert.ok(handoffAsk('claude').startsWith(handoffAskHead('claude')))
+  for (const to of ['claude', 'codex']) assert.ok(isHandoffAsk(handoffAsk(to)), to)
+  // The request of the sheet that started a new Codex session (REQ-F-857), still in older conversations.
+  assert.ok(isHandoffAsk('이 작업을 같은 폴더의 Codex 세션이 이어서 하도록 인계 요약을 써 주세요. 받는 쪽은…'))
+  assert.ok(!isHandoffAsk('인계 요약을 써 주세요'))
+  const back = handoffHead('codex', 'claude', true)
+  assert.match(back, /Codex 로 작업했고/)
+  assert.match(back, /이제 Claude Code 로 바뀌었어요/)
+  assert.match(back, /예전에 Claude Code 로 돌던 때/)
+  assert.doesNotMatch(handoffHead('claude', 'codex'), /예전에/)
+  const asked = [ev(1, { k: 'user', text: handoffAsk('claude') }), ev(2, { k: 'text', text: '```handoff\n## 목표\nC\n```' })]
+  assert.deepEqual(summaryAfterAsk(asked), { asked: true, summary: '## 목표\nC', last: true, block: true })
 })

@@ -631,7 +631,7 @@ func seatGuard(meta *Sess, via any) {
 	}
 }
 
-var SEAT_DRIVES = map[string]bool{"say": true, "do": true, "send": true, "retract": true, "sendnow": true, "esc": true, "dropheld": true, "answer": true, "setting": true, "refresh": true, "report": true, "btw": true, "trash": true, "resume": true, "lightfork": true, "trimlog": true, "fork": true, "key": true, "move": true, "cwd": true}
+var SEAT_DRIVES = map[string]bool{"say": true, "do": true, "send": true, "retract": true, "sendnow": true, "esc": true, "dropheld": true, "answer": true, "setting": true, "refresh": true, "report": true, "btw": true, "trash": true, "resume": true, "lightfork": true, "trimlog": true, "fork": true, "key": true, "move": true, "cwd": true, "switch": true}
 
 func sessionLink(meta *Sess) string {
 	o := ORIGIN
