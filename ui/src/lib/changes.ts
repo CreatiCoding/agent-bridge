@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.489',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '원본 모양 스냅샷이 iPhone 에서 흰 화면이던 것: 같은 그림을 스타일마다 다시 넣어 문서가 15 MB 가 됐다. 그림을 한 번만 넣어 반으로 줄였다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.488',
     date: '2026-11-08',
+    commit: '98b4fb7',
     changes: [
       {
         kind: 'changed',

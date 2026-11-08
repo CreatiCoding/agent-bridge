@@ -33,14 +33,22 @@ export function snapshotPage(s: SnapshotParts): string {
     const d = images[abs(u)]
     return typeof d === 'string' && DATA_IMG.test(d) ? d : ''
   }
-  // Every url(...) of a style: its picture as data: when the Mac sent it, else nothing to fetch.
+  // Every url(...) of a style: its picture when the Mac sent it, else nothing to fetch. A picture is written once, as
+  // a custom property on :root, and every style names it by var() (1.489): a sprite named by hundreds of rules made
+  // coupang.com's page 15 MB from 3.7 MB of pictures, and an iPhone drew nothing of it.
+  const vars = new Map<string, string>()
+  const varOf = (d: string) => {
+    let v = vars.get(d)
+    if (!v) vars.set(d, (v = `--cb-i${vars.size}`))
+    return `var(${v})`
+  }
   const styled = (text: string, base = s.url) =>
     text.replace(URL_RE, (all, a?: string, b?: string, c?: string) => {
       const raw = (a ?? b ?? c ?? '').trim()
       if (raw.startsWith('#')) return all
       if (raw.startsWith('data:')) return DATA_IMG.test(raw) ? all : `url("${NO_IMG}")`
       const d = images[abs(raw, base)]
-      return `url("${typeof d === 'string' && DATA_IMG.test(d) ? d : NO_IMG}")`
+      return typeof d === 'string' && DATA_IMG.test(d) ? varOf(d) : `url("${NO_IMG}")`
     })
 
   const doc = new DOMParser().parseFromString(s.html, 'text/html')
@@ -97,6 +105,11 @@ export function snapshotPage(s: SnapshotParts): string {
     for (const a of Array.from(e.attributes)) if (/^on/i.test(a.name)) e.removeAttribute(a.name)
   })
   const head = doc.head ?? doc.documentElement
+  if (vars.size) {
+    const defs = doc.createElement('style')
+    defs.textContent = `:root{${[...vars].map(([d, v]) => `${v}:url("${d}")`).join(';')}}`
+    head.prepend(defs)
+  }
   const meta = doc.createElement('meta')
   meta.setAttribute('name', 'referrer')
   meta.setAttribute('content', 'no-referrer')

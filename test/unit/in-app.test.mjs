@@ -200,3 +200,10 @@ test('AC-1687: a snapshot carries the page’s style sheets and the pictures the
   assert.match(sp, /\/\^on\/i\.test\(a\.name\)/)
   assert.match(sp, /a\.setAttribute\('target', '_blank'\)/)
 })
+
+test('AC-1688: a picture of the page’s styles is written once, on :root, and named by var()', () => {
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /`--cb-i\$\{vars\.size\}`/)
+  assert.match(sp, /return `var\(\$\{v\}\)`/)
+  assert.match(sp, /`:root\{\$\{\[\.\.\.vars\]\.map\(\(\[d, v\]\) => `\$\{v\}:url\("\$\{d\}"\)`\)\.join\(';'\)\}\}`/)
+})
