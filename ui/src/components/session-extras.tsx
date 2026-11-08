@@ -16,7 +16,7 @@ import { act, command, sessionPost } from './session-menu'
 import { AllowHint, confirmAllowAll } from './auto-allow-confirm'
 import { featureOn } from '../lib/features'
 import { openLink } from '../lib/builtin-actions'
-import { CodexAllowField, CodexModeFields } from './codex-mode'
+import { CodexAllowField, CodexEffortField, CodexModeFields } from './codex-mode'
 
 /** How a to-do's state reads at a glance (REQ-F-778). */
 const TODO_MARK: Record<string, string> = { completed: 'todoDone', in_progress: 'todoNow', pending: 'todo' }
@@ -386,12 +386,13 @@ export function SettingsSheet({ s, open, onClose }: { s: Session; open: boolean;
         <Spinner />
       ) : (
         <>
-          {runnerLabel(s) ? <p className="muted">{runnerLabel(s)} 세션이에요. 모델·생각 수준은 터미널의 {runnerLabel(s)} 에서 바꿔요.</p> : null}
+          {runnerLabel(s) ? <p className="muted">{runnerLabel(s)} 세션이에요. 모델은 터미널의 {runnerLabel(s)} 에서 바꿔요.</p> : null}
           {s.runner === 'codex' ? (
             <>
               <p className="muted" style={{ fontSize: 'var(--fs-small)' }}>
-                샌드박스·승인 모드는 다음에 다시 열 때(codex resume) 적용돼요. 지금 도는 codex 는 그대로예요.
+                생각 수준·샌드박스·승인 모드는 다음에 다시 열 때(codex resume) 적용돼요. 지금 도는 codex 는 그대로예요.
               </p>
+              <CodexEffortField value={s.codexEffort ?? ''} hint="바꾸면 다음에 다시 열 때 적용돼요" onChange={(v) => act(() => sessionPost(s, 'setting', { kind: 'codexEffort', value: v }), '다음에 다시 열 때 이 생각 수준으로 떠요')} />
               <CodexModeFields value={s.codexMode ?? ''} onChange={(v) => act(() => sessionPost(s, 'setting', { kind: 'codexMode', value: v }), '다음에 다시 열 때 이 모드로 떠요')} />
             </>
           ) : null}
@@ -448,7 +449,7 @@ function FolderInfo({ s }: { s: Session }) {
       <dd className="mono">{shortPath(s.cwd, s.home, 6)}</dd>
       <dt>모델</dt>
       <dd>
-        {modelName(s.launchModel || s.model)} · {s.state.effort ?? '?'} · {MODE_NAMES[s.state.mode ?? ''] ?? s.state.mode ?? '?'}
+        {modelName(s.launchModel || s.model)} · {s.state.effort ?? (s.runner === 'codex' ? s.codexEffort || '기본값' : '?')} · {MODE_NAMES[s.state.mode ?? ''] ?? s.state.mode ?? '?'}
       </dd>
       <dt>모델 라우팅</dt>
       <dd>{s.state.routing ? '켜짐' : '꺼짐'}</dd>

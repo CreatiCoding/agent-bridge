@@ -132,15 +132,20 @@ func startSession(uid string, b M, req *Req) string {
 	title := startTitle(orStr(b["title"]), prompt, orStr(b["cwd"]))
 	meta := newMeta(uid, sid, hostID, M{"title": title})
 	// A codex session's sandbox and approval (REQ-F-854), checked before the session exists.
-	codexM := ""
+	codexM, codexE := "", ""
 	if runner == "codex" {
 		codexM = mustCodexMode(b["codexMode"])
+		// Its effort (REQ-F-889) rides as effort, signed with new while trust is on.
+		codexE = codexEffort(b["effort"])
 	}
 	if runner != "" {
 		meta.set("runner", runner)
 	}
 	if codexM != "" {
 		meta.set("codexMode", codexM)
+	}
+	if codexE != "" {
+		meta.set("codexEffort", codexE)
 	}
 	st := noState()
 	st["alive"] = true
@@ -221,7 +226,7 @@ func startSession(uid string, b M, req *Req) string {
 	if runner != "" {
 		r := hostRunner(hostID, runner)
 		mode, autoAllow = "", autoAllow && r != nil && containsAny(asArr(r["caps"]), "autoAllow")
-		b["model"], b["effort"] = "", ""
+		b["model"], b["effort"] = "", codexE
 	}
 	cmd := M{"t": "new", "sid": sid, "sysPrompt": sysPromptOf(uid), "routing": routingCmd(uid), "create": b["create"] == true, "cwd": jsSliceTo(cwd, 1000), "prompt": prompt, "autoPush": true, "model": jsSliceTo(orStr(b["model"]), 60), "effort": jsSliceTo(orStr(b["effort"]), 10), "mode": mode}
 	if b["chrome"] == false {
@@ -565,6 +570,7 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 		// The mode chosen last (REQ-F-854): a trust Mac takes only its own record.
 		if r == "codex" {
 			open["codexMode"] = meta.str("codexMode")
+			open["codexEffort"] = meta.str("codexEffort")
 		}
 	}
 	if truthy(meta.get("mdFile")) {

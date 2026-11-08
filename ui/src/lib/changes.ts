@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.491',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: 'Codex 세션의 생각 수준(effort): 새 세션과 세션 설정에서 Codex 기본값·low·medium·high·xhigh 를 고르면 codex 를 -c model_reasoning_effort 로 띄운다(codex resume 에도). 세션 설정에서 바꾼 값은 다음에 다시 열 때 적용',
+        refs: ['REQ-F-889', 'REQ-F-851', 'REQ-F-854'],
+      },
+    ],
+  },
+  {
     version: '1.490',
     date: '2026-11-08',
+    commit: 'e14c155',
     changes: [
       {
         kind: 'security',

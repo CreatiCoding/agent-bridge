@@ -12,7 +12,7 @@ import { NONE, useStore } from '../lib/store'
 import type { Options } from '../lib/types'
 import { Badge, Button, Empty, Field, Icon, IconButton, NO_AUTOFILL, Segmented, Spinner, Switch, useWide } from '../kit'
 import { AdoptList, presetAdopt } from './adopt-list'
-import { CodexAllowField, CodexModeFields } from '../components/codex-mode'
+import { CodexAllowField, CodexEffortField, CodexModeFields, codexEffortOf } from '../components/codex-mode'
 import { codexAllowed } from '../lib/codex-mode'
 import { confirmLaunchMode } from '../components/auto-allow-confirm'
 import { StateWait, useStateLoaded } from '../components/state-wait'
@@ -85,6 +85,9 @@ export function NewSessionPage() {
   // A Codex session's sandbox and approval (REQ-F-854); the last pick is kept, within what this server allows.
   const [codexPick, setCodexPick] = useState<string>(() => getPref('newCodexMode', ''))
   const codexMode = runner === 'codex' ? codexAllowed(codexPick) : ''
+  // Its effort (REQ-F-889), kept apart from Claude Code's: sent as effort, '' is codex's own default.
+  const [codexEffortPick, setCodexEffortPick] = useState<string>(() => getPref('newCodexEffort', ''))
+  const codexEffort = runner === 'codex' ? codexEffortOf(codexEffortPick) : ''
   // Its 전부 허용 (REQ-F-856), kept apart from Claude Code's default mode: a codex session gets it only when picked here.
   const [codexAllowPick, setCodexAllowPick] = useState<string>(() => getPref('newCodexAllow', ''))
   const codexCanAllow = runner === 'codex' && !!runners.find((r) => r.id === 'codex')?.caps.includes('autoAllow')
@@ -158,12 +161,13 @@ export function NewSessionPage() {
       // message said while the session is still starting and hands it over once it is up.
       const first = attached ? { prompt: '', title: prompt } : { prompt }
       if (!startKey.current) startKey.current = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, startKey: startKey.current, ...(claude ? { model, effort, mode } : { runner, model: '', effort: '', mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(useShared ? { root: sharedBase } : {}), ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
+      const r = await dispatch('session.create', { hostId: host.id, cwd: folder, ...first, startKey: startKey.current, ...(claude ? { model, effort, mode } : { runner, model: '', effort: codexEffort, mode: codexAllow, ...(codexMode ? { codexMode } : {}) }), create, ...(useShared ? { root: sharedBase } : {}), ...(group ? { group: group.id } : {}), ...(chrome ? {} : { chrome: false }), ...(account ? { account } : {}), ...(Object.keys(extValues).length ? { ext: extValues } : {}) })
       if (isCancel(r)) return setBusy(false)
       setPref('newHost', host.id)
       if (claude) setPref('newAccount', account)
       setPref('newRunner', runner)
       if (runner === 'codex') setPref('newCodexMode', codexMode)
+      if (runner === 'codex') setPref('newCodexEffort', codexEffort)
       if (runner === 'codex' && codexCanAllow) setPref('newCodexAllow', codexAllow)
       if (!auto) setPref('newCwd', cwd)
       if (attached) {
@@ -227,7 +231,7 @@ export function NewSessionPage() {
             </Field>
           ) : null}
           {tab === 'new' && runners.length > 1 ? (
-            <Field label="실행기" hint={claude ? undefined : `${runners.find((r) => r.id === runner)?.name ?? runner} 는 대화 보기·입력·권한 카드${codexCanAllow ? '·전부 허용' : ''}만 돼요. 모델·복제·다른 맥으로 옮기기는 없어요`}>
+            <Field label="실행기" hint={claude ? undefined : `${runners.find((r) => r.id === runner)?.name ?? runner} 는 대화 보기·입력·권한 카드${codexCanAllow ? '·전부 허용' : ''}${runner === 'codex' ? '·생각 수준' : ''}만 돼요. 모델·복제·다른 맥으로 옮기기는 없어요`}>
               <div className="hstack" style={{ flexWrap: 'wrap' }}>
                 {runners.map((r) => (
                   <Button key={r.id} tone={r.id === runner ? 'soft' : 'plain'} icon="terminal" onClick={() => setRunnerPick(r.id)}>
@@ -238,6 +242,7 @@ export function NewSessionPage() {
               </div>
             </Field>
           ) : null}
+          {tab === 'new' && runner === 'codex' ? <CodexEffortField value={codexEffort} onChange={setCodexEffortPick} /> : null}
           {tab === 'new' && runner === 'codex' ? <CodexModeFields value={codexMode} onChange={setCodexPick} /> : null}
           {tab === 'new' && codexCanAllow ? <CodexAllowField value={codexAllow} onChange={setCodexAllowPick} /> : null}
           {tab === 'new' && claude && accounts.length > 1 ? (

@@ -54,6 +54,13 @@ export function parseCodexMode(v) {
   return { sandbox, approval, network: !!net }
 }
 
+/**
+ * How hard codex thinks (REQ-F-889): `-c model_reasoning_effort="<effort>"`. Codex passes any string on to the model
+ * unchecked, so only these are taken; '' is codex's own default (config.toml).
+ */
+export const CODEX_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh'])
+export const codexEffortOk = (v) => typeof v === 'string' && CODEX_EFFORTS.includes(v)
+
 /** The mode as it is kept: '' for both defaults. */
 export const codexModeStr = (m) => (!m || (!m.sandbox && !m.approval) ? '' : `${m.sandbox}:${m.approval}${m.network && m.sandbox === 'workspace-write' ? ':net' : ''}`)
 
@@ -62,9 +69,9 @@ export const codexModeStr = (m) => (!m || (!m.sandbox && !m.approval) ? '' : `${
  * terminal's (tmux -c), not an argument. Nothing here comes from the server unchecked: the id and the model are
  * checked by shape, the prompt is one argument, and the sandbox and approval are only the ones parseCodexMode takes
  * (never danger-full-access or the bypass flag).
- * @param {{ resume?: string|null, model?: string, prompt?: string, instructions?: string, mode?: string }} o
+ * @param {{ resume?: string|null, model?: string, effort?: string, prompt?: string, instructions?: string, mode?: string }} o
  */
-export function codexArgs({ resume = null, model, prompt, instructions, cwd, mode } = {}) {
+export function codexArgs({ resume = null, model, effort, prompt, instructions, cwd, mode } = {}) {
   const out = []
   if (resume) {
     if (!CODEX_ID_RE.test(resume)) throw new Error('codex 대화 id 가 올바르지 않아요')
@@ -77,6 +84,8 @@ export function codexArgs({ resume = null, model, prompt, instructions, cwd, mod
   // trust is answered for a bridge session: its question comes seconds after the input box, and what is typed then is lost.
   if (cwd) out.push('-c', `projects.${JSON.stringify(String(cwd))}.trust_level="trusted"`)
   if (model && CODEX_MODEL_RE.test(model)) out.push('-m', model)
+  // The effort asked for (REQ-F-889), on a resume too: one codex does not know is left out (codex's default).
+  if (codexEffortOk(effort)) out.push('-c', `model_reasoning_effort="${effort}"`)
   // The sandbox and approval asked for (REQ-F-854); none is codex's default. A resume takes them too, so a conversation
   // another tool wrote as workspace-write opens in the mode chosen here, not codex's default.
   if (mode) {

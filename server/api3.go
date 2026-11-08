@@ -651,6 +651,21 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			sessAfter("session.setting", meta, kv{"kind", "codexMode"}, kv{"value", v})
 			break
 		}
+		// A codex session's effort (REQ-F-889): the same, taken when it opens next.
+		if b["kind"] == "codexEffort" {
+			v := codexEffort(b["value"])
+			sessBefore("session.setting", meta, kv{"kind", "codexEffort"}, kv{"value", v})
+			toHost(liveHost(meta), M{"t": "setting", "sid": meta.id(), "kind": "codexEffort", "value": v})
+			if v == "" {
+				meta.del("codexEffort")
+			} else {
+				meta.set("codexEffort", v)
+			}
+			touch(meta)
+			broadcastState(meta.uid())
+			sessAfter("session.setting", meta, kv{"kind", "codexEffort"}, kv{"value", v})
+			break
+		}
 		if !containsAny([]any{"model", "effort", "mode"}, b["kind"]) {
 			refuse(400, "없는 설정입니다")
 		}

@@ -112,6 +112,22 @@ func codexMode(v any) (string, int, string) {
 	return s, 0, ""
 }
 
+// Codex sessions' effort (REQ-F-889, agent/codex.mjs CODEX_EFFORTS): `-c model_reasoning_effort`. Codex sends any
+// string on to the model, so only these; "" is codex's own default.
+var CODEX_EFFORTS = []string{"low", "medium", "high", "xhigh"}
+
+// codexEffort checks a requested effort: the kept string ("" for codex's default), refusing one that is not one.
+func codexEffort(v any) string {
+	s, ok := v.(string)
+	if v == nil || (ok && s == "") {
+		return ""
+	}
+	if !ok || !contains(CODEX_EFFORTS, s) {
+		refuse(400, "codex 생각 수준이 올바르지 않아요")
+	}
+	return s
+}
+
 // mustCodexMode: codexMode, refusing the request when it is not one.
 func mustCodexMode(v any) string {
 	s, code, why := codexMode(v)
@@ -137,7 +153,7 @@ func runnerGate(meta *Sess, op string, b M) {
 	cap := runnerOps[op]
 	if op == "setting" {
 		cap = strField(b, "kind")
-		if cap == "codexMode" {
+		if cap == "codexMode" || cap == "codexEffort" {
 			if id != "codex" {
 				no()
 			}

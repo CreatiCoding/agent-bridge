@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { CAPS, CLAUDE, can, isClaude, pickRunner, runnerBrief, runnerIdOf } from '../../agent/runners.mjs'
-import { CODEX, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, codexStatus, convertLine, reasoningText, REASONING_MAX, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
+import { CODEX, CODEX_EFFORTS, codexEffortOk, codexArgs, parseCodexMode, codexModeStr, codexBoxHas, codexHome, codexIdle, codexStatus, convertLine, reasoningText, REASONING_MAX, codexUsage, codexAutoAnswer, codexAutoRisk, codexEditFiles, codexMcpArgs, codexApprovalSig, parseMcpApproval, codexQuestion, codexOptionKind, MCP_APPROVAL_UNKNOWN, findNewRollout, findRollout, hiddenUserText, parseApproval, APPROVAL_UNKNOWN, rolloutId, syncMirror, toolUse, trustDialog, turnOpenAt, slashEchoes, slashOutput, codexPager, codexPicker, listRollouts, rolloutInfo } from '../../agent/codex.mjs'
 
 const ID = '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b'
 
@@ -48,6 +48,20 @@ test('codex starts with its own process, the folder trusted for this run, and no
   assert.deepEqual(codexArgs({ resume: ID }).slice(0, 2), ['resume', ID])
   assert.throws(() => codexArgs({ resume: '../../etc' }), /올바르지/)
   assert.ok(!codexArgs({ model: 'a b; rm' }).includes('-m'))
+})
+
+test('codex effort: -c model_reasoning_effort for the efforts the bridge takes, on a resume too (1.491, AC-1690)', () => {
+  assert.deepEqual([...CODEX_EFFORTS], ['low', 'medium', 'high', 'xhigh'])
+  const a = codexArgs({ effort: 'xhigh', prompt: 'hi' })
+  assert.ok(a.join('\n').includes('-c\nmodel_reasoning_effort="xhigh"'))
+  assert.equal(a.at(-1), 'hi', '프롬프트는 맨 끝')
+  const r = codexArgs({ resume: ID, effort: 'low' })
+  assert.deepEqual(r.slice(0, 2), ['resume', ID])
+  assert.ok(r.includes('model_reasoning_effort="low"'))
+  for (const bad of ['', 'max', 'high"; x', 'minimal', undefined, 3]) {
+    assert.equal(codexEffortOk(bad), false, String(bad))
+    assert.ok(!codexArgs({ effort: bad }).some((x) => String(x).startsWith('model_reasoning_effort')), String(bad))
+  }
 })
 
 test('codex sandbox and approval: only the modes asked for, never full access or the bypass (1.414, AC-1597)', () => {

@@ -168,6 +168,8 @@ export interface Session {
   runner?: string
   /** A Codex session's sandbox and approval (REQ-F-854): `<sandbox>:<approval>[:net]`, none for codex's default. */
   codexMode?: string
+  /** A Codex session's effort (REQ-F-889): low·medium·high·xhigh, none for codex's default. */
+  codexEffort?: string
 }
 
 /** A Claude account on a Mac (설정 → Claude 계정). Each is a config folder of its own with its own sign-in. */

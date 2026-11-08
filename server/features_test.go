@@ -72,6 +72,16 @@ func TestFeatureKeysRefuse(t *testing.T) {
 	}
 }
 
+// Codex sessions' effort (REQ-F-889, AC-1690): low·medium·high·xhigh or "" for codex's default; anything else is 400.
+func TestCodexEffort(t *testing.T) {
+	for in, want := range map[any]string{nil: "", "": "", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh"} {
+		eq(t, refused(func() { eq(t, codexEffort(in), want, jsString(in)) }), 0, jsString(in))
+	}
+	for _, bad := range []any{"max", "minimal", "high\"", 3, true} {
+		eq(t, refused(func() { codexEffort(bad) }), 400, jsString(bad))
+	}
+}
+
 // Codex sessions' sandbox and approval (REQ-F-854, AC-1598): shape errors are 400, what bridge.yaml leaves out is 403,
 // codex's own default is always allowed and full access is never a value.
 func TestCodexModes(t *testing.T) {

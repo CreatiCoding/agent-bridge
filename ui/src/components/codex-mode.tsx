@@ -20,6 +20,26 @@ export function CodexAllowField({ value, onChange }: { value: string; onChange: 
   )
 }
 
+/** The efforts codex takes from the bridge (REQ-F-889, agent/codex.mjs CODEX_EFFORTS); '' is codex's own default. */
+export const CODEX_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const
+export const codexEffortOf = (v: string | undefined) => ((CODEX_EFFORTS as readonly string[]).includes(v ?? '') ? (v as string) : '')
+
+/** A Codex session's effort (REQ-F-889): `-c model_reasoning_effort`, taken when codex starts. */
+export function CodexEffortField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint?: string }) {
+  return (
+    <Field label="생각 수준 (effort)" hint={hint ?? 'Codex 가 얼마나 오래 생각할지예요. 기본값은 config.toml 을 따라요'}>
+      <select className="input" value={codexEffortOf(value)} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Codex 기본값 (config.toml)</option>
+        {CODEX_EFFORTS.map((x) => (
+          <option key={x} value={x}>
+            {x}
+          </option>
+        ))}
+      </select>
+    </Field>
+  )
+}
+
 /**
  * A Codex session's sandbox and approval (REQ-F-854), picked like Claude Code's permission mode. "" in either is
  * codex's own default (config.toml); the network switch is there only for workspace-write. The value is the one

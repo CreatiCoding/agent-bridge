@@ -30,7 +30,7 @@ import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './lo
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
-import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
+import { CODEX, CODEX_ID_RE, codexArgs, codexAutoAnswer, codexAutoRisk, codexApprovalSig, parseCodexMode, codexModeStr, codexEffortOk, sessionsRoot, findRollout, findNewRollout, listRollouts, rolloutInfo, rolloutMeta, syncMirror, codexIdle, codexStatus, codexBoxHas, codexQuestion, codexOptionKind, trustDialog, CODEX_WORKING_RE, slashEchoes, slashOutput, codexPager, codexPicker } from './codex.mjs'
 import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detectPermissionMode, detectContext, transcriptTurnLooksOpen, transcriptQuietMs, TURN_STALE_MS, transcriptHasPrompt, normalizeMessage, mostlyEnglish, screenNote, mdMaxOf, sysDialogOpen } from './screen.mjs'
 
 const VERSION = '0.2.0'
@@ -487,7 +487,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}) }) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -922,7 +922,7 @@ function trustRememberClosed(sid, s) {
   try {
     trust.ensure()
     const list = readJson(closedPath, {})
-    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}) }), ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
+    list[sid] = { cwd: s.cwd, conv: s.conv || sid, ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }), ...(s.account ? { account: s.account } : {}), ...(s.chrome === false ? { chrome: false } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), autoPush: s.autoPush !== false, ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), at: Date.now() }
     const keep = Object.entries(list).sort((a, b) => b[1].at - a[1].at).slice(0, 200)
     writeJson(closedPath, Object.fromEntries(keep))
   } catch (e) {
@@ -932,7 +932,7 @@ function trustRememberClosed(sid, s) {
 /** What `open` may use while trust is on: this Mac's record of the session, or null. */
 function trustOpenRecord(sid) {
   const s = sessions.get(sid)
-  const r = s ? { cwd: s.cwd, conv: s.conv || sid, runner: s.runner, rollout: s.rollout, codexMode: s.codexMode, account: s.account, chrome: s.chrome, mdFile: s.mdFile, autoPush: s.autoPush !== false, model: s.model, effort: s.effort, mode: s.mode } : readJson(closedPath, {})[sid]
+  const r = s ? { cwd: s.cwd, conv: s.conv || sid, runner: s.runner, rollout: s.rollout, codexMode: s.codexMode, codexEffort: s.codexEffort, account: s.account, chrome: s.chrome, mdFile: s.mdFile, autoPush: s.autoPush !== false, model: s.model, effort: s.effort, mode: s.mode } : readJson(closedPath, {})[sid]
   return r && typeof r.cwd === 'string' ? r : null
 }
 // The terminal's confirmation of a pairing is a file (`trust pair`): looked at while one waits.
@@ -1332,7 +1332,7 @@ async function launchCodex(sid, s, opts) {
   const promptFile = path.join(promptsDir, `${sid}.txt`)
   const said = sessionPrompt(CODEX_PROMPT, { sysPrompt: trustOn() ? trustPrompt() : s.sysPrompt })
   fs.writeFileSync(promptFile, `developer_instructions=${JSON.stringify(said)}`, { mode: 0o600 })
-  const args = codexArgs({ resume: s.rollout || null, model: s.model, mode: s.codexMode, cwd: s.cwd, prompt: Array.isArray(opts) ? undefined : opts?.prompt })
+  const args = codexArgs({ resume: s.rollout || null, model: s.model, effort: s.codexEffort, mode: s.codexMode, cwd: s.cwd, prompt: Array.isArray(opts) ? undefined : opts?.prompt })
   const clean = 'unset ZEROPTY_SOCK CLAUDECODE CLAUDE_PID CLAUDE_EFFORT CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXECPATH CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_SESSION_ATTENDED CLAUDE_CODE_SESSION_ID CLAUDE_CODE_SSE_PORT'
   // The `-c` before the positional arguments: `codex resume <id>` takes the same options after its name.
   const head = args[0] === 'resume' ? ['resume', args[1]] : []
@@ -3196,7 +3196,7 @@ function sudoSpawn(pw, args, { cwd = HOME, ms = 15_000 } = {}) {
 }
 
 /** A new session in another runner (REQ-F-851): the same checks on the folder as claude's, then codex. */
-async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode, realRoot }) {
+async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, effort, create, sysPrompt, base, codexMode, realRoot }) {
   try {
     // The sandbox and approval asked for (REQ-F-854), signed while trust is on: one codex does not take is refused.
     const mode = codexModeStr(parseCodexMode(codexMode) ?? (() => { throw new Error('codex 샌드박스·승인 모드가 올바르지 않아요') })())
@@ -3213,7 +3213,8 @@ async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create,
     if (!fs.statSync(want).isDirectory()) throw new Error(`폴더가 아닙니다: ${want}`)
     const dir = fs.realpathSync(want)
     if (realRoot) sharedInside(realRoot, dir)
-    const s = { runner: rid, cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(mode ? { codexMode: mode } : {}), ...(/^[\w.-]{1,60}$/.test(model || '') && !/^claude/i.test(model) ? { model } : {}) }
+    // Its effort (REQ-F-889), signed with new while trust is on: one codex does not take is codex's default.
+    const s = { runner: rid, cwd: dir, autoPush: autoPush !== false, conv: sid, sysPrompt: String(sysPrompt ?? '').slice(0, 8000), ...(mode ? { codexMode: mode } : {}), ...(codexEffortOk(effort) ? { codexEffort: effort } : {}), ...(/^[\w.-]{1,60}$/.test(model || '') && !/^claude/i.test(model) ? { model } : {}) }
     resetRuntime(s)
     sessions.set(sid, s)
     const onLine = !!prompt && Buffer.byteLength(prompt) <= FIRST_PROMPT_MAX
@@ -3240,7 +3241,7 @@ async function newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create,
  * Opens a codex session again on this Mac (a reopen, a wake, a revive): its conversation is codex's rollout here, never
  * a copy from the server. Its id comes from this Mac's own record first.
  */
-async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysPrompt, record, codexMode }) {
+async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysPrompt, record, codexMode, codexEffort }) {
   try {
     const old = sessions.get(sid)
     const id = [old?.rollout, record?.rollout, conv].find((x) => typeof x === 'string' && CODEX_ID_RE.test(x))
@@ -3255,7 +3256,9 @@ async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysProm
     // and while trust is on only this Mac's own record (the server's value is not signed for an open).
     const kept = !trustOn() && typeof codexMode === 'string' ? [codexMode] : [old?.codexMode, record?.codexMode]
     const mode = kept.map((x) => (x ? codexModeStr(parseCodexMode(x)) : '')).find(Boolean) || ''
-    const s = { runner: 'codex', cwd: dir, autoPush: autoPush !== false, conv: id, rollout: id, rolloutFile: file, sysPrompt: String(sysPrompt ?? old?.sysPrompt ?? '').slice(0, 8000), ...(mode ? { codexMode: mode } : {}), ...((old?.model ?? model) && /^[\w.-]{1,60}$/.test(old?.model ?? model) && !/^claude/i.test(old?.model ?? model) ? { model: old?.model ?? model } : {}) }
+    // Its effort (REQ-F-889) the same way: the server's ('' is codex's default) unless trust is on.
+    const effort = !trustOn() && typeof codexEffort === 'string' ? codexEffort : (old?.codexEffort ?? record?.codexEffort)
+    const s = { runner: 'codex', cwd: dir, autoPush: autoPush !== false, conv: id, rollout: id, rolloutFile: file, sysPrompt: String(sysPrompt ?? old?.sysPrompt ?? '').slice(0, 8000), ...(mode ? { codexMode: mode } : {}), ...(codexEffortOk(effort) ? { codexEffort: effort } : {}), ...((old?.model ?? model) && /^[\w.-]{1,60}$/.test(old?.model ?? model) && !/^claude/i.test(old?.model ?? model) ? { model: old?.model ?? model } : {}) }
     // The mirror made again from the rollout, and reading resumes at its end: the server has these lines (a resync
     // asks for any it does not).
     s.mirror = {}
@@ -3338,7 +3341,7 @@ async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mo
     // Claude Code unless the command names another runner this Mac has (REQ-F-851). Signed while trust is on.
     const rid = pickRunner(runner, runnerIds())
     if (!rid) throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
-    if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, create, sysPrompt, base, codexMode, realRoot })
+    if (rid !== 'claude') return await newOther(reqId, sid, rid, { cwd, prompt, autoPush, model, effort, create, sysPrompt, base, codexMode, realRoot })
     // The server names the session: a name that is a path, or one already here, is not taken (REQ-S-092).
     if (trustOn() && (!safeConvId(sid) || sessions.has(sid))) throw new Error('세션 id 가 올바르지 않아요')
     if (prompt) prompt = trustText(prompt, sid)
@@ -3586,7 +3589,7 @@ const commands = {
     if (autoAllow === true && !had && sessions.has(cmd.sid)) await commands.set({ sid: cmd.sid, autoAllow: true, allowAll: allowAll === true, signed })
   },
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
-  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner, codexMode }) {
+  async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner, codexMode, codexEffort }) {
     try {
       // Another runner's session (REQ-F-851): the runner this Mac recorded wins over what the server says.
       const known = sessions.get(sid) ?? (safeConvId(sid) ? readJson(closedPath, {})[sid] : null)
@@ -3595,7 +3598,7 @@ const commands = {
         if (rid !== 'codex') throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')
         const r = trustOn() ? trustOpenRecord(sid) : null
         if (trustOn() && !r) throw new Error('이 맥은 서버를 믿지 않는 모드라, 이 맥에 기록이 있는 세션만 다시 열 수 있어요')
-        return await openCodex(reqId, sid, r ? { conv: r.conv, cwd: r.cwd, autoPush: r.autoPush, model: r.model, record: r, sysPrompt } : { conv, cwd, home, autoPush, model, sysPrompt, record: known, codexMode })
+        return await openCodex(reqId, sid, r ? { conv: r.conv, cwd: r.cwd, autoPush: r.autoPush, model: r.model, record: r, sysPrompt } : { conv, cwd, home, autoPush, model, sysPrompt, record: known, codexMode, codexEffort })
       }
       // Only a session this Mac has a record of, from that record: nothing the server sends with it (REQ-S-092).
       if (trustOn()) {
@@ -3874,6 +3877,17 @@ const commands = {
       if (!s.codexMode) delete s.codexMode
       saveSessions()
       toast(sid, '샌드박스·승인 모드를 바꿨어요. 다음에 다시 열 때(codex resume) 그 모드로 떠요')
+      return void publish(sid, s)
+    }
+    // A codex session's effort (REQ-F-889): kept, and taken the next time it opens, as its mode is.
+    if (kind === 'codexEffort') {
+      if (!s || s.runner !== 'codex') return void (s && cannot(sid, s, 'codexEffort'))
+      const v = String(value ?? '')
+      if (v && !codexEffortOk(v)) return void toast(sid, 'codex 생각 수준이 올바르지 않아요')
+      if (v) s.codexEffort = v
+      else delete s.codexEffort
+      saveSessions()
+      toast(sid, `생각 수준을 ${v || 'Codex 기본값'}(으)로 바꿨어요. 다음에 다시 열 때(codex resume) 적용돼요`)
       return void publish(sid, s)
     }
     if (s && !can(s, kind, RUNNERS)) return void cannot(sid, s, String(kind))
