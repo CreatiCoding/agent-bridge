@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Trust, classOf, rebuild, hashesHold, pairCommit, sha256Hex, b64u, deviceIdOf, sealWith, openWith, sealOut } from '../../agent/trust.mjs'
-import { Adapters, adapterInput, CLOSED_MS } from '../../agent/adapters.mjs'
+import { Adapters, adapterInput, CLOSED_MS, CLOSED_KEEP, JOURNAL_KEEP, JOURNAL_MAX } from '../../agent/adapters.mjs'
 
 const subtle = globalThis.crypto.subtle
 const enc = new TextEncoder()
@@ -218,4 +218,131 @@ test('AC-1709 what leaves the Mac is sealed: result, error and stderr in one pie
   const lm = sealOut({ ...tag, ok: true, actions: { 'thread.read': 'read' }, problems: [{ name: 'x', error: '/Users/me/secret 경로' }] }, seal)
   assert.ok(!JSON.stringify(lm).includes('secret'))
   assert.deepEqual(lm.actions, { 'thread.read': 'read' })
+})
+
+// 닫힌 id 의 보장 (AC-1711, 1.503): none was a promise that the id never runs while a signature for it can still be
+// good. Other ids asked about, a restart, a full table or a journal that could not be read or written never undo it.
+// Each answer a millisecond later than the one before: ties in time must not decide what is kept.
+let clock = Date.now()
+const tick = () => ++clock
+const spam = (a, from, n) => {
+  const out = []
+  for (let i = 0; i < n; i++) out.push(a.status('slack', `req-spam-${String(from + i).padStart(6, '0')}`))
+  return out
+}
+
+test('AC-1711 none holds: 501 other ids asked about, then the held signature comes: never runs', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  const a = new Adapters({ stateDir: dir, now: tick })
+  const held = await pageCall(t, dev, { ...W, requestId: 'req-held-0001' })
+  assert.equal(a.status('slack', 'req-held-0001').state, 'none')
+  spam(a, 0, CLOSED_KEEP + 1)
+  const late = await run(t, a, gate(t, held))
+  assert.equal(late.state, 'refused', JSON.stringify(late))
+  assert.equal(late.code, 'request-closed')
+  assert.equal(runs().length, 0, '실행 0회')
+})
+
+test('AC-1711 none holds across a restart in the middle of the flood', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  let a = new Adapters({ stateDir: dir, now: tick })
+  const held = await pageCall(t, dev, { ...W, requestId: 'req-held-0002' })
+  assert.equal(a.status('slack', 'req-held-0002').state, 'none')
+  spam(a, 0, 250)
+  a = new Adapters({ stateDir: dir, now: tick }) // 에이전트 재시작
+  spam(a, 250, CLOSED_KEEP)
+  a = new Adapters({ stateDir: dir, now: tick })
+  const t2 = new Trust({ stateDir: dir, hostId: 'host-a' })
+  const late = await run(t2, a, gate(t2, held))
+  assert.equal(late.code, 'request-closed', JSON.stringify(late))
+  assert.equal(runs().length, 0, '실행 0회')
+})
+
+test('AC-1711 a full table answers unknown, never none, and what it answered is what happens', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  let now = Date.now()
+  const a = new Adapters({ stateDir: dir, now: () => now })
+  const first = await pageCall(t, dev, { ...W, requestId: 'req-spam-000000' })
+  const answers = spam(a, 0, CLOSED_KEEP)
+  assert.ok(answers.every((x) => x.state === 'none'))
+  // Full: the next id is not promised, and nothing already promised was dropped to make room.
+  const over = await pageCall(t, dev, { ...W, requestId: 'req-over-00001' })
+  const st = a.status('slack', 'req-over-00001')
+  assert.equal(st.state, 'unknown')
+  assert.equal(st.code, 'closed-full')
+  assert.equal(Object.values(a.journal).filter((e) => e.state === 'closed').length, CLOSED_KEEP)
+  assert.equal(a.status('slack', 'req-spam-000000').state, 'none', '이미 닫은 id 는 계속 none')
+  // Answered none → refused. Answered unknown (not closed) → it may still run, as it said.
+  assert.equal((await run(t, a, gate(t, first))).code, 'request-closed')
+  assert.equal(runs().length, 0)
+  assert.equal((await run(t, a, gate(t, over))).state, 'done')
+  assert.equal(runs().length, 1)
+  // After CLOSED_MS the old ids are let go by age, and there is room again.
+  now += CLOSED_MS + 1000
+  assert.equal(a.status('slack', 'req-next-00001').state, 'none')
+})
+
+test('AC-1711 a journal that cannot be read or written never answers none', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  let a = new Adapters({ stateDir: dir })
+  const held = await pageCall(t, dev, { ...W, requestId: 'req-held-0003' })
+  assert.equal(a.status('slack', 'req-held-0003').state, 'none')
+  // Restart with a broken journal: the closed ids may be lost, so for CLOSED_MS nothing runs and nothing is promised.
+  fs.writeFileSync(path.join(dir, 'adapters-journal.json'), '{"slack|req-held-0003": {"st')
+  a = new Adapters({ stateDir: dir })
+  const late = await run(t, a, gate(t, held))
+  assert.equal(late.state, 'refused')
+  assert.equal(late.code, 'journal-lost')
+  assert.equal(a.status('slack', 'req-new-00001').state, 'unknown')
+  a = new Adapters({ stateDir: dir }) // 그 사이 다시 시작해도 마찬가지
+  assert.equal(a.status('slack', 'req-new-00002').code, 'journal-lost')
+  assert.equal(runs().length, 0)
+  // A journal that cannot be written: status does not promise none, a write does not run.
+  const d2 = mac()
+  const b = new Adapters({ stateDir: d2.dir })
+  b.save = () => {
+    throw new Error('EACCES')
+  }
+  assert.equal(b.status('slack', 'req-nosave-001').state, 'unknown')
+  const w = await b.call({ ...W, requestId: 'req-nosave-002' })
+  assert.equal(w.state, 'refused')
+  assert.equal(w.code, 'journal')
+  assert.equal(d2.runs().length, 0)
+})
+
+test('AC-1711 a write id is forgotten only by age: more writes never push one out; a full journal refuses new writes', async () => {
+  const { dir, t, runs } = mac()
+  const dev = await device()
+  pairIn(t, dev)
+  const file = path.join(dir, 'adapters-journal.json')
+  const at = Date.now() - 60_000
+  const j = { 'slack|req-old-00000': { ext: 'slack', action: 'thread.reply', access: 'write', state: 'done', at: at - 1000, boot: 'old', result: { ok: 1 } } }
+  for (let i = 1; i <= JOURNAL_KEEP + 5; i++) j[`slack|req-fill-${String(i).padStart(5, '0')}`] = { ext: 'slack', action: 'thread.reply', access: 'write', state: 'done', at, boot: 'old', result: { ok: i } }
+  fs.writeFileSync(file, JSON.stringify(j))
+  let a = new Adapters({ stateDir: dir })
+  assert.equal((await run(t, a, gate(t, await pageCall(t, dev, { ...W, requestId: 'req-new-00001' })))).state, 'done')
+  a = new Adapters({ stateDir: dir })
+  const again = await run(t, a, gate(t, await pageCall(t, dev, { ...W, requestId: 'req-old-00000' })))
+  assert.equal(again.state, 'done', JSON.stringify(again))
+  assert.equal(again.replayed, true)
+  assert.equal(again.resultDropped, true, '오래된 결과만 버리고 id 는 남김')
+  assert.equal(runs().length, 1, '오래된 id 는 다시 실행되지 않음')
+  // Full of write ids younger than JOURNAL_MS: a new write is refused before it runs, and nothing is dropped.
+  const full = {}
+  for (let i = 0; i < JOURNAL_MAX; i++) full[`slack|req-full-${String(i).padStart(5, '0')}`] = { ext: 'slack', action: 'thread.reply', access: 'write', state: 'done', at, boot: 'old' }
+  fs.writeFileSync(file, JSON.stringify(full))
+  a = new Adapters({ stateDir: dir })
+  const r = await run(t, a, gate(t, await pageCall(t, dev, { ...W, requestId: 'req-full-new01' })))
+  assert.equal(r.state, 'refused')
+  assert.equal(r.code, 'journal-full')
+  assert.equal(runs().length, 1)
+  assert.equal(a.status('slack', 'req-full-00000').state, 'done')
 })

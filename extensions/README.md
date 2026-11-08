@@ -122,8 +122,8 @@ await bridge.adapters.list(sid)                       // 이 맥에 있는 작�
 ```
 
 - `call` 은 결과를 throw 하지 않고 `state` 로 돌려준다(`extension.yaml` 에 없는 작업만 throw). 페이지·서버는 다시 보내지 않는다.
-- 맥은 쓰기의 `requestId` 를 실행하기 전에 디스크에 적고, 같은 id 는 두 번 실행하지 않는다: 동시에 다시 와도, 나중에 와도, 에이전트가 다시 시작돼도 처음 결과(`replayed: true`)나 `unknown` 을 준다(24시간, 최근 300개). 그래서 `unknown` 뒤에는 **같은 requestId 로** `status` 를 묻거나 다시 보내야 중복 전송이 없다. 새 id 로 다시 보내는 것은 사람이 "다시 보내기"를 눌렀을 때만 한다.
-- 쓰기의 결과가 16KB 를 넘으면 다시 줄 때 `result: null, resultDropped: true` 다.
+- 맥은 쓰기의 `requestId` 를 실행하기 전에 디스크에 적고, 같은 id 는 두 번 실행하지 않는다: 동시에 다시 와도, 나중에 와도, 에이전트가 다시 시작돼도 처음 결과(`replayed: true`)나 `unknown` 을 준다(24시간). 24시간 안의 쓰기 id 가 3000개로 가득하면 새 쓰기는 실행하지 않고 `refused`(code `journal-full`)다. 그래서 `unknown` 뒤에는 **같은 requestId 로** `status` 를 묻거나 다시 보내야 중복 전송이 없다. 새 id 로 다시 보내는 것은 사람이 "다시 보내기"를 눌렀을 때만 한다.
+- 쓰기의 결과가 16KB 를 넘거나 최근 300개보다 오래됐으면 다시 줄 때 `result: null, resultDropped: true` 다.
 
 ### 서버를 믿지 않는 맥에서 (`trust enforce`·봉인)
 
@@ -133,7 +133,7 @@ await bridge.adapters.list(sid)                       // 이 맥에 있는 작�
 - **봉인**: 맥이 봉인을 켰으면 입력은 그 세션에 봉인해 보내고, 결과·오류·어댑터의 stderr 는 그 호출(익스텐션·requestId·세션)에 묶인 봉인 조각 하나로 돌아온다. `call` 의 결과, `status` 의 저장된 결과, 같은 id 로 다시 준 결과 모두 같다. 서버는 `state`·`code` 만 본다. 봉인을 끈 맥에서는 요청 서명만 지켜지고 결과는 평문이다.
 - **믿을 수 있는 결과만**: 봉인하는 맥에서 그 호출에 묶인 조각이 아닌 답(서버가 만든 `offline`·`unsupported`·4xx 포함)은, 쓰기와 `status` 면 `unknown`(서버가 말한 것은 `claimed`), 읽기면 결과 없는 `failed` 다. 맥에서 읽은 답은 `sealed: true`.
 - **쓰기는 사람이 한 동작으로만**: 짝지은 맥의 쓰기는 사람이 페이지를 누르거나 입력한 뒤 10 초 안에 부른 것만 보낸다. 아니면 보내지 않고 `refused`(code `needs-gesture`). 자동으로 다시 보내는 곳은 없다.
-- **중복 방지**: 같은 requestId 는 위처럼 한 번만 실행한다. `status` 가 `none` 이면 맥이 그 id 를 5 분 닫아, 서버가 붙잡아 둔 서명이 나중에 와도 실행하지 않는다(`refused`, code `request-closed`). 그러니 `none` 을 본 뒤에는 **새 requestId** 로 다시 보낸다.
+- **중복 방지**: 같은 requestId 는 위처럼 한 번만 실행한다. `status` 가 `none` 이면 맥이 그 id 를 5 분 닫아, 서버가 붙잡아 둔 서명이 나중에 와도 실행하지 않는다(`refused`, code `request-closed`). 그러니 `none` 을 본 뒤에는 **새 requestId** 로 다시 보낸다. 맥이 그 약속을 지킬 수 없을 때(닫힌 id 가 가득함 `closed-full`, 기록을 쓰지 못함 `journal`, 기록을 읽지 못한 직후 `journal-lost`)는 `none` 대신 `unknown` 이니, 새 id 로 보내지 말고 잠시 뒤 같은 id 로 다시 묻는다.
 - **지원 여부**: `list(sid)` 의 `signs`(이 페이지가 그 맥에 서명함)·`seals`(결과를 봉인 조각으로 받음)·`signed`(그 맥의 에이전트가 서명된 호출을 앎, 서버가 전한 값). 서명을 확인하는 맥의 에이전트가 오래됐으면 보호를 낮추지 않고 `unsupported` 로 보내지 않는다. 에이전트를 업데이트하면 된다.
 - 한도는 그대로다: 호출마다 프로세스 한 번, 입력 64KB, 결과 512KB.
 

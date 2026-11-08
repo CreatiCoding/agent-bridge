@@ -13,15 +13,21 @@ export const ADAPTER_IN_MAX = 64 * 1024
 export const ADAPTER_OUT_MAX = 512 * 1024
 export const ADAPTER_TIMEOUT_MS = 30_000
 export const ADAPTER_TIMEOUT_MAX = 120_000
-/** What is kept of each request id: the last JOURNAL_KEEP, none older than JOURNAL_MS. */
+/**
+ * A write's request id is kept JOURNAL_MS and only age forgets it (1.503): more writes never push one out, or the
+ * same id could run again. At most JOURNAL_MAX of them: when full a new write is refused before it runs
+ * (journal-full). Results are kept for the newest JOURNAL_KEEP only; an older one replays as done, resultDropped.
+ */
 export const JOURNAL_KEEP = 300
 export const JOURNAL_MS = 24 * 3600_000
+export const JOURNAL_MAX = 3000
 /** A write's result kept for a replay; a bigger one is answered as done with result null and resultDropped. */
 export const JOURNAL_RESULT_MAX = 16 * 1024
 /**
  * A request id that status found never arrived is closed (REQ-S-101): kept CLOSED_MS (longer than a signature is
  * good for, trust.mjs SKEW_MS both ways) so a call a server held back is refused when it comes, never run after the
- * page was told none. At most CLOSED_KEEP, apart from the journal so they never push out what ran.
+ * page was told none. Only age forgets a closed id (1.503): at CLOSED_KEEP status answers unknown (closed-full)
+ * instead of none, never dropping an id it already promised. Apart from the journal so they never push out what ran.
  */
 export const CLOSED_MS = 5 * 60_000
 export const CLOSED_KEEP = 500
@@ -100,18 +106,53 @@ export class Adapters {
     this.journal = this.load()
   }
   load() {
+    let text = null
     try {
-      const j = JSON.parse(fs.readFileSync(this.file, 'utf8'))
-      return j && typeof j === 'object' && !Array.isArray(j) ? j : {}
-    } catch {
-      return {}
+      text = fs.readFileSync(this.file, 'utf8')
+    } catch (e) {
+      if (e.code === 'ENOENT') return {}
     }
+    try {
+      const j = text === null ? null : JSON.parse(text)
+      if (j && typeof j === 'object' && !Array.isArray(j)) return j
+    } catch {}
+    // Unreadable: the ids it closed or ran may be lost. Kept aside as .bad, whose time says for how long nothing
+    // runs and nothing is promised (lost()), across more restarts too.
+    try {
+      fs.renameSync(this.file, `${this.file}.bad`)
+    } catch {}
+    try {
+      fs.writeFileSync(`${this.file}.bad`, '', { flag: 'a', mode: 0o600 })
+      fs.utimesSync(`${this.file}.bad`, new Date(this.now()), new Date(this.now()))
+    } catch {}
+    this.log('warn', '어댑터 기록(adapters-journal.json)을 읽지 못했어요. 5 분 동안 어댑터를 실행하지 않아요')
+    return {}
+  }
+  /** True while a journal lost by load() may still hold a closed id that a good signature could come for. */
+  lost() {
+    try {
+      return this.now() - fs.statSync(`${this.file}.bad`).mtimeMs < CLOSED_MS
+    } catch {
+      return false
+    }
+  }
+  /** Ids still kept: closed ones younger than CLOSED_MS, or write ids younger than JOURNAL_MS. */
+  kept(closed) {
+    const t = this.now()
+    let n = 0
+    for (const e of Object.values(this.journal)) if ((e.state === 'closed') === closed && t - e.at < (closed ? CLOSED_MS : JOURNAL_MS)) n++
+    return n
   }
   save() {
     const t = this.now()
     const all = Object.entries(this.journal).sort((a, b) => b[1].at - a[1].at)
-    const ran = all.filter(([, e]) => e.state !== 'closed' && t - e.at < JOURNAL_MS).slice(0, JOURNAL_KEEP)
-    const closed = all.filter(([, e]) => e.state === 'closed' && t - e.at < CLOSED_MS).slice(0, CLOSED_KEEP)
+    // Only age forgets an id. Room is made by refusing new ones (status closed-full, call journal-full), never by
+    // dropping one: a dropped closed id could run after none, a dropped write id could run twice.
+    const ran = all.filter(([, e]) => e.state !== 'closed' && t - e.at < JOURNAL_MS)
+    ran.forEach(([, e], i) => {
+      if (i >= JOURNAL_KEEP && 'result' in e) (delete e.result, (e.resultDropped = true))
+    })
+    const closed = all.filter(([, e]) => e.state === 'closed' && t - e.at < CLOSED_MS)
     this.journal = Object.fromEntries([...ran, ...closed])
     fs.mkdirSync(this.stateDir, { recursive: true })
     fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.journal), { mode: 0o600 })
@@ -127,20 +168,28 @@ export class Adapters {
   /**
    * What became of a request id: none (never arrived, and from now on never runs: send again with a new id),
    * running, done, failed, unknown. `at` is this Mac's time of the answer.
+   * none is answered only once the closed id is on disk (1.503). When that cannot be promised (the table is full,
+   * the journal was lost or cannot be written) the answer is unknown with a code, and the id is not closed.
    */
   status(ext, requestId) {
     if (!EXT_RE.test(ext ?? '') || !REQUEST_RE.test(requestId ?? '')) return { state: 'refused', code: 'bad-request', error: '익스텐션·요청 id 모양이 맞지 않아요' }
     const k = `${ext}|${requestId}`
     if (this.running.has(k)) return { state: 'running' }
     const e = this.journal[k] ?? this.reads.get(k)
-    if (!e || e.state === 'closed') {
-      if (!e) {
-        this.journal[k] = { ext, state: 'closed', at: this.now() }
-        this.save()
-      }
-      return { state: 'none', at: this.now() }
+    if (e?.state === 'closed') return { state: 'none', at: this.now() }
+    if (e) return this.view(e, false)
+    const cannot = (code, why) => ({ state: 'unknown', code, error: `${why}. 이 요청 id 가 나중에 실행되지 않는다고 약속할 수 없어요. 잠시 뒤 다시 확인하거나 새 id 로 보내기 전에 결과를 확인하세요` })
+    if (this.lost()) return cannot('journal-lost', '어댑터 기록을 읽지 못해 5 분 동안 확인할 수 없어요')
+    if (this.kept(true) >= CLOSED_KEEP) return cannot('closed-full', `닫아 둔 요청 id 가 ${CLOSED_KEEP}개로 가득해요`)
+    this.journal[k] = { ext, state: 'closed', at: this.now() }
+    try {
+      this.save()
+    } catch (err) {
+      // Still refused in this process (the entry stays), but a restart would forget it: not promised.
+      this.log('warn', `어댑터 기록을 쓰지 못했어요: ${err.message}`)
+      return cannot('journal', '어댑터 기록을 디스크에 쓰지 못했어요')
     }
-    return this.view(e, false)
+    return { state: 'none', at: this.now() }
   }
   view(e, replayed) {
     const base = { state: e.state === 'running' && e.boot !== BOOT ? 'unknown' : e.state, action: e.action, ...(replayed ? { replayed: true } : {}) }
@@ -160,6 +209,8 @@ export class Adapters {
       if (old.action !== action) return { state: 'refused', code: 'request-reused', error: '같은 요청 id 를 다른 작업에 썼어요' }
       return this.view(old, true)
     }
+    // The lost journal may have closed this id, or run it: nothing runs until a signature for it can no longer be good.
+    if (this.lost()) return { state: 'refused', code: 'journal-lost', error: '어댑터 기록을 읽지 못해 5 분 동안 실행하지 않아요. 실행하지 않았어요' }
     const raw = JSON.stringify(input ?? null)
     if (raw.length > ADAPTER_IN_MAX) return { state: 'refused', code: 'too-large', error: `입력이 ${ADAPTER_IN_MAX / 1024}KB 를 넘어요` }
     const { adapters } = readAdapters(this.stateDir)
@@ -170,8 +221,15 @@ export class Adapters {
     const entry = { ext, action, access, state: 'running', at: this.now(), boot: BOOT }
     // Kept before it runs: if this agent stops halfway, the id answers unknown and is never run again.
     if (write) {
+      if (this.kept(false) >= JOURNAL_MAX) return { state: 'refused', code: 'journal-full', error: `24 시간 안의 쓰기 요청 id 가 ${JOURNAL_MAX}개로 가득해 중복 실행을 막을 수 없어요. 실행하지 않았어요` }
       this.journal[k] = entry
-      this.save()
+      try {
+        this.save()
+      } catch (err) {
+        delete this.journal[k]
+        this.log('warn', `어댑터 기록을 쓰지 못했어요: ${err.message}`)
+        return { state: 'refused', code: 'journal', error: '어댑터 기록을 디스크에 쓰지 못해 실행하지 않았어요' }
+      }
     }
     const p = this.run(a, { ext, action, access, input: input ?? null, requestId, session: { id: sid ?? null, cwd: cwd ?? null } }, write).then((out) => {
       Object.assign(entry, { state: out.state, error: out.error, code: out.code })
@@ -180,8 +238,14 @@ export class Adapters {
         if (write && size > JOURNAL_RESULT_MAX) entry.resultDropped = true
         else entry.result = out.result
       }
-      if (write) this.save()
-      else this.reads.set(k, entry), setTimeout(() => this.reads.delete(k), 10 * 60_000).unref?.()
+      if (write) {
+        // Not written: the id stays 'running' on disk (unknown after a restart), never forgotten.
+        try {
+          this.save()
+        } catch (err) {
+          this.log('warn', `어댑터 기록을 쓰지 못했어요: ${err.message}`)
+        }
+      } else this.reads.set(k, entry), setTimeout(() => this.reads.delete(k), 10 * 60_000).unref?.()
       this.running.delete(k)
       return out
     })

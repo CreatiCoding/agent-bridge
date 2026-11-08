@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.503',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '로컬 어댑터: status 가 none 이라 답한 요청 id 가 다른 id 501개를 묻는 것만으로 5 분 안에 지워져, 서버가 붙잡아 둔 서명이 실행되던 것을 고쳤다. 닫힌 id·쓰기 id 는 나이로만 지우고, 가득 차면 none 대신 unknown(closed-full), 새 쓰기는 refused(journal-full). 기록을 쓰지 못하거나 깨진 기록으로 다시 시작하면 none 을 주지 않고 실행하지 않는다(journal, journal-lost)',
+        refs: ['REQ-S-101', 'REQ-F-893'],
+      },
+    ],
+  },
+  {
     version: '1.502',
     date: '2026-11-08',
+    commit: 'ebabf88',
     changes: [
       {
         kind: 'security',
