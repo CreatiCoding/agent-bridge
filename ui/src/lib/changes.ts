@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.482',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '디스크 관리의 앱 복제본 정리가 링크를 따라 복제본 폴더 밖의 파일을 지울 수 있던 것: 링크인 앱 폴더·복제본은 목록에서 빼고, 지우기 바로 앞에서 실제 경로를 다시 확인한다',
+        refs: ['REQ-F-885'],
+      },
+    ],
+  },
+  {
     version: '1.481',
     date: '2026-11-08',
+    commit: 'c136bc3',
     changes: [
       {
         kind: 'fixed',

@@ -878,6 +878,78 @@ export function cloneWhy({ inUse, mtimeMs, now }) {
   return null
 }
 
+/**
+ * An app folder under X (the real path) that is a real folder: not a link, and its real path is itself. A link would
+ * make the reads and the removal below go through it to a folder outside X.
+ */
+function cloneAppDirOk(x, app) {
+  if (!CLONE_DIR_RE.test(String(app ?? ''))) return false
+  const p = path.join(x, app)
+  try {
+    const st = fs.lstatSync(p)
+    return st.isDirectory() && !st.isSymbolicLink() && fs.realpathSync(p) === p
+  } catch {
+    return false
+  }
+}
+/** One clone under a checked app folder: a real entry, not a link, whose real parent is that folder. */
+function cloneEntryOk(x, app, name) {
+  const s = String(name ?? '')
+  if (!s || s === '.' || s === '..' || s.includes('/') || s.includes('\0')) return null
+  const p = path.join(x, app, s)
+  try {
+    const st = fs.lstatSync(p)
+    if (st.isSymbolicLink()) return null
+    if (fs.realpathSync(path.dirname(p)) !== path.join(x, app)) return null
+    return st
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The clones under X (its real path) as they are on disk: `{ app, name, mtimeMs }`. An app folder or a clone that is a
+ * link, or whose real path leaves X, is not listed at all, so it is never judged removable.
+ */
+export function cloneEntries(x) {
+  const out = []
+  let apps = []
+  try {
+    apps = fs.readdirSync(x).filter((n) => CLONE_DIR_RE.test(n))
+  } catch {
+    return out
+  }
+  for (const app of apps) {
+    if (!cloneAppDirOk(x, app)) continue
+    let ents = []
+    try {
+      ents = fs.readdirSync(path.join(x, app))
+    } catch {
+      continue
+    }
+    for (const name of ents) {
+      const st = cloneEntryOk(x, app, name)
+      if (st) out.push({ app, name, mtimeMs: st.mtimeMs })
+    }
+  }
+  return out
+}
+
+/**
+ * Removes one clone, checking again right before: X is still its own real path, the app folder is a real folder in it,
+ * and the clone is a real entry in that folder (a link swapped in after the listing is refused). True when removed.
+ */
+export function removeClone(x, app, name) {
+  try {
+    if (fs.realpathSync(x) !== x) return false
+  } catch {
+    return false
+  }
+  if (!cloneAppDirOk(x, app) || !cloneEntryOk(x, app, name)) return false
+  fs.rmSync(path.join(x, app, String(name)), { recursive: true, force: true })
+  return true
+}
+
 /** `lsof -F n` output → the clones (`<app folder>/<clone>`) some process has a file open in. */
 export function openClones(lsofOut, xDir) {
   const out = new Set()

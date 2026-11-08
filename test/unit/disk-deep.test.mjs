@@ -2,7 +2,10 @@
 // that the removing ops stay signed for a Mac that does not trust the server.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { cloneWhy, openClones, dockerLeftovers, ignoredDirs, userXDir, CLONE_QUIET_MS, CLONE_DIR_RE } from '../../agent/guard.mjs'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, ignoredDirs, userXDir, CLONE_QUIET_MS, CLONE_DIR_RE } from '../../agent/guard.mjs'
 import { classOf } from '../../agent/trust.mjs'
 import { TOOLS, handle } from '../../agent/mcp.mjs'
 import { startServer } from './server-harness.mjs'
@@ -30,6 +33,58 @@ test('AC-1669 the clones open now are read from lsof by their real path', () => 
     `n${X}/other.folder/code_sign_clone.Nope/x`,
   ].join('\n')
   assert.deepEqual([...openClones(out, X)], ['com.google.Chrome.code_sign_clone/code_sign_clone.LIqYaf'])
+})
+
+test('AC-1678 a clone folder that is a link out of X is never listed or removed, and the file it leads to stays', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cb-clones-')))
+  try {
+    const x = path.join(root, 'X')
+    const outside = path.join(root, 'outside')
+    fs.mkdirSync(x)
+    fs.mkdirSync(outside)
+    const keep = path.join(outside, 'keep.txt')
+    fs.writeFileSync(keep, 'keep')
+    const old = new Date(Date.now() - 2 * 3_600_000)
+    fs.utimesSync(keep, old, old)
+    // The reported case: the app folder itself is a link to a folder outside X.
+    fs.symlinkSync(outside, path.join(x, 'com.example.code_sign_clone'))
+    // A real app folder: a real clone, a clone that is a link out, and a link inside a real clone.
+    const app = path.join(x, 'com.real.code_sign_clone')
+    fs.mkdirSync(path.join(app, 'code_sign_clone.Real'), { recursive: true })
+    fs.symlinkSync(outside, path.join(app, 'code_sign_clone.Link'))
+    fs.symlinkSync(keep, path.join(app, 'code_sign_clone.Real', 'inner'))
+    fs.utimesSync(path.join(app, 'code_sign_clone.Real'), old, old)
+
+    const list = cloneEntries(x)
+    assert.deepEqual(list.map((c) => `${c.app}/${c.name}`), ['com.real.code_sign_clone/code_sign_clone.Real'])
+    assert.ok(Date.now() - list[0].mtimeMs >= CLONE_QUIET_MS)
+
+    // Asked directly anyway (a listing from before a swap): refused, nothing outside is touched.
+    assert.equal(removeClone(x, 'com.example.code_sign_clone', 'keep.txt'), false)
+    assert.equal(removeClone(x, 'com.real.code_sign_clone', 'code_sign_clone.Link'), false)
+    assert.equal(removeClone(x, 'com.real.code_sign_clone', '..'), false)
+    assert.equal(removeClone(x, '../outside', 'keep.txt'), false)
+    assert.ok(fs.existsSync(keep))
+
+    // The real clone goes; the link inside it is removed as a link, the file it named stays.
+    assert.equal(removeClone(x, 'com.real.code_sign_clone', 'code_sign_clone.Real'), true)
+    assert.ok(!fs.existsSync(path.join(app, 'code_sign_clone.Real')))
+    assert.ok(fs.existsSync(keep))
+
+    // The app folder swapped for a link after the listing: checked again right before removing, refused.
+    fs.mkdirSync(path.join(outside, 'code_sign_clone.Swap'))
+    fs.rmSync(app, { recursive: true })
+    fs.symlinkSync(outside, app)
+    assert.equal(removeClone(x, 'com.real.code_sign_clone', 'code_sign_clone.Swap'), false)
+    assert.ok(fs.existsSync(path.join(outside, 'code_sign_clone.Swap')))
+    // X itself not its real path (a link): refused.
+    const xl = path.join(root, 'XL')
+    fs.symlinkSync(x, xl)
+    assert.equal(removeClone(xl, 'com.real.code_sign_clone', 'code_sign_clone.Swap'), false)
+    assert.ok(fs.existsSync(keep))
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('AC-1670 only failed containers with nothing mounted are Docker leftovers', () => {

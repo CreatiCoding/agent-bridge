@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, openClones, dockerLeftovers, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
@@ -5350,14 +5350,14 @@ async function diskOp(op, id, where, paths) {
     let removed = 0
     let kept = 0
     for (const c of cl.list.filter((x) => x.app === id)) {
-      const p = path.join(cl.x, c.app, c.name)
-      if (c.why || path.dirname(path.dirname(p)) !== cl.x) {
+      if (c.why) {
         kept++
         continue
       }
+      // removeClone checks the real paths again right before removing: a link swapped in since the listing is kept.
       try {
-        fs.rmSync(p, { recursive: true, force: true })
-        removed++
+        if (removeClone(cl.x, c.app, c.name)) removed++
+        else kept++
       } catch {
         kept++
       }
@@ -5425,23 +5425,11 @@ async function clonesNow() {
   const lsof = await run('/usr/sbin/lsof', ['-n', '-F', 'n'], { timeout: 90_000 })
   const open = openClones(lsof.out, x)
   const now = Date.now()
-  const list = []
-  for (const app of fs.readdirSync(x).filter((n) => CLONE_DIR_RE.test(n))) {
-    let ents = []
-    try {
-      ents = fs.readdirSync(path.join(x, app))
-    } catch {
-      continue
-    }
-    for (const name of ents) {
-      let mtimeMs = now
-      try {
-        mtimeMs = fs.lstatSync(path.join(x, app, name)).mtimeMs
-      } catch {}
-      const why = cloneWhy({ inUse: open.has(`${app}/${name}`), mtimeMs, now })
-      list.push({ app, name, mtimeMs, ...(why ? { why } : {}) })
-    }
-  }
+  // cloneEntries leaves out an app folder or clone that is a link or leads out of X: never listed, never removed.
+  const list = cloneEntries(x).map((c) => {
+    const why = cloneWhy({ inUse: open.has(`${c.app}/${c.name}`), mtimeMs: c.mtimeMs, now })
+    return { ...c, ...(why ? { why } : {}) }
+  })
   return { x, list, checked: !!lsof.out }
 }
 /** Docker as it stands: the leftovers dockerLeftovers picks, `docker system df`, and colima's VM disk. Null without docker. */
