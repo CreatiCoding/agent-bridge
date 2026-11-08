@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 10
+export const TRUST_VERSION = 11
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -157,9 +157,10 @@ export const TRUST_CLASS = {
   tidyRun: 'free',
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
-  // 로컬 어댑터 (REQ-F-893): its input and result are not sealed and a write acts outside this Mac, so while the
-  // Mac does not trust the server (enforce) it is refused; warn runs it with a warning.
-  adapter: 'off',
+  // 로컬 어댑터 (REQ-F-893, 서명 REQ-S-101): a call is signed with its extension, session, action, read or write,
+  // request id and the hash of its input as sent (inputJ: JSON, sealed while sealing). The server's `input` is
+  // dropped. list and status only answer, and what they answer leaves sealed (sealOut adapter).
+  adapter: { ops: { list: 'free', status: 'free', call: { i: ['op', 'ext', 'sid', 'action', 'access', 'requestId', 'inputH'], keep: ['inputJ'] } }, other: 'off' },
   // by op
   // 깊게 찾기 (REQ-F-885, 9): probe only measures; clones and docker remove things, so they are signed like clean.
   // 공유 디스크만 보기 (REQ-F-888, 10): shared only measures the one path the server names, like info.
@@ -431,7 +432,7 @@ export function rebuild(cmd, rule, i) {
 }
 
 /** The hashes a signature binds, against what came: {field: hashField}. */
-export const HASHED = { send: { text: 'textH' }, btw: { text: 'textH' }, new: { prompt: 'promptH' } }
+export const HASHED = { send: { text: 'textH' }, btw: { text: 'textH' }, new: { prompt: 'promptH' }, adapter: { inputJ: 'inputH' } }
 export function hashesHold(cmd, i) {
   for (const [f, h] of Object.entries(HASHED[cmd.t] ?? {})) {
     const v = cmd[f] ?? ''
@@ -703,6 +704,21 @@ export function sealOut(msg, seal) {
     case 'stats':
       if (m.prs) m.prs = d(m.prs)
       break
+    case 'adapter': {
+      // 로컬 어댑터 (REQ-S-101): the outcome (state, result, error with the adapter's stderr, code) in one piece
+      // bound to the extension, the request id and the session, so a server can neither read nor move one. The
+      // plain state and code beside it are only the server's hint; the page uses the piece.
+      if (m.state !== undefined) {
+        const inner = {}
+        for (const k of ['state', 'result', 'error', 'code', 'action', 'replayed', 'resultDropped', 'at']) if (m[k] !== undefined) inner[k] = m[k]
+        m.sealed = seal(JSON.stringify({ kind: 'adapter', ext: m.ext ?? '', requestId: m.requestId ?? '', sid, ...inner }), sid)
+        delete m.result
+        delete m.at
+      }
+      if (m.error !== undefined) m.error = S(m.error)
+      if (Array.isArray(m.problems)) m.problems = m.problems.map((p) => (p && typeof p === 'object' ? { ...p, error: S(p.error) } : p))
+      break
+    }
     case 'logs':
       if (Array.isArray(m.entries)) m.entries = m.entries.map((e) => (e && typeof e === 'object' ? { ...e, text: S(e.text) } : e))
       break

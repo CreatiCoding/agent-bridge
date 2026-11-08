@@ -576,3 +576,62 @@ export async function sealBody(method: string, path: string, body: unknown): Pro
   if (p === '/api/sessions' && typeof b.prompt === 'string' && typeof b.hostId === 'string' && sealsTo(b.hostId)) return { ...b, prompt: await sealFor(b.hostId, '', b.prompt) }
   return body
 }
+
+// ---------- 로컬 어댑터 (REQ-S-101) ----------
+// A call to a paired Mac's adapter is signed here with everything that decides what runs (extension, session,
+// action, read or write, request id, the hash of the input as sent), and its input sealed for that session while
+// the Mac seals. What comes back is taken only from the Mac's sealed piece bound to the same call.
+
+export const ADAPTER_IN_MAX = 64 * 1024
+
+export interface AdapterCall {
+  ext: string
+  sid: string
+  action: string
+  access: 'read' | 'write'
+  requestId: string
+  input: unknown
+}
+
+/** The body and X-Bridge-Auth of a signed call, or null when this device is not paired with that Mac. */
+export async function adapterSigned(hostId: string, c: AdapterCall): Promise<{ body: Record<string, unknown>; auth: string; sealed: boolean } | null> {
+  await loadTrust()
+  if (!pairedWith(hostId)) return null
+  const plain = JSON.stringify(c.input ?? null)
+  if (plain.length > ADAPTER_IN_MAX) throw Object.assign(new Error(`입력이 ${ADAPTER_IN_MAX / 1024}KB 를 넘어요`), { status: 413, local: true })
+  const sealed = sealsTo(hostId)
+  const inputJ = sealed ? await sealPiece(hostId, c.sid, plain) : plain
+  const tok = await sign({ h: hostId, t: 'adapter', i: { op: 'call', ext: c.ext, sid: c.sid, action: c.action, access: c.access, requestId: c.requestId, inputH: await sha256Hex(inputJ) } })
+  return { body: { sid: c.sid, action: c.action, access: c.access, requestId: c.requestId, inputJ }, auth: b64u(enc.encode(JSON.stringify([tok]))), sealed }
+}
+
+const OUTCOME_KEYS = ['state', 'result', 'error', 'code', 'action', 'replayed', 'resultDropped', 'at']
+
+/**
+ * An answer from the server about an adapter call, as this page may believe it. For a Mac that seals, only its
+ * sealed piece counts, and only one for this extension and request id (and this session, for a call). Anything
+ * else is the server's word: a write (or a status) then stays unknown, a read gives no result.
+ */
+export async function adapterOpen(hostId: string, want: { ext: string; sid: string; requestId?: string; kind: 'call' | 'status' | 'list'; write: boolean }, r: Record<string, unknown>): Promise<Record<string, unknown>> {
+  await loadTrust()
+  const base = (await openDeep(r)) as Record<string, unknown>
+  if (!sealsTo(hostId) || want.kind === 'list') return base
+  const rid = want.requestId ?? (typeof r.requestId === 'string' ? r.requestId : undefined)
+  let why = '맥이 봉인한 답이 아니에요'
+  if (typeof r.sealed === 'string') {
+    try {
+      const o = JSON.parse((await openSealed(r.sealed)) ?? 'null') as Record<string, unknown> | null
+      if (o && o.kind === 'adapter' && o.ext === want.ext && o.requestId === rid && (want.kind === 'status' || o.sid === want.sid)) {
+        const out: Record<string, unknown> = { ok: o.state === 'done', requestId: rid, sealed: true }
+        for (const k of OUTCOME_KEYS) if (o[k] !== undefined) out[k] = o[k]
+        return out
+      }
+    } catch {}
+    why = '맥이 봉인한 답을 이 요청의 것으로 확인하지 못했어요(다른 요청·세션의 답이거나 키가 바뀜)'
+  }
+  const said = typeof base.error === 'string' && base.error ? `${base.error} — ` : ''
+  if (want.write || want.kind === 'status') return { ok: false, state: 'unknown', requestId: rid, claimed: r.state, error: `${said}${why}. 실행됐는지 알 수 없어요. 같은 requestId 로 status 를 확인해 주세요` }
+  if (base.state === 'done') return { ok: false, state: 'failed', requestId: rid, error: `${why}. 결과를 쓰지 않았어요` }
+  const { result: _drop, sealed: _s, ...rest } = base
+  return rest
+}

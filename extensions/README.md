@@ -107,7 +107,7 @@ adapters:
 - 부를 때마다 그 폴더에서 `command` 를 한 번 실행한다(`./` 로 시작하면 폴더 안 파일). stdin 은 `{action, access, input, requestId, session: {id, cwd}, ext}`, stdout 의 JSON 이 결과다. 0 이 아닌 종료는 실패(stderr 끝 줄이 이유). 환경 변수 `BRIDGE_ADAPTER_ACTION`·`BRIDGE_ADAPTER_ACCESS`·`BRIDGE_REQUEST_ID` 도 받는다.
 - 폴더나 `adapter.json` 을 다른 사용자가 고칠 수 있으면 쓰지 않는다. 한도: 입력 64KB, 결과 512KB, 시간 `timeoutMs`(기본 30 초, 최대 120 초).
 - 서버는 세션이 부르는 사람의 것인지, 작업이 `extension.yaml` 에 있는지, 읽기·쓰기가 맞는지를 보고, 맥은 `adapter.json` 의 `ext`·`actions`·읽기·쓰기가 맞는지 본다. 쓰기는 사람·익스텐션마다 분당 30 번.
-- 맥이 신뢰 모드 `enforce` 면 쓸 수 없다(입력·결과가 봉인되지 않는다). 예시: [example/adapter](example/adapter).
+- 신뢰 모드(`trust enforce`, 봉인 on)인 맥에서도 쓴다: 아래 "서버를 믿지 않는 맥에서". 예시: [example/adapter](example/adapter).
 
 ```ts
 const r = await bridge.adapters.call(sid, 'thread.reply', { text }, { requestId })  // requestId 는 bridge.adapters.requestId()
@@ -117,13 +117,25 @@ switch (r.state) {
   case 'offline': case 'refused': case 'unsupported': case 'failed': showError(r.error)
 }
 // 다시 연결된 뒤, 새로 고친 뒤: 같은 requestId 로 묻는다
-const s = await bridge.adapters.status(sid, requestId) // done(result) · failed · unknown · running · none(맥에 닿지 않음: 다시 보내도 된다)
-await bridge.adapters.list(sid)                       // 이 맥에 있는 작업 {actions, problems}
+const s = await bridge.adapters.status(sid, requestId) // done(result) · failed · unknown · running · none(맥에 닿지 않음: 그 id 는 닫혔으니 새 id 로 다시)
+await bridge.adapters.list(sid)                       // 이 맥에 있는 작업 {actions, problems, signs, signed, seals}
 ```
 
 - `call` 은 결과를 throw 하지 않고 `state` 로 돌려준다(`extension.yaml` 에 없는 작업만 throw). 페이지·서버는 다시 보내지 않는다.
 - 맥은 쓰기의 `requestId` 를 실행하기 전에 디스크에 적고, 같은 id 는 두 번 실행하지 않는다: 동시에 다시 와도, 나중에 와도, 에이전트가 다시 시작돼도 처음 결과(`replayed: true`)나 `unknown` 을 준다(24시간, 최근 300개). 그래서 `unknown` 뒤에는 **같은 requestId 로** `status` 를 묻거나 다시 보내야 중복 전송이 없다. 새 id 로 다시 보내는 것은 사람이 "다시 보내기"를 눌렀을 때만 한다.
 - 쓰기의 결과가 16KB 를 넘으면 다시 줄 때 `result: null, resultDropped: true` 다.
+
+### 서버를 믿지 않는 맥에서 (`trust enforce`·봉인)
+
+`bridge.version.features` 에 `'adapters.signed'` 가 있는 페이지는 짝지은 맥의 어댑터를 서명·봉인해 부른다. 익스텐션 코드는 같다.
+
+- **요청 서명**: 페이지가 기기 키로 익스텐션 id·세션 id·대상 맥·action·읽기/쓰기·requestId·입력 해시를 서명한다. 맥은 서명한 값으로 명령을 다시 만들고, 서버가 바꾼 값·다른 세션이나 맥 대상·다시 보낸 서명(재시작 뒤에도)·60 초가 지난 서명은 거절한다(`refused`, code `trust`·`bad-input`).
+- **봉인**: 맥이 봉인을 켰으면 입력은 그 세션에 봉인해 보내고, 결과·오류·어댑터의 stderr 는 그 호출(익스텐션·requestId·세션)에 묶인 봉인 조각 하나로 돌아온다. `call` 의 결과, `status` 의 저장된 결과, 같은 id 로 다시 준 결과 모두 같다. 서버는 `state`·`code` 만 본다. 봉인을 끈 맥에서는 요청 서명만 지켜지고 결과는 평문이다.
+- **믿을 수 있는 결과만**: 봉인하는 맥에서 그 호출에 묶인 조각이 아닌 답(서버가 만든 `offline`·`unsupported`·4xx 포함)은, 쓰기와 `status` 면 `unknown`(서버가 말한 것은 `claimed`), 읽기면 결과 없는 `failed` 다. 맥에서 읽은 답은 `sealed: true`.
+- **쓰기는 사람이 한 동작으로만**: 짝지은 맥의 쓰기는 사람이 페이지를 누르거나 입력한 뒤 10 초 안에 부른 것만 보낸다. 아니면 보내지 않고 `refused`(code `needs-gesture`). 자동으로 다시 보내는 곳은 없다.
+- **중복 방지**: 같은 requestId 는 위처럼 한 번만 실행한다. `status` 가 `none` 이면 맥이 그 id 를 5 분 닫아, 서버가 붙잡아 둔 서명이 나중에 와도 실행하지 않는다(`refused`, code `request-closed`). 그러니 `none` 을 본 뒤에는 **새 requestId** 로 다시 보낸다.
+- **지원 여부**: `list(sid)` 의 `signs`(이 페이지가 그 맥에 서명함)·`seals`(결과를 봉인 조각으로 받음)·`signed`(그 맥의 에이전트가 서명된 호출을 앎, 서버가 전한 값). 서명을 확인하는 맥의 에이전트가 오래됐으면 보호를 낮추지 않고 `unsupported` 로 보내지 않는다. 에이전트를 업데이트하면 된다.
+- 한도는 그대로다: 호출마다 프로세스 한 번, 입력 64KB, 결과 512KB.
 
 ## AI 의 결과를 익스텐션으로 받기
 

@@ -16,7 +16,7 @@ import { Markdown } from './markdown'
 import type { Me } from './types'
 import * as kitAll from '../kit'
 import { chooseDialog, confirmDialog, openMenu, promptDialog, Sheet, toast, type MenuEntry } from '../kit/overlay'
-import { loadTrust, pairedHosts } from './trust'
+import { adapterOpen, adapterSigned, loadTrust, pairedHosts, pairedWith, sealsTo } from './trust'
 import { setQuietRules } from './quiet'
 import { extClosePanel, extOpenPanel, panelStateOf, subscribePanels, usePanelState } from '../components/session-panel'
 
@@ -44,7 +44,7 @@ export interface ExtInfo {
 /** The extensionApi this page gives; a newer one is not loaded. */
 export const EXT_API = 1
 /** What this page has beyond extensionApi 1's first form (bridge.version.features): an older page lacks the name. */
-export const EXT_FEATURES = ['panels', 'adapters']
+export const EXT_FEATURES = ['panels', 'adapters', 'adapters.signed']
 
 /** 로컬 어댑터 (REQ-F-893): what became of one call. */
 export type AdapterState = 'done' | 'failed' | 'refused' | 'unknown' | 'running' | 'none' | 'offline' | 'unsupported'
@@ -57,6 +57,12 @@ export interface AdapterOutcome {
   code?: string
   replayed?: true
   resultDropped?: true
+  /** The outcome came in the Mac's sealed piece for this very call (REQ-S-101). */
+  sealed?: true
+  /** What the server said when this page could not believe it (the state is then unknown). */
+  claimed?: string
+  /** status none: the Mac's time of the answer. */
+  at?: number
 }
 const EVENTS = ['session.done', 'decision.waiting', 'decision.answered']
 // The events' shape is the server's (REQ-F-817); the page only passes them on, so it takes the published types.
@@ -80,8 +86,8 @@ export function noExt() {
 
 // ---------- requests ----------
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const r = await fetch(path, { method, credentials: 'same-origin', headers: { ...H, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) })
+async function call<T>(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<T> {
+  const r = await fetch(path, { method, credentials: 'same-origin', headers: { ...H, ...extra, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body) })
   const data = await r.json().catch(() => ({}))
   if (!r.ok) throw Object.assign(new Error(data.error || `${r.status}`), { status: r.status })
   return data as T
@@ -89,6 +95,15 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 // Reported to 운영 탭: message and stack only, never what the page shows.
 const reported = new Map<string, number>()
+
+// The last thing a person did on this page (REQ-S-101): an extension cannot make a trusted event.
+let lastGesture = 0
+const GESTURE_MS = 10_000
+if (typeof window !== 'undefined')
+  for (const ev of ['pointerdown', 'keydown', 'click'])
+    window.addEventListener(ev, (e) => {
+      if (e.isTrusted) lastGesture = Date.now()
+    }, { capture: true, passive: true })
 function report(id: string, where: string, e: unknown) {
   if (!id) return
   const key = `${id}|${where}|${e instanceof Error ? e.message : String(e)}`
@@ -227,13 +242,31 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
   }
   const adapterPost = async (sub: string, body: Record<string, unknown>, write: boolean): Promise<AdapterOutcome> => {
     const requestId = typeof body.requestId === 'string' ? body.requestId : undefined
+    const sid = String(body.sid ?? '')
+    const hostId = getStore().state?.sessions.find((s) => s.id === sid)?.hostId ?? ''
+    const kind = sub === '/status' ? 'status' : sub === '/list' ? 'list' : 'call'
     try {
-      return await call<AdapterOutcome>('POST', `/api/ext/${owner}/adapter${sub}`, body)
+      // A paired Mac (REQ-S-101): the call signed and its input sealed here; what comes back checked against it.
+      let send = body
+      let auth: string | null = null
+      if (kind === 'call' && hostId) {
+        const s = await adapterSigned(hostId, { ext: owner, sid, action: String(body.action), access: write ? 'write' : 'read', requestId: String(requestId), input: body.input })
+        if (s) {
+          // A write goes only from something a person just did on this page, never from a timer or a load.
+          if (write && Date.now() - lastGesture > GESTURE_MS) return { ok: false, state: 'refused', code: 'needs-gesture', requestId, error: '짝지은 맥의 쓰기는 사람이 누르거나 입력한 직후에만 보낼 수 있어요. 실행하지 않았어요' }
+          ;({ body: send, auth } = s)
+        }
+      }
+      const r = await call<Record<string, unknown>>('POST', `/api/ext/${owner}/adapter${sub}`, send, auth ? { 'X-Bridge-Auth': auth } : {})
+      const out = hostId ? await adapterOpen(hostId, { ext: owner, sid, requestId, kind, write }, r) : r
+      if (kind === 'list' && hostId) Object.assign(out, { signs: pairedWith(hostId), seals: sealsTo(hostId) })
+      return out as unknown as AdapterOutcome
     } catch (e) {
       const status = (e as { status?: number }).status
       const error = e instanceof Error ? e.message : String(e)
       // The server said no before sending it on: nothing ran.
-      if (status && status >= 400 && status < 500) return { ok: false, state: 'refused', requestId, error }
+      // For a write signed to a Mac that seals, that is only the server's word: unknown until status says (REQ-S-101).
+      if (status && status >= 400 && status < 500 && ((e as { local?: boolean }).local || !(write && hostId && sealsTo(hostId)))) return { ok: false, state: 'refused', requestId, error }
       return { ok: false, state: write ? 'unknown' : 'failed', requestId, error: write ? `${error} — 실행됐는지 알 수 없어요` : error }
     }
   }
@@ -290,7 +323,7 @@ function makeBridge(x: ExtInfo, locale: Record<string, string>, me: Me) {
         return adapterPost('', { sid, action, access, input: input ?? null, requestId: o.requestId ?? crypto.randomUUID() }, access === 'write')
       },
       status: (sid: string, requestId: string) => adapterPost('/status', { sid, requestId }, false),
-      list: (sid: string) => adapterPost('/list', { sid }, false) as Promise<AdapterOutcome & { actions?: Record<string, 'read' | 'write'>; problems?: { name: string; error: string }[] }>,
+      list: (sid: string) => adapterPost('/list', { sid }, false) as Promise<AdapterOutcome & { actions?: Record<string, 'read' | 'write'>; problems?: { name: string; error: string }[]; signs?: boolean; seals?: boolean; signed?: boolean }>,
     },
     /** The session list's search (REQ-F-865): read and change what the list is filtered by. */
     list: {

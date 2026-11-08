@@ -615,6 +615,12 @@ export interface AdapterOutcome {
   replayed?: true
   /** A write's result was bigger than the Mac keeps for a replay (16KB): done, result null. */
   resultDropped?: true
+  /** Read from the Mac's sealed piece bound to this call (a sealing Mac in trust mode, REQ-S-101). */
+  sealed?: true
+  /** What the server said when the page could not believe it (a sealing Mac): the state is then unknown or failed. */
+  claimed?: string
+  /** status none: the Mac's time. The id is closed from then on: send again with a new requestId. */
+  at?: number
 }
 
 /** A panel of this extension in one session (REQ-F-894). */
@@ -693,7 +699,7 @@ export interface Bridge {
     call: (sid: string, action: string, input?: unknown, opts?: { requestId?: string }) => Promise<AdapterOutcome>
     status: (sid: string, requestId: string) => Promise<AdapterOutcome>
     /** The declared actions that Mac has, and the adapters there it could not read. */
-    list: (sid: string) => Promise<AdapterOutcome & { actions?: Record<string, 'read' | 'write'>; problems?: { name: string; error: string }[] }>
+    list: (sid: string) => Promise<AdapterOutcome & { actions?: Record<string, 'read' | 'write'>; problems?: { name: string; error: string }[]; signs?: boolean; seals?: boolean; signed?: boolean }>
   }
   /** The session list's search text. */
   list: { filter: () => string; setFilter: (text: string) => void; useFilter: () => string }

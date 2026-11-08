@@ -18,6 +18,13 @@ export const JOURNAL_KEEP = 300
 export const JOURNAL_MS = 24 * 3600_000
 /** A write's result kept for a replay; a bigger one is answered as done with result null and resultDropped. */
 export const JOURNAL_RESULT_MAX = 16 * 1024
+/**
+ * A request id that status found never arrived is closed (REQ-S-101): kept CLOSED_MS (longer than a signature is
+ * good for, trust.mjs SKEW_MS both ways) so a call a server held back is refused when it comes, never run after the
+ * page was told none. At most CLOSED_KEEP, apart from the journal so they never push out what ran.
+ */
+export const CLOSED_MS = 5 * 60_000
+export const CLOSED_KEEP = 500
 
 const NAME_RE = /^[a-z][a-z0-9-]{1,31}$/
 const EXT_RE = /^[a-z][a-z0-9-]{1,31}$/
@@ -102,11 +109,10 @@ export class Adapters {
   }
   save() {
     const t = this.now()
-    const keep = Object.entries(this.journal)
-      .filter(([, e]) => t - e.at < JOURNAL_MS)
-      .sort((a, b) => b[1].at - a[1].at)
-      .slice(0, JOURNAL_KEEP)
-    this.journal = Object.fromEntries(keep)
+    const all = Object.entries(this.journal).sort((a, b) => b[1].at - a[1].at)
+    const ran = all.filter(([, e]) => e.state !== 'closed' && t - e.at < JOURNAL_MS).slice(0, JOURNAL_KEEP)
+    const closed = all.filter(([, e]) => e.state === 'closed' && t - e.at < CLOSED_MS).slice(0, CLOSED_KEEP)
+    this.journal = Object.fromEntries([...ran, ...closed])
     fs.mkdirSync(this.stateDir, { recursive: true })
     fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.journal), { mode: 0o600 })
     fs.renameSync(`${this.file}.tmp`, this.file)
@@ -118,12 +124,22 @@ export class Adapters {
     for (const a of adapters) if (a.ext === ext) for (const [n, access] of Object.entries(a.actions)) actions[n] ??= access
     return { actions, problems: problems.slice(0, 20) }
   }
-  /** What became of a request id: none (never arrived: safe to send again), running, done, failed, unknown. */
+  /**
+   * What became of a request id: none (never arrived, and from now on never runs: send again with a new id),
+   * running, done, failed, unknown. `at` is this Mac's time of the answer.
+   */
   status(ext, requestId) {
+    if (!EXT_RE.test(ext ?? '') || !REQUEST_RE.test(requestId ?? '')) return { state: 'refused', code: 'bad-request', error: '익스텐션·요청 id 모양이 맞지 않아요' }
     const k = `${ext}|${requestId}`
     if (this.running.has(k)) return { state: 'running' }
     const e = this.journal[k] ?? this.reads.get(k)
-    if (!e) return { state: 'none' }
+    if (!e || e.state === 'closed') {
+      if (!e) {
+        this.journal[k] = { ext, state: 'closed', at: this.now() }
+        this.save()
+      }
+      return { state: 'none', at: this.now() }
+    }
     return this.view(e, false)
   }
   view(e, replayed) {
@@ -140,6 +156,7 @@ export class Adapters {
     if (was) return { ...(await was), replayed: true }
     const old = this.journal[k] ?? this.reads.get(k)
     if (old) {
+      if (old.state === 'closed') return { state: 'refused', code: 'request-closed', error: '이 요청 id 는 상태 확인에서 "도착하지 않음"으로 닫혔어요. 실행하지 않았어요. 새 id 로 다시 요청하세요' }
       if (old.action !== action) return { state: 'refused', code: 'request-reused', error: '같은 요청 id 를 다른 작업에 썼어요' }
       return this.view(old, true)
     }
@@ -239,5 +256,26 @@ export class Adapters {
       child.on('close', (code) => finish(code))
       child.stdin.end(JSON.stringify(req))
     })
+  }
+}
+
+/**
+ * A call's input as the agent got it (REQ-S-101): inputJ, the JSON text the page signed the hash of (a sealed piece
+ * while sealing, opened by open(text) which throws when it does not open), or else the plain input of an unsigned
+ * call. Returns {input} or {error}.
+ */
+export function adapterInput(cmd, open = (t) => t) {
+  if (typeof cmd?.inputJ !== 'string') return { input: cmd?.input ?? null }
+  let text
+  try {
+    text = open(cmd.inputJ)
+  } catch (e) {
+    return { error: e.message }
+  }
+  if (typeof text !== 'string' || text.length > ADAPTER_IN_MAX) return { error: `입력이 ${ADAPTER_IN_MAX / 1024}KB 를 넘거나 읽을 수 없어요` }
+  try {
+    return { input: JSON.parse(text) }
+  } catch {
+    return { error: '입력이 JSON 이 아니에요' }
   }
 }
