@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { errorText } from '../lib/api'
 import { kbDebugOn, kbDebugText } from '../lib/kbdebug'
-import { bytes, duration, folderPath, shortLabel, tokens } from '../lib/format'
+import { bytes, clock, duration, folderPath, shortLabel, tokens } from '../lib/format'
 import { getPref, markSeen, setPref } from '../lib/local'
 import { back } from '../lib/router'
 import { loadOlder, retryLog, useSessionLog } from '../lib/session-log'
@@ -13,7 +13,7 @@ import { featureOn } from '../lib/features'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { runnerCan, runnerLabel } from '../lib/runner'
-import { activityLine } from '../lib/activity'
+import { activityLine, lastSeen, NO_UPDATE, toolRunningIn } from '../lib/activity'
 import { Button, Chip, Empty, Icon, IconButton, LoadError, Spinner, useTick, useWide, wideNow } from '../kit'
 import { openMenu, toast } from '../kit/overlay'
 import { Composer, type ComposerHandle, type SentVideo } from '../components/composer'
@@ -369,6 +369,8 @@ function Activity({ s, items }: { s: Session; items: Item[] }) {
         <Spinner size={12} /> 세션을 띄우는 중
       </div>
     )
+  const hooks = runnerCan(s, 'hooks')
+  const busy = st.phase === 'busy'
   const line = activityLine({
     now: Date.now(),
     phase: st.phase,
@@ -377,24 +379,30 @@ function Activity({ s, items }: { s: Session; items: Item[] }) {
     waitingSince: st.waitingSince,
     tool: st.tool,
     compacting: st.compacting,
-    hooks: runnerCan(s, 'hooks'),
+    hooks,
     hostOnline,
     link,
     downSince,
-    lastItemAt: st.phase === 'busy' ? lastItemAt(items, st.turnAt) : 0,
+    lastItemAt: busy ? lastItemAt(items, st.turnAt) : 0,
+    toolRunning: busy && !hooks && toolRunningIn(items, st.turnAt),
   })
   // Between turns the line keeps its place, empty: dropping it pulled the conversation down at every turn's end
   // and pushed it up again at the next one.
   if (!line) return <div className="activity" aria-hidden />
+  // What last showed and at what time (REQ-F-874 규칙 6): "N분 전" alone did not say what the runner was last doing.
+  const last = busy ? lastSeen(items, st.turnAt, st.tool) : null
+  const lastText = last ? `${last.what} · ${clock(last.at)}` : ''
   // The turn's whole time, and apart from it how long nothing has moved (REQ-F-874): a long quiet stretch reads as such.
-  const times = line.total == null ? '' : line.quiet != null ? ` · 전체 ${duration(line.total)} · 마지막 활동 ${duration(line.quiet)} 전` : ` · ${duration(line.total)}`
+  const times = line.total == null ? '' : line.quiet != null ? ` · 전체 ${duration(line.total)} · 마지막 활동 ${last ? `${lastText} (${duration(line.quiet)} 전)` : `${duration(line.quiet)} 전`}` : ` · ${duration(line.total)}`
   const many = st.running && st.running.length > 1 ? ` · 도구 ${st.running.length}개 실행 중` : ''
-  if (line.label)
+  // A runner that says nothing of its state still showed something this turn: say what, not "업데이트 없음".
+  const label = line.label === NO_UPDATE && last && line.quiet == null ? `작업 중 · 마지막 활동 ${lastText}` : line.label
+  if (label)
     return (
       <div className="activity">
         <Spinner size={12} />
         <span className="activity-text">
-          {line.label}
+          {label}
           {times}
           {st.phase === 'busy' ? many : ''}
         </span>

@@ -6,6 +6,8 @@
 export const ACTIVITY_QUIET_MS = 60_000
 /** A link down this briefly is a reconnect, not worth a word (the app's own banner waits as long). */
 export const LINK_DOWN_MS = 8_000
+/** What a runner without hooks gets when nothing tells what it is doing. */
+export const NO_UPDATE = '작업 중 · 상태 업데이트 없음'
 
 export interface ActivityInput {
   now: number
@@ -22,6 +24,62 @@ export interface ActivityInput {
   downSince: number | null
   /** When the latest timeline item of this turn came (0 when none did). */
   lastItemAt: number
+  /** This turn's timeline shows a tool that has not ended (its row says "도는 중"). */
+  toolRunning?: boolean
+}
+
+/** The last thing that showed in this turn: what it was and when (REQ-F-874 규칙 6). */
+export interface LastSeen {
+  what: string
+  at: number
+}
+
+/** The few fields of a timeline item this needs (ui/src/lib/timeline.ts Item). */
+type SeenItem = { t: string; at: number; name?: string; label?: string; text?: string; done?: boolean }
+
+const LAST_WHAT_MAX = 60
+const firstLine = (s: string) =>
+  (s.split('\n').find((l) => l.trim()) ?? '')
+    .replace(/\*\*/g, '')
+    .trim()
+const cut = (s: string) => (s.length > LAST_WHAT_MAX ? `${s.slice(0, LAST_WHAT_MAX - 1)}…` : s)
+const tagged = (tag: string, s: string) => cut(s ? `${tag} · ${s}` : tag)
+
+/** What a timeline item says it was, in a few words; null for items that are not the runner's own work. */
+function seenWhat(it: SeenItem): string | null {
+  if (it.t === 'tool') return cut([it.name, it.label].filter(Boolean).join(' · ') || '도구')
+  if (it.t === 'thinking') return tagged('생각', firstLine(it.text ?? ''))
+  if (it.t === 'text') return tagged('답', firstLine(it.text ?? ''))
+  return null
+}
+
+/**
+ * The latest item of the running turn (back to its user message) that says what the runner did, or the Codex header
+ * when it changed later (a tool with no name, REQ-F-851 규칙 9a). Null when nothing came yet. Only what the page has.
+ */
+export function lastSeen(items: SeenItem[], turnAt: number | null, tool?: ActivityInput['tool']): LastSeen | null {
+  let found: LastSeen | null = null
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.t === 'user' || (turnAt && it.at < turnAt)) break
+    const what = seenWhat(it)
+    if (what) {
+      found = { what, at: it.at }
+      break
+    }
+  }
+  if (tool && !tool.name && tool.title && tool.at && (!found || tool.at > found.at)) found = { what: cut(tool.title), at: tool.at }
+  return found
+}
+
+/** Whether this turn's timeline shows a tool still running. */
+export function toolRunningIn(items: SeenItem[], turnAt: number | null): boolean {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.t === 'user' || (turnAt && it.at < turnAt)) return false
+    if (it.t === 'tool' && !it.done) return true
+  }
+  return false
 }
 
 export interface ActivityLine {
@@ -62,6 +120,8 @@ export function activityLine(a: ActivityInput): ActivityLine | null {
   }
   if (a.compacting) return { label: '컨텍스트 압축 중', total, quiet }
   if (a.tool?.name) return { label: null, total, quiet }
+  // A runner without hooks (Codex) says nothing of its commands: the timeline row of one still running does (규칙 5).
+  if (!a.hooks && a.toolRunning) return { label: '도구 실행 중', total, quiet }
   if (a.tool?.title) return { label: null, total, quiet }
-  return { label: a.hooks ? '생각하는 중' : '작업 중 · 상태 업데이트 없음', total, quiet }
+  return { label: a.hooks ? '생각하는 중' : NO_UPDATE, total, quiet }
 }

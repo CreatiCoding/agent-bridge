@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.492',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: 'Codex 세션의 상태줄: 명령이 도는 동안 "작업 중 · 상태 업데이트 없음" 대신 "도구 실행 중", 마지막 활동은 무엇이었는지(명령·생각 머리말·답 첫 줄)와 시각을 함께 보인다(예: 마지막 활동 Bash · npm test · 오후 3:02 (5분 전)). 화면이 이미 받은 대화로만 계산, 폴링 없음',
+        refs: ['REQ-F-874', 'REQ-F-851'],
+      },
+    ],
+  },
+  {
     version: '1.491',
     date: '2026-11-08',
+    commit: '6b6cd19',
     changes: [
       {
         kind: 'added',

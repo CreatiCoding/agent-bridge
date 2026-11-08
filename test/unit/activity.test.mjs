@@ -1,7 +1,7 @@
 // The session page's status line while a turn runs (REQ-F-874): what it says, and its two times.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ACTIVITY_QUIET_MS, activityLine, lastActivityAt } from '../../ui/src/lib/activity.ts'
+import { ACTIVITY_QUIET_MS, activityLine, lastActivityAt, lastSeen, NO_UPDATE, toolRunningIn } from '../../ui/src/lib/activity.ts'
 import { COMPACTING_RE } from '../../agent/screen.mjs'
 
 const NOW = 10_000_000
@@ -53,4 +53,42 @@ test('COMPACTING_RE: 압축 중인 작업 줄만 (Claude Code·Codex)', () => {
   assert.ok(!COMPACTING_RE.test('⏺ Compacting the log is done (3 files)\n'))
   assert.ok(!COMPACTING_RE.test('Compacting conversation (later)\n'))
   assert.ok(!COMPACTING_RE.test('✻ Thinking… (12s · esc to interrupt)\n'))
+})
+
+test('Codex 처럼 훅이 없어도 이 턴의 도는 도구 줄이 있으면 "도구 실행 중" (AC-1692)', () => {
+  const T = NOW - 60_000
+  const items = [
+    { t: 'user', at: T },
+    { t: 'tool', at: T + 1000, name: 'Bash', label: 'npm test', done: false },
+  ]
+  assert.equal(toolRunningIn(items, T), true)
+  assert.equal(line({ hooks: false, toolRunning: true }).label, '도구 실행 중')
+  // Ahead of a Codex header: the command is what is going on now.
+  assert.equal(line({ hooks: false, toolRunning: true, tool: { name: '', title: 'Planning', at: NOW } }).label, '도구 실행 중')
+  // Done, or from an earlier turn: not running.
+  assert.equal(toolRunningIn([{ t: 'tool', at: T - 5000, done: false }, { t: 'user', at: T }], T), false)
+  assert.equal(toolRunningIn([{ t: 'user', at: T }, { t: 'tool', at: T + 1, done: true }], T), false)
+  // Claude Code's hooks already say it (tool.name): unchanged.
+  assert.equal(line({ hooks: true, toolRunning: true }).label, '생각하는 중')
+  assert.equal(line({ hooks: false }).label, NO_UPDATE)
+})
+
+test('마지막 활동이 무엇이었는지: 이 턴의 마지막 도구·생각·답, 더 늦은 Codex 머리말 (AC-1693)', () => {
+  const T = NOW - 600_000
+  const items = [
+    { t: 'text', at: T - 9000, text: '지난 턴' },
+    { t: 'user', at: T },
+    { t: 'thinking', at: T + 1000, text: '**Inspecting the config**\n\nRead it first.' },
+    { t: 'tool', at: T + 2000, name: 'Bash', label: 'ls -la', done: true },
+    { t: 'note', at: T + 3000, text: '알림' },
+  ]
+  assert.deepEqual(lastSeen(items, T), { what: 'Bash · ls -la', at: T + 2000 })
+  assert.deepEqual(lastSeen(items.slice(0, 3), T), { what: '생각 · Inspecting the config', at: T + 1000 })
+  assert.deepEqual(lastSeen([...items, { t: 'text', at: T + 4000, text: '\n고쳤어요. 이제 됩니다' }], T), { what: '답 · 고쳤어요. 이제 됩니다', at: T + 4000 })
+  // A Codex header that changed later is what it was last doing.
+  assert.deepEqual(lastSeen(items, T, { name: '', title: 'Running tests', at: T + 5000 }), { what: 'Running tests', at: T + 5000 })
+  assert.deepEqual(lastSeen(items, T, { name: '', title: 'Old header', at: T + 500 }), { what: 'Bash · ls -la', at: T + 2000 })
+  // Nothing this turn yet (the last turn's answer does not count).
+  assert.equal(lastSeen(items.slice(0, 2), T), null)
+  assert.ok(lastSeen([{ t: 'user', at: T }, { t: 'tool', at: T + 1, name: 'Bash', label: 'x'.repeat(200) }], T).what.length <= 60)
 })
