@@ -1347,7 +1347,7 @@ async function launchCodex(sid, s, opts) {
   await stillOpen(true)
   const screen = await term.capture(pane(s))
   if (!(await alive(s)) || /\[codex exited \d+\]/.test(screen)) {
-    throw new Error(`codex 가 바로 끝났습니다: ${screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'}`)
+    throw new Error(quitText(sid, 'codex', screen))
   }
   s.alive = true
   s.aliveAt = Date.now()
@@ -1492,6 +1492,18 @@ class SessionClosed extends Error {
     super('세션이 닫혔어요')
   }
 }
+/**
+ * Why a runner quit right after it started, with its screen's last lines. While this Mac seals (REQ-S-095) the screen
+ * (which may show the conversation) is not put in the error, which reaches the server as it is: it goes to the
+ * conversation as a note, sealed like every other.
+ */
+function quitText(sid, name, screen) {
+  const tail = screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'
+  if (!trustSealing()) return `${name} 가 바로 끝났습니다: ${tail}`
+  note(sid, `${name} 가 바로 끝났어요. 터미널 마지막 줄: ${tail}`, 'warn')
+  return `${name} 가 바로 끝났습니다 (터미널 마지막 줄은 대화에 남겼어요)`
+}
+
 async function launch(sid, s, claudeArgs) {
   // While claude is being started its terminal may not exist yet: that is not a session that ended.
   s.launching = true
@@ -1595,7 +1607,7 @@ async function launchNow(sid, s, claudeArgs) {
     return launchNow(sid, s, claudeArgs)
   }
   if (!(await alive(s)) || /\[claude exited \d+\]/.test(screen)) {
-    throw new Error(`claude 가 바로 끝났습니다: ${screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'}`)
+    throw new Error(quitText(sid, 'claude', screen))
   }
   s.alive = true
   s.aliveAt = Date.now()
@@ -1957,7 +1969,8 @@ async function inject(sid, s, text, id, signed = false) {
   // Being reopened: there is no terminal for a moment, and what is said now is for the session that comes back.
   if (s.refreshing) return hold(sid, s, text, id, signed)
   // Still starting: a start-up dialog may be on screen, and what is typed now would go into it.
-  if (s.starting) return (toast(sid, '세션이 뜨면 바로 전달할게요'), hold(sid, s, text, id, signed))
+  // A 실행기 전환 under way (REQ-F-891) holds it too: it goes to the runner the session switches to.
+  if (s.starting || s.switching) return (toast(sid, '세션이 뜨면 바로 전달할게요'), hold(sid, s, text, id, signed))
   if (!(await alive(s))) return toast(sid, '세션이 이 맥에서 돌고 있지 않아 전달하지 못했습니다.')
   tail(sid, s)
   const card = s.card?.open ? s.card : null
@@ -3355,8 +3368,12 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     if (s.alive === false || s.launching) throw new Error('세션을 먼저 열어야 해요')
     if (s.starting || s.turn || s.card?.open || s.wait || s.running?.size) throw new Error('세션이 지금 작업 중이에요. 끝나거나 멈춘 뒤에 바꿔 주세요')
     if (s.held?.length) throw new Error('세션에 보낼 글이 남아 있어요. 전달되거나 지운 뒤에 바꿔 주세요')
+    if (s.switching) throw new Error('이미 실행기를 바꾸는 중이에요')
     // Codex's own sandbox and approval, signed with the switch while trust is on (like new, REQ-F-854).
     const mode = runner === 'codex' ? codexModeStr(parseCodexMode(codexMode) ?? (() => { throw new Error('codex 샌드박스·승인 모드가 올바르지 않아요') })()) : ''
+    // From here until the new runner is up, nothing else starts, types into or reopens this session (a second
+    // switch is refused, a message is held for the new runner, a close is seen after the terminal goes).
+    s.switching = true
     // What the runner it leaves needs to go on later.
     const mine = from === 'claude'
       ? { conv: s.conv || sid, ...(s.transcript ? { transcript: s.transcript } : {}), ...(s.account ? { account: s.account } : {}), ...(s.model ? { model: s.model } : {}), ...(s.effort ? { effort: s.effort } : {}), ...(s.mode ? { mode: s.mode } : {}), ...(s.chrome === false ? { chrome: false } : {}) }
@@ -3383,7 +3400,9 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
       if (safeConvId(prev.conv)) {
         t.conv = prev.conv
         const file = transcriptPath(t, sid)
-        const found = fs.existsSync(file) ? file : findTranscript(prev.conv, typeof prev.transcript === 'string' ? prev.transcript : null)
+        // The path on record is used only when it names this conversation's own file.
+        const before = typeof prev.transcript === 'string' && path.basename(prev.transcript) === `${prev.conv}.jsonl` ? prev.transcript : null
+        const found = fs.existsSync(file) ? file : findTranscript(prev.conv, before)
         if (found && found !== file) (fs.mkdirSync(path.dirname(file), { recursive: true }), fs.copyFileSync(found, file))
         resumed = !!found
       }
@@ -3402,7 +3421,11 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     clearTimeout(s.slowStart)
     clearTimeout(s.check?.timer)
     await tmux('kill-session', '-t', `=${s.tmux}`)
+    // Closed (or replaced) while its terminal went: it stays closed, nothing new is started.
+    if (s.closed || sessions.get(sid) !== s) throw new SessionClosed()
     resetRuntime(t)
+    // What was said while it switched goes to the new runner once it is up.
+    if (s.held?.length) t.held = [...s.held]
     sessions.set(sid, t)
     // The server's copy starts over with this conversation before any of its lines are read.
     emit({ t: 'conv', sid, conv: t.conv, replay: false, silent, keepTitle: true, runner })
@@ -3428,7 +3451,9 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     emit({ t: 'opened', reqId, sid, ok: true, cwd: t.cwd, warnings: [], account: t.account ?? '', runner, conv: t.conv, resumed })
   } catch (e) {
     log('error', 'switch', `실행기를 바꾸지 못함: ${e.message}`, sid)
-    emit({ t: 'opened', reqId, sid, ok: false, error: e.message })
+    emit({ t: 'opened', reqId, sid, ok: false, error: e instanceof SessionClosed ? '전환하는 사이 세션이 닫혔어요' : e.message })
+  } finally {
+    if (s) delete s.switching
   }
 }
 
@@ -3694,8 +3719,10 @@ const commands = {
   /** Take over a session from the server's copy: load the folder state, write the transcript, resume. */
   async open({ reqId, sid, conv, cwd, home, folder, transcript, local, autoPush, autoAllow, allowAll, model, effort, mode, sysPrompt, chrome, mdFile, account, routing, runner, codexMode, codexEffort }) {
     try {
+      // Not while a 실행기 전환 (REQ-F-891) stops one runner and starts the other.
+      if (sessions.get(sid)?.switching) throw new Error('실행기를 바꾸는 중이에요. 끝난 뒤 다시 열어 주세요')
       // Another runner's session (REQ-F-851): the runner this Mac recorded wins over what the server says.
-      const known = sessions.get(sid) ?? (safeConvId(sid) ? readJson(closedPath, {})[sid] : null)
+      const known =sessions.get(sid) ?? (safeConvId(sid) ? readJson(closedPath, {})[sid] : null)
       const rid = known ? (known.runner || 'claude') : trustOn() ? 'claude' : runner || 'claude'
       if (rid !== 'claude') {
         if (rid !== 'codex') throw new Error('이 맥에서 그 실행기를 쓸 수 없어요')

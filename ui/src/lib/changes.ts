@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.498',
+    date: '2026-11-08',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '실행기 전환도 다른 세션 동작처럼 session.do.before 훅의 허락을 받는다(운영자 정책으로 막을 수 있음)',
+        refs: ['REQ-F-891'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '실행기를 바꾸는 동안 두 번째 전환·다시 열기를 거절하고 보낸 글은 새 실행기로 넘긴다. 그 사이 세션을 닫으면 새 실행기를 띄우지 않는다',
+        refs: ['REQ-F-891'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '봉인하는 맥에서 claude·codex 가 바로 끝난 화면을 오류 문구(평문) 대신 봉인되는 대화 알림으로 보낸다',
+        refs: ['REQ-F-891', 'REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.497',
     date: '2026-11-08',
+    commit: '32ffbe8',
     changes: [
       {
         kind: 'changed',

@@ -192,7 +192,7 @@ func init() {
 			silent := 0.0
 			// 실행기 전환 (REQ-F-891): the Mac says how many of the new conversation's first lines were shown before
 			// (a runner's own conversation resumed), and which runner the session runs now.
-			if n, ok := msg["silent"].(float64); ok && n > 0 && !truthy(msg["replay"]) {
+			if n, ok := msg["silent"].(float64); ok && n > 0 && n <= 10_000_000 && !truthy(msg["replay"]) {
 				silent = n
 			}
 			if r, ok := msg["runner"].(string); ok && (r == "claude" || r == "codex") {

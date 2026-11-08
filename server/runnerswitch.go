@@ -65,7 +65,9 @@ func switchOp(res *Res, uid string, meta *Sess, b M) {
 		cmd["autoAllow"] = true
 		cmd["allowAll"] = m == "allowAll"
 	}
-	// The lock was let go while the hooks ran: the session may have started working since.
+	// The operator's policy (session.do.before) decides like for every other session action; the lock is let go
+	// while the hooks run, so the session may have started working since and is checked again.
+	sessBefore("session.do", meta, kv{"do", "switch"}, kv{"runner", to})
 	switchReady(meta)
 	r := ask(hostID, cmd, SWITCH_MS)
 	if !truthy(r["ok"]) {

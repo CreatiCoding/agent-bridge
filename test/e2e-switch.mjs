@@ -122,7 +122,11 @@ try {
   ok((await count()) === sessions0, `세션이 늘지 않음 (${await count()})`)
   ok((await shown('echo: 첫 인사 SWITCH_ONE').count()) === 1, 'Codex 때의 대화가 그대로 한 번 보임')
   ok((await until(async () => (await page.locator('.note').allTextContents()).some((t) => /Claude Code 로 전환했어요/.test(t)), 20000)) !== null, '전환 알림')
-  const tmux = execFileSync('tmux', ['list-sessions', '-F', '#S']).toString()
+  // No tmux server at all (claude runs in zeropty, codex is gone) is fine too.
+  let tmux = ''
+  try {
+    tmux = execFileSync('tmux', ['list-sessions', '-F', '#S'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+  } catch {}
   ok(!/codex/.test(execFileSync('ps', ['-axo', 'command']).toString().split('\n').filter((l) => l.includes(tmp) && /\bcodex\b/.test(l) && !l.includes('fake-responses')).join('\n')), 'codex 는 내려감')
   ok(tmux.split('\n').filter((x) => x.includes(sid.slice(0, 8))).length <= 1, '터미널은 하나')
   ok((await until(async () => (await sess(sid))?.state?.phase === 'idle', 90000)) !== null, 'Claude Code 가 뜨고 쉬는 중')
