@@ -13,26 +13,42 @@ import { serverBin } from './server-bin.mjs'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const freePort = () => new Promise((resolve) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)) }) })
 
+const gone = (c) => c.exitCode !== null || c.signalCode !== null
+
 export async function startServer({ seed = {}, env = {} } = {}) {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-srv-'))
   for (const [rel, v] of Object.entries(seed)) {
     fs.mkdirSync(path.dirname(path.join(data, rel)), { recursive: true })
     fs.writeFileSync(path.join(data, rel), typeof v === 'string' ? v : JSON.stringify(v))
   }
-  const port = await freePort()
-  const origin = `http://localhost:${port}`
-  const childEnv = { ...process.env, HOME: data, PORT: String(port), BRIDGE_DATA: data, BRIDGE_DEV_LOGIN: '1', BRIDGE_ADMIN_LOGINS: 'boss', GITHUB_ALLOWED_LOGINS: '*', BRIDGE_ORIGIN: origin, BRIDGE_ROOT: ROOT, ...env }
-  delete childEnv.CLAUDECODE
-  for (const [k, v] of Object.entries(env)) if (v === undefined) delete childEnv[k]
-  const child = spawn(serverBin(), [], { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
-  let out = ''
-  child.stdout.on('data', (d) => (out += d))
-  child.stderr.on('data', (d) => (out += d))
-  for (let i = 0; i < 80; i++) {
-    try {
-      if ((await fetch(`${origin}/api/health`)).ok) break
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100))
+  // A free port can be taken by another test file between freePort() and the server's listen, so a server that exits
+  // before it is healthy is started again on a new port; one that never comes up fails with its own output.
+  let port, origin, child, out
+  for (let attempt = 0; ; attempt++) {
+    port = await freePort()
+    origin = `http://localhost:${port}`
+    const childEnv = { ...process.env, HOME: data, PORT: String(port), BRIDGE_DATA: data, BRIDGE_DEV_LOGIN: '1', BRIDGE_ADMIN_LOGINS: 'boss', GITHUB_ALLOWED_LOGINS: '*', BRIDGE_ORIGIN: origin, BRIDGE_ROOT: ROOT, ...env }
+    delete childEnv.CLAUDECODE
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete childEnv[k]
+    child = spawn(serverBin(), [], { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
+    out = ''
+    const exited = new Promise((r) => child.once('exit', r))
+    child.stdout.on('data', (d) => (out += d))
+    child.stderr.on('data', (d) => (out += d))
+    let ok = false
+    for (let i = 0; i < 150 && !ok && !gone(child); i++) {
+      try {
+        ok = (await fetch(`${origin}/api/health`)).ok
+      } catch {}
+      if (!ok) await new Promise((r) => setTimeout(r, 100))
+    }
+    if (ok) break
+    if (!gone(child)) child.kill()
+    await exited
+    if (attempt >= 2) {
+      fs.rmSync(data, { recursive: true, force: true })
+      throw new Error(`server did not come up on :${port}\n${out}`)
+    }
   }
   const jars = {}
   const api = async (who, p, { method = 'GET', body, headers = {} } = {}) => {
@@ -54,8 +70,12 @@ export async function startServer({ seed = {}, env = {} } = {}) {
     api,
     jar: (who) => jars[who],
     async stop() {
-      child.kill()
-      await new Promise((r) => child.once('exit', r))
+      // A server that already exited has fired 'exit'; waiting for it again would hang with nothing keeping the loop alive.
+      if (!gone(child)) {
+        const exited = new Promise((r) => child.once('exit', r))
+        child.kill()
+        await exited
+      }
       fs.rmSync(data, { recursive: true, force: true })
     },
   }
