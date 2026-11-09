@@ -134,12 +134,12 @@ export function AdoptList({ hostId }: { hostId: string }) {
     }
   }
 
-  // 한 번에 넘기기 (REQ-F-861): bring it over as a bridge session, then the switch sheet asks it for the hand-over
-  // summary once it is up and switches that same session to Codex when the summary comes (실행기 전환, REQ-F-891).
-  // One press for what took 이어 가기 → ⋯ Codex 로 전환 → 요약 만들기 → Codex 로 전환.
+  // 한 번에 넘기기 (REQ-F-861): bring it over as a bridge session, then the switch sheet switches that same session to
+  // Codex once it is up and resting (실행기 전환, REQ-F-891); Codex reads the conversation from the Mac's file.
+  // One press for what took 이어 가기 → ⋯ Codex 로 전환 → Codex 로 전환.
   const toCodex = async (c: Conversation) => {
     const ok = await confirmDialog('이 대화를 Codex 로 이어 갈까요?', {
-      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? `1분 안에 이 대화에 쓰인 기록이 있어요. ${busyNote}\n\n` : ''}claude --resume 으로 가져와 Claude 에게 인계 요약을 받고, 요약이 오면 그 세션을 바로 Codex 로 바꿔 이어서 해요. Claude 대화는 맥에 남아 다시 바꾸면 이어서 열려요.`,
+      text: `${nameOf(c)}\n${c.cwd}\n\n${c.active ? `1분 안에 이 대화에 쓰인 기록이 있어요. ${busyNote}\n\n` : ''}claude --resume 으로 가져와 그 세션을 바로 Codex 로 바꾸고, Codex 가 지금까지의 대화를 직접 읽고 이어서 해요. Claude 대화는 맥에 남아 다시 바꾸면 이어서 열려요.`,
       ok: 'Codex 로 이어 가기',
       danger: c.active,
     })

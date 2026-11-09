@@ -1,8 +1,10 @@
 // 실행기 전환 (REQ-F-891), end to end: the server, one agent, a real `codex` against the stand-in Responses API
-// (test/fixtures/fake-responses.mjs, its own CODEX_HOME) and the real `claude` (only started, never asked anything, so
-// no usage). A Codex session switches to Claude Code and back in place: the same session id, no second session, the
-// conversation on the page kept and not drawn twice, the codex conversation resumed (one rollout), refused while it
-// works. Starts its own server, agent and stand-in on free ports, and stops them at the end.
+// (test/fixtures/fake-responses.mjs, its own CODEX_HOME) and the real `claude` pointed at the same stand-in as an
+// Anthropic Messages API (ANTHROPIC_BASE_URL, so no account or usage). A Codex session switches to Claude Code and back
+// in place: the same session id, no second session, the conversation on the page kept and not drawn twice, the codex
+// conversation resumed (one rollout), refused while it works. Each switch writes the conversation it left to
+// SESSION-<id8>-switch.md and puts the "[실행기 전환] …" first message into the new runner, which answers it (REQ-F-891
+// rule 13); closing the session takes the file. Starts its own server, agent and stand-in on free ports, and stops them.
 //   PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs CODEX=/path/to/codex [CHANNEL=chrome] node test/e2e-switch.mjs
 import fs from 'node:fs'
 import net from 'node:net'
@@ -69,7 +71,7 @@ server.on('exit', (code, sig) => console.log('SERVER EXIT', code, sig))
 try {
   for (let i = 0; i < 100 && !(await fetch(`${SITE}/api/health`).then((r) => r.ok, () => false)); i++) await wait(100)
   const home = path.join(tmp, 'agent')
-  const agent = spawn(process.execPath, [path.join(ROOT, 'agent', 'agent.mjs'), SITE, '--port', String(agentPort), '--name', 'MacSwitch', '--no-open', '--no-chrome', '--no-auto-update'], { env: { ...process.env, CLAUDECODE: '', CLAUDE_BRIDGE_HOME: home, CLAUDE_BRIDGE_CODEX: CODEX, CODEX_HOME: codexHome }, stdio: 'ignore' })
+  const agent = spawn(process.execPath, [path.join(ROOT, 'agent', 'agent.mjs'), SITE, '--port', String(agentPort), '--name', 'MacSwitch', '--no-open', '--no-chrome', '--no-auto-update'], { env: { ...process.env, CLAUDECODE: '', CLAUDE_BRIDGE_HOME: home, CLAUDE_BRIDGE_CODEX: CODEX, CODEX_HOME: codexHome, ANTHROPIC_BASE_URL: `http://127.0.0.1:${fakePort}`, ANTHROPIC_AUTH_TOKEN: 'fake', ANTHROPIC_API_KEY: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }, stdio: 'ignore' })
   children.push(agent)
   await until(async () => fs.existsSync(path.join(home, 'agent.json')) && JSON.parse(fs.readFileSync(path.join(home, 'agent.json'), 'utf8')).key, 20000)
   const c = JSON.parse(fs.readFileSync(path.join(home, 'agent.json'), 'utf8'))
@@ -129,6 +131,11 @@ try {
   } catch {}
   ok(!/codex/.test(execFileSync('ps', ['-axo', 'command']).toString().split('\n').filter((l) => l.includes(tmp) && /\bcodex\b/.test(l) && !l.includes('fake-responses')).join('\n')), 'codex 는 내려감')
   ok(tmux.split('\n').filter((x) => x.includes(sid.slice(0, 8))).length <= 1, '터미널은 하나')
+  const record = path.join(work, `SESSION-${sid.slice(0, 8)}-switch.md`)
+  ok(fs.existsSync(record) && fs.readFileSync(record, 'utf8').includes('SWITCH_ONE'), '떠난 Codex 대화가 전환 기록 파일에 있음')
+  ok(!execFileSync('git', ['status', '--porcelain'], { cwd: work }).toString().includes('switch.md'), '전환 기록은 git status 에 안 보임')
+  ok((await until(async () => (await page.locator('.note').allTextContents()).some((t) => t.includes(path.basename(record))), 20000)) !== null, '전환 알림에 기록 파일 이름')
+  ok((await answered('echo: [실행기 전환] 이 세션은 지금까지 Codex 로 작업했고', 120000)) !== null, '맥이 넣은 첫 글에 Claude Code 가 답함')
   ok((await until(async () => (await sess(sid))?.state?.phase === 'idle', 90000)) !== null, 'Claude Code 가 뜨고 쉬는 중')
 
   step('Claude Code → Codex, 예전 codex 대화를 이어서')
@@ -136,6 +143,8 @@ try {
   const toCodexBody = await toCodex.json().catch(() => ({}))
   ok(toCodex.ok(), `전환 (${toCodex.status()} ${JSON.stringify(toCodexBody)})`)
   ok(toCodexBody.resumed === true, '예전 codex 대화를 이어서 엶')
+  ok((await answered('echo: [실행기 전환] 이 세션은 지금까지 Claude Code 로 작업했고', 90000)) !== null, '맥이 넣은 첫 글에 Codex 가 답함')
+  ok(fs.readFileSync(record, 'utf8').includes('지금까지 Codex 로 작업했고'), '전환 기록이 떠난 Claude Code 대화로 바뀜')
   ok((await until(async () => (await sess(sid))?.runner === 'codex' && (await sess(sid))?.state?.phase === 'idle', 90000)) !== null, '같은 세션이 다시 Codex')
   await ctx.request.post(`${SITE}/api/sessions/${sid}/say`, { data: { text: '돌아와서 SWITCH_TWO' }, headers: H })
   ok((await answered('echo: 돌아와서 SWITCH_TWO')) !== null, '돌아온 codex 가 답함')
@@ -149,6 +158,7 @@ try {
 
   step('끝내기')
   ok((await ctx.request.post(`${SITE}/api/sessions/${sid}/close`, { data: {}, headers: H })).ok(), '세션 종료')
+  ok((await until(async () => !fs.existsSync(record), 20000)) !== null, '세션을 닫으면 전환 기록 파일도 지움')
   ok(errors.length === 0, `페이지 오류 없음 ${errors.join(' | ')}`)
   await browser.close()
 } catch (e) {

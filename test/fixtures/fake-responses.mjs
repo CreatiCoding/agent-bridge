@@ -22,6 +22,52 @@ function lastUserText(input) {
   return ''
 }
 
+// The same stand-in as an Anthropic Messages API, for `claude` pointed at it with ANTHROPIC_BASE_URL (test/e2e-switch.mjs:
+// the first message the agent puts into the runner it switched to). Answers "echo: <first line of the last user text>".
+function lastClaudeText(messages) {
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role !== 'user') continue
+    const all = typeof m.content === 'string' ? m.content : (m.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n')
+    // What claude adds around the person's words (<system-reminder>…) is left out, and a message of several lines
+    // reaches the model wrapped in <pasted_content …>: what is inside is the message.
+    const real = all
+      .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+      .replace(/<pasted_content[^>]*>([\s\S]*?)<\/pasted_content[^>]*>/g, '$1')
+      .trim()
+    if (real && !real.startsWith('<')) return real
+  }
+  return ''
+}
+
+function messages(req, res, body) {
+  if (req.url.startsWith('/v1/messages/count_tokens')) {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    return res.end('{"input_tokens":10}')
+  }
+  let json = {}
+  try {
+    json = JSON.parse(body)
+  } catch {}
+  const id = `msg_${++seq}`
+  const text = `echo: ${lastClaudeText(json.messages).split('\n')[0]}`
+  const usage = { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+  const message = { id, type: 'message', role: 'assistant', model: json.model || 'fake-model', content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null, usage }
+  if (!json.stream) {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    return res.end(JSON.stringify(message))
+  }
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+  const send = (ev) => res.write(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`)
+  send({ type: 'message_start', message: { ...message, content: [], stop_reason: null, usage: { ...usage, output_tokens: 1 } } })
+  send({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
+  send({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } })
+  send({ type: 'content_block_stop', index: 0 })
+  send({ type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 10 } })
+  send({ type: 'message_stop' })
+  res.end()
+}
+
 http
   .createServer(async (req, res) => {
     let body = ''
@@ -30,6 +76,7 @@ http
       res.writeHead(200, { 'content-type': 'application/json' })
       return res.end(JSON.stringify({ object: 'list', data: [{ id: 'fake-model', object: 'model' }], models: [] }))
     }
+    if (req.method === 'POST' && req.url.startsWith('/v1/messages')) return messages(req, res, body)
     if (!(req.method === 'POST' && req.url.startsWith('/v1/responses'))) {
       res.writeHead(404, { 'content-type': 'application/json' })
       return res.end('{"error":{"message":"not found"}}')

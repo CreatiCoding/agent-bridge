@@ -1,33 +1,31 @@
 // 실행기 전환 (REQ-F-891; before it Codex 로 이어서 작업, REQ-F-857, which started a second session): a session's work
 // goes on in the other runner (Claude Code ↔ Codex) in the same session: same id, same place in the list, same
-// conversation on the page, same folder of the same Mac. The session writes the hand-over summary (it knows the whole
-// conversation, compacted parts too); the person reads and edits it, picks Codex's own sandbox and approval when it
-// goes to Codex, the Mac switches the runner (POST /switch), and the summary is sent as the first message to the new
-// runner. The runner it leaves keeps its conversation on the Mac: switching back resumes it.
+// conversation on the page, same folder of the same Mac. Nothing is asked of the runner it leaves (1.508, rule 13: it
+// may have no tokens left): the Mac puts that conversation into a file and tells the new runner to read it. The person
+// picks Codex's own sandbox and approval when it goes to Codex, and the Mac switches the runner (POST /switch). The
+// runner it leaves keeps its conversation on the Mac: switching back resumes it.
 // 한 번에 넘기기 (REQ-F-861): opened with `auto` (a conversation brought over from the Mac's list with "Codex 로"),
-// the sheet asks for the summary as soon as the session rests and switches as soon as a handoff block comes back, so
-// the whole move is one press. The person can still turn that off and read the summary first.
+// the sheet switches as soon as the session is up and resting.
 import { useEffect, useRef, useState } from 'react'
-import { errorText, get } from '../lib/api'
-import { isCancel } from '../lib/actions'
-import { openSession, sendMessage } from '../lib/builtin-actions'
+import { errorText } from '../lib/api'
+import { openSession } from '../lib/builtin-actions'
 import { codexAllowed } from '../lib/codex-mode'
 import { folderPath } from '../lib/format'
 import { getPref, setPref } from '../lib/local'
 import { runnerOf } from '../lib/runner'
 import { titleOf } from '../lib/sessions'
 import { getStore, useStore } from '../lib/store'
-import type { EventsPage, Ev, Session } from '../lib/types'
-import { Button, Field, Spinner, Switch } from '../kit'
+import type { Session } from '../lib/types'
+import { Button, Field, Spinner } from '../kit'
 import { Sheet, toast } from '../kit/overlay'
 import { CodexAllowField, CodexModeFields } from './codex-mode'
 import { confirmLaunchMode } from './auto-allow-confirm'
 import { act, sessionPost } from './session-menu'
-import { RUNNER_NAMES, handoffAsk, handoffHead, otherRunner, summaryAfterAsk, type SwitchRunner } from '../lib/handoff'
+import { RUNNER_NAMES, otherRunner, type SwitchRunner } from '../lib/handoff'
 
 /**
- * Opens the sheet for a session from anywhere (its ⋯ menu, a right click on its row). `auto` asks for the summary
- * once the session rests and switches when it comes (한 번에 넘기기); without it the person's last choice decides.
+ * Opens the sheet for a session from anywhere (its ⋯ menu, a right click on its row). `auto` switches once the
+ * session rests (한 번에 넘기기).
  */
 export const openHandoff = (s: Session | string, opts: { auto?: boolean } = {}) =>
   dispatchEvent(new CustomEvent('cb-handoff', { detail: { id: typeof s === 'string' ? s : s.id, auto: !!opts.auto } }))
@@ -48,25 +46,6 @@ export function handoffBlocked(s: Session): string | null {
   return null
 }
 
-/** How long the sheet waits for the summary. */
-const ASK_MS = 15 * 60_000
-const POLL_MS = 2000
-
-/** All the events after `after`, page by page. */
-async function eventsAfter(sid: string, after: number) {
-  const out: Ev[] = []
-  let last = after
-  for (let i = 0; i < 20; i++) {
-    const p = await get<EventsPage>(`/api/sessions/${sid}/events?after=${last}`)
-    out.push(...p.events)
-    last = p.events.at(-1)?.seq ?? last
-    if (!p.more) break
-  }
-  return out
-}
-
-type Step = 'ready' | 'asking' | 'edit'
-
 export function HandoffSheet() {
   const [sid, setSid] = useState<string | null>(null)
   // Whether this opening was asked to go all the way by itself (read when the opening starts over below).
@@ -82,26 +61,14 @@ export function HandoffSheet() {
   }, [])
   const s = useStore((st) => (sid ? st.state?.sessions.find((x) => x.id === sid) : undefined))
   const host = useStore((st) => (s ? st.state?.hosts.find((h) => h.id === s.hostId) : undefined))
-  const [step, setStep] = useState<Step>('ready')
-  const [summary, setSummary] = useState('')
-  const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  // Start the summary once Claude is done with what it is doing (끝나면 요약 만들기, 중단하고 진행).
-  const [afterTurn, setAfterTurn] = useState(false)
-  // 한 번에 넘기기: start Codex as soon as a handoff block comes back (auto), ask once the session rests (autoAsk),
-  // and the start itself, run on the render after the summary is in (autoGo).
-  const [auto, setAuto] = useState(false)
-  const autoRef = useRef(false)
-  autoRef.current = auto
-  const [autoAsk, setAutoAsk] = useState(false)
-  const [autoGo, setAutoGo] = useState(false)
-  // Which way it goes: the runner the session runs now, and the other one.
+  // Switch once the session rests: after its turn (끝나면 전환, 중단하고 진행) or from a one-press move (auto).
+  const [whenIdle, setWhenIdle] = useState(false)
   const from: SwitchRunner = s && runnerOf(s) === 'codex' ? 'codex' : 'claude'
   const to = otherRunner(from)
   const toCodex = to === 'codex'
   const fromName = RUNNER_NAMES[from]
   const toName = RUNNER_NAMES[to]
-  const asking = useRef(0)
   const starting = useRef(false)
   // Codex's own sandbox and approval, picked here: Claude Code's permission mode does not carry over.
   const codex = host?.runners?.find((r) => r.id === 'codex')
@@ -112,135 +79,33 @@ export function HandoffSheet() {
   const codexAllow = canAllow && (allowPick === 'autoAllow' || allowPick === 'allowAll') ? allowPick : ''
 
   const close = () => {
-    asking.current += 1
     starting.current = false
     setSid(null)
     setBusy(false)
-    setAfterTurn(false)
-    setAutoAsk(false)
-    setAutoGo(false)
+    setWhenIdle(false)
   }
 
-  // Each opening starts over, with the summary already written for this sheet if the conversation has one.
+  // Each opening starts over.
   const [opened, setOpened] = useState<string | null>(null)
   if (s && opened !== s.id) {
     setOpened(s.id)
-    setStep('ready')
-    setSummary('')
-    setNote(null)
-    setAfterTurn(false)
-    const all = openAuto.current
+    setWhenIdle(openAuto.current)
     openAuto.current = false
-    const on = all || getPref<boolean>('handoffAuto', false) === true
-    setAuto(on)
-    autoRef.current = on
-    // The switch left on from the ⋯ menu goes all the way too: it asks as soon as the session rests.
-    setAutoAsk(on)
-    setAutoGo(false)
   }
   if (!s && opened) setOpened(null)
-  useEffect(() => {
-    // A one-press move always asks afresh: an older summary may miss what was done in the terminal since.
-    if (!opened || autoAsk) return
-    const n = asking.current
-    get<EventsPage>(`/api/sessions/${opened}/events`).then(
-      (p) => {
-        const r = summaryAfterAsk(p.events)
-        if (n === asking.current && r.summary && r.last && r.block) {
-          setSummary(r.summary)
-          setNote('이 세션이 최근에 쓴 인계 요약을 불러왔어요. 그사이 작업이 더 있었으면 다시 만들어 주세요.')
-          setStep('edit')
-        }
-      },
-      () => {},
-    )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened])
 
   const phase = s?.state.phase
   const working = phase === 'busy' || phase === 'waiting' || phase === 'starting'
 
-  const ask = async () => {
-    if (!s) return
-    const n = ++asking.current
-    setStep('asking')
-    setNote(null)
-    try {
-      const base = (await get<EventsPage>(`/api/sessions/${s.id}/events?after=1000000000000000`)).last
-      const r = await sendMessage(s.id, handoffAsk(to))
-      if (isCancel(r)) return n === asking.current && setStep('ready')
-      const until = Date.now() + ASK_MS
-      let seen: Ev[] = []
-      // An answer without a block counts only once the session has rested with nothing new for two reads: the turn's
-      // end may come before its last words are read.
-      let still = 0
-      while (n === asking.current && Date.now() < until) {
-        await new Promise((ok) => setTimeout(ok, POLL_MS))
-        if (n !== asking.current) return
-        const more = await eventsAfter(s.id, seen.at(-1)?.seq ?? base)
-        seen = [...seen, ...more]
-        const got = summaryAfterAsk(seen)
-        const now = getStore().state?.sessions.find((x) => x.id === s.id)?.state.phase
-        still = now === 'idle' && !more.length ? still + 1 : 0
-        if (got.asked && got.summary && now === 'idle' && (got.block || still >= 2)) {
-          setSummary(got.summary)
-          setStep('edit')
-          // Only a real handoff block switches by itself; plain last words are shown to read first.
-          if (autoRef.current && got.block) setAutoGo(true)
-          else if (autoRef.current) setNote('요약이 정해진 모양이 아니라 바로 바꾸지 않았어요. 읽어 보고 전환해 주세요.')
-          return
-        }
-      }
-      if (n === asking.current) {
-        setStep('ready')
-        toast('요약을 받지 못했어요. 다시 만들거나 직접 써 주세요', { tone: 'bad' })
-      }
-    } catch (e) {
-      if (n === asking.current) {
-        setStep('ready')
-        toast(`요약을 만들지 못했어요: ${errorText(e)}`, { tone: 'bad' })
-      }
-    }
-  }
-
-  // 끝나면 요약 만들기: asked as soon as the turn is over.
-  useEffect(() => {
-    if (afterTurn && s && phase === 'idle' && step === 'ready') {
-      setAfterTurn(false)
-      // One request only: a pending one-press ask is the same request.
-      setAutoAsk(false)
-      void ask()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [afterTurn, phase, step])
-
-  // 한 번에 넘기기: the summary is asked once the session is up and resting (a conversation just brought over is
-  // still starting).
-  useEffect(() => {
-    if (autoAsk && !afterTurn && s?.state.alive && phase === 'idle' && step === 'ready') {
-      setAutoAsk(false)
-      void ask()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAsk, afterTurn, s?.state.alive, phase, step])
-
-  const stop = async () => {
-    if (!s) return
-    const r = await act(() => sessionPost(s, 'esc'), '멈추라고 보냈어요 (Esc)')
-    // A pending one-press ask already waits for the rest.
-    if (r != null && !autoAsk) setAfterTurn(true)
-  }
-
   const start = async () => {
     if (!s || !host || starting.current) return
-    const text = summary.trim()
-    if (!text) return toast('넘길 요약이 비어 있어요', { tone: 'bad' })
     starting.current = true
     setBusy(true)
     try {
       if (toCodex && !(await confirmLaunchMode(codexAllow))) return
-      // The same session goes on in the other runner (REQ-F-891): no new session is made.
-      const r = await sessionPost<{ ok: true; resumed?: boolean }>(s, 'switch', {
+      // The same session goes on in the other runner (REQ-F-891): no new session is made. The Mac hands the new
+      // runner the conversation it leaves to read (rule 13).
+      await sessionPost<{ ok: true; resumed?: boolean }>(s, 'switch', {
         runner: to,
         ...(toCodex ? { codexMode } : {}),
         ...(codexAllow ? { mode: codexAllow } : {}),
@@ -249,14 +114,11 @@ export function HandoffSheet() {
         setPref('handoffCodexMode', codexMode)
         if (canAllow) setPref('handoffCodexAllow', codexAllow)
       }
-      // The summary is its first message, sent like any other (signed and sealed as one); it waits while it starts.
-      const sent = await sendMessage(s.id, `${handoffHead(from, to, !!r.resumed)}\n\n${text}`).catch((e) => (toast(`요약을 보내지 못했어요: ${errorText(e)} · 시트에서 복사해 직접 보내 주세요`, { tone: 'bad' }), null))
-      if (sent == null || isCancel(sent)) return
-      toast(`${toName} 로 바꿨어요. 같은 세션에서 이어서 해요`)
+      toast(`${toName} 로 바꿨어요. ${fromName} 와의 대화를 읽고 이어서 해요`)
       close()
       openSession(s.id, 'handoff')
     } catch (e) {
-      // The session is untouched (or back on its runner); the summary stays here to try again.
+      // The session is untouched (or back on its runner): it can be tried again.
       toast(`${toName} 로 바꾸지 못했어요: ${errorText(e)}`, { tone: 'bad' })
     } finally {
       starting.current = false
@@ -264,30 +126,20 @@ export function HandoffSheet() {
     }
   }
 
-  // ...and the switch runs on the render that has the summary, with the sandbox and approval shown in the sheet now.
+  // 끝나면 전환 / 한 번에 넘기기: the switch goes as soon as the session is up and resting.
   useEffect(() => {
-    if (autoGo && step === 'edit') {
-      setAutoGo(false)
-      if (autoRef.current && !working) void start()
+    if (whenIdle && s?.state.alive && phase === 'idle' && !busy) {
+      setWhenIdle(false)
+      void start()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGo, step])
+  }, [whenIdle, s?.state.alive, phase, busy])
 
-  const pickAuto = (on: boolean) => {
-    setAuto(on)
-    // Off also stops the ask still waiting for the session: the person reads and asks themselves.
-    if (!on) setAutoAsk(false)
-    setPref('handoffAuto', on)
+  const stop = async () => {
+    if (!s) return
+    const r = await act(() => sessionPost(s, 'esc'), '멈추라고 보냈어요 (Esc)')
+    if (r != null) setWhenIdle(true)
   }
-
-  const modeFields = (
-    <>
-      <p className="muted">Codex 의 권한은 여기서 따로 골라요. Claude Code 의 권한 모드는 옮기지 않아요.</p>
-      <CodexModeFields value={codexMode} onChange={setModePick} />
-      {canAllow ? <CodexAllowField value={codexAllow} onChange={setAllowPick} /> : null}
-    </>
-  )
-  const claudeNote = <p className="muted">Claude Code 는 이 세션에서 예전에 쓰던 모델·권한 모드로 다시 떠요. 처음이면 기본값이에요.</p>
 
   const folder = s ? folderPath(s.cwd, s.home) : ''
   return (
@@ -298,15 +150,9 @@ export function HandoffSheet() {
       footer={
         <div className="dialog-buttons">
           <Button onClick={close}>취소</Button>
-          {step === 'edit' ? (
-            <Button tone="primary" busy={busy} disabled={!summary.trim() || working || (toCodex && !codex)} onClick={() => void start()}>
-              {toName} 로 전환
-            </Button>
-          ) : step === 'ready' ? (
-            <Button tone="primary" disabled={working || (toCodex && !codex)} onClick={() => void ask()}>
-              요약 만들기
-            </Button>
-          ) : null}
+          <Button tone="primary" busy={busy} disabled={working || whenIdle || (toCodex && !codex)} onClick={() => void start()}>
+            {toName} 로 전환
+          </Button>
         </div>
       }
     >
@@ -315,30 +161,29 @@ export function HandoffSheet() {
           <p className="muted" style={{ marginTop: 0 }}>
             <b>{titleOf(s)}</b> 를 {fromName} 에서 {toName} 로 바꿔 <b>이 세션에서</b> 이어서 해요. 새 세션을 만들지 않아요. {fromName} 의 대화는 맥에 남아, 다시 바꾸면 그 대화를 이어서 열어요.
           </p>
+          <p className="muted">
+            {fromName} 에게 요약을 시키지 않아요({fromName} 토큰이 없어도 돼요). 맥이 지금까지의 대화를 작업 폴더의 <code>SESSION-…-switch.md</code> 에 옮기고, {toName} 가 그 파일과 지금 파일 상태를 직접 읽고 이어서 해요.
+          </p>
           <Field label="작업 폴더" hint="미커밋 변경과 worktree·브랜치를 그대로 두고 같은 폴더에서 이어서 해요">
             <div className="input mono" aria-label="작업 폴더">
               {folder}
             </div>
           </Field>
           {toCodex && !codex ? <p className="muted">이 맥에 Codex 가 없어요. 맥에 codex 와 tmux 를 설치하면 쓸 수 있어요.</p> : null}
-          {working && step !== 'asking' ? (
+          {working ? (
             <div className="note note-warn">
               <div className="grow">
                 {phase === 'waiting' ? `${fromName} 가 답을 기다리고 있어요. 세션에서 답한 뒤 이어서 해요.` : `${fromName} 가 지금 작업 중이에요. 두 에이전트가 같은 파일을 함께 고치지 않게, 끝나길 기다리거나 멈춘 뒤에 바꿔요.`}
                 <div className="choices">
-                  {autoAsk ? (
+                  {whenIdle ? (
                     <span className="hstack muted">
-                      <Spinner size={12} /> 준비되면 요약을 만들어요
+                      <Spinner size={12} /> 끝나면 바로 바꿔요
                     </span>
-                  ) : afterTurn ? (
-                    <span className="hstack muted">
-                      <Spinner size={12} /> 끝나면 요약을 만들어요
-                    </span>
-                  ) : step === 'ready' ? (
-                    <Button size="sm" onClick={() => setAfterTurn(true)}>
-                      끝나면 요약 만들기
+                  ) : (
+                    <Button size="sm" onClick={() => setWhenIdle(true)}>
+                      끝나면 전환
                     </Button>
-                  ) : null}
+                  )}
                   {phase === 'busy' ? (
                     <Button size="sm" tone="danger" onClick={() => void stop()}>
                       중단하고 진행
@@ -352,42 +197,20 @@ export function HandoffSheet() {
                 </div>
               </div>
             </div>
-          ) : null}
-          {step !== 'edit' ? (
-            <Switch label={`요약이 오면 바로 ${toName} 로 전환`} checked={auto} onChange={pickAuto} />
-          ) : null}
-          {step === 'ready' && autoAsk ? (
-            <p className="muted">세션이 준비되면 요약을 만들고, 요약이 오면 {toCodex ? '아래 권한으로 ' : ''}바로 {toName} 로 바꿔요.</p>
-          ) : null}
-          {step === 'ready' && !autoAsk ? (
-            <p className="muted">
-              "요약 만들기"를 누르면 {fromName} 에게 목표·요구사항·결정 사항·변경 파일·검증 결과·남은 작업을 정리해 달라고 이 대화에 보내요. 받은 요약은 보내기 전에 고칠 수 있어요.{' '}
-              <Button size="sm" tone="ghost" onClick={() => (setSummary(''), setStep('edit'))}>
-                직접 쓰기
-              </Button>
-            </p>
-          ) : null}
-          {step === 'asking' ? (
+          ) : whenIdle ? (
             <div className="hstack muted" style={{ gap: 8 }}>
-              <Spinner size={14} /> {fromName} 가 인계 요약을 쓰는 중이에요. 이 창을 닫아도 대화에는 남아요.
-              {phase === 'waiting' ? ' 권한을 묻고 있어요: 세션에서 답해 주세요.' : ''}
+              <Spinner size={14} /> 세션이 준비되면 바로 바꿔요
             </div>
           ) : null}
-          {step !== 'edit' && auto ? (toCodex ? modeFields : claudeNote) : null}
-          {step === 'edit' ? (
+          {toCodex ? (
             <>
-              {note ? <p className="muted">{note}</p> : null}
-              <Field label="넘길 요약" hint={`${toName} 에게 보내는 첫 메시지가 돼요. 고쳐서 보내도 돼요`}>
-                <textarea className="input" rows={14} value={summary} onChange={(e) => setSummary(e.target.value)} aria-label="넘길 요약" />
-              </Field>
-              <div className="hstack" style={{ gap: 8, marginTop: -8, marginBottom: 8 }}>
-                <Button size="sm" tone="ghost" icon="refresh" disabled={working || busy} onClick={() => void ask()}>
-                  요약 다시 만들기
-                </Button>
-              </div>
-              {toCodex ? modeFields : claudeNote}
+              <p className="muted">Codex 의 권한은 여기서 따로 골라요. Claude Code 의 권한 모드는 옮기지 않아요.</p>
+              <CodexModeFields value={codexMode} onChange={setModePick} />
+              {canAllow ? <CodexAllowField value={codexAllow} onChange={setAllowPick} /> : null}
             </>
-          ) : null}
+          ) : (
+            <p className="muted">Claude Code 는 이 세션에서 예전에 쓰던 모델·권한 모드로 다시 떠요. 처음이면 기본값이에요.</p>
+          )}
         </>
       ) : null}
     </Sheet>

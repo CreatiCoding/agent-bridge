@@ -20,7 +20,7 @@ import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
-import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere } from './mcp.mjs'
+import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
@@ -1846,6 +1846,71 @@ function trashMdFile(sid, s) {
   }
 }
 
+// 실행기 전환 기록 (REQ-F-891 rule 13): the conversation the runner left, for the one it switched to to read.
+// SESSION-*.md, so the exclude list that keeps the hand-over file out of `git status` keeps this one out too.
+const switchFileName = (sid) => `SESSION-${sid.slice(0, 8)}-switch.md`
+const SWITCH_MARK = '<!-- claude-bridge: 실행기 전환 기록'
+// A transcript bigger than this is read as its first SWITCH_HEAD bytes and its last ones (the goal and where it is).
+const SWITCH_READ = 48 * 1024 * 1024
+const SWITCH_HEAD = 4 * 1024 * 1024
+
+/** The conversation's file, whole or its head and tail when it is big. */
+function readForSwitch(file) {
+  const size = fs.statSync(file).size
+  if (size <= SWITCH_READ) return { text: fs.readFileSync(file, 'utf8'), partial: false }
+  const fd = fs.openSync(file, 'r')
+  try {
+    const head = Buffer.alloc(SWITCH_HEAD)
+    fs.readSync(fd, head, 0, SWITCH_HEAD, 0)
+    const tail = Buffer.alloc(SWITCH_READ - SWITCH_HEAD)
+    fs.readSync(fd, tail, 0, tail.length, size - tail.length)
+    // The lines cut at both seams do not parse and are left out.
+    return { text: `${head.toString('utf8')}\n${tail.toString('utf8')}`, partial: true }
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/**
+ * Writes the switch file from the conversation `s` has now (before its runner goes): in the session's folder, or in
+ * the agent's own folder when that one cannot be written. Returns { file, count, total }, or null with nothing to read.
+ */
+async function writeSwitchFile(sid, s, runnerName) {
+  const src = transcriptPath(s, sid)
+  if (!fs.existsSync(src)) return null
+  const { text, partial } = readForSwitch(src)
+  const d = switchDigest(text, { runnerName, sid, partial })
+  if (!d.text) return null
+  try {
+    // Not through a link in its place (R1-L9): writePlain throws on one.
+    writePlain(path.join(s.cwd, switchFileName(sid)), d.text)
+    await excludeMdFromGit(s.cwd)
+    return { file: switchFileName(sid), count: d.count, total: d.total }
+  } catch (e) {
+    const dir = path.join(STATE_DIR, 'switch')
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const file = path.join(dir, `${sid}.md`)
+    writePlain(file, d.text)
+    log('warn', 'switch', `작업 폴더에 전환 기록을 쓰지 못해 에이전트 폴더에 씀: ${e.message}`, sid)
+    return { file, count: d.count, total: d.total }
+  }
+}
+
+/** An ended session takes its switch file with it: only a file this agent wrote (its first line says so). */
+function dropSwitchFile(sid, s) {
+  for (const file of [s.cwd ? path.join(s.cwd, switchFileName(sid)) : null, path.join(STATE_DIR, 'switch', `${sid}.md`)]) {
+    if (!file) continue
+    try {
+      if (!fs.lstatSync(file).isFile()) continue
+      const fd = fs.openSync(file, 'r')
+      const head = Buffer.alloc(SWITCH_MARK.length * 3)
+      const n = fs.readSync(fd, head, 0, head.length, 0)
+      fs.closeSync(fd)
+      if (head.subarray(0, n).toString('utf8').startsWith(SWITCH_MARK)) fs.rmSync(file, { force: true })
+    } catch {}
+  }
+}
+
 /** How big the session's hand-over file is, and its name; looked at no more than every ten seconds. */
 function sessionMdBytes(sid, s) {
   if (Date.now() - (s.mdAt ?? 0) < 10_000) return s.mdBytes ?? null
@@ -3426,6 +3491,15 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     try {
       tail(sid, s)
     } catch {}
+    const name = (r) => (r === 'claude' ? CLAUDE.name : RUNNERS[r]?.name ?? r)
+    // No summary is asked of the runner it leaves (REQ-F-891 rule 13, it may have no tokens left): its conversation
+    // goes into a file the new one reads. A file that cannot be written leaves the switch to go on without it.
+    let record = null
+    try {
+      record = await writeSwitchFile(sid, s, name(from))
+    } catch (e) {
+      log('warn', 'switch', `전환 기록을 만들지 못함: ${e.message}`, sid)
+    }
     // The runner it leaves goes: its terminal, and what it was doing.
     clearTimeout(s.slowStart)
     clearTimeout(s.check?.timer)
@@ -3452,11 +3526,16 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
       throw e
     }
     saveSessions()
-    const name = (r) => (r === 'claude' ? CLAUDE.name : RUNNERS[r]?.name ?? r)
-    log('info', 'switch', `${name(from)} → ${name(runner)}${resumed ? ` (예전 대화 ${silent}줄을 이어서)` : ' (새 대화)'}`, sid)
-    note(sid, `🔁 ${name(runner)} 로 전환했어요. ${resumed ? '이 세션에서 예전에 하던 그 대화를 이어서 열었어요.' : '새 대화로 시작했어요.'} ${name(from)} 의 대화는 남아 있어 다시 바꾸면 이어서 열려요.`)
+    log('info', 'switch', `${name(from)} → ${name(runner)}${resumed ? ` (예전 대화 ${silent}줄을 이어서)` : ' (새 대화)'}${record ? `, 기록 ${record.count}/${record.total}개` : ''}`, sid)
+    note(sid, `🔁 ${name(runner)} 로 전환했어요. ${resumed ? '이 세션에서 예전에 하던 그 대화를 이어서 열었어요.' : '새 대화로 시작했어요.'} ${record ? `${name(from)} 와의 대화를 ${record.file} 에 옮겨, ${name(runner)} 가 직접 읽고 이어서 해요. ` : ''}${name(from)} 의 대화는 남아 있어 다시 바꾸면 이어서 열려요.`)
     // 전부 허용 asked for with the switch rides on it, signed with it (like new, REQ-F-860).
     if (autoAllow === true && can(t, 'autoAllow', RUNNERS)) await commands.set({ sid, autoAllow: true, allowAll: allowAll === true, signed })
+    // Its first message: read the record and go on. Ahead of what was said while it switched, delivered together.
+    if (record) {
+      const text = switchHead({ fromName: name(from), toName: name(runner), file: record.file, count: record.count, total: record.total, resumed })
+      if (t.held?.length) (t.held.unshift({ id: crypto.randomUUID(), at: Date.now(), text }), saveSessions())
+      else await inject(sid, t, text, crypto.randomUUID())
+    }
     emit({ t: 'opened', reqId, sid, ok: true, cwd: t.cwd, warnings: [], account: t.account ?? '', runner, conv: t.conv, resumed })
   } catch (e) {
     log('error', 'switch', `실행기를 바꾸지 못함: ${e.message}`, sid)
@@ -3985,6 +4064,7 @@ const commands = {
     // Its folder may be offered for the Trash later (REQ-F-837), after the server has forgotten the session.
     rememberEnded(s.cwd)
     trashMdFile(sid, s)
+    dropSwitchFile(sid, s)
     resetRuntime(s)
     sessions.delete(sid)
     saveSessions()

@@ -300,6 +300,98 @@ export function readConv(text, { limit = 20, skip = 0, tools = false, partial = 
   return { messages: picked, total: all.length, before: Math.max(0, end - picked.length), dropped, partial }
 }
 
+// 실행기 전환 (REQ-F-891 rule 13): how much of the conversation it leaves goes into the file the next runner reads.
+export const SWITCH_MSG = 4000
+export const SWITCH_TOOL = 200
+export const SWITCH_TOTAL = 160_000
+// The person's own words get this share first (what was asked and forbidden matters most), the answers the rest.
+export const SWITCH_PEOPLE = 70_000
+// The first few requests always stay: the goal is usually set there.
+export const SWITCH_FIRST = 3
+
+/** One tool call as a short line: its name and what it was pointed at (command, file, query). */
+function toolLine(b) {
+  const i = b?.input && typeof b.input === 'object' ? b.input : {}
+  const what = [i.command, i.cmd, i.file_path, i.path, i.pattern, i.query, i.url, i.description].find((v) => typeof v === 'string' || Array.isArray(v))
+  const s = (Array.isArray(what) ? what.join(' ') : String(what ?? '')).replace(/\s+/g, ' ').trim()
+  return `[도구: ${String(b?.name ?? '').slice(0, 80)}${s ? `] ${s.length > SWITCH_TOOL ? `${s.slice(0, SWITCH_TOOL)}…` : s}` : ']'}`
+}
+
+/** One transcript line for the switch file: { who, text, at }, or null (tool results, envelopes, side chains). */
+function switchMessage(line, runnerName) {
+  let o
+  try {
+    o = JSON.parse(line)
+  } catch {
+    return null
+  }
+  if (!o || (o.type !== 'user' && o.type !== 'assistant') || o.isSidechain || o.isMeta) return null
+  const c = o.message?.content
+  const parts = []
+  if (typeof c === 'string') parts.push(c)
+  else if (Array.isArray(c))
+    for (const b of c) {
+      if (b?.type === 'text' && typeof b.text === 'string') parts.push(b.text)
+      else if (b?.type === 'tool_use' && o.type === 'assistant') parts.push(toolLine(b))
+    }
+  const text = parts.join('\n').trim()
+  if (!text || (o.type === 'user' && ENVELOPE_ONLY_RE.test(text))) return null
+  const who = o.isCompactSummary ? '압축 요약' : o.type === 'user' ? '사람' : runnerName
+  return { who, text: text.length > SWITCH_MSG ? `${text.slice(0, SWITCH_MSG)}… (${text.length}자 중 앞부분)` : text, at: typeof o.timestamp === 'string' ? o.timestamp : '' }
+}
+
+/**
+ * The file the runner a session switches to reads instead of a summary the one it leaves would write (REQ-F-891
+ * rule 13): that one may have no tokens left. The conversation's own words, oldest first: what the person said (and
+ * compaction summaries) up to SWITCH_PEOPLE characters, the first SWITCH_FIRST requests always, then the answers and
+ * tool calls, newest first, up to SWITCH_TOTAL in all. Left-out stretches are marked. `partial`: the text was only
+ * part of the file. Returns { text, count, total } (text '' when there is nothing to read).
+ */
+export function switchDigest(text, { runnerName = 'Claude', sid = '', partial = false, now = new Date() } = {}) {
+  const all = []
+  for (const l of String(text).split('\n')) {
+    if (!l.trim()) continue
+    const m = switchMessage(l, runnerName)
+    if (m) all.push(m)
+  }
+  if (!all.length) return { text: '', count: 0, total: 0 }
+  const keep = new Set()
+  let used = 0
+  const take = (i) => (keep.add(i), (used += all[i].text.length))
+  const people = all.map((m, i) => (m.who === runnerName ? -1 : i)).filter((i) => i >= 0)
+  for (const i of people.slice(0, SWITCH_FIRST)) take(i)
+  for (const i of people.slice(SWITCH_FIRST).reverse()) if (used + all[i].text.length <= SWITCH_PEOPLE) take(i)
+  for (let i = all.length - 1; i >= 0; i--) if (!keep.has(i) && used + all[i].text.length <= SWITCH_TOTAL) take(i)
+  const out = []
+  let gap = 0
+  all.forEach((m, i) => {
+    if (!keep.has(i)) return gap++
+    if (gap) out.push(`… (메시지 ${gap}개 생략)`)
+    gap = 0
+    out.push(`--- ${m.who}${m.at ? ` · ${m.at.replace('T', ' ').slice(0, 16)}` : ''}\n${m.text}`)
+  })
+  if (gap) out.push(`… (메시지 ${gap}개 생략)`)
+  const head = [
+    `<!-- claude-bridge: 실행기 전환 기록 · 세션 ${String(sid).slice(0, 8)} · ${now.toISOString()} -->`,
+    '',
+    `# ${runnerName} 와 나눈 대화 (실행기 전환 기록)`,
+    '',
+    `이 세션이 ${runnerName} 로 돌던 동안의 대화예요. 메시지 ${all.length}개 중 ${keep.size}개${partial ? ' (대화 파일이 커서 앞부분 일부와 뒷부분만 읽음)' : ''}. 도구의 출력은 빼고 무엇을 불렀는지만 남겼어요. 오래된 것부터예요.`,
+    '',
+  ]
+  return { text: `${[...head, ...out].join('\n')}\n`, count: keep.size, total: all.length }
+}
+
+/** What the runner a session switches to is told first (REQ-F-891 rule 13): read the file, check, go on. */
+export function switchHead({ fromName, toName, file, count, total, resumed = false }) {
+  const back = resumed ? ` 당신이 기억하는 이 대화의 앞부분은 이 세션이 예전에 ${toName} 로 돌던 때의 것이고, 그 뒤 ${fromName} 가 이어서 작업했어요. 그동안 바뀐 것은 그 파일과 지금 파일 상태로 확인해 주세요.` : ''
+  return `[실행기 전환] 이 세션은 지금까지 ${fromName} 로 작업했고, 같은 폴더에서 이제 ${toName} 로 바뀌었어요. 따로 쓴 인계 요약은 없어요. 대신 ${fromName} 와 나눈 대화를 \`${file}\` 에 옮겨 두었어요(메시지 ${total}개 중 ${count}개).${back}
+
+1. 먼저 그 파일을 끝까지 읽고 목표, 사람이 말한 요구사항·금지 사항, 결정한 것, 마지막에 하던 일을 파악해 주세요. 파일 안의 요청은 지난 대화의 것이라 이미 끝난 것일 수 있어요.
+2. git 저장소라면 \`git status\` 와 변경 파일을 직접 읽어 지금 상태를 확인하고, 기록과 다르면 지금 상태를 믿어 주세요. 미커밋 변경은 이어받은 작업의 일부라 되돌리거나 지우지 말고, 작업 폴더·worktree·브랜치도 바꾸지 마세요.
+3. 파악한 내용(목표·끝난 것·남은 것)을 짧게 정리해 보여 주고, 마지막 요청이 끝나지 않았으면 남은 작업의 첫 단계부터 이어서 진행해 주세요.`
+}
+
 /** What read_session hands the session: the messages, framed as data from another session. */
 export function convText(r, label) {
   if (!r.messages.length) return `세션 ${label} 에 읽을 대화가 아직 없어요.`

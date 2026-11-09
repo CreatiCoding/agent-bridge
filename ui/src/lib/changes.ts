@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.508',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'agent'],
+        text: '실행기 전환(Claude Code ↔ Codex)이 떠나는 쪽에게 인계 요약을 시키지 않는다: 맥이 떠나는 대화(사람의 글·답·도구 이름, 도구 출력은 뺌)를 작업 폴더의 SESSION-<id8>-switch.md 에 옮기고, 새 실행기가 그 파일과 git status 를 직접 읽고 이어서 한다. 떠나는 쪽 토큰이 다 떨어져도 바꿀 수 있다',
+        refs: ['REQ-F-891', 'REQ-F-861'],
+      },
+    ],
+  },
+  {
     version: '1.507',
     date: '2026-11-09',
+    commit: 'a5c5744',
     changes: [
       {
         kind: 'fixed',
