@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.505',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '멈춘 세션에 글을 보낼 때 다시 열기가 실패하면 "다시 엽니다" 줄만 쌓이고 글은 전달되지 않아 헛도는 것처럼 보이던 것: 이제 실패하면 이유를 담은 경고 알림을 대화에 남긴다',
+        refs: ['REQ-F-297'],
+      },
+    ],
+  },
+  {
     version: '1.504',
     date: '2026-11-09',
+    commit: '8b94de3',
     changes: [
       {
         kind: 'security',

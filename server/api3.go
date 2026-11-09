@@ -1020,6 +1020,28 @@ func numOrNaN0(x any) float64 {
 	return f
 }
 
+// reopenToSend opens a stopped session again before a message goes to it (REQ-F-297). A reopen that fails says so in
+// the conversation, with the reason: before, only the "다시 엽니다" line was left, the message was not logged, and
+// each new try added one more such line with nothing after it, as if sending did nothing (rule 6).
+func reopenToSend(meta *Sess) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		why := "알 수 없는 오류"
+		if rf, ok := r.(*Refuse); ok && jsTrim(rf.Msg) != "" {
+			why = rf.Msg
+		}
+		logEvents(meta, []any{M{"k": "notice", "tone": "warn", "text": REOPEN_FAILED + why}})
+		panic(r)
+	}()
+	moveSession(meta, meta.host(), nil, nil)
+}
+
+// REOPEN_FAILED leads the notice of a reopen that failed (REQ-F-297 rule 6): the reason follows.
+const REOPEN_FAILED = "❌ 세션을 다시 열지 못해 보낸 글을 전달하지 못했어요. 입력창의 글은 그대로 두고, 같은 일이 이어지면 새 세션을 열어 주세요. 이유: "
+
 func sendOp(req *Req, uid string, meta *Sess, b M) {
 	text := ""
 	if truthy(b["text"]) {
@@ -1096,7 +1118,7 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 		}
 		logEvents(meta, []any{M{"k": "line", "text": "🔄 끊긴 세션을 대화 그대로 이어서 다시 엽니다."}})
 		meta.set("bg", []any{})
-		moveSession(meta, meta.host(), nil, nil)
+		reopenToSend(meta)
 	}
 	hostID := liveHost(meta)
 	if numOr0(meta.state()["size"]) >= 100*1024*1024 && !strings.HasPrefix(jsTrim(text), "/") {

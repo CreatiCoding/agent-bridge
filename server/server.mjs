@@ -4996,7 +4996,13 @@ async function api(req, res, url, uid) {
         logEvents(meta, [{ k: 'line', text: '🔄 끊긴 세션을 대화 그대로 이어서 다시 엽니다.' }])
         // What ran in the background went with the old process.
         meta.bg = []
-        await moveSession(meta, meta.hostId)
+        // A reopen that fails says why in the conversation (REQ-F-297 rule 6).
+        try {
+          await moveSession(meta, meta.hostId)
+        } catch (e) {
+          logEvents(meta, [{ k: 'notice', tone: 'warn', text: `❌ 세션을 다시 열지 못해 보낸 글을 전달하지 못했어요. 입력창의 글은 그대로 두고, 같은 일이 이어지면 새 세션을 열어 주세요. 이유: ${(e instanceof Refuse && e.message.trim()) || '알 수 없는 오류'}` }])
+          throw e
+        }
       }
       const hostId = liveHost(meta)
       // Past 100 MB the conversation takes no more text from here (a slash command still goes through):
