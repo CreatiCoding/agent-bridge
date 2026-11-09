@@ -4,6 +4,7 @@
 // rebuilds the command from what was signed, so the server cannot change or make up one.
 import type { Host, Session } from './types'
 import { getStore } from './store'
+import { choicesAfterOpen } from './choices'
 
 const DB = 'cb2-trust'
 const STORE = 'kv'
@@ -520,7 +521,7 @@ export async function openDeep<T>(v: T): Promise<T> {
       const o: Record<string, unknown> = {}
       for (const [k, y] of Object.entries(x)) o[k] = await walk(y)
       if (typeof (x as Record<string, unknown>).sealed === 'string' && 'id' in o) return cardOf(o)
-      return o
+      return choicesAfterOpen(x as Record<string, unknown>, o)
     }
     return x
   }

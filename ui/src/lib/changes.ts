@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.510',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '봉인(trust seal on)한 맥의 끝난 답에서 choices 블록이 버튼 대신 코드 블록으로 보이던 것: 서버는 봉인된 글을 읽지 못해 선택지를 뽑지 못했다. 이제 화면이 글을 푼 뒤 서버와 같은 규칙으로 선택지를 뽑아 버튼으로 그린다',
+        refs: ['REQ-F-579', 'REQ-S-095'],
+      },
+    ],
+  },
+  {
     version: '1.509',
     date: '2026-11-09',
+    commit: '3ed836d',
     changes: [
       {
         kind: 'fixed',

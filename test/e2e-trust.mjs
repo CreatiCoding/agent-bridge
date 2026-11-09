@@ -184,6 +184,18 @@ try {
     walk(process.env.DATA)
     ok(!hits.length, `서버 데이터 폴더에 평문 없음 ${hits.join(' ')}`)
   }
+  step('봉인(1.510): 끝난 답의 choices 블록은 짝지은 기기에서 버튼')
+  // A plain question the bridge's own choices rule answers (asking for a pasted block makes a model wary).
+  await phone.fill('.inputbox textarea', 'Which should I name the next file, PICK_A or PICK_B? Let me pick with buttons.')
+  await phone.click('.inputbox .send')
+  await phone.waitForSelector('.choices :text("PICK_A")', { timeout: 120000 })
+  ok(true, '봉인된 답의 choices 가 버튼으로 보임')
+  ok(!(await phone.locator('.msg-text pre', { hasText: 'PICK_A' }).count()), 'choices 가 코드 블록으로 남지 않음')
+  await phone.reload()
+  await phone.waitForSelector('.choices :text("PICK_B")', { timeout: 30000 })
+  ok(true, '다시 열어도(API 기록) 버튼')
+  const evs2 = await (await otherCtx.request.get(`${SITE}/api/sessions/${sid}/events`)).text()
+  ok(!/PICK_A/.test(evs2), '서버 기록에는 선택지 평문 없음')
   const stranger = watch(await otherCtx.newPage(), 'other')
   await stranger.goto(`${SITE}/s/${sid}`)
   await stranger.waitForFunction(() => [...document.querySelectorAll('.msg-text')].some((m) => m.textContent.includes('🔒')), null, { timeout: 20000 })
