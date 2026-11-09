@@ -35,6 +35,8 @@ export interface ExtInfo {
   quietAgreed?: boolean
   /** adapters (REQ-F-893): the actions on the Mac this extension may call, each read or write. */
   adapters?: { action: string; access: 'read' | 'write' }[]
+  /** Each file's short hash (REQ-F-864): which files changed, for a paired device that keeps it on. */
+  files?: Record<string, string>
   storesData: boolean
   consented: boolean
   loadError?: string
@@ -427,14 +429,88 @@ async function localeOf(x: ExtInfo) {
 
 // A device paired with a Mac runs an extension only when the person turned it on here, on this device, for this
 // hash: its code runs in this page and can sign with this device's keys. Kept in this browser only, so the server
-// cannot turn it on; new files (another hash) are off again until turned on again.
+// cannot turn it on; new files (another hash) are off again until turned on again, unless the person also chose,
+// here, to keep it on across changes (cb-ext-paired-keep-<id>, holding the files' hashes last run here).
 const pairedKey = (id: string) => `cb-ext-paired-${id}`
+const keepKey = (id: string) => `cb-ext-paired-keep-${id}`
 export function pairedAllowed(x: ExtInfo) {
   try {
-    return localStorage.getItem(pairedKey(x.id)) === x.hash
+    if (localStorage.getItem(pairedKey(x.id)) === x.hash) return true
+    // Kept on across changes: turned on here once, and the keep chosen here too.
+    return localStorage.getItem(pairedKey(x.id)) !== null && localStorage.getItem(keepKey(x.id)) !== null
   } catch {
     return false
   }
+}
+export function pairedKeeps(x: ExtInfo) {
+  try {
+    return localStorage.getItem(pairedKey(x.id)) !== null && localStorage.getItem(keepKey(x.id)) !== null
+  } catch {
+    return false
+  }
+}
+
+/** What changed between two file lists (path → short hash): changed, added, removed. */
+export function filesChanged(was: Record<string, string>, now: Record<string, string>) {
+  const changed = Object.keys(now).filter((n) => n in was && was[n] !== now[n]).sort()
+  const added = Object.keys(now).filter((n) => !(n in was)).sort()
+  const removed = Object.keys(was).filter((n) => !(n in now)).sort()
+  return { changed, added, removed }
+}
+
+function namesOf(l: string[]) {
+  return l.length > 3 ? `${l.slice(0, 3).join(', ')} 외 ${l.length - 3}개` : l.join(', ')
+}
+
+/** Kept on across changes and the files changed since last run here: say which, then remember the new ones. */
+function noteChanged(x: ExtInfo) {
+  try {
+    const was = localStorage.getItem(pairedKey(x.id))
+    if (was === x.hash || !pairedKeeps(x)) return
+    let old: Record<string, string> = {}
+    try {
+      old = JSON.parse(localStorage.getItem(keepKey(x.id)) || '{}') as Record<string, string>
+    } catch {
+      /* unknown: said below */
+    }
+    localStorage.setItem(pairedKey(x.id), x.hash)
+    localStorage.setItem(keepKey(x.id), JSON.stringify(x.files ?? {}))
+    const d = filesChanged(old, x.files ?? {})
+    const parts = [d.changed.length ? `바뀜 ${namesOf(d.changed)}` : '', d.added.length ? `새로 ${namesOf(d.added)}` : '', d.removed.length ? `지움 ${namesOf(d.removed)}` : ''].filter(Boolean)
+    const what = Object.keys(old).length && parts.length ? parts.join(' · ') : '어떤 파일이 바뀌었는지는 알 수 없어요'
+    toast(`${x.name} 의 코드가 바뀌어 새 코드로 띄웠어요 (${was ?? '?'} → ${x.hash}) · ${what}`, { ms: 12_000 })
+  } catch {
+    /* this browser keeps nothing: it was off anyway */
+  }
+}
+
+/** Keep an extension on, on this paired device, when its files change (REQ-F-864): asked with a warning first. */
+export async function keepOnPaired(x: ExtInfo, on: boolean) {
+  if (on) {
+    const sure = await confirmDialog('코드가 바뀌어도 이 기기에서 계속 켤까요?', {
+      text: (
+        <div className="stack" style={{ gap: 8 }}>
+          <div>
+            앞으로 <b>{x.name}</b> 의 파일이 바뀌어도 이 기기에서 다시 묻지 않고 <b>새 코드를 바로 돌려요.</b> 서버나 그 익스텐션 폴더를 고칠 수 있는 누구든 이 기기의 서명 키로 맥에 명령을 보내는 코드를 넣을 수 있게 돼요.
+          </div>
+          <div className="muted">직접 운영하는 서버에서 직접 고치는 익스텐션에만 켜 주세요. 바뀐 뒤 처음 띄울 때 어떤 파일이 바뀌었는지 알려 드려요(서버가 알려 준 목록이에요). 이 기기에만 저장돼요.</div>
+        </div>
+      ),
+      ok: '계속 켜기',
+      cancel: '그대로 두기',
+      danger: true,
+    })
+    if (!sure) return false
+  }
+  try {
+    localStorage.setItem(pairedKey(x.id), x.hash)
+    if (on) localStorage.setItem(keepKey(x.id), JSON.stringify(x.files ?? {}))
+    else localStorage.removeItem(keepKey(x.id))
+  } catch {
+    toast('이 브라우저에 저장하지 못했어요', { tone: 'bad' })
+    return false
+  }
+  return true
 }
 export async function allowOnPaired(x: ExtInfo, on: boolean) {
   if (on) {
@@ -444,7 +520,7 @@ export async function allowOnPaired(x: ExtInfo, on: boolean) {
           <div>
             이 기기는 맥과 짝지어져 있어요. <b>{x.name}</b> 을(를) 켜면 그 코드가 이 화면 안에서 돌아서 <b>이 기기의 서명 키로 맥에 명령을 보내고, 봉인이 풀린 대화를 읽을 수 있어요.</b>
           </div>
-          <div className="muted">직접 만들었거나 코드를 확인한 익스텐션만 켜 주세요. 이 기기에만 저장되고, 익스텐션 파일이 바뀌면 다시 꺼져요.</div>
+          <div className="muted">직접 만들었거나 코드를 확인한 익스텐션만 켜 주세요. 이 기기에만 저장되고, 익스텐션 파일이 바뀌면 다시 꺼져요(바뀌어도 계속 켜려면 켠 뒤 따로 고를 수 있어요).</div>
         </div>
       ),
       ok: '이 기기에서 켜기',
@@ -455,7 +531,7 @@ export async function allowOnPaired(x: ExtInfo, on: boolean) {
   }
   try {
     if (on) localStorage.setItem(pairedKey(x.id), x.hash)
-    else localStorage.removeItem(pairedKey(x.id))
+    else (localStorage.removeItem(pairedKey(x.id)), localStorage.removeItem(keepKey(x.id)))
   } catch {
     toast('이 브라우저에 저장하지 못했어요', { tone: 'bad' })
     return false
@@ -469,6 +545,7 @@ async function loadOne(x: ExtInfo, me: Me) {
   // A device paired with a Mac runs an extension only when turned on here (REQ-S-091, REQ-F-864).
   await loadTrust()
   if (pairedHosts().length && !pairedAllowed(x)) return report(x.id, 'load', new Error('맥과 짝지은 기기라 띄우지 않았어요 · 설정 → 플러그인에서 이 기기에서도 켤 수 있어요'))
+  if (pairedHosts().length) noteChanged(x)
   if (x.extensionApi > EXT_API) return report(x.id, 'load', new Error(`extensionApi ${x.extensionApi} 를 이 화면이 몰라요`))
   loaded.add(x.id)
   try {

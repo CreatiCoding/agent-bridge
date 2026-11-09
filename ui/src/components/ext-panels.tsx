@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button, CardHead, Switch } from '../kit'
 import { confirmDialog, toast } from '../kit/overlay'
-import { allowOnPaired, askConsent, cleanLeftover, ConsentText, extLeftovers, listExtensions, pairedAllowed, revokeConsent, type ExtInfo } from '../lib/ext-host'
+import { allowOnPaired, askConsent, cleanLeftover, ConsentText, extLeftovers, keepOnPaired, listExtensions, pairedAllowed, pairedKeeps, revokeConsent, type ExtInfo } from '../lib/ext-host'
 import { loadTrust, onTrustChange, pairedHosts } from '../lib/trust'
 import { clock } from '../lib/format'
 
@@ -23,6 +23,8 @@ export function ExtSettings() {
   const load = () => listExtensions().then(setList, () => setList([]))
   useEffect(() => void load(), [])
   const paired = usePaired()
+  // The keep switch is this browser's only (no reload): draw again after it changes.
+  const [, bump] = useState(0)
   if (!list?.length) return null
   return (
     <section className="card-box">
@@ -41,6 +43,18 @@ export function ExtSettings() {
                     label={`${x.name} 이 기기에서도 켜기`}
                     onChange={async (on) => {
                       if (await allowOnPaired(x, on)) location.reload()
+                    }}
+                  />
+                </div>
+              ) : null}
+              {paired && x.consented && !x.loadError && pairedAllowed(x) ? (
+                <div className="hstack" style={{ marginTop: 8, gap: 12 }}>
+                  <div className="grow muted">코드가 바뀌어도 이 기기에서 계속 켜요. 바뀐 뒤 처음 띄울 때 어떤 파일이 바뀌었는지 알려 드려요. 직접 고치는 익스텐션에만 켜 주세요.</div>
+                  <Switch
+                    checked={pairedKeeps(x)}
+                    label={`${x.name} 코드가 바뀌어도 이 기기에서 계속 켜기`}
+                    onChange={async (on) => {
+                      if (await keepOnPaired(x, on)) bump((n) => n + 1)
                     }}
                   />
                 </div>

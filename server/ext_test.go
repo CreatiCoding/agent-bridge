@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -230,4 +232,16 @@ func errS(e error) string {
 		return ""
 	}
 	return e.Error()
+}
+
+// AC-1720: GET /api/ext carries each file's short hash, so a paired device that keeps an extension on can say which
+// files changed (REQ-F-864).
+func TestExtListFiles(t *testing.T) {
+	d := withExt(t, true)
+	sum := sha256.Sum256(d.Files["index.js"])
+	want := hex.EncodeToString(sum[:])[:12]
+	code, body := extCall(t, "GET", "/api/ext", "", extH, "gh1")
+	eq(t, code, 200)
+	ok(t, strings.Contains(body, `"files":{`) && strings.Contains(body, `"index.js":"`+want+`"`), body)
+	eq(t, len(d.FileHashes), len(d.Files))
 }

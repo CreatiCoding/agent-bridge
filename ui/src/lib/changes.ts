@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.512',
+    date: '2026-11-10',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server'],
+        text: '맥과 짝지은 기기의 설정 → 플러그인에 "코드가 바뀌어도 이 기기에서 계속 켜기"(경고 창 뒤, 기본 꺼짐, 이 브라우저에만 저장): 켜 두면 익스텐션 파일이 바뀌어도 이 기기에서 다시 켜지 않아도 되고, 바뀐 뒤 처음 띄울 때 바뀜·새로·지움 파일을 알린다. 서버가 GET /api/ext 항목에 파일별 짧은 해시(files)를 싣는다',
+        refs: ['REQ-F-864'],
+      },
+    ],
+  },
+  {
     version: '1.511',
     date: '2026-11-09',
+    commit: '2eb1c84',
     changes: [
       {
         kind: 'fixed',

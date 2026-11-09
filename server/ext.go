@@ -62,9 +62,10 @@ type extDef struct {
 	Env                           []string
 	Files                         map[string][]byte
 	Hash                          string
-	Quiet                         []quietRule // messages.quiet (REQ-F-850)
-	Adapters                      [][2]string // adapters: action and read|write (REQ-F-893)
-	Err                           string      // why it is not loaded ("" when it is)
+	FileHashes                    map[string]string // path → sha256 (12 hex) of each file, for "what changed" (REQ-F-864)
+	Quiet                         []quietRule       // messages.quiet (REQ-F-850)
+	Adapters                      [][2]string       // adapters: action and read|write (REQ-F-893)
+	Err                           string            // why it is not loaded ("" when it is)
 }
 
 // EXTS: the extensions of this server, in bridge.yaml's order; those with Err are listed but not served.
@@ -194,6 +195,17 @@ func hashFiles(files map[string][]byte) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
+// fileHashes: each file's own short hash, so a paired device that keeps an extension on across changes can say which
+// files changed (REQ-F-864). Only a hint: the files themselves are served to the same people anyway.
+func fileHashes(files map[string][]byte) map[string]string {
+	out := make(map[string]string, len(files))
+	for n, b := range files {
+		sum := sha256.Sum256(b)
+		out[n] = hex.EncodeToString(sum[:])[:12]
+	}
+	return out
+}
+
 func (d *extDef) load(getenv func(string) string) (err error) {
 	st, err := os.Stat(d.Dir)
 	if err != nil || !st.IsDir() {
@@ -205,6 +217,7 @@ func (d *extDef) load(getenv func(string) string) (err error) {
 	}
 	d.Files = files
 	d.Hash = hashFiles(files)
+	d.FileHashes = fileHashes(files)
 	src, ok := files["extension.yaml"]
 	if !ok {
 		return errf("extension.yaml 이 없습니다")
@@ -563,7 +576,7 @@ func extList(uid string) []any {
 		}
 		sort.Slice(hooks, func(i, j int) bool { return jsonStr(hooks[i]) < jsonStr(hooks[j]) })
 		o := orderedObj{{"id", d.ID}, {"name", d.Name}, {"version", d.Version}, {"entry", "/ext/" + d.ID + "/" + d.Hash + "/" + d.Entry}, {"hash", d.Hash},
-			{"extensionApi", d.API}, {"uses", orderedObj{{"actions", d.Actions}, {"slots", d.Slots}}}, {"routes", routes}, {"hooks", hooks}, {"quiet", quietList(d)}, {"adapters", d.adapterList()}, {"quietAgreed", quietAgreed(uid, d)}, {"storesData", true},
+			{"extensionApi", d.API}, {"uses", orderedObj{{"actions", d.Actions}, {"slots", d.Slots}}}, {"routes", routes}, {"hooks", hooks}, {"quiet", quietList(d)}, {"adapters", d.adapterList()}, {"quietAgreed", quietAgreed(uid, d)}, {"files", extFilesOf(d)}, {"storesData", true},
 			{"consented", d.Err == "" && (!cfgOn("extensionConsent") || c[d.ID] == d.Hash)}}
 		if d.Err != "" {
 			o = append(o, kv{"loadError", d.Err})
@@ -578,6 +591,14 @@ func extList(uid string) []any {
 		out = append(out, o)
 	}
 	return out
+}
+
+// extFilesOf: the files' short hashes for GET /api/ext (an empty object when not loaded).
+func extFilesOf(d *extDef) map[string]string {
+	if d.FileHashes == nil {
+		return map[string]string{}
+	}
+	return d.FileHashes
 }
 
 // ---------- /ext/<id>/<hash>/<file> ----------
