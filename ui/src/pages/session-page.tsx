@@ -678,19 +678,37 @@ export function SessionPage({ id }: { id: string }) {
     })
   }, [s?.id, toBottom])
 
+  // A send whose answer was lost (the phone went to the background, the network dropped) may still have reached
+  // the Mac (REQ-F-580): the box keeps the words, and empties itself if the conversation shows them within 30 s.
+  const unsure = useRef<{ text: string; at: number } | null>(null)
+  const itemsNow = useRef(log.folded.items)
+  itemsNow.current = log.folded.items
+  const checkUnsure = useCallback(() => {
+    const u = unsure.current
+    if (!u) return
+    if (Date.now() - u.at > 30_000) return void (unsure.current = null)
+    const said = itemsNow.current.filter((i) => i.t === 'user').slice(-20) as { text: string; at: number }[]
+    if (!said.some((x) => x.text.trim() === u.text && x.at >= u.at - 5000)) return
+    unsure.current = null
+    if (composer.current?.clearIfSent(u.text)) toast('보낸 글이 대화에 들어가 있어 입력창을 비웠어요')
+  }, [])
+  useEffect(checkUnsure, [log.folded.items, checkUnsure])
   const send = useCallback(
     async (text: string, images: { data: string; name: string }[] = [], videos: SentVideo[] = []) => {
       if (!s) return false
       atBottom.current = true
       requestAnimationFrame(() => toBottom())
+      const at = Date.now()
       try {
         return !isCancel(await sendMessage(s.id, text, images, videos))
       } catch (e) {
+        // Checked again once the box is done sending (the conversation may have shown the words already).
+        if (text.trim()) (unsure.current = { text: text.trim(), at }), setTimeout(checkUnsure, 0)
         toast(errorText(e), { tone: 'bad' })
         return false
       }
     },
-    [s, toBottom],
+    [s, toBottom, checkUnsure],
   )
   // 음성 모드's 전송: in the conversation at once with the browser's words (greyer, 받아쓰는 중), and sent with the Mac's
   // words when they are in; from then on it is any sent message.

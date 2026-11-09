@@ -44,6 +44,8 @@ const canReadClipboard = typeof navigator !== 'undefined' && !!navigator.clipboa
 export interface ComposerHandle {
   setText: (text: string) => void
   focus: () => void
+  /** Empties the box if it still holds `text` (a send that failed but reached the server, REQ-F-580); true if it did. */
+  clearIfSent: (text: string) => boolean
 }
 
 export type { SentVideo }
@@ -93,6 +95,16 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
       requestAnimationFrame(() => box.current?.focus())
     },
     focus: () => box.current?.focus(),
+    clearIfSent: (t) => {
+      if (!t || text.trim() !== t || submitting.current) return false
+      lastSent.current = { text: t, at: Date.now() }
+      setText('')
+      setImages([])
+      setVideos([])
+      setDraft(session.id, '')
+      recall.current = null
+      return true
+    },
   }))
 
   // Each session keeps its own draft.

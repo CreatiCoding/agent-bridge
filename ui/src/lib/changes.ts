@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.506',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '보낸 글이 가끔 입력창에 그대로 남던 것: 서버에는 닿았는데 답만 잃은 보내기(폰이 백그라운드로 가거나 망이 잠깐 끊김)는 실패로 보여 글이 남았다. 이제 30초 안에 대화에 그 글이 나타나고 입력창이 그대로면 입력창을 비운다',
+        refs: ['REQ-F-580'],
+      },
+    ],
+  },
+  {
     version: '1.505',
     date: '2026-11-09',
+    commit: '70317e7',
     changes: [
       {
         kind: 'fixed',
