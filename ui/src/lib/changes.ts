@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.514',
+    date: '2026-11-10',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '영어 답을 이 기기 안에서 한국어로 보기: 답에 영어 문장이 섞여 오면 그 줄만 iOS 앱(iOS 18 이상, Apple 기기 안 번역)이나 데스크톱 Chrome(Translator API)으로 번역해 보인다. 바깥 번역 서비스로는 보내지 않는다. 코드 블록·표·인라인 코드·링크·경로는 그대로 두고, 답 아래 "원문 보기"로 영어를 본다. 설정 → 이 기기에서 끄거나 처음 한 번 언어를 받는다',
+        refs: ['REQ-F-896'],
+      },
+    ],
+  },
+  {
     version: '1.513',
     date: '2026-11-10',
+    commit: '77048d6',
     changes: [
       {
         kind: 'added',

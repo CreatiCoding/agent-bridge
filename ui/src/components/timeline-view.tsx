@@ -5,6 +5,7 @@ import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from
 import { createPortal } from 'react-dom'
 import { clock, duration, oneLine, shortLabel } from '../lib/format'
 import { Markdown, MarkdownContext } from '../lib/markdown'
+import { useKorean } from '../lib/translate'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { Badge, Button, Collapse, Icon, IconButton, Spinner } from '../kit'
@@ -287,6 +288,9 @@ function TextMsgView(p: TextProps) {
   const shown = messageShown({ sid: session.id, seq: it.seq, text: it.text, quiet, isLast: last })
   const [open, setOpen] = useState(false)
   const [own, setOwn] = useState(false)
+  // 영어 답 번역 (REQ-F-896): English lines in Korean, on this device; the English is one press away.
+  const [english, setEnglish] = useState(false)
+  const ko = useKorean(shown.text, !shown.folded || open)
   if (shown.folded && !open)
     return (
       <div className="msg-folded" data-quiet={quiet?.ext ?? 'hook'}>
@@ -302,10 +306,20 @@ function TextMsgView(p: TextProps) {
         </Button>
       </div>
     )
-  const text = own ? it.text : shown.text
+  const text = own ? it.text : english ? shown.text : ko.text
   return (
     <>
       <TextBody {...p} text={text} choices={!shown.folded} />
+      {ko.changed || ko.busy ? (
+        <div className="msg-changed muted" data-translated={ko.changed ? (english ? 'en' : 'ko') : 'busy'}>
+          {ko.busy ? '영어 답을 이 기기에서 번역하는 중…' : english ? '원문(영어)' : '이 기기에서 번역함'}
+          {ko.changed ? (
+            <Button size="sm" tone="ghost" onClick={() => setEnglish(!english)}>
+              {english ? '번역 보기' : '원문 보기'}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       <MsgSlots session={session} message={{ key: it.key, seq: it.seq, at: it.at, role: 'assistant', text: it.text }} />
       {shown.folded || shown.changed ? (
         <div className="msg-changed muted">

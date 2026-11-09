@@ -22,6 +22,10 @@ struct BridgeApp: App {
       Web().ignoresSafeArea(.container, edges: .bottom).ignoresSafeArea(.keyboard)
         // 카메라 번역 (REQ-F-808): the icon's long-press menu opens it over the page.
         .fullScreenCover(isPresented: $lab.camera) { CameraScreen() }
+        // 영어 답 번역 (REQ-F-896): the session the page's translate asks go through.
+        .background {
+          if #available(iOS 18.0, *) { ReplyTranslatorHost() }
+        }
     }
   }
 }
@@ -40,6 +44,8 @@ struct Web: UIViewRepresentable {
     c.userContentController.add(context.coordinator, name: "push")
     // 퀵 제보 (REQ-F-870): the page reads the clipboard through the app, so WebKit's 붙여넣기 bubble does not come first.
     c.userContentController.add(context.coordinator, name: "clipboard")
+    // 영어 답 번역 (REQ-F-896): the page's English lines go to the phone's own Translation.
+    c.userContentController.add(context.coordinator, name: "translate")
     // The page reads the app's version from here to show it in 설정 → 이 기기 (REQ-F-765). Appended, so the
     // default "Mobile/…" that sites look for stays.
     let info = Bundle.main.infoDictionary
@@ -62,6 +68,7 @@ struct Web: UIViewRepresentable {
     v.load(URLRequest(url: Push.shared.pending ?? home))
     Push.shared.pending = nil
     Push.shared.web = v
+    ReplyTranslator.shared.web = v
     context.coordinator.web = v
     return v
   }
@@ -80,6 +87,10 @@ struct Web: UIViewRepresentable {
         return Push.shared.ask(action, id: id)
       }
       if m.name == "clipboard", let id = body["id"] as? Int { return readClipboard(id) }
+      if m.name == "translate", let id = body["id"] as? Int {
+        let texts = (body["texts"] as? [String] ?? []).prefix(200).map { String($0.prefix(4000)) }
+        return ReplyTranslator.shared.ask(id, texts: texts, prepare: body["prepare"] as? Bool ?? false)
+      }
       guard m.name == "appleSignIn", let nonce = body["nonce"] as? String else { return }
       let request = ASAuthorizationAppleIDProvider().createRequest()
       request.requestedScopes = [.fullName, .email]

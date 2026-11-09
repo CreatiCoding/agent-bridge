@@ -12,6 +12,7 @@ import { chooseDialog, Sheet, toast } from '../kit/overlay'
 import { inHomeApp, safariHref } from '../lib/safari'
 import { appVersion } from '../lib/app-version'
 import { kbDebugOn, setKbDebug } from '../lib/kbdebug'
+import { TranslateSetting } from '../components/translate-setting'
 import { PushToggle, PushWhen } from '../components/push'
 import { TrustPanel } from '../components/trust-panel'
 import { LinkRuleSettings } from '../components/link-rules'
@@ -921,6 +922,7 @@ export function SettingsPage({ me, tab, ext, host }:{ me: Me | null; tab: Settin
             <div className="stack">
               <PushToggle />
               <PushWhen />
+              <TranslateSetting />
               <div className="hstack">
                 <span style={{ fontSize: 'var(--fs-medium)' }}>화면</span>
                 <Segmented
