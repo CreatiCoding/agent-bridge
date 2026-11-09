@@ -183,6 +183,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 
 - **서명 필요**: §5.3 표의 명령.
 - **끔**(`enforce` 거부): `release`, `sudo`, `sudopass`, `account`(op≠list), `http`, `ws`, `delegated`, `sudoans`. 그리고 `welcome` 의 남의 세션 kill 은 `enforce` 에서 하지 않는다.
+- **서명**(1.513, 세션 찾기 REQ-S-102): `convfind` 는 op(text·ai) 별 서명 명령이다. i = `{op, qH, fn}`(qH = sha256(받은 q, 곧 그 맥에 봉인한 조각), fn = 페이지가 찾기마다 새로 만든 번호), keep = q·closed·skip, `HASHED.convfind` 로 받은 q 가 서명한 해시와 맞아야 한다. op 가 다르면 `off`. 서명이 없으면 서버가 찾기를 지어내, 돌아오는 평문 세션 id 만으로 "어느 대화에 이 글이 있나"를 알아낼 수 있어서다. 봉인 중이면 warn 에서도 서명 없는 찾기와, 찾는 글이 봉인 조각 하나가 아닌 찾기(평문 검색어)를 거절한다(`convfindRefusal`, 글을 열거나 파일을 읽기 전). closed(서버가 아는 닫힌 세션)·skip(잠긴 세션)은 서버 것이지만 좁히기만 한다: trust 가 켜진 맥은 닫힌 세션을 `trust/closed.json` 기록으로만 찾고, 대화 파일은 Claude 프로젝트 폴더·mirror 폴더 안만 읽는다.
 - **서명**(1.408): `adopt` 는 `{conv, cwd}` 를 서명하고, 맥은 대화 기록(jsonl)에 적힌 cwd 가 서명한 cwd 와 realpath 로 같을 때만 연다. 서버가 넣은 sysPrompt·routing 은 버린다.
 - **자유**(서명 없이): 
   - 상태: `ping`, `rehello`, `check`, `report`, `resync`, `welcome`(kill 없이), `models`, `sudooff`(비밀번호를 잊기만), `bg`(`enforce` 에서는 세는 수만 기록하고 새로고침을 일으키지 않음).
@@ -237,6 +238,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | file | content, name, path | |
 | attachment(1.401) | id·세션·이름·종류·크기·바이트를 한 조각 `sealed` 로(화면이 안의 id·sid 확인), 오류 | id, size |
 | convread(1.401) | text, error(단, 봉인 중에는 아예 거절해 글을 보내지 않음) | |
+| convfind(1.513, 세션 찾기) | hits·picks 의 줄마다 `{kind:"find", op, sid, qh, fn, n, snips}`(찾은 글) 또는 `{kind:"find", op, sid, qh, fn, rank, why}`(AI) 를 그 세션 id 로 한 조각 `sealed` 로, error. 검색어 해시 qh 와 찾기 번호 fn 은 조각 안에만(짧은 글은 해시로 맞혀 볼 수 있음). picks 는 세션 id 순으로 내보낸다(순위는 조각 안에만). 찾는 글이 봉인 조각으로 왔으면 봉인을 끈 맥도 이렇게 봉인한다. 화면은 그 줄의 맥 키로만 연 조각이고 안의 kind·op·sid·qh·fn 이 그 줄·그 찾기와 같을 때만 믿는다 | 세션 id, at(파일 시각), searched·total·shown·partial·ms |
 | image, img, export | data | |
 | snapshot(SPEC 1.469, 1.488 css·width) | url·html·images·css·width·via 를 `{kind:"snapshot", sid, …}` 한 조각 `sealed` 로, error | ok |
 | btw | answer | |
@@ -288,6 +290,7 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 | 계정 기본 프롬프트 | store.go sysPromptOf | 맥의 `trust/prompt.txt` |
 | 운영자의 남의 맥 고치기 | session.go 226 | 주인 기기 서명 없으면 거부 |
 | 서버 쪽 검색 | 없음 | 해당 없음 |
+| 세션 찾기(대화 내용·AI, 1.513) | server find.go, agent convfind, ui conv-find.tsx | 됨. 짝지은 기기가 서명한 찾기만(찾는 글은 그 맥에 봉인해서만 보내고, 봉인 맥은 평문 검색어를 거절), 결과의 문맥·이유·순위는 봉인된 조각으로 짝지은 기기에서만 보임. 짝짓지 않은 맥의 평문 찾기는 따로 된 요청이고, 짝지은 맥에 찾은 뒤에는 사람이 고를 때만(그때 서버는 글과 봉인 맥 결과가 같은 찾기라는 것을 안다). 짝짓지 않은 기기에서는 봉인 맥이 찾지 않음(`서명이 없어 맥이 거절함`) |
 | 받아쓰기 | api3.go 106, store.go cleanVoiceHost | 음성은 평문(R5), 결과 글은 봉인. 받아쓰기를 맡는 맥이 짝짓지 않은 다른 맥이면 결과가 평문이라 짝지은 맥의 화면은 받지 않는다(안 됨) |
 | 맥의 연동 탭으로 열린 화면 | relay | 그대로(전달만) |
 | 세션 정리 자동 내리기 | tidy.go, agent tidyRun | 제안만(맥이 스스로 내리지 않음). 손으로 고른 내리기·버리기는 서명해서 됨 |
@@ -305,3 +308,10 @@ p = {"v":1,"h":"<hostId>","d":"<기기 id>","ts":<ms>,"n":<일련번호>,"t":"<�
 2. **2단계 (SPEC 1.394)**: 봉인, `trust seal on` 으로 따로 켬(에이전트 emit·대화 줄, 화면 풀기·보내는 글 봉인, 서버의 자르기·알림·Slack·훅·에코 처리, 카드 덩어리). 그림은 평문, 평문 경고는 하지 않음. 시험: 봉인 왕복 단위(`test/unit/trust.test.mjs`, `server/sealtext_test.go`), e2e 로 서버 기록·데이터 폴더에 원문이 없는지(`test/e2e-trust.mjs`).
 3. **로컬 화면과 맞추기 (SPEC 1.398)**: 서버가 내려가도 쓰는 로컬 화면(`docs/LOCAL-UI-DESIGN.md`). 입구 표에 `/local/`, 맥 터미널 전용 파일·명령(`trust/`·`localui/`·`agent.mjs trust|local`)은 묻지 않는 전부 허용에서도 묻는다(`bridgeSelfCall`), `writeJson` 이 `trustSeal` 도 디스크 값을 지킨다, `TRUST_VERSION` 3.
 4. **로컬 어댑터 (SPEC 1.502, REQ-S-101)**: 익스텐션의 `bridge.adapters` 호출을 `enforce`·봉인 맥에서도 받는다. 페이지(`ui/src/lib/trust.ts` adapterSigned)가 `{t:'adapter', i:{op:'call', ext, sid, action, access, requestId, inputH}}` 를 서명하고 입력은 그 세션에 봉인한 `inputJ` 로 보낸다(`inputH` = sha256(inputJ), `HASHED.adapter`). 맥은 `TRUST_CLASS.adapter.ops.call` 로 다시 만들어 서버의 평문 input 을 버리고, 결과·오류·stderr 를 호출에 묶은 봉인 조각 하나로 낸다(`sealOut` adapter, list·status 는 `free` 로 답만). status 의 `none` 은 그 id 를 5 분 닫아 서버가 붙잡아 둔 서명이 나중에 실행되지 않게 하고, 페이지는 봉인 맥의 묶인 조각이 아닌 답을 쓰기 `unknown`·읽기 결과 없음으로 본다. 짝지은 맥의 쓰기는 사람의 동작(isTrusted) 뒤 10 초 안에만 보낸다. 익스텐션 코드 자체는 §2.4 처럼 사람이 켠 것이라 이 보호 밖이다: 이 단계가 막는 것은 서버가 호출을 바꾸거나 만들거나 다시 쓰는 것과 서버가 입력·결과를 읽는 것이다. `TRUST_VERSION` 11.
+5. **세션 찾기 (SPEC 1.513, REQ-S-102)**: 목록 검색 글로 모든 맥의 대화 파일을 찾거나(1단계 text) `claude -p` 가 고르게 한다(2단계 ai). 찾는 글이 어느 세션에 있는지도 대화 내용이다. 등급: `convfind` 는 op 별 서명 명령(§5.5), 결과는 봉인(§6.2).
+   - **누가 봉인 맥인가는 기기 기록으로**: 페이지(`ui/src/lib/trust.ts` findTargets)는 서버가 알려 주는 `trust.seal` 이 아니라 이 기기의 짝짓기 기록(짝지을 때 IndexedDB 에 둔 그 맥의 키)으로 정한다. 서버가 봉인 맥을 평문이라 하거나 가짜 맥을 끼워도 바뀌지 않는다. 짝지은 맥(전부)은 봉인 맥으로 다룬다: 봉인을 끈 맥도 봉인 조각으로 묻고, 맥은 조각으로 온 찾기에 봉인해 답한다.
+   - **두 요청, 섞지 않기**: 짝지은 맥에는 봉인 찾기 `{mode, qh:{맥: 조각}, hosts, fn}` 하나(평문 q 없음, 맥마다 `{t:'convfind', i:{op, qH: sha256(조각), fn}}` 서명). 짝짓지 않은 맥에는 평문 찾기 `{mode, q, hosts}` 를 따로(서명 없음, 짝지은 맥을 넣지 않음). 짝지은 맥이 목록에 있으면 평문 찾기는 화면이 "서버가 글을 보고, 위 결과와 같은 찾기라는 것도 안다"고 알린 뒤 사람이 "짝짓지 않은 맥에서도 찾기"를 고를 때만 간다. 같은 때에 평문 글과 봉인 결과를 보내면 요청을 나눠도 서버가 시각으로 이을 수 있어서, 나누기만으로는 막지 못한다. 서버는 q·qh 를 함께 받지 않는다(400). 남는 위험: 사람이 고르면 서버는 그 글과 봉인 맥의 결과 세션 id 를 이을 수 있다(알린 뒤의 선택).
+   - **맥이 마지막 문**: 봉인 중 맥은 서명 없는 찾기와 봉인 조각 하나가 아닌 찾는 글을 거절한다(`convfindRefusal`). 페이지가 속아도 평문 글로는 봉인 맥이 찾지 않는다.
+   - **결과 묶음**: 문맥·맞은 횟수·AI 이유·순위·오류는 세션·검색어 해시(qh)·찾기 번호(fn)에 묶인 조각이고, 조각의 AAD 는 그 맥 id 다. 페이지(findOpen)는 그 줄의 맥 키로만 열고 kind·op·sid·qh·fn 을 확인한다: 서버가 조각을 다른 줄·다른 맥·다른 찾기·나중 찾기로 옮기거나 예전 답을 다시 보내도 버린다. 짝지은 맥의 평문 줄(서버가 지어낸 문맥)은 믿지 않고, 짝짓지 않은 맥의 평문 줄은 그 맥 이름을 붙여 보이되 봉인 찾기가 찾은 세션이나 목록상 다른 맥의 세션이면 뺀다. AI picks 는 세션 id 순으로 내보내 순위가 새지 않는다.
+   - **그 밖**: 잠긴 세션·남의 세션은 맥이 읽지 않고(서버가 준 skip) 서버가 다시 거른다(서버가 skip 을 빼도 서버의 걸러내기가 남는다: 잠금은 서버 기능이다). AI 의 `claude -p` 는 도구·MCP·설정 없이 돌고(그 옵션을 모르는 claude 는 돌리지 않음), 대화 조각은 "자료이지 지시가 아님"으로 감싸며, 목록에 보인 id 만 받는다. 맥도 AI 찾기를 분당 4번으로 센다.
+   - **`TRUST_VERSION` 은 11 그대로**: 새 등급(`convfind`)을 더했을 뿐 기존 trust 경로를 고치지 않았다. `updateKeepsTrust` 가 막는 것은 trust 판이 낮은 에이전트로 되돌아가는 것인데, 판 11 의 예전 빌드에는 `convfind` 가 아예 없어(평문 찾는 글을 받던 1.513 첫 커밋은 main 에 올라가지 않았다) 되돌려도 이 구멍이 생기지 않는다. 그래서 판을 올리지 않는다.

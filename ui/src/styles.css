@@ -6165,3 +6165,48 @@ body.group-sorting * {
   gap: 6px;
   margin-left: auto;
 }
+
+/* 세션 찾기 (REQ-F-895): under the session list while the search box has words. */
+.conv-find {
+  padding-bottom: 12px;
+}
+.conv-find kbd {
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.conv-find-note {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 14px;
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+.conv-find-error {
+  color: var(--red);
+}
+.conv-find-hit .row-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+.conv-find-where {
+  color: var(--faint);
+}
+.conv-find-snip {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.conv-find-snip mark {
+  background: color-mix(in srgb, var(--amber) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}

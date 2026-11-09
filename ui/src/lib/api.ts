@@ -60,6 +60,8 @@ export const get = <T>(path: string, signal?: AbortSignal) => call<T>('GET', pat
 /** A GET whose sealed pieces are left as they came (the caller checks they are sealed, then opens them). */
 export const getSealed = <T>(path: string, signal?: AbortSignal) => call<T>('GET', path, undefined, signal, true)
 export const post = <T = { ok: true; note?: string }>(path: string, body: unknown = {}) => call<T>('POST', path, body)
+/** A POST whose sealed pieces are left as they came (the caller checks what each is bound to, then opens it). */
+export const postSealed = <T>(path: string, body: unknown = {}) => call<T>('POST', path, body, undefined, true)
 export const del = <T = { ok: true }>(path: string) => call<T>('DELETE', path)
 
 /**

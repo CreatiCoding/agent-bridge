@@ -72,6 +72,20 @@ export function gcmOpen(key, sealed, aad) {
 /** ⟦bt1:<kid>:<iv‖ct‖tag>⟧ — may sit anywhere in a string. */
 export const SEAL_RE = /⟦bt1:([0-9a-f]{8}):([A-Za-z0-9_-]{38,})⟧/g
 export const hasSeal = (s) => typeof s === 'string' && s.includes('⟦bt1:')
+/** A string that is exactly one sealed piece (spaces around it aside), with no plain words beside it. */
+export const onlySealed = (s) => typeof s === 'string' && /^\s*⟦bt1:[0-9a-f]{8}:[A-Za-z0-9_-]{38,}⟧\s*$/.test(s)
+
+/**
+ * 세션 찾기 (REQ-F-895, REQ-S-102): whether this Mac takes a search as it came, or why not. While sealing only a
+ * search a paired device signed, and only its sealed words: plain words would show the server what was searched,
+ * and the plain ids that come back would tell it which conversations hold them (whatever the page thought).
+ */
+export function convfindRefusal(cmd, sealing) {
+  if (!sealing) return null
+  if (!cmd?.signed) return '대화를 봉인하는 맥이라 짝지은 기기가 서명한 찾기만 받아요'
+  if (!onlySealed(cmd.q)) return '대화를 봉인하는 맥이라 봉인된 찾는 글만 받아요(평문 검색어는 받지 않아요)'
+  return null
+}
 export const sealAad = (hostId, kid) => `bt1|${hostId}|${kid}`
 export function sealWith(key, kid, hostId, text, dir, sid) {
   return `⟦bt1:${kid}:${gcmSeal(key, Buffer.from(JSON.stringify({ d: dir, s: sid || '', v: String(text) }), 'utf8'), sealAad(hostId, kid))}⟧`
@@ -110,6 +124,12 @@ export const TRUST_CLASS = {
   events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free',
   // the bridge MCP's attach (by the id the session made) and another Mac's read_session (refused while sealing)
   attachment: 'free', convread: 'free',
+  // 세션 찾기 (REQ-F-895): the words searched are signed (qH, the hash of the sealed words as sent: a paired device
+  // never sends them plain), so a server cannot make up searches and learn from the plain ids that come back what
+  // the conversations hold. fn is the page's own number for this search, bound into every sealed finding.
+  // closed and skip are the server's (which closed sessions it still knows, which are locked: they only narrow,
+  // and while trust is on a closed one counts only when this Mac remembers it).
+  convfind: { ops: { text: { i: ['op', 'qH', 'fn'], keep: ['q', 'closed', 'skip'] }, ai: { i: ['op', 'qH', 'fn'], keep: ['q', 'closed', 'skip'] } }, other: 'off' },
   // actions
   // A codex session's sandbox and approval (REQ-F-854) are signed with it: a server cannot loosen them.
   // 전부 허용 asked for at the start is signed with it (REQ-F-860): the page cannot sign a set for a sid it does not know yet.
@@ -432,7 +452,7 @@ export function rebuild(cmd, rule, i) {
 }
 
 /** The hashes a signature binds, against what came: {field: hashField}. */
-export const HASHED = { send: { text: 'textH' }, btw: { text: 'textH' }, new: { prompt: 'promptH' }, adapter: { inputJ: 'inputH' } }
+export const HASHED = { send: { text: 'textH' }, btw: { text: 'textH' }, new: { prompt: 'promptH' }, adapter: { inputJ: 'inputH' }, convfind: { q: 'qH' } }
 export function hashesHold(cmd, i) {
   for (const [f, h] of Object.entries(HASHED[cmd.t] ?? {})) {
     const v = cmd[f] ?? ''
@@ -676,6 +696,28 @@ export function sealOut(msg, seal) {
       break
     case 'voice':
       m.text = S(m.text)
+      break
+    case 'convfind':
+      // 세션 찾기 (REQ-F-895): only the session ids (and the file times, counts of files) stay plain, for the server
+      // to leave out what the person may not see. What was found in each, or why it was picked, is one piece bound
+      // to that session, to the words searched (qh) and to the page's own number for this search (fn, signed), so a
+      // server can neither read it nor move it to another row, another search or a later one. The key that opens it
+      // is this Mac's (its id is in the piece's AAD): the page checks it opened with the key of the row's Mac.
+      for (const k of ['hits', 'picks'])
+        if (Array.isArray(m[k])) {
+          m[k] = m[k].map((h, rank) => {
+            if (!h || typeof h !== 'object' || typeof h.sid !== 'string') return null
+            const inner = k === 'hits' ? { n: h.n, snips: h.snips } : { rank, why: h.why }
+            return { sid: h.sid, ...(h.at !== undefined ? { at: h.at } : {}), sealed: seal(JSON.stringify({ kind: 'find', op: m.op, sid: h.sid, qh: m.qh ?? '', fn: m.fn ?? '', ...inner }), h.sid) }
+          }).filter(Boolean)
+          // The AI's order is its ranking: it rides only inside the pieces, the list goes out in session id order.
+          if (k === 'picks') m[k].sort((a, b) => (a.sid < b.sid ? -1 : a.sid > b.sid ? 1 : 0))
+        }
+      // The hash of the words searched and the search's number ride only inside the pieces (a short search could be
+      // guessed from its hash).
+      delete m.qh
+      delete m.fn
+      if (m.error !== undefined) m.error = S(m.error)
       break
     case 'snapshot':
       // 스냅샷 (1.469): the page, its address and its pictures in one piece bound to the session; the screen reads it.

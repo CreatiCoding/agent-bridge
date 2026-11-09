@@ -408,6 +408,14 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     if (body.runner === 'codex' && typeof body.codexMode === 'string' && body.codexMode) i.codexMode = body.codexMode.slice(0, 60)
     return [{ h, t: 'new', i }]
   }
+  // 세션 찾기 (REQ-F-895, REQ-S-102): one signature per paired Mac, on the hash of the sealed words that Mac gets
+  // and the search's number. A plain search (for the Macs this device is not paired with) is signed for none.
+  if (method === 'POST' && path === '/api/find' && (body.mode === 'text' || body.mode === 'ai') && body.q === undefined) {
+    const qh = (body.qh ?? {}) as Record<string, unknown>
+    const xs: Intent[] = []
+    for (const h of pairedHosts()) if (typeof qh[h] === 'string') xs.push({ h, t: 'convfind', i: { op: body.mode, qH: await sha256Hex(qh[h] as string), fn: str(body.fn) } })
+    return xs
+  }
   const hm = /^\/api\/hosts\/([a-zA-Z0-9-]+)\/([\w-]+)$/.exec(path)
   if (hm && method === 'POST' && pairedWith(hm[1])) {
     const [, h, op] = hm
@@ -580,6 +588,105 @@ export async function sealBody(method: string, path: string, body: unknown): Pro
   }
   if (p === '/api/sessions' && typeof b.prompt === 'string' && typeof b.hostId === 'string' && sealsTo(b.hostId)) return { ...b, prompt: await sealFor(b.hostId, '', b.prompt) }
   return body
+}
+
+// ---------- 세션 찾기 (REQ-F-895, REQ-S-102) ----------
+// Which Mac gets what is decided by this device's own pairings (hostRecs, kept since pairing), never by what the
+// server says of a Mac (its trust.seal): a server could call a sealing Mac plain, or add a Mac, to get the words.
+// - A paired Mac gets the words sealed for it alone, never plain, signed (qH of the piece, fn), and only its sealed
+//   findings, opened with its own key and bound to this very search (fn), count.
+// - The other Macs get the plain words in a request of their own, which carries no sealed piece and no paired Mac.
+//   While some paired Mac is asked, that request goes only when the person chooses it (the screen says what the
+//   server then sees): plain words in the same breath as a sealed search would let the server tie them to the
+//   sessions the sealed one found.
+
+/** The first 16 hex of SHA-256 of the words searched: what the Mac binds its sealed findings to. */
+export const findQh = async (q: string) => (await sha256Hex(q.trim())).slice(0, 16)
+
+/**
+ * The Macs a search goes to. `sealed`: this device's paired Macs (all of them: the server leaves out any that is not
+ * the person's). `plain`: the person's other Macs as the server lists them. `direct`: whether the plain search goes
+ * by itself — only when no paired Mac of the person is listed, so no sealed search is made with it.
+ */
+export async function findTargets(listed: string[]): Promise<{ sealed: string[]; plain: string[]; direct: boolean }> {
+  await loadTrust()
+  const sealed = pairedHosts()
+  const plain = listed.filter((h) => !pairedWith(h))
+  return { sealed, plain, direct: !listed.some((h) => pairedWith(h)) }
+}
+
+/** The body of a sealed search: one piece per paired Mac, no plain words. The number fn is new each time. */
+export async function findSealedBody(mode: 'text' | 'ai', text: string, hosts: string[]) {
+  await loadTrust()
+  const q = text.trim()
+  const fn = b64u(rand(16))
+  const qh: Record<string, string> = {}
+  for (const h of hosts) if (pairedWith(h)) qh[h] = await sealPiece(h, '', q)
+  if (!Object.keys(qh).length) throw new Error('짝지은 맥이 없어요')
+  return { body: { mode, qh, hosts: Object.keys(qh), fn }, fn }
+}
+
+/** The body of a plain search: only for Macs this device is not paired with (named, whenever it has a pairing). */
+export async function findPlainBody(mode: 'text' | 'ai', text: string, hosts?: string[]) {
+  await loadTrust()
+  const to = hosts?.filter((h) => !pairedWith(h))
+  if (!to && pairedHosts().length) throw new Error('짝지은 맥이 있으면 평문 찾기는 짝짓지 않은 맥만 골라 보내요')
+  return { mode, q: text.trim(), ...(to ? { hosts: to } : {}) }
+}
+
+export interface FindRow {
+  n?: number
+  snips?: string[]
+  why?: string
+  rank?: number
+}
+
+/** One sealed piece opened with the key of that Mac only ({d, s, v}), or null. */
+async function openFrom(hostId: string, s: unknown): Promise<{ d?: unknown; s?: unknown; v?: unknown } | null> {
+  const m = typeof s === 'string' ? /^⟦bt1:([0-9a-f]{8}):([A-Za-z0-9_-]{38,})⟧$/.exec(s) : null
+  const h = hostRecs.get(hostId)
+  const k = m && h?.keys[m[1]]
+  if (!m || !k) return null
+  try {
+    const b = unb64u(m[2])
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: enc.encode(`bt1|${hostId}|${m[1]}`) }, k.aes, b.slice(12))
+    return JSON.parse(new TextDecoder().decode(plain))
+  } catch {
+    return null
+  }
+}
+
+/** A short text a Mac sent with its answer (an error): opened with that Mac's key when sealed, 🔒 when it does not open. */
+export async function findText(hostId: string, s: unknown): Promise<string | undefined> {
+  if (typeof s !== 'string' || !s) return undefined
+  if (!s.includes('⟦bt')) return s
+  const o = await openFrom(hostId, s)
+  return o && typeof o.v === 'string' ? o.v : LOCKED
+}
+
+/**
+ * One row a Mac found, as this page may believe it, or null (dropped).
+ * - A paired Mac (this device's record): only its sealed piece, opened with that Mac's key, for this very session,
+ *   this kind of search, these words (qh) and this search's number (fn). A plain row from it is never believed.
+ * - Another Mac: its plain row (the server can read and change it anyway; the screen names the Mac).
+ */
+export async function findOpen(hostId: string, want: { op: 'text' | 'ai'; qh: string; fn: string }, hit: Record<string, unknown>): Promise<FindRow | null> {
+  await loadTrust()
+  const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined)
+  if (!pairedWith(hostId)) {
+    if (hit.sealed !== undefined) return null
+    return { n: typeof hit.n === 'number' ? hit.n : undefined, snips: strs(hit.snips), why: typeof hit.why === 'string' ? hit.why : undefined }
+  }
+  if (typeof hit.sid !== 'string' || !want.fn) return null
+  const w = await openFrom(hostId, hit.sealed)
+  if (!w || w.s !== hit.sid || typeof w.v !== 'string') return null
+  try {
+    const o = JSON.parse(w.v) as Record<string, unknown>
+    if (o.kind !== 'find' || o.op !== want.op || o.sid !== hit.sid || o.qh !== want.qh || o.fn !== want.fn) return null
+    return { n: typeof o.n === 'number' ? o.n : undefined, snips: strs(o.snips), why: typeof o.why === 'string' ? o.why : undefined, rank: typeof o.rank === 'number' ? o.rank : undefined }
+  } catch {
+    return null
+  }
 }
 
 // ---------- 로컬 어댑터 (REQ-S-101) ----------

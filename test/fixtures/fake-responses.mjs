@@ -50,7 +50,19 @@ function messages(req, res, body) {
     json = JSON.parse(body)
   } catch {}
   const id = `msg_${++seq}`
-  const text = `echo: ${lastClaudeText(json.messages).split('\n')[0]}`
+  const said = lastClaudeText(json.messages)
+  let text = `echo: ${said.split('\n')[0]}`
+  // 세션 찾기 (REQ-F-895, test/e2e-find.mjs): picks the listed session whose digest holds the words searched (the
+  // first word of `찾는 글`), and one id that was never listed, which the agent must drop.
+  if (said.includes('[세션 찾기]')) {
+    const want = (/찾는 글: <<<(\S+)/.exec(said)?.[1] ?? '').replace(/>+$/, '').toLowerCase()
+    const picks = said
+      .split('\n- id: ')
+      .slice(1)
+      .filter((b) => want && b.toLowerCase().includes(want))
+      .map((b) => ({ id: b.split('\n')[0].trim(), why: `시험: "${want}" 가 나온 세션` }))
+    text = JSON.stringify({ picks: [...picks, { id: 'deadbeef-0000-4000-8000-000000000000', why: '지어낸 id' }] })
+  }
   const usage = { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
   const message = { id, type: 'message', role: 'assistant', model: json.model || 'fake-model', content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null, usage }
   if (!json.stream) {

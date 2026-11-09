@@ -8,6 +8,7 @@ import { menuWithSlot, RailSlot, useMenuBadge } from './components/app-slots'
 import { SlotActions, SlotSections } from './components/slot-parts'
 import { AppBanner, ExtPage, StatusStrip, useExtNotices } from './components/ext-places'
 import { setListFilter, useListFilter } from './lib/list-filter'
+import { ConvFind, convFind } from './components/conv-find'
 import { look } from './lib/sessions'
 import { featureOn } from './lib/features'
 import { getStore, linkWhy, onServerToast, reportFocus, useStore } from './lib/store'
@@ -196,13 +197,28 @@ function Sidebar({ route, me, onNotices }: { route: Route; me: Me | null; onNoti
         </div>
       ) : null}
       <div className="list-tools">
-        <input ref={search} className="search" type="search" placeholder={wide ? '검색 (⌘K)' : '검색'} value={filter} onChange={(e) => setListFilter(e.target.value)} aria-label="이름·첫 메시지·폴더 검색" />
+        {/* Enter / ⌘Enter look inside the conversations (세션 찾기, REQ-F-895): only when asked, never per key. */}
+        <input
+          ref={search}
+          className="search"
+          type="search"
+          placeholder={wide ? '검색 (⌘K)' : '검색'}
+          value={filter}
+          onChange={(e) => setListFilter(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' || e.nativeEvent.isComposing || !filter.trim()) return
+            e.preventDefault()
+            void convFind(e.metaKey || e.ctrlKey ? 'ai' : 'text', filter)
+          }}
+          aria-label="이름·첫 메시지·폴더 검색"
+        />
         <SlotActions slot="session-list.toolbar" ctx={{ filter, setFilter: setListFilter, wide }} />
         {wide ? <IconButton icon="plus" label="새 세션" onClick={() => go({ name: 'new' })} /> : null}
       </div>
       <SlotSections slot="session-list.filters" ctx={{ filter, setFilter: setListFilter, wide }} className="slot-sections list-filters" />
       <div className="scroll" ref={scroller} onScroll={(e) => (listKept.scroll = e.currentTarget.scrollTop)}>
         <SessionList activeId={activeId} filter={filter} />
+        <ConvFind q={filter} />
       </div>
       {relay && !relay.headless ? (
         <div className="side-foot" title={relay.text}>

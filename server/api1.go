@@ -21,7 +21,7 @@ func qnil(u *url.URL, k string) any { return nilIfEmpty(u.Query(), k) }
 
 // api: every route of a signed-in person, in the order server.mjs tried them.
 func api(req *Req, res *Res, u *url.URL, uid string) {
-	for _, h := range []func(*Req, *Res, *url.URL, string) bool{apiExt, apiExtLeftovers, apiMisc, apiReader, apiBridge, apiControl, apiHosts, apiConfig, apiAdmin, apiSessions} {
+	for _, h := range []func(*Req, *Res, *url.URL, string) bool{apiExt, apiExtLeftovers, apiMisc, apiFind, apiReader, apiBridge, apiControl, apiHosts, apiConfig, apiAdmin, apiSessions} {
 		if h(req, res, u, uid) {
 			return
 		}

@@ -20,11 +20,11 @@ import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
-import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead } from './mcp.mjs'
+import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
-import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
+import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
@@ -3202,6 +3202,168 @@ function convHere(sid, a) {
   return { ok: true, result: convText(r, `${sid.slice(0, 8)} (${path.basename(s.cwd || '') || '~'})`) }
 }
 
+// ---------- 세션 찾기 (REQ-F-895) ----------
+
+/** Readable transcript of this Mac: under a Claude projects folder, or a runner's mirror (as convHere). */
+const findReadable = (file, s) => !!file && insideAny(file, [...allProjects().map((p) => p.dir), ...(!s || !isClaude(s) ? [MIRROR_DIR] : [])])
+
+/**
+ * The transcripts a search reads: every session this Mac has, and the closed ones the server still knows
+ * (`closed`: [{ sid, conv }]), minus `skip` (the server's locked ones). While trust is on a closed session counts
+ * only when this Mac remembers closing it (trust/closed.json), and its conversation is the one recorded there.
+ */
+async function findTargets(closed, skip) {
+  const left = new Set((Array.isArray(skip) ? skip : []).slice(0, 5000).map(String))
+  const out = []
+  const seen = new Set()
+  for (const [sid, s] of sessions) {
+    if (left.has(sid)) continue
+    const file = transcriptPath(s, sid)
+    if (findReadable(file, s)) (out.push({ sid, file, cwd: s.cwd ?? '' }), seen.add(sid))
+  }
+  const rec = trustOn() ? readJson(closedPath, {}) : null
+  let where = null
+  for (const c of (Array.isArray(closed) ? closed : []).slice(0, FIND_CLOSED_MAX)) {
+    const sid = String(c?.sid ?? '')
+    if (!safeConvId(sid) || seen.has(sid) || left.has(sid)) continue
+    const r = rec ? rec[sid] : { conv: safeConvId(c?.conv) ? c.conv : sid, cwd: '' }
+    if (!r) continue
+    const conv = safeConvId(r.conv) ? r.conv : sid
+    // The projects folders are listed once for the whole search (findConvFiles), not once per closed session.
+    where ??= await findConvFiles()
+    const file = where.get(`${conv}.jsonl`) ?? (fs.existsSync(mirrorPath(sid)) ? mirrorPath(sid) : null)
+    if (findReadable(file, null)) (out.push({ sid, file, cwd: r.cwd ?? '' }), seen.add(sid))
+  }
+  return out
+}
+/**
+ * Every transcript under this Mac's own projects folders (not a linked account's, as findTranscript own): file name
+ * → path, the first folder that has it. Listed without blocking the agent's loop.
+ */
+async function findConvFiles() {
+  const out = new Map()
+  for (const { dir, account } of allProjects()) {
+    if (isLinked(account)) continue
+    let names = []
+    try {
+      names = await fs.promises.readdir(dir)
+    } catch {}
+    for (const n of names) {
+      let files = []
+      try {
+        files = await fs.promises.readdir(path.join(dir, n))
+      } catch {}
+      for (const f of files) if (f.endsWith('.jsonl') && !out.has(f)) out.set(f, path.join(dir, n, f))
+    }
+  }
+  return out
+}
+const FIND_CLOSED_MAX = 300
+let findAiBusy = false
+// 2단계 is counted on this Mac itself too, not only at the server (a server that does not count could have claude
+// run without end): at most FIND_AI_PER_MIN (the server's number) in any minute.
+const FIND_AI_PER_MIN = 4
+let findAiTimes = []
+/** Whether one more AI search may start now; counts it when it may. */
+function findAiTake(now = Date.now()) {
+  findAiTimes = findAiTimes.filter((t) => now - t < 60_000)
+  if (findAiTimes.length >= FIND_AI_PER_MIN) return false
+  findAiTimes.push(now)
+  return true
+}
+// Whether this Mac's claude knows every option that turns its tools, MCP and settings off (findAiArgs): asked of
+// `claude --help` and kept 10 minutes. A claude that does not is never run, rather than run with its tools on.
+let findAiFlags = { at: 0, missing: null }
+async function findAiCheck() {
+  if (findAiFlags.missing && Date.now() - findAiFlags.at < 10 * 60_000) return findAiFlags.missing
+  const help = await new Promise((resolve) => {
+    execFile(CLAUDE_BIN, ['--help'], { timeout: 15_000, maxBuffer: 1024 * 1024, env: claudeEnv() }, (e, out) => resolve(String(out ?? '') || (e ? null : '')))
+  })
+  if (help === null) return ['--help']
+  findAiFlags = { at: Date.now(), missing: findAiMissing(help) }
+  return findAiFlags.missing
+}
+
+/** Up to `max` bytes of a file from `from` (negative: from the end), as text. */
+function findRead(file, from, max) {
+  const fd = fs.openSync(file, 'r')
+  try {
+    const size = fs.fstatSync(fd).size
+    const at = from < 0 ? Math.max(0, size - max) : 0
+    const buf = Buffer.alloc(Math.min(max, size - at))
+    fs.readSync(fd, buf, 0, buf.length, at)
+    return { text: buf.toString('utf8'), partial: at > 0 }
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/** 2단계: a digest of the newest sessions, then one `claude -p` with no tools; only ids it was shown come back. */
+async function findAi(q, targets) {
+  const files = []
+  for (const t of targets) {
+    try {
+      files.push({ ...t, at: fs.statSync(t.file).mtimeMs })
+    } catch {}
+  }
+  files.sort((a, b) => b.at - a.at)
+  const digests = []
+  for (const t of files.slice(0, FIND_AI_SESSIONS)) {
+    try {
+      const tail = findRead(t.file, -1, FIND_AI_TAIL)
+      digests.push({ sid: t.sid, text: findDigest({ sid: t.sid, cwd: t.cwd, head: findRead(t.file, 0, FIND_AI_HEAD).text, tail: tail.text, partial: tail.partial }) })
+    } catch {}
+    await new Promise((r) => setImmediate(r))
+  }
+  if (!digests.length) return { ok: true, picks: [], shown: 0, total: files.length }
+  const missing = await findAiCheck()
+  if (missing.length) return { ok: false, error: findAiMissingText(missing) }
+  const { text, count } = findAiPrompt(q, digests.map((d) => d.text))
+  const run = await findAiRun(text)
+  if (!run.ok) return { ok: false, error: run.error }
+  const r = findAiResult(run.out)
+  if (!r.ok) return { ok: false, error: r.error }
+  return { ok: true, picks: parseFindPicks(r.text, digests.slice(0, count).map((d) => d.sid)), shown: count, total: files.length }
+}
+
+/** `claude -p` once, the prompt on stdin, killed at FIND_AI_TIMEOUT_MS. Run in an empty folder of the agent's own. */
+function findAiRun(prompt) {
+  return new Promise((resolve) => {
+    const dir = path.join(STATE_DIR, 'find')
+    try {
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+    } catch {}
+    let out = ''
+    let err = ''
+    let done = false
+    const finish = (r) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      resolve(r)
+    }
+    let child
+    try {
+      child = spawn(CLAUDE_BIN, findAiArgs(), { cwd: dir, env: claudeEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
+    } catch (e) {
+      return finish({ ok: false, error: `claude 를 실행하지 못했어요: ${e.message}` })
+    }
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {}
+      finish({ ok: false, error: `AI 가 ${FIND_AI_TIMEOUT_MS / 1000}초 안에 답하지 않았어요` })
+    }, FIND_AI_TIMEOUT_MS)
+    child.stdout.on('data', (d) => (out.length < 1024 * 1024 ? (out += d) : null))
+    child.stderr.on('data', (d) => (err.length < 4096 ? (err += d) : null))
+    child.on('error', (e) => finish({ ok: false, error: `claude 를 실행하지 못했어요: ${e.message}` }))
+    // Only a run that ended well counts: one that stopped on an option it does not know printed nothing to trust.
+    child.on('close', (code) => finish(code === 0 ? { ok: true, out } : { ok: false, error: findAiFailText(code, err) }))
+    child.stdin.on('error', () => {})
+    child.stdin.end(prompt)
+  })
+}
+
 /** This Mac's sessions, for when the server is not asked: id and folder (the names are the server's). */
 const hereList = () => [...sessions].filter(([, s]) => s.alive !== false).map(([id, s]) => ({ id, folder: s.cwd, thisMac: true }))
 
@@ -3707,6 +3869,57 @@ const commands = {
     if (trustSealing()) return emit({ t: 'convread', reqId, ok: false, error: '대화를 봉인하는 맥이라 다른 맥으로 대화를 보내지 않아요' })
     const r = convHere(String(sid ?? ''), { limit, skip, tools })
     emit({ t: 'convread', reqId, ok: r.ok, ...(r.ok ? { text: r.result } : { error: r.error }) })
+  },
+  /**
+   * 세션 찾기 (REQ-F-895): the person's search over this Mac's sessions, 1단계 (text: the words in the transcripts) or
+   * 2단계 (ai: `claude -p` picks from a digest). The server names the closed sessions it still knows and the locked ones
+   * to leave out. While sealing only a signed search with sealed words runs (convfindRefusal: plain words would show
+   * the server what was searched, and the plain ids that come back which conversations hold them), and what was
+   * found leaves in pieces bound to its session, the words searched and the page's number for the search (trust.mjs
+   * sealOut convfind). A search whose words came sealed is answered sealed even when this Mac does not seal the
+   * rest: the paired page that sent it takes only sealed findings from it (it does not ask the server whether a
+   * Mac seals).
+   */
+  async convfind(cmd) {
+    const { reqId, op } = cmd
+    const sealing = trustSealing()
+    const askedSealed = hasSeal(cmd.q)
+    const fn = typeof cmd.fn === 'string' ? cmd.fn.slice(0, 64) : ''
+    // emit seals while sealing (checked as it sends); a sealed ask is sealed here when it does not.
+    const out = (m) => {
+      let msg = { ...m, fn }
+      if (askedSealed && !trustSealing()) {
+        const seal = trust.sealer()
+        msg = seal ? sealOut(msg, seal) : { t: 'convfind', reqId, op, ok: false, error: '이 맥에 봉인 키가 없어 봉인된 찾기에 답하지 못해요' }
+      }
+      emit(msg)
+    }
+    const no = (error) => out({ t: 'convfind', reqId, op, ok: false, error })
+    if (op !== 'text' && op !== 'ai') return no('찾는 방식이 올바르지 않아요')
+    const why = convfindRefusal(cmd, sealing)
+    if (why) return no(why)
+    let q
+    try {
+      q = trustText(String(cmd.q ?? ''), '').trim()
+    } catch (e) {
+      return no(e.message)
+    }
+    if (q.length < FIND_Q_MIN || q.length > FIND_Q_MAX) return no(`찾는 글은 ${FIND_Q_MIN}~${FIND_Q_MAX}자예요`)
+    const qh = crypto.createHash('sha256').update(q, 'utf8').digest('hex').slice(0, 16)
+    if (op === 'text') {
+      const r = await findSessions(await findTargets(cmd.closed, cmd.skip), q)
+      return out({ t: 'convfind', reqId, op, ok: true, qh, ...r })
+    }
+    if (findAiBusy) return no('이 맥은 이미 AI 로 찾는 중이에요. 끝난 뒤 다시 해 주세요')
+    if (!findAiTake()) return no(`AI 로 찾기는 이 맥에서 1분에 ${FIND_AI_PER_MIN}번까지예요. 조금 뒤에 다시 해 주세요`)
+    findAiBusy = true
+    const start = Date.now()
+    try {
+      const r = await findAi(q, await findTargets(cmd.closed, cmd.skip))
+      out({ t: 'convfind', reqId, op, qh, ms: Date.now() - start, ...r })
+    } finally {
+      findAiBusy = false
+    }
   },
   /** A page of a session's log, for a page that asked the server. */
   events({ reqId, sid, after, before, limit, kinds }) {

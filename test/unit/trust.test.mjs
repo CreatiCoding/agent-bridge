@@ -336,3 +336,59 @@ test('a codex session sandbox and approval is signed with new and adopt (1.414, 
   assert.equal(rebuild(cmd, rule, { conv: 'c', cwd: '/p', runner: 'codex', codexMode: 'read-only:on-request' }).codexMode, 'read-only:on-request', '서명한 모드가 이김')
   assert.ok(TRUST_VERSION >= 8)
 })
+
+// 세션 찾기 (REQ-F-895, REQ-S-102, AC-1725): signed by the hash of the words; the server's other fields dropped; a
+// sealing Mac sends only session ids in plain, each finding a piece bound to its session and the words searched.
+test('convfind: signed by qH, rebuilt without the server extras, sealed per session (AC-1725)', async () => {
+  const t = open(tmp())
+  const dev = await device()
+  const { k, r4 } = await pair(t, dev)
+  // The page's sealed q ('u', no session), as ui/src/lib/trust.ts findBody makes it.
+  const iv = rand(12)
+  const key = await subtle.importKey('raw', k, 'AES-GCM', false, ['encrypt'])
+  const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: enc.encode(`bt1|host-a|${r4.kid}`) }, key, enc.encode(JSON.stringify({ d: 'u', s: '', v: 'example.slack.com/archives/C1' }))))
+  const q = `⟦bt1:${r4.kid}:${b64u(new Uint8Array([...iv, ...ct]))}⟧`
+  assert.deepEqual(classOf({ t: 'convfind', op: 'text' }), { i: ['op', 'qH', 'fn'], keep: ['q', 'closed', 'skip'] })
+  assert.equal(classOf({ t: 'convfind', op: 'grep' }), 'off')
+  const cmd = await signed(t, dev, { t: 'convfind', op: 'text', reqId: 'r1', q, fn: '서버가 바꾼 번호', closed: [{ sid: 's1', conv: 'c1' }], skip: ['s9'], sysPrompt: '서버가 끼운 것' }, { op: 'text', qH: sha256Hex(q), fn: 'n-1' })
+  const v = t.verify(cmd)
+  assert.equal(v.ok, true, v.why)
+  assert.equal(hashesHold(cmd, v.i), true)
+  assert.equal(hashesHold({ ...cmd, q: '서버가 바꾼 글' }, v.i), false, '바뀐 글은 서명과 맞지 않음')
+  const out = rebuild(cmd, classOf(cmd), v.i)
+  assert.deepEqual(Object.keys(out).sort(), ['closed', 'fn', 'op', 'q', 'qH', 'reqId', 'skip', 't'])
+  assert.equal(out.fn, 'n-1', '찾기 번호는 서명한 것')
+  assert.equal(t.openText(out.q, ''), 'example.slack.com/archives/C1')
+  // What leaves a sealing Mac.
+  const seal = t.sealer()
+  const sid = '11111111-2222-4333-8444-555555555555'
+  const r = sealOut({ t: 'convfind', reqId: 'r1', op: 'text', ok: true, qh: 'abcd1234abcd1234', searched: 3, total: 3, partial: false, fn: 'n-1', hits: [{ sid, at: 5, n: 2, snips: ['…비밀 링크 https://example.slack.com/archives/C1…'] }] }, seal)
+  const flat = JSON.stringify(r)
+  assert.doesNotMatch(flat, /비밀 링크|example\.slack|abcd1234/, '문맥·검색어 해시는 평문으로 나가지 않음')
+  assert.deepEqual(Object.keys(r.hits[0]).sort(), ['at', 'sealed', 'sid'])
+  assert.equal(r.searched, 3)
+  const inner = JSON.parse(await pageOpen(k, 'host-a', r.hits[0].sealed))
+  assert.deepEqual(inner, { kind: 'find', op: 'text', sid, qh: 'abcd1234abcd1234', fn: 'n-1', n: 2, snips: ['…비밀 링크 https://example.slack.com/archives/C1…'] })
+  assert.equal(r.fn, undefined, '찾기 번호는 조각 안에만')
+  // AI picks (L3): the list goes out in session id order, the ranking only inside the pieces.
+  const sid0 = 'ffffffff-2222-4333-8444-555555555555'
+  const a = sealOut({ t: 'convfind', reqId: 'r2', op: 'ai', ok: true, qh: 'ff', fn: 'n-2', picks: [{ sid: sid0, why: '가장 맞음' }, { sid, why: '링크가 나온 세션' }] }, seal)
+  assert.doesNotMatch(JSON.stringify(a), /링크가 나온|가장 맞음/)
+  assert.deepEqual(a.picks.map((p) => p.sid), [sid, sid0], '평문 순서는 세션 id 순')
+  assert.deepEqual(JSON.parse(await pageOpen(k, 'host-a', a.picks[0].sealed)), { kind: 'find', op: 'ai', sid, qh: 'ff', fn: 'n-2', rank: 1, why: '링크가 나온 세션' })
+  assert.equal(JSON.parse(await pageOpen(k, 'host-a', a.picks[1].sealed)).rank, 0, '순위는 조각 안에')
+  const e = sealOut({ t: 'convfind', reqId: 'r3', op: 'ai', ok: false, error: 'AI 가 답하지 못했어요: 대화 조각' }, seal)
+  assert.doesNotMatch(JSON.stringify(e), /대화 조각/)
+})
+
+test('agent convfind: while sealing only a signed search with sealed words; a sealed ask is answered sealed (REQ-S-102)', () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const at = src.indexOf('  async convfind(cmd) {')
+  const body = src.slice(at, at + 3000)
+  assert.match(body, /const why = convfindRefusal\(cmd, sealing\)\n\s+if \(why\) return no\(why\)/)
+  // The refusal comes before the words are opened or anything is read.
+  assert.ok(body.indexOf('convfindRefusal(') < body.indexOf('trustText(String(cmd.q'))
+  assert.ok(body.indexOf('convfindRefusal(') < body.indexOf('findTargets('))
+  assert.match(body, /if \(askedSealed && !trustSealing\(\)\) \{\n\s+const seal = trust\.sealer\(\)/)
+  assert.match(body, /if \(!findAiTake\(\)\) return no\(/)
+})
