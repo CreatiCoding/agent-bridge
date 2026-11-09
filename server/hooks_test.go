@@ -175,17 +175,18 @@ func TestHooksAfter(t *testing.T) {
 
 	// The server's own close (no request): by system, to the command on stdin with only a small environment.
 	withLock(func() { closeSession(meta, "") })
-	var raw []byte
-	for i := 0; i < 200 && len(raw) == 0; i++ {
+	// The command writes the body, then the env file: wait for both (a loaded CI box can run between them).
+	var raw, envOut []byte
+	for i := 0; i < 500 && (len(raw) == 0 || len(envOut) == 0); i++ {
 		time.Sleep(10 * time.Millisecond)
 		raw, _ = os.ReadFile(out)
+		envOut, _ = os.ReadFile(out + ".env")
 	}
 	v, err := parseJSON(raw)
 	if err != nil {
 		t.Fatalf("명령이 받은 것: %q", raw)
 	}
 	ok(t, mget(v, "name") == "session.close" && mget(v, "kind") == "end" && mget(v, "by") == "system", string(raw))
-	envOut, _ := os.ReadFile(out + ".env")
 	eq(t, string(envOut), VERSION+" none\n", "서버의 비밀 환경변수는 넘기지 않음")
 	dead.wait(t, 1)
 	time.Sleep(50 * time.Millisecond)
