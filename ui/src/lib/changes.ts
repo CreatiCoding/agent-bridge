@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.509',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '답 끝의 선택지(choices)가 답 아래에 코드 블록 글자로 남던 것: 스트림이 끊긴 사이 턴이 끝나면 쓰는 중인 글이 비워지지 않았다. 이제 빠진 기록을 받아 올 때 서버의 쓰는 중인 글로 맞추고, 세션이 쉬거나 끝나면 보이지 않으며, 쓰는 중인 글에서 choices 블록을 뺀다(끝난 답에서 버튼이 된다)',
+        refs: ['REQ-F-137', 'REQ-F-136'],
+      },
+    ],
+  },
+  {
     version: '1.508',
     date: '2026-11-09',
+    commit: 'c0dfbf1',
     changes: [
       {
         kind: 'changed',

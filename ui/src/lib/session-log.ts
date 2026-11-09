@@ -5,7 +5,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { ApiError, get } from './api'
 import { dropLog, loadLog, saveLog } from './cache'
 import { tokenOf } from './locks'
-import { getStore, onEvents, onPoke, onReconnect } from './store'
+import { getStore, onEvents, onPoke, onReconnect, syncWriting } from './store'
 import { emptyFold, fold, type Folded } from './timeline'
 import type { Card, Ev, EventsPage } from './types'
 
@@ -69,6 +69,7 @@ async function firstPage(sid: string) {
   const page = await getPage(`/api/sessions/${sid}/events`)
   const events = page.events
   set(sid, { events, folded: fold(emptyFold(), events), older: page.more, loading: false, loaded: true, cached: false, card: page.card, offline: false })
+  syncWriting(sid, typeof page.writing === 'string' ? page.writing : '')
   // Live events that arrived while the first page loaded.
   if (page.last > (events.at(-1)?.seq ?? 0)) await afterLoop(sid)
 }
@@ -115,6 +116,7 @@ async function afterLoop(sid: string) {
     }
     merge(sid, page.events)
     set(sid, { card: page.card, cached: false, offline: false })
+    syncWriting(sid, typeof page.writing === 'string' ? page.writing : '')
     if (!page.more) break
   }
 }

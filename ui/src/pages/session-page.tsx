@@ -9,6 +9,7 @@ import { back } from '../lib/router'
 import { loadOlder, retryLog, useSessionLog } from '../lib/session-log'
 import { groupTree, look, modelName, titleOf } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
+import { writingShown } from '../lib/writing'
 import { featureOn } from '../lib/features'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
@@ -894,7 +895,7 @@ export function SessionPage({ id }: { id: string }) {
               {p.writing ? <div className="bubble-note">받아쓰는 중…</div> : null}
             </div>
           ))}
-          <Writing text={writing} sid={s.id} />
+          <Writing text={writingShown(writing, s.state?.phase)} sid={s.id} />
           <Activity s={s} items={log.folded.items} />
           {/* After the conversation is in: drawn before it, they were pushed down the moment it arrived (a layout
               shift of 0.18 on a phone). */}

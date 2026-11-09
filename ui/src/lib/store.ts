@@ -40,6 +40,13 @@ export function useStore<T>(pick: (s: Store) => T): T {
   )
 }
 export const getStore = () => store
+/**
+ * The server's word on what is being written (REQ-F-137), from a page of the log fetched after a dropped stream:
+ * the `preview` that cleared it was missed with the stream, so the answer read off the screen would stay.
+ */
+export function syncWriting(sid: string, text: string) {
+  if ((store.writing[sid] ?? '') !== text) set({ writing: { ...store.writing, [sid]: text } })
+}
 
 type EventsListener = (events: Ev[]) => void
 const eventListeners = new Map<string, Set<EventsListener>>()
