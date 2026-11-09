@@ -1581,11 +1581,15 @@ async function launchNow(sid, s, claudeArgs) {
   // The bridge MCP server (agent/mcp.mjs): its tools hand work to a session on another Mac (REQ-F-760). Its address
   // names this session, so each session gets its own file.
   const mcpFile = path.join(promptsDir, `${sid}.mcp.json`)
-  writeJson(mcpFile, { mcpServers: { bridge: { type: 'stdio', command: process.execPath, args: [path.join(AGENT_DIR, 'mcp.mjs')], env: { CB_DELEGATE: `http://127.0.0.1:${config.port}/delegate?sid=${sid}`, CB_KEY_FILE: hookHeaderPath } } } })
+  // alwaysLoad: Claude Code waits for this server (at most its 5 s connect limit) before the first turn, and keeps
+  // its todos tool in the prompt instead of behind tool search (mcp.mjs ALWAYS_LOADED). Older versions ignore the key.
+  writeJson(mcpFile, { mcpServers: { bridge: { type: 'stdio', alwaysLoad: true, command: process.execPath, args: [path.join(AGENT_DIR, 'mcp.mjs')], env: { CB_DELEGATE: `http://127.0.0.1:${config.port}/delegate?sid=${sid}`, CB_KEY_FILE: hookHeaderPath } } } })
   fs.chmodSync(mcpFile, 0o600)
   // The tools this process starts with: a session started before a tool was added does not have it until it is
   // reopened, and the page offers to reopen it (REQ-F-778, 할 일 정리).
-  s.bridgeTools = BRIDGE_TOOLS.map((t) => t.name)
+  // As Claude names them (mcp__bridge__todos): the page looks for that name. With todos always loaded the
+  // transcript no longer lists it among the deferred tools, so this is how the page knows the session has it.
+  s.bridgeTools = BRIDGE_TOOLS.map((t) => `mcp__bridge__${t.name}`)
   // 모델 라우팅 (REQ-F-834): session-only subagents and the default subagent model, only while it is on. The
   // variable is exported in the command, not given with -e, so it reaches claude the same way in tmux and zeropty.
   const agentsFile = path.join(promptsDir, `${sid}.agents.json`)

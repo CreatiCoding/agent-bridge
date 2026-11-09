@@ -8,9 +8,26 @@ import fs from 'node:fs'
 test('the agent remembers the bridge tools a session started with and reports them (AC-1354)', () => {
   const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(src, /import \{ TOOLS as BRIDGE_TOOLS[,\w\s]* \} from '\.\/mcp\.mjs'/)
-  assert.match(src, /s\.bridgeTools = BRIDGE_TOOLS\.map\(\(t\) => t\.name\)/)
+  // The names as Claude calls them: the page looks for mcp__bridge__todos (1.511; the short names never matched).
+  assert.match(src, /s\.bridgeTools = BRIDGE_TOOLS\.map\(\(t\) => `mcp__bridge__\$\{t\.name\}`\)/)
   assert.match(src, /bridgeTools: s\.bridgeTools \?\? null,/)
   assert.match(src, /\.\.\.\(s\.bridgeTools \? \{ bridgeTools: s\.bridgeTools \} : \{\}\)/)
+})
+
+test('a reopened session has the todos tool on its first turn: the server is always loaded, the rest stay deferred (AC-1719)', async () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  // alwaysLoad makes Claude Code wait for the server before the first turn and keep its tools out of tool search.
+  assert.match(src, /mcpServers: \{ bridge: \{ type: 'stdio', alwaysLoad: true, command: process\.execPath,/)
+  const { handle, TOOLS, ALWAYS_LOADED } = await import('../../agent/mcp.mjs')
+  assert.deepEqual(ALWAYS_LOADED, ['todos'])
+  const listed = (await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).result.tools
+  assert.deepEqual(listed.map((t) => t.name), TOOLS.map((t) => t.name))
+  for (const t of listed) {
+    if (t.name === 'todos') assert.equal(t._meta, undefined, 'todos is loaded with the server')
+    else assert.deepEqual(t._meta, { 'anthropic/alwaysLoad': false }, `${t.name} stays behind tool search`)
+  }
+  // TOOLS itself is not changed (the agent reads its names).
+  assert.ok(TOOLS.every((t) => !t._meta))
 })
 
 test('the page reopens a session without the tool before asking, after its work when it works (AC-1354)', () => {

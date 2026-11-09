@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.511',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '세션을 다시 연 뒤 첫 답이 할 일 도구를 못 보고 todos 코드 블록을 지어내던 것: bridge MCP 서버를 기다리지 않고 첫 턴이 시작됐고 도구도 tool search 뒤에 숨어 있었다. 이제 bridge 서버를 alwaysLoad 로 띄워 첫 턴 전에 연결을 기다리고 할 일 도구를 바로 싣는다(나머지 bridge 도구는 그대로 지연)',
+        refs: ['REQ-F-778', 'REQ-F-760'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '에이전트가 세션의 bridge 도구 이름을 짧게(todos) 보내 화면이 할 일 도구가 있는지 알아보지 못하던 것: 이제 mcp__bridge__todos 처럼 Claude 가 부르는 이름으로 보낸다',
+        refs: ['REQ-F-778'],
+      },
+    ],
+  },
+  {
     version: '1.510',
     date: '2026-11-09',
+    commit: 'd17f748',
     changes: [
       {
         kind: 'fixed',

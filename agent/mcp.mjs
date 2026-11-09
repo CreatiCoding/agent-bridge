@@ -157,6 +157,15 @@ export const TOOLS = [
   },
 ]
 
+/**
+ * The tools Claude Code always puts in the prompt (REQ-F-778). The session's config loads this server with
+ * alwaysLoad, so Claude Code waits for it before the first turn and does not hide its tools behind tool search:
+ * without that a session just reopened answered its first message before the server was up and wrote the to-do
+ * list as a made-up code block. Only todos needs that; the rest stay behind tool search, as before.
+ */
+export const ALWAYS_LOADED = ['todos']
+export const LISTED = TOOLS.map((t) => (ALWAYS_LOADED.includes(t.name) ? t : { ...t, _meta: { 'anthropic/alwaysLoad': false } }))
+
 /** The disk tools wait on du, lsof, docker and fstrim on the other Mac: up to the server's longest disk wait. */
 const DISK_TOOLS = ['disk_look', 'disk_clean']
 
@@ -419,7 +428,7 @@ export async function handle(msg, run = call) {
   const { id, method, params } = msg ?? {}
   if (method === 'initialize') return { jsonrpc: '2.0', id, result: { protocolVersion: params?.protocolVersion || '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'bridge', version: '1' } } }
   if (method === 'ping') return { jsonrpc: '2.0', id, result: {} }
-  if (method === 'tools/list') return { jsonrpc: '2.0', id, result: { tools: TOOLS } }
+  if (method === 'tools/list') return { jsonrpc: '2.0', id, result: { tools: LISTED } }
   if (method === 'tools/call') {
     const name = params?.name
     if (!TOOLS.some((t) => t.name === name)) return { jsonrpc: '2.0', id, error: { code: -32602, message: `없는 도구: ${name}` } }
