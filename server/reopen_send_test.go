@@ -24,3 +24,23 @@ func TestReopenToSendFailureSaysWhy(t *testing.T) {
 		t.Fatalf("notice with the reason missing: %s", raw)
 	}
 }
+
+// REQ-F-297 rule 7 (AC-1715): 지금 새로고침 of a stopped session opens it again; a refusal says why.
+func TestRefreshStoppedReopens(t *testing.T) {
+	uid := "refresh-stopped-user"
+	wasData, wasHosts := DATA, hosts
+	DATA, hosts = t.TempDir(), newOMap[M]()
+	defer func() { DATA, hosts = wasData, wasHosts }()
+	id := "refresh-stopped-sess"
+	t.Cleanup(func() { sessions.Delete(id) })
+	meta := newMeta(uid, id, "no-host", M{})
+	var code int
+	withLock(func() { code = refused(func() { reopenStopped(meta, REFRESH_FAILED) }) })
+	eq(t, code, 409, "refused as moveSession refused")
+	t.Cleanup(func() { tails.Delete(id) })
+	evs, _ := tails.Get(id)
+	raw := jsonStr(evs)
+	if !strings.Contains(raw, REFRESH_FAILED+"받는 호스트가 연결돼 있지 않습니다") || strings.Contains(raw, "보낸 글을") {
+		t.Fatalf("refresh notice wrong: %s", raw)
+	}
+}

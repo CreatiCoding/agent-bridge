@@ -835,7 +835,7 @@ export function SessionPage({ id }: { id: string }) {
         </div>
         {/* A phone has 새로고침 in the ⋯ menu. */}
         {wide ? <IconButton icon="list" label="할 일" className="todo-toggle" active={todoShown} aria-pressed={todoShown} onClick={() => showTodos(!todoShown)} /> : null}
-        {wide ? <IconButton icon="refresh" label="새로고침" title="대화 그대로 다시 열기" onClick={() => void refresh(s)} disabled={!!disabled || !s.state.alive} /> : null}
+        {wide ? <IconButton icon="refresh" label="새로고침" title={s.state.alive ? '대화 그대로 다시 열기' : '멈춘 세션을 대화 그대로 다시 열기'} onClick={() => void refresh(s)} disabled={!!disabled} /> : null}
         {/* session.panel (REQ-F-892): the extensions' panels beside the conversation, opened from here. */}
         <PanelToggle panels={panels} />
         <SlotActions slot="session.header.actions" ctx={slotCtx} max={wide ? 3 : 1} />

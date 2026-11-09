@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.507',
+    date: '2026-11-09',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '서명 필수 맥에서 멈춘 세션에 글을 보내면 "open 거부 (서명 없음)" 으로 다시 열리지 않던 것: 짝지은 기기가 서버가 먼저 보내는 open 에도 서명한다',
+        refs: ['REQ-F-297'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui', 'server'],
+        text: '멈춘 세션(claude·codex 가 끝남)에서도 새로고침을 누를 수 있다: 같은 맥에서 대화 그대로 다시 열고, 실패하면 이유를 대화에 남긴다',
+        refs: ['REQ-F-297', 'AC-1715'],
+      },
+    ],
+  },
+  {
     version: '1.506',
     date: '2026-11-09',
+    commit: '24d9fb8',
     changes: [
       {
         kind: 'fixed',

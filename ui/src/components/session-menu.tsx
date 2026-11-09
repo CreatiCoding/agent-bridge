@@ -344,7 +344,8 @@ function sessionMenuAll(s: Session, opts: { groups?: { id: string; name: string 
           },
     'sep',
     // A wide session page has 새로고침 as a header button instead.
-    ...(page && wide ? [] : [{ id: 'refresh', label: '새로고침', icon: 'refresh' as const, hint: '대화 그대로 다시 열기', disabled: !alive, onSelect: () => refresh(s) }]),
+    // A stopped session (claude or codex has ended) is opened again by it on the same conversation (REQ-F-297 rule 7).
+    ...(page && wide ? [] : [{ id: 'refresh', label: '새로고침', icon: 'refresh' as const, hint: alive || !live || away ? '대화 그대로 다시 열기' : '멈춘 세션을 대화 그대로 다시 열기', disabled: !live || away, onSelect: () => refresh(s) }]),
     // The session page puts its own near the top (it knows whether a list is already there); a row's menu, the only
     // way to it on a phone's list, asks as a first 정리.
     ...(page ? [] : [{ id: 'todos', label: '할 일 정리', icon: 'list' as const, hint: '지금까지 한 일·남은 일', disabled: !!todoBlocked(s), onSelect: () => void askTodos(s) }]),
@@ -534,6 +535,7 @@ export async function trimLog(s: Session) {
 }
 
 export async function refresh(s: Session) {
+  if (!s.state.alive) return void (await act(() => sessionPost(s, 'refresh', { when: 'now' }), '다시 여는 중이에요'))
   const busy = s.state.phase === 'busy'
   const bg = s.bg ?? []
   // Nothing to cut and nothing booked: the only choice would be 지금 새로고침, so pressing it refreshes.

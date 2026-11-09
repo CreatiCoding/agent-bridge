@@ -357,10 +357,14 @@ async function intentsFor(method: string, path: string, body: Body): Promise<Int
     else if (op === 'say' || op === 'send') {
       xs = op === 'say' ? await sayIntents(s, h, str(body.text), body.images) : [{ t: 'send', i: await sendI(sid, str(body.text), body.images) }]
       if (xs[0]?.t === 'send' && op === 'say' && !/^[:/]/.test(plainOf(str(body.text)).trim())) lastSaid.set(sid, plainOf(str(body.text)).slice(0, 100_000))
+      // A message to a stopped session makes the server open it first (REQ-F-297): that open needs this device's
+      // signature too, or a Mac that takes only signed commands refuses it (서명 없음).
+      if (xs[0]?.t === 'send' && !s.state?.alive && !s.closed) xs.unshift({ t: 'open', i: { sid } })
     } else if (op === 'do') xs = await doIntents(s, str(body.cmd), str(body.arg).trim())
     else if (op === 'answer') xs = [{ t: 'answer', i: { sid, card: body.card, n: body.n === 'esc' || body.n === 'enter' ? body.n : Number(body.n) } }]
     else if (op === 'setting') xs = [{ t: 'setting', i: { sid, kind: body.kind, value: str(body.value).slice(0, 60) } }]
-    else if (op === 'refresh') xs = [{ t: 'refresh', i: { sid, when: body.when === 'later' || body.when === 'cancel' ? body.when : 'now' } }]
+    // 새로고침 of a stopped session is an open on the server (REQ-F-297 rule 7).
+    else if (op === 'refresh') xs = body.when !== 'later' && body.when !== 'cancel' && !s.state?.alive && !s.closed ? [{ t: 'open', i: { sid } }] : [{ t: 'refresh', i: { sid, when: body.when === 'later' || body.when === 'cancel' ? body.when : 'now' } }]
     else if (['sendnow', 'esc', 'close', 'trash', 'trimlog', 'fork'].includes(op)) xs = [{ t: op, i: { sid } }]
     else if (op === 'dropheld') xs = [{ t: 'dropheld', i: { sid, ...(typeof body.id === 'string' ? { id: body.id.slice(0, 64) } : {}) } }]
     else if (op === 'btw') xs = [{ t: 'btw', i: { sid, textH: await sha256Hex(str(body.text).trim()) } }]

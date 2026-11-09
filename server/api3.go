@@ -681,7 +681,17 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			when = b["when"].(string)
 		}
 		sessBefore("session.do", meta, kv{"do", "refresh"}, kv{"when", when})
-		refreshSession(uid, meta, liveHost(meta), when)
+		hostID := liveHost(meta)
+		// REQ-F-297 rule 7: a stopped session (claude or codex has ended) has nothing to refresh on the Mac, so 지금
+		// 새로고침 opens it again on the same conversation, as a message sent to it would.
+		if when == "now" && !truthy(meta.state()["alive"]) {
+			logEvents(meta, []any{M{"k": "line", "text": REOPEN_LINE}})
+			meta.set("bg", []any{})
+			meta.set("resting", false)
+			reopenStopped(meta, REFRESH_FAILED)
+		} else {
+			refreshSession(uid, meta, hostID, when)
+		}
 		sessAfter("session.do", meta, kv{"do", "refresh"}, kv{"when", when})
 	case "report":
 		toHost(liveHost(meta), M{"t": "report", "sid": meta.id()})
@@ -1023,7 +1033,10 @@ func numOrNaN0(x any) float64 {
 // reopenToSend opens a stopped session again before a message goes to it (REQ-F-297). A reopen that fails says so in
 // the conversation, with the reason: before, only the "다시 엽니다" line was left, the message was not logged, and
 // each new try added one more such line with nothing after it, as if sending did nothing (rule 6).
-func reopenToSend(meta *Sess) {
+func reopenToSend(meta *Sess) { reopenStopped(meta, REOPEN_FAILED) }
+
+// reopenStopped opens a stopped session again on its own Mac; a refusal leaves failed + its reason in the conversation.
+func reopenStopped(meta *Sess, failed string) {
 	defer func() {
 		r := recover()
 		if r == nil {
@@ -1033,11 +1046,17 @@ func reopenToSend(meta *Sess) {
 		if rf, ok := r.(*Refuse); ok && jsTrim(rf.Msg) != "" {
 			why = rf.Msg
 		}
-		logEvents(meta, []any{M{"k": "notice", "tone": "warn", "text": REOPEN_FAILED + why}})
+		logEvents(meta, []any{M{"k": "notice", "tone": "warn", "text": failed + why}})
 		panic(r)
 	}()
 	moveSession(meta, meta.host(), nil, nil)
 }
+
+// REOPEN_LINE is logged before a stopped session is opened again (REQ-F-297 rule 3 and 7).
+const REOPEN_LINE = "🔄 끊긴 세션을 대화 그대로 이어서 다시 엽니다."
+
+// REFRESH_FAILED leads the notice of a 새로고침 of a stopped session that failed (REQ-F-297 rule 7).
+const REFRESH_FAILED = "❌ 멈춘 세션을 다시 열지 못했어요. 이유: "
 
 // REOPEN_FAILED leads the notice of a reopen that failed (REQ-F-297 rule 6): the reason follows.
 const REOPEN_FAILED = "❌ 세션을 다시 열지 못해 보낸 글을 전달하지 못했어요. 입력창의 글은 그대로 두고, 같은 일이 이어지면 새 세션을 열어 주세요. 이유: "
@@ -1116,7 +1135,7 @@ func sendOp(req *Req, uid string, meta *Sess, b M) {
 			}
 			refuse(409, "세션이 멈춰 있습니다. 다시 연 뒤 보내 주세요")
 		}
-		logEvents(meta, []any{M{"k": "line", "text": "🔄 끊긴 세션을 대화 그대로 이어서 다시 엽니다."}})
+		logEvents(meta, []any{M{"k": "line", "text": REOPEN_LINE}})
 		meta.set("bg", []any{})
 		reopenToSend(meta)
 	}
