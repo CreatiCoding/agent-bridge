@@ -20,6 +20,7 @@ import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
+import { MacTranslator, canTranslate } from './translate.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
@@ -36,7 +37,7 @@ import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detec
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs', 'translate.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -1090,7 +1091,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign'], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', ...(canTranslate() ? ['translate'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 
@@ -5195,6 +5196,20 @@ const commands = {
    * A recording from the input box to words (REQ-F-754): the page sends it, the words go back, and the page sends
    * them like anything typed. Nothing here touches a session.
    */
+  /**
+   * 맥 언어팩 번역 (REQ-F-897): English lines from a page whose browser has no translator of its own, to Korean with
+   * this Mac's Translation language pack. A sealing Mac takes none: the lines would come plain from the server.
+   */
+  async translate({ reqId, texts }) {
+    if (trustSealing()) return emit({ t: 'translate', reqId, ok: false, code: 'sealed', error: '대화를 봉인하는 맥이라 번역을 받지 않아요' })
+    try {
+      const list = (Array.isArray(texts) ? texts : []).slice(0, 200).map((x) => String(x ?? '').slice(0, 4000))
+      translator ??= new MacTranslator({ dir: path.join(STATE_DIR, 'bin'), log })
+      emit({ t: 'translate', reqId, ok: true, ...(await translator.translate(list)) })
+    } catch (e) {
+      emit({ t: 'translate', reqId, ok: false, code: e.code || 'error', error: e.message })
+    }
+  },
   async voice({ reqId, audio, opts }) {
     try {
       const dir = whisperDir()
@@ -7552,6 +7567,7 @@ const atRest = () => [...sessions.values()].every((s) => !s.turn && !s.held?.len
  */
 /** whisper.cpp kept up between recordings (voice.mjs); stopped with the agent. */
 let whisper = null
+let translator = null
 const whisperDir = () => path.join(STATE_DIR, 'whisper')
 process.on('exit', () => whisper?.stop())
 /** A session in the middle of a turn (REQ-F-832 skipBusy): a night update waits for it, or for the next night. */
@@ -8339,7 +8355,7 @@ const server = http.createServer(async (req, res) => {
     // Signed by a paired device, or not run at all, while this Mac does not trust the server (REQ-S-091).
     cmd = trustGate(cmd)
     if (!cmd) return
-    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter'].includes(cmd.t)
+    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate'].includes(cmd.t)
     if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
     if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)
     try {

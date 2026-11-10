@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.515',
+    date: '2026-11-10',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '맥 언어팩 번역: 브라우저에 기기 안 번역기가 없으면(Safari, 다른 Chromium 브라우저, 폰 브라우저) 영어 줄을 내 맥(macOS 26 이상)이 그 맥의 언어팩으로 번역한다. 세션의 맥을 먼저, 안 되면 연결된 다른 맥. 번역 서비스는 쓰지 않고, 봉인하는 맥과 이 기기와 짝지은 맥의 답은 맡기지 않는다. 언어팩은 맥의 시스템 설정 → 일반 → 언어 및 지역 → 번역 언어에서 받는다. POST /api/translate',
+        refs: ['REQ-F-897', 'IF-283'],
+      },
+    ],
+  },
+  {
     version: '1.514',
     date: '2026-11-10',
+    commit: '7725a71',
     changes: [
       {
         kind: 'added',

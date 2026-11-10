@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { clock, duration, oneLine, shortLabel } from '../lib/format'
 import { Markdown, MarkdownContext } from '../lib/markdown'
 import { useKorean } from '../lib/translate'
+import { pairedWith } from '../lib/trust'
 import type { Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { Badge, Button, Collapse, Icon, IconButton, Spinner } from '../kit'
@@ -290,7 +291,9 @@ function TextMsgView(p: TextProps) {
   const [own, setOwn] = useState(false)
   // 영어 답 번역 (REQ-F-896): English lines in Korean, on this device; the English is one press away.
   const [english, setEnglish] = useState(false)
-  const ko = useKorean(shown.text, !shown.folded || open)
+  // A Mac paired with this device may seal its answers: its words are never handed to another Mac through the server.
+  const mac = useMemo(() => (pairedWith(session.hostId) ? null : { host: session.hostId }), [session.hostId])
+  const ko = useKorean(shown.text, !shown.folded || open, mac)
   if (shown.folded && !open)
     return (
       <div className="msg-folded" data-quiet={quiet?.ext ?? 'hook'}>

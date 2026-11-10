@@ -1,6 +1,7 @@
 // 영어 답 번역 (REQ-F-896): an answer that came in English is shown in Korean, translated on this device only.
 // Two on-device translators: the iOS app's (Apple Translation, through webkit.messageHandlers.translate) and desktop
-// Chrome's Translator API. Nothing is sent to a translation service; where neither exists the answer stays as it is.
+// Chrome's Translator API. Where the browser has neither, one of the person's Macs translates with macOS's language
+// pack (REQ-F-897, POST /api/translate, macOS 26). Nothing is sent to a translation service.
 // Only English prose lines change. Fenced code, inline code, links and paths are kept byte for byte: they are held
 // out as ⟦n⟧ marks, and a line whose marks do not all come back whole keeps its English.
 import { useEffect, useState, useSyncExternalStore } from 'react'
@@ -71,7 +72,18 @@ export function restore(p: Piece, ko: string): string | null {
 }
 
 export type Status = 'installed' | 'download' | 'unsupported'
-type Engine = { kind: 'app' | 'chrome'; status(): Promise<Status>; prepare(): Promise<Status>; run(texts: string[]): Promise<string[]> }
+type Engine = { kind: 'app' | 'chrome' | 'mac'; status(): Promise<Status>; prepare(): Promise<Status>; run(texts: string[]): Promise<string[]> }
+/** Asking a Mac (REQ-F-897): host is the session's own Mac, asked first. Left out for a Mac paired with this device. */
+export type MacOpt = { host?: string }
+
+export type MacAnswer = { ok: true; status: Status; texts?: string[]; host?: string }
+/** A Mac that could not translate is not asked again for a minute. */
+let macDownUntil = 0
+async function askMac(texts: string[], host?: string): Promise<MacAnswer> {
+  const { post } = await import('./api')
+  return post<MacAnswer>('/api/translate', { texts, ...(host ? { host } : {}) })
+}
+export const macStatus = () => askMac([])
 
 type AppAnswer = { status?: Status; texts?: string[]; error?: string }
 type AppBridge = {
@@ -106,8 +118,8 @@ const pair = { sourceLanguage: 'en', targetLanguage: 'ko' }
 let chromeOne: Promise<ChromeTranslator> | null = null
 const chromeStatus = (a: string): Status => (a === 'available' ? 'installed' : a === 'downloadable' || a === 'downloading' ? 'download' : 'unsupported')
 
-/** This device's translator, or null. */
-export function engine(): Engine | null {
+/** This device's translator; a Mac when the browser has none and mac is given; or null. */
+export function engine(mac?: MacOpt | null): Engine | null {
   const g = globalThis as unknown as AppBridge & { Translator?: ChromeApi }
   if (g.webkit?.messageHandlers?.translate)
     return {
@@ -138,6 +150,23 @@ export function engine(): Engine | null {
         return Promise.all(texts.map((s) => t.translate(s)))
       },
     }
+  if (mac)
+    return {
+      kind: 'mac',
+      status: async () => (await askMac([], mac.host)).status,
+      prepare: async () => (await askMac([], mac.host)).status,
+      run: async (texts) => {
+        if (Date.now() < macDownUntil) throw new Error('mac')
+        try {
+          const a = await askMac(texts, mac.host)
+          if (a.status !== 'installed' || !a.texts) throw new Error(a.status)
+          return a.texts
+        } catch (e) {
+          macDownUntil = Date.now() + 60_000
+          throw e
+        }
+      },
+    }
   return null
 }
 
@@ -145,12 +174,12 @@ const done = new Map<string, string>()
 const going = new Map<string, Promise<string>>()
 
 /** The answer with its English lines in Korean; the same text when there is nothing to change or it fails. */
-export function translateAnswer(md: string): Promise<string> {
+export function translateAnswer(md: string, mac?: MacOpt | null): Promise<string> {
   const hit = done.get(md)
   if (hit !== undefined) return Promise.resolve(hit)
   const on = going.get(md)
   if (on) return on
-  const e = engine()
+  const e = engine(mac)
   const { lines, pieces } = englishPieces(md)
   const todo = pieces.flatMap((p, i) => (p ? [i] : []))
   if (!e || !todo.length) return Promise.resolve(md)
@@ -164,27 +193,30 @@ export function translateAnswer(md: string): Promise<string> {
       })
       return out.join('\n')
     })
-    .catch(() => md)
-    .then((r) => {
-      going.delete(md)
-      if (done.size > 300) done.delete(done.keys().next().value as string)
-      done.set(md, r)
-      return r
-    })
+    .then(
+      (r) => {
+        going.delete(md)
+        if (done.size > 300) done.delete(done.keys().next().value as string)
+        done.set(md, r)
+        return r
+      },
+      // Not kept: a language pack downloaded later, or a Mac that comes back, translates it next time.
+      () => (going.delete(md), md),
+    )
   going.set(md, p)
   return p
 }
 
 /** What to show for an answer: the Korean once it is ready (the English until then) and whether it changed. */
-export function useKorean(md: string, active: boolean) {
+export function useKorean(md: string, active: boolean, mac?: MacOpt | null) {
   const on = useTranslateOn() && active
-  const want = on && englishPieces(md).pieces.some(Boolean) && !!engine()
+  const want = on && englishPieces(md).pieces.some(Boolean) && !!engine(mac)
   const [ko, setKo] = useState<string | null>(() => (want ? done.get(md) ?? null : null))
   useEffect(() => {
     if (!want) return setKo(null)
     let live = true
     setKo(done.get(md) ?? null)
-    translateAnswer(md).then((r) => live && setKo(r))
+    translateAnswer(md, mac).then((r) => live && setKo(r))
     return () => {
       live = false
     }
