@@ -110,10 +110,14 @@ export async function convFind(mode: Mode, text: string) {
     const qh = await findQh(q)
     let got: Awaited<ReturnType<typeof take>>
     let plainLeft: string[] = []
+    if (t.missing) {
+      // Paired Macs, none of them listed: send nothing (a server hiding them must not get the words plain).
+      if (my === seq) set({ mode, q, busy: false, rows: [], hosts: [], dropped: 0, plainLeft: t.plain, error: '이 기기와 짝지은 맥이 맥 목록에 없어 찾지 않았어요' })
+      return
+    }
     if (t.direct) {
-      const body = await findPlainBody(mode, q, t.sealed.length ? t.plain : undefined)
-      const r = await postSealed<Answer>('/api/find', body)
-      got = await take(r, t.sealed.length ? t.plain : null, { op: mode, qh, fn: '' }, new Set())
+      const r = await postSealed<Answer>('/api/find', await findPlainBody(mode, q))
+      got = await take(r, null, { op: mode, qh, fn: '' }, new Set())
     } else {
       const { body, fn } = await findSealedBody(mode, q, t.sealed)
       const r = await postSealed<Answer>('/api/find', body)

@@ -606,13 +606,15 @@ export const findQh = async (q: string) => (await sha256Hex(q.trim())).slice(0, 
 /**
  * The Macs a search goes to. `sealed`: this device's paired Macs (all of them: the server leaves out any that is not
  * the person's). `plain`: the person's other Macs as the server lists them. `direct`: whether the plain search goes
- * by itself — only when no paired Mac of the person is listed, so no sealed search is made with it.
+ * by itself — only when this device is paired with no Mac at all. `missing`: this device has paired Macs but the
+ * server lists none of them. Then nothing goes by itself: a server that leaves the paired Macs out must not turn the
+ * search plain (the person chooses the plain one, as after a sealed search).
  */
-export async function findTargets(listed: string[]): Promise<{ sealed: string[]; plain: string[]; direct: boolean }> {
+export async function findTargets(listed: string[]): Promise<{ sealed: string[]; plain: string[]; direct: boolean; missing: boolean }> {
   await loadTrust()
   const sealed = pairedHosts()
   const plain = listed.filter((h) => !pairedWith(h))
-  return { sealed, plain, direct: !listed.some((h) => pairedWith(h)) }
+  return { sealed, plain, direct: !sealed.length, missing: sealed.length > 0 && !listed.some((h) => pairedWith(h)) }
 }
 
 /** The body of a sealed search: one piece per paired Mac, no plain words. The number fn is new each time. */
@@ -630,7 +632,8 @@ export async function findSealedBody(mode: 'text' | 'ai', text: string, hosts: s
 export async function findPlainBody(mode: 'text' | 'ai', text: string, hosts?: string[]) {
   await loadTrust()
   const to = hosts?.filter((h) => !pairedWith(h))
-  if (!to && pairedHosts().length) throw new Error('짝지은 맥이 있으면 평문 찾기는 짝짓지 않은 맥만 골라 보내요')
+  // An empty list is no choice either: with a pairing, a plain search always names at least one unpaired Mac.
+  if (!to?.length && pairedHosts().length) throw new Error('짝지은 맥이 있으면 평문 찾기는 짝짓지 않은 맥만 골라 보내요')
   return { mode, q: text.trim(), ...(to ? { hosts: to } : {}) }
 }
 

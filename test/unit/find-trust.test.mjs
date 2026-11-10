@@ -107,11 +107,17 @@ test('H1: the plain words go only to the Macs this page is not paired with, by t
   const plain = await page.findPlainBody('text', WORDS, ['host-a', B])
   assert.deepEqual(plain, { mode: 'text', q: WORDS, hosts: [B] }, '짝지은 맥은 평문 찾기에서 빠짐')
   await assert.rejects(page.findPlainBody('text', WORDS), /짝짓지 않은 맥만/, '짝지은 맥이 있으면 받을 맥을 꼭 정함')
+  await assert.rejects(page.findPlainBody('text', WORDS, []), /짝짓지 않은 맥만/, '빈 목록도 정한 것이 아님')
+  await assert.rejects(page.findPlainBody('text', WORDS, ['host-a']), /짝짓지 않은 맥만/, '짝지은 맥만 남으면 보내지 않음')
   assert.equal(await page.authHeader('POST', '/api/find', plain), null, '평문 찾기는 서명하지 않음')
-  // No paired Mac of the person listed: the plain search goes by itself (no sealed one is made with it).
-  const t = await page.findTargets([B])
-  assert.equal(t.direct, true)
-  assert.deepEqual(t.plain, [B])
+  // The server leaves the paired Macs out of the list: the search does not turn plain by itself (AC-1740).
+  for (const listedNow of [[B], []]) {
+    const t = await page.findTargets(listedNow)
+    assert.equal(t.direct, false, '짝지은 맥이 있는 기기는 평문 찾기를 바로 보내지 않음')
+    assert.equal(t.missing, true, '짝지은 맥이 목록에 없음을 알림')
+    assert.deepEqual(t.plain, listedNow)
+  }
+  assert.equal((await page.findTargets(['host-a', B])).missing, false)
 })
 
 test('H1: a sealing Mac refuses plain words, and an unsigned search, even if the server sends them (AC-1729)', async () => {

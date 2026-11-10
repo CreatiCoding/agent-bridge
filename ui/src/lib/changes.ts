@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.516',
+    date: '2026-11-10',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: '세션 찾기: 서버가 이 기기와 짝지은 맥을 맥 목록에서 빼도 찾는 글이 평문으로 나가지 않는다. 짝지은 맥이 목록에 없으면 아무것도 보내지 않고 알리며, 짝짓지 않은 맥에는 사람이 고를 때만 평문으로 묻는다. 받을 맥이 빈 평문 찾기도 보내지 않는다',
+        refs: ['REQ-S-102', 'REQ-F-895'],
+      },
+    ],
+  },
+  {
     version: '1.515',
     date: '2026-11-10',
+    commit: 'f90d8f3',
     changes: [
       {
         kind: 'added',
