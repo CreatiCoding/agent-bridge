@@ -201,6 +201,28 @@ test('the local server log is kept apart from the site log, so the site never pa
   }
 })
 
+test('only the local server marks a command local: the site\'s signed:\'local\' is dropped in every trust mode (REQ-S-106)', async () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const { classOf, rebuild, hashesHold } = await import('../../agent/trust.mjs')
+  // The real trustGate, run with the Mac's trust stubbed: a device signature that never checks out.
+  const a = src.indexOf('function trustGate(cmd) {')
+  const gateSrc = src.slice(a, src.indexOf('\n}\n', a) + 2)
+  const trust = { verify: () => ({ ok: false, why: 'x' }), audit() {} }
+  for (const mode of ['off', 'warn', 'enforce']) {
+    const gate = new Function('trustMode', 'classOf', 'trustRefuse', 'trustWarn', 'trust', 'hashesHold', 'rebuild', `${gateSrc}\nreturn trustGate`)(() => mode, classOf, () => null, () => {}, trust, hashesHold, rebuild)
+    for (const t of ['events', 'log', 'forget']) {
+      const out = gate({ t, sid: 's1', signed: 'local' })
+      assert.ok(out === null || out.signed !== 'local', `${mode} ${t}: 사이트가 붙인 local 표시가 남지 않음`)
+    }
+  }
+  // The mark is put in one place, runCommand's local branch; the site's commands go through trustGate.
+  assert.equal(src.split("cmd.signed = 'local'").length - 1, 1, 'local 표시는 한 곳에서만 붙음')
+  const run = src.slice(src.indexOf('async function runCommand('), src.indexOf('\n}\n', src.indexOf('async function runCommand(')))
+  assert.match(run, /if \(local\) \{\s*delete cmd\.signed\s*cmd\.signed = 'local'\s*\} else \{[^}]*cmd = trustGate\(cmd\)/)
+  assert.ok(src.includes('return runCommand(cmd)\n'), '사이트 명령은 local 없이 들어옴')
+  assert.ok(src.includes('toAgent: (cmd) => runCommand(cmd, { local: true })'), '로컬 서버 명령만 local')
+})
+
 test('a site with no build, or behind a sign-in, gives way to the published release; checked the same (REQ-F-904)', async () => {
   const dir = tmp()
   const configPath = path.join(dir, 'agent.json')
