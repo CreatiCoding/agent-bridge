@@ -100,8 +100,13 @@ try {
   // A fresh folder: Claude Code asks whether to trust it. Answered with the local screen's keys.
   const screenText = async () => ((await (await req(`/local/api/screen?sid=${sid}`, { token })).json()).text ?? '').replace(/\x1b\[[0-9;]*m/g, '')
   await until(async () => /trust this folder/.test(await screenText()) || (await (await req('/local/api/state', { token })).json()).sessions?.find((s) => s.id === sid)?.phase === 'idle', 60000, '폴더 신뢰 창 또는 쉬는 중')
-  if (/trust this folder/.test(await screenText())) {
-    ok((await req('/local/api/key', { method: 'POST', token, body: { sid, keys: ['Down', 'Enter'] } })).status === 200, '키(↓·Enter)로 폴더 신뢰 창에 답함')
+  // Keys sent the moment the dialog is drawn can be lost before it reads them: it is looked at again until it goes.
+  for (let i = 0; i < 8 && /trust this folder/.test(await screenText()); i++) {
+    await sleep(1500)
+    const scr = await screenText()
+    if (!/trust this folder/.test(scr)) break
+    const keys = /❯ Yes, I trust/.test(scr) ? ['Enter'] : ['Down']
+    ok((await req('/local/api/key', { method: 'POST', token, body: { sid, keys } })).status === 200, `키(${keys.join('·')})로 폴더 신뢰 창에 답함`)
   }
   await until(async () => (await (await req('/local/api/state', { token })).json()).sessions?.find((s) => s.id === sid)?.phase === 'idle', 90000, '세션이 쉬는 중')
   ok(true, '터미널 화면이 보임')
@@ -111,6 +116,53 @@ try {
   ok(true, '로컬 화면에서 보낸 글에 Claude 가 답함(터미널 화면)')
   ok((await req('/local/api/key', { method: 'POST', token, body: { sid, keys: ['rm -rf /'] } })).status === 400, '목록에 없는 키는 거부')
   ok((await req('/local/api/send', { method: 'POST', token, body: { sid: 'nope', text: 'x' } })).status === 404, '없는 세션 404')
+
+  // REQ-F-898 (1.517): the conversation as messages, files with a message, a new session and closing one.
+  step('the conversation as messages, from the transcript on this Mac')
+  const conv = async (id = sid) => (await (await req(`/local/api/conv?sid=${id}`, { token })).json()).messages ?? []
+  await until(async () => (await conv()).some((m) => !m.me && /PONGLOCAL/.test(m.text)), 20000, '대화에 답')
+  const c1 = await conv()
+  ok(c1.some((m) => m.me && /PONGLOCAL and nothing else/.test(m.text)), '대화: 보낸 글이 내 말풍선')
+  ok(c1.some((m) => !m.me && /PONGLOCAL/.test(m.text) && /^\d{4}-/.test(m.at)), '대화: Claude 의 답과 시각')
+  ok((await req('/local/api/conv?sid=nope', { token })).status === 404, '대화: 없는 세션 404')
+  ok((await req(`/local/api/conv?sid=${sid}`)).status === 401, '대화: 토큰 없이 401')
+
+  step('files and a picture with a message')
+  // A 1×1 PNG and a text file; their names and types say nothing the agent goes by.
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+  const big = 'x'.repeat(100 * 1024)
+  // Answered before the rest of the body is read: the connection may be cut as it is still sending.
+  const bigStatus = await req('/local/api/send', { method: 'POST', body: { sid, text: big } }).then((r) => r.status, () => 'reset')
+  ok(bigStatus === 413 || bigStatus === 'reset', `토큰 없는 큰 본문은 다 읽기 전에 거절 (${bigStatus})`)
+  ok((await req('/local/api/send', { method: 'POST', token, body: { sid, text: '', files: [{ name: 'a', data: '***' }] } })).status === 400, '깨진 파일 400')
+  const withFiles = await req('/local/api/send', { method: 'POST', token, body: { sid, text: 'Reply with exactly the word FILESLOCAL and nothing else. Do not use tools.', files: [{ name: 'dot.txt', data: png.toString('base64') }, { name: '../notes.txt', data: Buffer.from('hello').toString('base64') }, { name: 'pad', data: Buffer.from(big).toString('base64') }] } })
+  ok(withFiles.status === 200, `파일 3개와 글 보내기 (${withFiles.status})`)
+  const pngPath = path.join(home, 'images', `${crypto.createHash('sha1').update(png).digest('hex')}.png`)
+  ok(fs.existsSync(pngPath), '그림은 내용으로 알아보고 SHA-1 이름으로 저장')
+  const notes = fs.readdirSync(path.join(home, 'images')).find((f) => /^[0-9a-f]{8}-notes\.txt$/.test(f))
+  ok(!!notes && fs.readFileSync(path.join(home, 'images', notes), 'utf8') === 'hello', '다른 파일은 경로를 뺀 제 이름으로 저장')
+  await until(async () => (await conv()).some((m) => !m.me && /FILESLOCAL/.test(m.text)), 120000, '파일과 함께 보낸 글에 답')
+  const mine = (await conv()).filter((m) => m.me).pop()?.text ?? ''
+  ok(mine.includes(`🖼 ${path.basename(pngPath)}`) && /📎 notes\.txt/.test(mine) && !/pasted_content|\[Image attached/.test(mine), '말풍선: 붙여넣기 봉투 없이 그림·파일 이름으로')
+  const typed = fs.readFileSync(path.join(home, 'agent.log'), 'utf8')
+  ok(/로컬 화면에서 글 \d+자 · 파일 3개/.test(typed), '로그: 로컬 화면에서 글·파일 3개')
+  await until(async () => (await (await req('/local/api/state', { token })).json()).sessions?.find((s) => s.id === sid)?.phase === 'idle', 60000, '세션이 다시 쉬는 중')
+
+  step('a new session from the local screen, and closing it')
+  ok((await req('/local/api/new', { method: 'POST', token, body: { cwd: path.join(work, 'nope'), prompt: '' } })).status === 400, '없는 폴더 400')
+  ok((await req('/local/api/new', { method: 'POST', token, body: { cwd: 'relative/dir' } })).status === 400, '/ 나 ~ 로 시작하지 않는 경로 400')
+  ok((await req('/local/api/new', { method: 'POST', body: { cwd: work } })).status === 401, '새 세션: 토큰 없이 401')
+  // The folder Claude Code was already told to trust: no dialog stands in front of the first prompt.
+  const made = await req('/local/api/new', { method: 'POST', token, body: { cwd: work, prompt: 'Reply with exactly the word NEWLOCAL and nothing else. Do not use tools.' } })
+  const sid2 = (await made.json()).sid
+  ok(made.status === 200 && /^[0-9a-f-]{36}$/.test(sid2 ?? ''), '새 세션 시작')
+  ok((await (await req('/local/api/state', { token })).json()).sessions?.some((s) => s.id === sid2), '새 세션이 목록에')
+  await until(async () => (await conv(sid2)).some((m) => !m.me && /NEWLOCAL/.test(m.text)), 120000, '새 세션의 첫 답')
+  ok(true, '새 세션의 첫 글에 답함')
+  ok((await req('/local/api/close', { method: 'POST', body: { sid: sid2 } })).status === 401, '닫기: 토큰 없이 401')
+  ok((await req('/local/api/close', { method: 'POST', token, body: { sid: sid2 } })).status === 200, '세션 닫기')
+  ok(!(await (await req('/local/api/state', { token })).json()).sessions?.some((s) => s.id === sid2), '닫은 세션이 목록에서 빠짐')
+  ok(spawnSync('tmux', ['ls'], { env, encoding: 'utf8' }).stdout.split('\n').filter(Boolean).length === 1, '닫은 세션의 터미널도 내려감')
 
   // The page itself in a browser, when PLAYWRIGHT names playwright's index.mjs (not a dependency of this repo).
   if (process.env.PLAYWRIGHT) {
@@ -127,12 +179,22 @@ try {
       await pg.waitForSelector('#sessions button', { timeout: 15000 })
       ok(!(await pg.evaluate(() => location.hash)), '입장권이 주소에서 지워짐')
       await pg.click('#sessions button')
+      await pg.waitForFunction(() => [...document.querySelectorAll('#conv .bubble.ai')].some((b) => /PONGLOCAL/.test(b.textContent)), null, { timeout: 15000 })
+      ok(await pg.locator('#conv .bubble.me').count().then((n) => n >= 1), '브라우저에서 대화가 말풍선으로 보임')
+      await pg.click('[data-tab="term"]')
       await pg.waitForFunction(() => /PONGLOCAL/.test(document.getElementById('screen').textContent), null, { timeout: 15000 })
-      ok(true, '브라우저에서 세션 터미널이 보임')
+      ok(await pg.locator('#conv').isHidden(), '터미널 탭으로 바꾸면 터미널 화면')
+      await pg.click('[data-tab="conv"]')
+      await pg.waitForSelector('#conv .bubble.ai')
       if (process.env.SHOTS) await pg.screenshot({ path: path.join(process.env.SHOTS, 'localui.png') })
       await pg.setViewportSize({ width: 390, height: 800 })
       if (process.env.SHOTS) await pg.screenshot({ path: path.join(process.env.SHOTS, 'localui-phone.png') })
       ok(await pg.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), '폰 폭에서 가로 스크롤 없음')
+      await pg.click('#new')
+      ok(await pg.locator('#newpane').isVisible(), '새 세션 폼이 열림')
+      ok(await pg.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), '폰 폭 새 세션 폼에서 가로 스크롤 없음')
+      if (process.env.SHOTS) await pg.screenshot({ path: path.join(process.env.SHOTS, 'localui-new-phone.png') })
+      await pg.click('#new-cancel')
       await pg.reload()
       await pg.waitForSelector('#sessions button', { timeout: 15000 })
       ok(true, '새로 고쳐도 로그인 유지(localStorage 토큰)')

@@ -26,7 +26,7 @@ import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
 import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
-import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS } from './localui.mjs'
+import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
@@ -967,6 +967,15 @@ setInterval(() => localUi.tick(), 5000).unref()
 const localAudit = (what, sid) => trustOn() && trust.audit(`local ${what}${sid ? ` ${String(sid).slice(0, 8)}` : ''}`)
 /** Failed sign-ins in the last minute: ten at most (§4.3). */
 let localFails = []
+/** A person's message as a bubble (REQ-F-898): without the paste envelope Claude Code wraps it in, files by their names. */
+const localBubble = (t) =>
+  String(t)
+    .replace(/^<\/?pasted_content id="[^"]*">\n?/gm, '')
+    .replace(/\[Image attached: ([^\]\n]+)\]/g, (_, p) => `🖼 ${path.basename(p)}`)
+    .replace(/\[Attached file: ([^\]\n]+)\]/g, (_, p) => `📎 ${path.basename(p).replace(/^[0-9a-f]{8}-/, '')}`)
+    .trim()
+/** How many of a session's newest messages the local screen shows (REQ-F-898); READ_MAX at most. */
+const LOCAL_CONV_LIMIT = 60
 
 /** /local/…: the local screen's files and its API. Nothing here opens with the bridge tab's key or the hook key. */
 async function localHttp(req, res, url) {
@@ -998,9 +1007,11 @@ async function localHttp(req, res, url) {
     if (!/^application\/json\b/.test(String(req.headers['content-type'] ?? ''))) return json(415, { error: 'JSON 만 받아요' })
     const chunks = []
     let size = 0
+    // A send carries its files (REQ-F-898); before the token is checked only the small limit's worth is read.
+    const max = op === 'send' && /^Bearer [A-Za-z0-9_-]{43}$/.test(String(req.headers.authorization ?? '')) && localUi.tokenOk(String(req.headers.authorization).slice(7)) ? LOCAL_SEND_MAX : LOCAL_BODY_MAX
     for await (const c of req) {
       size += c.length
-      if (size > 64 * 1024) return json(413, { error: '너무 커요' })
+      if (size > max) return json(413, { error: '너무 커요' })
       chunks.push(c)
     }
     try {
@@ -1032,20 +1043,61 @@ async function localHttp(req, res, url) {
     const a = localUi.active()
     return json(200, { name: config.name, hostId: config.hostId, linked: !!client, trust: trustMode(), bundle: a ? { source: a.source, version: a.version } : null, sessions: list })
   }
+  // A new session from the person at this Mac (REQ-F-898): the same start as the server's new, in a folder that is here.
+  if (op === 'new') {
+    if (req.method !== 'POST') return json(405, { error: '쓸 수 없는 방법' })
+    const cwd = typeof body.cwd === 'string' ? body.cwd.trim() : ''
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+    if (!cwd || cwd.length > 1024) return json(400, { error: '작업 폴더를 / 또는 ~ 로 시작하는 경로로 적어 주세요' })
+    if (Buffer.byteLength(prompt) > 16 * 1024) return json(400, { error: '글이 비었거나 너무 길어요(16 KB)' })
+    const sid = crypto.randomUUID()
+    log('info', 'localui', '로컬 화면에서 새 세션', sid)
+    localAudit('new', sid)
+    const r = await newSession({ sid, cwd, prompt: prompt || undefined, create: false })
+    if (!r?.ok) return json(400, { error: r?.error || '세션을 시작하지 못했어요' })
+    // A linked server takes a session it has never seen from hello; the lines it gets before that are dropped there.
+    if (client) hello().catch(() => {})
+    return json(200, { ok: true, sid, cwd: r.cwd })
+  }
   const s = sessions.get(String(body.sid ?? url.searchParams.get('sid') ?? ''))
   const sid = s ? String(body.sid ?? url.searchParams.get('sid')) : ''
   if (!s) return json(404, { error: '이 맥에 그런 세션이 없어요' })
   // With 300 lines of history: what Claude said a moment ago has often scrolled off the visible screen.
   if (op === 'screen' && req.method === 'GET') return json(200, { text: (await tmuxRaw('capture-pane', '-p', '-e', '-S', '-300', '-t', pane(s))).replace(/\n+$/, '') })
+  // The conversation as messages, from the transcript on this Mac (REQ-F-898): there whether the server is or not.
+  if (op === 'conv' && req.method === 'GET') {
+    const r = convRead(sid, { limit: Number(url.searchParams.get('limit')) || LOCAL_CONV_LIMIT, tools: true })
+    if (!r.ok) return json(500, { error: r.error })
+    const c = r.conv
+    return json(200, { messages: c.messages.map((m) => ({ me: m.who === '사람', text: m.who === '사람' ? localBubble(m.text) : m.text, at: m.at })), total: c.total, before: c.before, dropped: c.dropped, partial: c.partial })
+  }
   if (req.method !== 'POST') return json(405, { error: '쓸 수 없는 방법' })
   if (op === 'send') {
     const text = typeof body.text === 'string' ? body.text.trim() : ''
-    if (!text || Buffer.byteLength(text) > 16 * 1024) return json(400, { error: '글이 비었거나 너무 길어요(16 KB)' })
-    log('info', 'localui', `로컬 화면에서 글 ${text.length}자`, sid)
-    localAudit('send', sid)
+    const f = localFiles(body.files)
+    if (f.error) return json(400, { error: f.error })
+    if ((!text && !f.files.length) || Buffer.byteLength(text) > 16 * 1024) return json(400, { error: '글이 비었거나 너무 길어요(16 KB)' })
+    // Files become files on this Mac and the message says where they are, as a send from the page does: a picture
+    // (told by its bytes) by its SHA-1 so the page can show it again, any other file by its own name.
+    const lines = []
+    if (f.files.length) fs.mkdirSync(IMAGES_DIR, { recursive: true, mode: 0o700 })
+    for (const x of f.files) {
+      const sha = crypto.createHash('sha1').update(x.bytes).digest('hex')
+      const file = path.join(IMAGES_DIR, x.picture ? `${sha}.${x.picture}` : `${sha.slice(0, 8)}-${x.name}`)
+      fs.writeFileSync(file, x.bytes, { mode: 0o600 })
+      lines.push(x.picture ? `[Image attached: ${file}]` : `[Attached file: ${file}]`)
+    }
+    log('info', 'localui', `로컬 화면에서 글 ${text.length}자${f.files.length ? ` · 파일 ${f.files.length}개` : ''}`, sid)
+    localAudit(f.files.length ? `send +${f.files.length}` : 'send', sid)
     // Marked as the Mac's own (held `signed`): typed by the person at this Mac, it is not thrown away by enforce.
-    await inject(sid, s, text, crypto.randomUUID(), true)
+    await inject(sid, s, [text, ...lines].filter(Boolean).join('\n'), crypto.randomUUID(), true)
     publish(sid, s)
+    return json(200, { ok: true })
+  }
+  if (op === 'close') {
+    log('info', 'localui', '로컬 화면에서 세션을 닫음', sid)
+    localAudit('close', sid)
+    await commands.close({ sid })
     return json(200, { ok: true })
   }
   if (op === 'key') {
@@ -3176,6 +3228,11 @@ function localSid(want) {
  * transcript under a Claude projects folder (the path a hook reported is not taken on its word).
  */
 function convHere(sid, a) {
+  const r = convRead(sid, a)
+  return r.ok ? { ok: true, result: convText(r.conv, `${sid.slice(0, 8)} (${path.basename(sessions.get(sid).cwd || '') || '~'})`) } : r
+}
+/** convHere's reading: { ok, conv: readConv's result } or { ok: false, error }. The local screen draws it too. */
+function convRead(sid, a) {
   const s = sessions.get(sid)
   if (!s) return { ok: false, error: '이 맥에 그 세션이 없어요' }
   const file = transcriptPath(s, sid)
@@ -3185,6 +3242,10 @@ function convHere(sid, a) {
     if (!insideAny(file, [...allProjects().map((p) => p.dir), ...(isClaude(s) ? [] : [MIRROR_DIR])])) return { ok: false, error: '그 세션의 대화 기록을 읽을 수 없어요' }
     try {
       const st = fs.statSync(file)
+      // The local screen asks every few seconds (REQ-F-898): an unchanged file is not read and parsed again.
+      const key = `${file}|${st.size}|${st.mtimeMs}|${a?.limit}|${a?.skip}|${a?.tools === true}`
+      const hit = convCache.get(sid)
+      if (hit?.key === key) return { ok: true, conv: hit.conv }
       const from = Math.max(0, st.size - READ_TAIL)
       partial = from > 0
       const fd = fs.openSync(file, 'r')
@@ -3195,13 +3256,19 @@ function convHere(sid, a) {
       } finally {
         fs.closeSync(fd)
       }
+      const conv = readConv(text, { limit: a?.limit, skip: a?.skip, tools: a?.tools === true, partial })
+      convCache.delete(sid)
+      convCache.set(sid, { key, conv })
+      if (convCache.size > 8) convCache.delete(convCache.keys().next().value)
+      return { ok: true, conv }
     } catch {
       return { ok: false, error: '그 세션의 대화 기록을 읽지 못했어요' }
     }
   }
-  const r = readConv(text, { limit: a?.limit, skip: a?.skip, tools: a?.tools === true, partial })
-  return { ok: true, result: convText(r, `${sid.slice(0, 8)} (${path.basename(s.cwd || '') || '~'})`) }
+  return { ok: true, conv: readConv(text, { limit: a?.limit, skip: a?.skip, tools: a?.tools === true, partial }) }
 }
+/** The last reading of a few sessions' transcripts, by file, size, time and what was asked. */
+const convCache = new Map()
 
 // ---------- 세션 찾기 (REQ-F-895) ----------
 
@@ -3772,9 +3839,12 @@ async function newSession({ reqId, sid, cwd, prompt, autoPush, model, effort, mo
     saveSessions()
     emit({ t: 'opened', reqId, sid, ok: true, cwd: dir, warnings: [], account: s.account ?? '' })
     agentHook('session.create', sid, dir)
+    // What the local screen (REQ-F-898) shows; the server hears it from the emit above.
+    return { ok: true, cwd: dir }
   } catch (e) {
     log('error', 'new', `세션을 시작하지 못함: ${e.message}`, sid)
     emit({ t: 'opened', reqId, sid, ok: false, error: e.message, missing: !!e.missing })
+    return { ok: false, error: e.message }
   }
 }
 

@@ -129,7 +129,7 @@ builtin 도 시작할 때 같은 확인을 한다(서명이 안 맞는 builtin =
 3. `Origin` 이 있으면 `http://127.0.0.1:<port>` 또는 `http://localhost:<port>` 여야 함(아니면 403, `Origin: null` 도 403). CORS 머리글을 내지 않는다(다른 출처는 응답을 읽을 수 없다).
 4. 연동 키(`config.key`)·`hookKey` 로는 `/local/api/*` 가 열리지 않는다. 거꾸로 로컬 토큰으로는 `/cmd`·`/events` 등이 열리지 않는다.
 5. `GET /local/`·`/local/<파일>`: 묶음 파일(인증 없이, 공개 코드라 비밀이 없음). 머리글: `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`.
-6. `/local/api/*`: 모두 `X-Local-UI: 1` 머리글이 있어야 한다(없으면 403, 폼·링크로는 보낼 수 없음). `login`·`booted` 말고는 유효한 Bearer 토큰 필요(아니면 401). 쓰는 요청(POST)은 `Content-Type: application/json`, 본문 64 KB 이하. 로그인 실패는 1분에 10번까지(넘으면 429).
+6. `/local/api/*`: 모두 `X-Local-UI: 1` 머리글이 있어야 한다(없으면 403, 폼·링크로는 보낼 수 없음). `login`·`booted` 말고는 유효한 Bearer 토큰 필요(아니면 401). 쓰는 요청(POST)은 `Content-Type: application/json`, 본문 64 KB 이하(맞는 토큰을 실은 `send` 만 48 MB: 파일이 base64 로 실린다, 1.517). 토큰을 보기 전에는 64 KB 넘게 읽지 않는다. 로그인 실패는 1분에 10번까지(넘으면 429).
 
 ### 4.4 API
 
@@ -140,12 +140,17 @@ builtin 도 시작할 때 같은 확인을 한다(서명이 안 맞는 builtin =
 | `POST /local/api/logout` | 토큰 지움 |
 | `GET /local/api/state` | 맥 이름·hostId·연동 상태(연동 탭 연결 여부)·trust 모드·묶음(source·version)·세션 목록 `{id, name(폴더 이름), cwd, alive, busy, held, card:{id,title,options[{n,label}]}|null}` |
 | `GET /local/api/screen?sid=` | 그 세션 터미널 화면(색 SGR 포함 텍스트) |
-| `POST /local/api/send {sid, text}` | 글 보내기(16 KB 이하). 웹에서 보낸 것과 같은 길(`inject`): 턴 중이면 붙잡아 둠 |
+| `GET /local/api/conv?sid=&limit=` | 대화를 말풍선으로(1.517): 그 맥의 대화 파일에서 최근 60개 `{me, text, at}`. 서버가 쌓는 이벤트 기록이 아니라 대화 파일을 읽으므로 서버가 없어도 된다 |
+| `POST /local/api/send {sid, text, files?}` | 글 보내기(16 KB 이하). 웹에서 보낸 것과 같은 길(`inject`): 턴 중이면 붙잡아 둠. `files` 는 `[{name, data:base64}]` 4개·하나 8 MB 까지(1.517): 그림은 앞 바이트로 알아봐 `images/<SHA-1>.<ext>`, 그 밖은 `images/<8자>-<이름>` 에 두고 경로를 글 뒤 줄로 붙인다 |
+| `POST /local/api/new {cwd, prompt?}` | 새 세션(1.517): 서버의 new 와 같은 `newSession`(폴더는 만들지 않음). 연동 중이면 hello 를 다시 보내 서버가 받아들인다 |
+| `POST /local/api/close {sid}` | 세션 닫기(1.517): 서버의 close 와 같은 `commands.close` |
 | `POST /local/api/key {sid, keys[]}` | 키(`KEYS` 목록만, 20개까지) |
 | `POST /local/api/esc {sid}` | 멈추기 |
 | `POST /local/api/answer {sid, card, n}` | 열린 권한 카드에 답(카드 id 가 지금 열린 것과 같을 때만) |
 
-범위: 보기와 입력만. 새 세션·닫기·설정·파일·그림은 하지 않는다(웹 화면의 일).
+범위(1.517): 보기·입력, 말풍선 대화, 새 세션·닫기, 파일·그림. 설정·다른 맥·알림·공유는 하지 않는다(웹 화면의 일). 웹 화면(`ui/`) 전체를 맥에서 띄우지 않는 이유: 운영 서버는 Go 바이너리라 맥에 없고, Node 판 `server/server.mjs` 는 시험용이라 최근 기능이 빠져 있으며, 조작 화면의 API·실시간 연결을 에이전트에 다시 짜면 두 구현이 갈라진다. 같은 입구를 넓혀 짝짓기(출처별 키)를 다시 할 일도 없다.
+
+묶음 api 는 2(1.517): 새 경로를 쓰는 화면이 그 경로가 없는 에이전트에 가지 않게 한다(서버는 api 가 같은 맥에만 묶음을 보낸다).
 
 ## 5. 서버를 믿지 않는 맥(1.392·1.394)과의 관계
 

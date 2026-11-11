@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { LocalUi, makeBundle, parseBundle, docOf, signDoc, docSigned, verify, localUiOf, hostOk, originOk, SIG_PREFIX, BOOT_MS, FILE_HEADERS } from '../../agent/localui.mjs'
+import { LocalUi, makeBundle, parseBundle, docOf, signDoc, docSigned, verify, localUiOf, hostOk, originOk, SIG_PREFIX, BOOT_MS, FILE_HEADERS, LOCALUI_API, localFiles, pictureExt, fileName, LOCAL_FILES_MAX, LOCAL_FILE_MAX, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from '../../agent/localui.mjs'
 import { DOC, SIG, BUNDLE } from '../../agent/localbundle.mjs'
 import { localBundleText } from '../../scripts/sign-agent.mjs'
 import { manifestOf } from '../../agent/guard.mjs'
@@ -54,12 +54,12 @@ test('verify: the bundle must be the one the document names, and a bundle of fil
   assert.ok(verify(b, { keys: KEYS }).ok)
   assert.match(verify({ ...b, bundle: page('b') }, { keys: KEYS }).why, /해시/)
   assert.match(verify({ ...b, sig: '' }, { keys: KEYS }).why, /서명/)
-  assert.match(verify(signed(page('a'), 5), { keys: KEYS, api: 2 }).why, /api/)
-  const evil = JSON.stringify({ format: 'cb-bundle', v: 1, name: 'localui', api: 1, files: { '../x.html': { type: 'text/html; charset=utf-8', data: '' } } })
+  assert.match(verify(signed(page('a'), 5), { keys: KEYS, api: LOCALUI_API + 1 }).why, /api/)
+  const evil = JSON.stringify({ format: 'cb-bundle', v: 1, name: 'localui', api: LOCALUI_API, files: { '../x.html': { type: 'text/html; charset=utf-8', data: '' } } })
   assert.match(verify(signed(evil, 5), { keys: KEYS }).why, /올바르지/)
   const noIndex = makeBundle({ 'app.js': 'x' })
   assert.match(verify(signed(noIndex, 5), { keys: KEYS }).why, /index\.html/)
-  const wrongType = JSON.stringify({ format: 'cb-bundle', v: 1, name: 'localui', api: 1, files: { 'index.html': { type: 'text/javascript; charset=utf-8', data: '' } } })
+  const wrongType = JSON.stringify({ format: 'cb-bundle', v: 1, name: 'localui', api: LOCALUI_API, files: { 'index.html': { type: 'text/javascript; charset=utf-8', data: '' } } })
   assert.ok(parseBundle(wrongType) instanceof Error)
   assert.throws(() => makeBundle({ 'a/b.js': 'x' }))
 })
@@ -213,4 +213,41 @@ test('a session asks before touching the Mac-terminal-only files or commands, ev
   assert.ok(riskyCall(bash('node agent.mjs local')))
   assert.equal(bridgeSelfCall(bash('node agent.mjs doctor')), null)
   assert.equal(bridgeSelfCall(bash('echo local')), null)
+})
+
+// REQ-F-898 (1.517): the local screen starts sessions, closes them, sends files and shows the conversation.
+test('api 2: a bundle made for the page of 1.516 (api 1) is not served by this agent', () => {
+  assert.equal(LOCALUI_API, 2)
+  const old = makeBundle({ 'index.html': '<p>old</p>' }, 1)
+  assert.match(String(parseBundle(old)), /다른 api 의 묶음\(1\)/)
+  const doc = docOf(old, 500, 1)
+  assert.equal(verify({ doc, sig: signDoc(doc, privateKey), bundle: old }, { keys: KEYS }).ok, false)
+  assert.equal(JSON.parse(DOC).api, LOCALUI_API, 'localbundle.mjs 를 다시 서명하세요(node scripts/sign-agent.mjs)')
+})
+
+test('files with a message: a picture is told by its bytes, other files keep a plain name, and the limits hold', () => {
+  const png = Buffer.from('89504e470d0a1a0a0000', 'hex')
+  const jpg = Buffer.from('ffd8ffe000104a464946', 'hex')
+  const gif = Buffer.from('GIF89a....', 'latin1')
+  const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')])
+  assert.deepEqual([png, jpg, gif, webp].map(pictureExt), ['png', 'jpg', 'gif', 'webp'])
+  // A name or type that says picture does not make one.
+  assert.equal(pictureExt(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>')), '')
+  const b64 = (b) => Buffer.from(b).toString('base64')
+  const r = localFiles([{ name: 'shot.png', data: b64(png) }, { name: '../../etc/passwd', data: b64('x') }, { name: '.env', data: b64('A=1') }, { name: '보고서 (1).pdf', data: b64('%PDF') }])
+  assert.equal(r.error, undefined)
+  assert.deepEqual(r.files.map((f) => [f.picture, f.name]), [['png', 'shot.png'], ['', 'passwd'], ['', 'env'], ['', '보고서 _1_.pdf']])
+  assert.equal(fileName(''), 'file')
+  assert.equal(fileName('a/b\\c.txt'), 'c.txt')
+  assert.equal(fileName('x'.repeat(300)).length, 120)
+  assert.deepEqual(localFiles(undefined), { files: [] })
+  assert.match(localFiles('x').error, /목록/)
+  assert.match(localFiles(Array(LOCAL_FILES_MAX + 1).fill({ name: 'a', data: b64('a') })).error, /4개까지/)
+  assert.match(localFiles([{ name: 'a', data: '***' }]).error, /올바르지/)
+  assert.match(localFiles([{ name: 'a', data: '' }]).error, /빈 파일/)
+  assert.equal(localFiles([{ name: 'a', data: b64(Buffer.alloc(LOCAL_FILE_MAX)) }]).error, undefined)
+  assert.match(localFiles([{ name: 'a', data: b64(Buffer.alloc(LOCAL_FILE_MAX + 1)) }]).error, /8 MB/)
+  // Four files at the limit fit in a send's body as base64 (and JSON around them); every other request stays small.
+  assert.ok(Math.ceil((LOCAL_FILE_MAX * LOCAL_FILES_MAX) / 3) * 4 + 64 * 1024 < LOCAL_SEND_MAX)
+  assert.equal(LOCAL_BODY_MAX, 64 * 1024)
 })

@@ -14,6 +14,13 @@
   var lastState = null
   var screenTimer = 0
   var stateTimer = 0
+  var convTimer = 0
+  // What the pane shows: the conversation as messages (from the transcript) or the terminal as it looks.
+  var TAB_KEY = 'cb-local-tab'
+  var tab = (function () { try { return localStorage.getItem(TAB_KEY) === 'term' ? 'term' : 'conv' } catch (e) { return 'conv' } })()
+  var picked = []
+  var FILES_MAX = 4
+  var FILE_MAX = 8 * 1024 * 1024
 
   function api(method, path, body) {
     var headers = { 'X-Local-UI': '1' }
@@ -36,6 +43,7 @@
     store.set('')
     clearInterval(screenTimer)
     clearInterval(stateTimer)
+    clearInterval(convTimer)
     $('app').hidden = true
     $('logout').hidden = true
     $('login').hidden = false
@@ -133,6 +141,18 @@
       frag.appendChild(p)
     }
     nav.replaceChildren(frag)
+    // The folders of this Mac's sessions, offered for a new one.
+    var dl = $('cwds')
+    var seen = {}
+    var opts = document.createDocumentFragment()
+    s.sessions.forEach(function (x) {
+      if (!x.cwd || seen[x.cwd]) return
+      seen[x.cwd] = true
+      var o = document.createElement('option')
+      o.value = x.cwd
+      opts.appendChild(o)
+    })
+    dl.replaceChildren(opts)
     var me = s.sessions.find(function (x) { return x.id === current })
     if (current && !me) pick('')
     if (me) renderSession(me)
@@ -165,16 +185,87 @@
     card.hidden = false
   }
   function pick(id) {
+    var changed = id !== current
     current = id
+    $('newpane').hidden = true
     $('empty').hidden = !!id
     $('pane').hidden = !id
     $('card').removeAttribute('data-id')
+    if (changed) {
+      $('conv').replaceChildren()
+      $('conv').removeAttribute('data-key')
+      $('screen').removeAttribute('data-sid')
+      $('msg').textContent = ''
+      armClose(false)
+    }
     if (lastState) renderState(lastState)
-    if (id) loadScreen()
+    if (id) load()
+  }
+  function showTab(t) {
+    tab = t
+    try { localStorage.setItem(TAB_KEY, t) } catch (e) {}
+    document.querySelectorAll('[data-tab]').forEach(function (b) { b.setAttribute('aria-selected', b.getAttribute('data-tab') === t ? 'true' : 'false') })
+    $('conv').hidden = t !== 'conv'
+    $('screen').hidden = t !== 'term'
+    load()
+  }
+  function load() {
+    if (tab === 'conv') loadConv()
+    else loadScreen()
+  }
+  // ---------- the conversation as messages ----------
+  function stamp(at) {
+    var d = at ? new Date(at) : null
+    if (!d || isNaN(d)) return ''
+    var p = function (n) { return (n < 10 ? '0' : '') + n }
+    return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+  }
+  function loadConv() {
+    if (!current || document.hidden || tab !== 'conv') return
+    var sid = current
+    api('GET', 'conv?sid=' + encodeURIComponent(sid)).then(function (r) {
+      if (sid !== current) return
+      var el = $('conv')
+      var list = r.messages || []
+      // Drawn again only when something changed: the place being read stays put.
+      var key = sid + ':' + r.total + ':' + list.length + ':' + (list.length ? list[list.length - 1].text.length : 0)
+      if (el.getAttribute('data-key') === key) return
+      var first = el.getAttribute('data-key') === null
+      var bottom = first || el.scrollHeight - el.scrollTop - el.clientHeight < 60
+      var frag = document.createDocumentFragment()
+      if (r.before) {
+        var more = document.createElement('p')
+        more.className = 'muted more'
+        more.textContent = '앞의 대화 ' + r.before + '개' + (r.partial ? ' 이상' : '') + '는 맥 터미널이나 웹 화면에서 보세요.'
+        frag.appendChild(more)
+      }
+      if (!list.length) {
+        var none = document.createElement('p')
+        none.className = 'muted more'
+        none.textContent = '아직 대화가 없어요.'
+        frag.appendChild(none)
+      }
+      list.forEach(function (m) {
+        var b = document.createElement('div')
+        b.className = 'bubble ' + (m.me ? 'me' : 'ai')
+        var t = document.createElement('div')
+        t.className = 'btext'
+        t.textContent = m.text
+        var w = document.createElement('div')
+        w.className = 'when'
+        w.textContent = (m.me ? '나' : 'Claude') + (stamp(m.at) ? ' · ' + stamp(m.at) : '')
+        b.appendChild(t)
+        b.appendChild(w)
+        frag.appendChild(b)
+      })
+      el.replaceChildren(frag)
+      el.setAttribute('data-key', key)
+      if (bottom) el.scrollTop = el.scrollHeight
+    }, function (e) { if (e.message !== '401') say(e) })
   }
   function say(e) { $('msg').textContent = e && e.message !== '401' ? '⚠️ ' + e.message : '' }
   function loadScreen() {
-    if (!current || document.hidden) return
+    if (!current || document.hidden || tab !== 'term') return
     var sid = current
     api('GET', 'screen?sid=' + encodeURIComponent(sid)).then(function (r) {
       if (sid !== current) return
@@ -192,27 +283,127 @@
     return api('GET', 'state').then(renderState, say)
   }
 
+  // ---------- files ----------
+  function renderChips() {
+    var box = $('chips')
+    var frag = document.createDocumentFragment()
+    picked.forEach(function (f, i) {
+      var c = document.createElement('button')
+      c.type = 'button'
+      c.className = 'chip'
+      c.title = '빼기'
+      c.textContent = (/^image\//.test(f.type) ? '🖼 ' : '📄 ') + f.name + ' ✕'
+      c.addEventListener('click', function () { picked.splice(i, 1); renderChips() })
+      frag.appendChild(c)
+    })
+    box.replaceChildren(frag)
+    box.hidden = !picked.length
+  }
+  function addFiles(list) {
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i]
+      if (picked.length >= FILES_MAX) { $('msg').textContent = '⚠️ 파일은 한 번에 ' + FILES_MAX + '개까지예요.'; break }
+      if (f.size > FILE_MAX) { $('msg').textContent = '⚠️ 파일 하나는 8 MB 까지예요: ' + f.name; continue }
+      if (!f.size) { $('msg').textContent = '⚠️ 빈 파일이에요: ' + f.name; continue }
+      picked.push(f)
+    }
+    renderChips()
+  }
+  function readB64(f) {
+    return new Promise(function (ok, bad) {
+      var r = new FileReader()
+      r.onload = function () { ok(String(r.result).replace(/^data:[^,]*,/, '')) }
+      r.onerror = function () { bad(new Error('파일을 읽지 못했어요: ' + f.name)) }
+      r.readAsDataURL(f)
+    })
+  }
+  $('attach').addEventListener('click', function () { $('files').click() })
+  $('files').addEventListener('change', function () { addFiles($('files').files); $('files').value = '' })
+  // A picture pasted into the box goes with the message too.
+  $('text').addEventListener('paste', function (e) {
+    var items = e.clipboardData && e.clipboardData.files
+    if (items && items.length) { e.preventDefault(); addFiles(items) }
+  })
+
   // ---------- actions ----------
+  var sending = false
   $('send').addEventListener('submit', function (e) {
     e.preventDefault()
     var t = $('text').value
-    if (!current || !t.trim()) return
-    api('POST', 'send', { sid: current, text: t }).then(function () {
+    if (!current || sending || (!t.trim() && !picked.length)) return
+    var sid = current
+    var files = picked.slice()
+    sending = true
+    $('msg').textContent = files.length ? '파일을 보내는 중…' : ''
+    Promise.all(files.map(function (f) { return readB64(f).then(function (d) { return { name: f.name, data: d } }) })).then(function (list) {
+      return api('POST', 'send', list.length ? { sid: sid, text: t, files: list } : { sid: sid, text: t })
+    }).then(function () {
       $('text').value = ''
+      picked = []
+      renderChips()
       $('msg').textContent = '보냈어요.'
-      setTimeout(loadScreen, 400)
+      setTimeout(load, 400)
+    }, say).then(function () { sending = false })
+  })
+  document.querySelectorAll('[data-tab]').forEach(function (b) {
+    b.addEventListener('click', function () { showTab(b.getAttribute('data-tab')) })
+  })
+  // Closing asks twice in place (no dialog): the first press arms it for a few seconds.
+  var closeTimer = 0
+  function armClose(on) {
+    clearTimeout(closeTimer)
+    var b = $('close')
+    b.classList.toggle('danger', on)
+    b.textContent = on ? '정말 닫기' : '닫기'
+    if (on) closeTimer = setTimeout(function () { armClose(false) }, 4000)
+  }
+  $('close').addEventListener('click', function () {
+    if (!current) return
+    if (!$('close').classList.contains('danger')) return armClose(true)
+    armClose(false)
+    var sid = current
+    api('POST', 'close', { sid: sid }).then(function () {
+      if (sid === current) pick('')
+      refresh()
     }, say)
+  })
+  // ---------- a new session ----------
+  $('new').addEventListener('click', function () {
+    current = ''
+    $('pane').hidden = true
+    $('empty').hidden = true
+    $('newpane').hidden = false
+    $('new-msg').textContent = ''
+    if (lastState) renderState(lastState)
+    $('new-cwd').focus()
+  })
+  $('new-cancel').addEventListener('click', function () {
+    $('newpane').hidden = true
+    $('empty').hidden = false
+  })
+  var starting = false
+  $('newpane').addEventListener('submit', function (e) {
+    e.preventDefault()
+    var cwd = $('new-cwd').value.trim()
+    if (!cwd || starting) return
+    starting = true
+    $('new-msg').textContent = '세션을 띄우는 중…'
+    api('POST', 'new', { cwd: cwd, prompt: $('new-prompt').value }).then(function (r) {
+      $('new-prompt').value = ''
+      $('new-msg').textContent = ''
+      return refresh().then(function () { pick(r.sid) })
+    }, function (err) { $('new-msg').textContent = '⚠️ ' + (err.message === '401' ? '' : err.message) }).then(function () { starting = false })
   })
   $('text').addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) $('send').requestSubmit()
   })
   document.querySelectorAll('[data-key]').forEach(function (b) {
     b.addEventListener('click', function () {
-      if (current) api('POST', 'key', { sid: current, keys: [b.getAttribute('data-key')] }).then(function () { setTimeout(loadScreen, 250) }, say)
+      if (current) api('POST', 'key', { sid: current, keys: [b.getAttribute('data-key')] }).then(function () { setTimeout(load, 250) }, say)
     })
   })
   document.querySelector('[data-esc]').addEventListener('click', function () {
-    if (current) api('POST', 'esc', { sid: current }).then(function () { setTimeout(loadScreen, 400) }, say)
+    if (current) api('POST', 'esc', { sid: current }).then(function () { setTimeout(load, 400) }, say)
   })
   $('logout').addEventListener('click', function () {
     api('POST', 'logout', {}).catch(function () {}).then(function () { signedOut('나갔어요.') })
@@ -225,8 +416,11 @@
     refresh()
     clearInterval(stateTimer)
     clearInterval(screenTimer)
+    clearInterval(convTimer)
     stateTimer = setInterval(refresh, 3000)
     screenTimer = setInterval(loadScreen, 1200)
+    convTimer = setInterval(loadConv, 2000)
+    showTab(tab)
   }
 
   // The ticket is after '#': it never went over HTTP. It is taken off the address at once.

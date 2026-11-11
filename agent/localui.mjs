@@ -9,8 +9,11 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { UPDATE_KEYS } from './keys.mjs'
 
-/** What the page and the agent agree on: a bundle for another api is never served. */
-export const LOCALUI_API = 1
+/**
+ * What the page and the agent agree on: a bundle for another api is never served. 2 (1.517): conv, new, close and
+ * files on send (REQ-F-898). A page made for 2 on an agent of 1 would show buttons that answer 404.
+ */
+export const LOCALUI_API = 2
 /** In front of what is signed, so that no agent-update signature reads as a bundle's and none of these as one. */
 export const SIG_PREFIX = 'claude-bridge localui v1\n'
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -400,6 +403,50 @@ export const FILE_HEADERS = {
   'Cache-Control': 'no-store',
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-origin',
+}
+
+// ---------- files sent with a message (REQ-F-898) ----------
+
+/** At most this many files with one message, each at most LOCAL_FILE_MAX bytes. */
+export const LOCAL_FILES_MAX = 4
+export const LOCAL_FILE_MAX = 8 * 1024 * 1024
+/** A send's body may be this big (the files go in it as base64); every other request stays at LOCAL_BODY_MAX. */
+export const LOCAL_SEND_MAX = 48 * 1024 * 1024
+export const LOCAL_BODY_MAX = 64 * 1024
+
+/** A picture is told by its first bytes, not by the name or type the page gave: anything else is a plain file. */
+export function pictureExt(bytes) {
+  const b = bytes
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png'
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg'
+  if (b.length >= 6 && b.subarray(0, 4).toString('latin1') === 'GIF8') return 'gif'
+  if (b.length >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp'
+  return ''
+}
+
+/** A file's name as it is kept: one plain name, no path, no dot first, at most 120 characters. */
+export function fileName(name) {
+  const n = String(name ?? '').split(/[\\/]/).pop().replace(/[^\w.가-힣 -]/g, '_').replace(/^\.+/, '').slice(0, 120)
+  return n || 'file'
+}
+
+/**
+ * The files of a send from the page ([{name, data: base64}]), checked: { files: [{ picture: ext|'', name, bytes }] }
+ * or { error }. Nothing is written here.
+ */
+export function localFiles(list) {
+  if (list === undefined || list === null) return { files: [] }
+  if (!Array.isArray(list)) return { error: '파일 목록이 올바르지 않아요' }
+  if (list.length > LOCAL_FILES_MAX) return { error: `파일은 한 번에 ${LOCAL_FILES_MAX}개까지예요` }
+  const files = []
+  for (const f of list) {
+    if (!f || typeof f !== 'object' || typeof f.data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(f.data)) return { error: '파일 내용이 올바르지 않아요' }
+    const bytes = Buffer.from(f.data, 'base64')
+    if (!bytes.length) return { error: `빈 파일이에요: ${fileName(f.name)}` }
+    if (bytes.length > LOCAL_FILE_MAX) return { error: `파일 하나는 ${LOCAL_FILE_MAX / 1024 / 1024} MB 까지예요: ${fileName(f.name)}` }
+    files.push({ picture: pictureExt(bytes), name: fileName(f.name), bytes })
+  }
+  return { files }
 }
 
 // ---------- the terminal: `node agent.mjs local …` ----------

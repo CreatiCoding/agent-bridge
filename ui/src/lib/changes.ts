@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.517',
+    date: '2026-11-11',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '로컬 화면(서버가 내려가도 맥 터미널의 일회용 링크로 여는 127.0.0.1 화면): 대화를 말풍선으로 보기(대화·터미널 탭), 그 맥의 폴더에서 새 세션 시작, 세션 닫기(두 번 눌러 확인), 글과 함께 파일·그림 4개까지(하나 8 MB, 붙여 넣기도). GET /local/api/conv, POST /local/api/new·close, send 의 files. 로컬 화면 묶음 api 2',
+        refs: ['REQ-F-898', 'REQ-F-843', 'IF-267', 'REQ-S-097'],
+      },
+    ],
+  },
+  {
     version: '1.516',
     date: '2026-11-10',
+    commit: '5df483f',
     changes: [
       {
         kind: 'security',
