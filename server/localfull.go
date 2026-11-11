@@ -164,6 +164,11 @@ func localFullVerify(args []string) int {
 		println("사용법: bridge-server localfull-verify <빌드 폴더> <localfull.json>")
 		return 2
 	}
+	// This runs before configure, with ROOT unset: the trusted keys are those of the checkout the documents belong
+	// to (<root>/server/localfull.json → <root>/agent/keys.mjs), wherever the command is run from.
+	if abs, err := filepath.Abs(args[1]); err == nil {
+		ROOT = filepath.Dir(filepath.Dir(abs))
+	}
 	bad := 0
 	for a, lb := range loadLocalFull(args[0], args[1]) {
 		if lb.OK {

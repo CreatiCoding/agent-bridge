@@ -86,6 +86,33 @@ func TestLocalFullVerifyAndServe(t *testing.T) {
 	ok(t, !serveLocalFull(newRes(newReq(httptest.NewRequest("GET", "/localfull/linux", nil))), "/localfull/linux"), "모르는 이름")
 }
 
+// AC-1747: the image runs `localfull-verify` before anything sets ROOT, from another folder: the keys are read from
+// the checkout of the documents (<root>/agent/keys.mjs), not left empty (an empty list refuses every build).
+func TestLocalFullVerifyReadsKeysOfItsCheckout(t *testing.T) {
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	der, _ := x509.MarshalPKIXPublicKey(pub)
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "agent"), 0o700)
+	_ = os.MkdirAll(filepath.Join(root, "server"), 0o700)
+	_ = os.WriteFile(filepath.Join(root, "agent", "keys.mjs"), []byte("export const UPDATE_KEYS = ['"+base64.StdEncoding.EncodeToString(der)+"']\n"), 0o600)
+	builds := t.TempDir()
+	docs := map[string]any{"src": "x"}
+	for _, a := range LF_ARCHES {
+		b := []byte("build of " + a)
+		_ = os.WriteFile(filepath.Join(builds, a), b, 0o600)
+		doc, sig := lfDoc(key, a, b, 3)
+		docs[a] = map[string]string{"doc": doc, "sig": sig}
+	}
+	jb, _ := json.Marshal(docs)
+	docsFile := filepath.Join(root, "server", "localfull.json")
+	_ = os.WriteFile(docsFile, jb, 0o600)
+	keepRoot, keepKeys := ROOT, lfKeys
+	defer func() { ROOT, lfKeys = keepRoot, keepKeys }()
+	ROOT, lfKeys = "", updateKeys
+	t.Chdir(t.TempDir())
+	eq(t, localFullVerify([]string{builds, docsFile}), 0, "문서가 있는 checkout 의 키로 확인")
+}
+
 // withLocalServer: a fresh store, run as a Mac's local server on port 4399 with the given agent secret.
 func withLocalServer(t *testing.T) (secret string, tickets string) {
 	t.Helper()
