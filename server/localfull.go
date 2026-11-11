@@ -509,6 +509,9 @@ async function withKey(req) {
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url)
   if (u.origin !== self.location.origin || u.pathname === '/sw.js') return
+  // A page load other than GET may come from a page of another origin (a form): it gets no key, and the browser's
+  // own Origin stays on it for the server's check.
+  if (e.request.mode === 'navigate' && e.request.method !== 'GET') return
   e.respondWith(withKey(e.request))
 })
 `
@@ -523,7 +526,18 @@ const LOCAL_ENTER_JS = `(async () => {
   const msg = document.getElementById('msg')
   const m = /^#t=([A-Za-z0-9_-]{43})$/.exec(location.hash)
   history.replaceState(null, '', location.pathname)
-  if (!m) return void (msg.textContent = '로그인이 필요해요.')
+  if (!m) {
+    // A hard reload skips the service worker that carries the key: one plain reload brings it back (not twice in
+    // ten seconds, so a lost key does not reload forever).
+    const reg = navigator.serviceWorker && (await navigator.serviceWorker.getRegistration('/').catch(() => null))
+    let again = false
+    try {
+      again = !navigator.serviceWorker.controller && !!reg && Date.now() - Number(sessionStorage.getItem('cb-local-reload') || 0) > 10000
+      if (again) sessionStorage.setItem('cb-local-reload', String(Date.now()))
+    } catch {}
+    if (again) return void location.reload()
+    return void (msg.textContent = '로그인이 필요해요.')
+  }
   try {
     if (!navigator.serviceWorker) return void (msg.textContent = '이 브라우저는 서비스 워커를 쓸 수 없어 들어갈 수 없어요(사생활 보호 창이면 일반 창으로 여세요).')
     const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })

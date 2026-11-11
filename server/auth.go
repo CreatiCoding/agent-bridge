@@ -365,6 +365,11 @@ func auth(req *Req, res *Res, u *url.URL) {
 		if req.Has("origin") && req.H("origin") != "" && req.H("origin") != originOf(req) {
 			refuse(403, "다른 출처의 요청입니다")
 		}
+		// A local server: only the owner (cookie and key) ends the sign-in, not a program that was sent the cookie
+		// on another port (REQ-S-107).
+		if LOCAL && whoami(req) == "" {
+			refuse(401, "로그인이 필요합니다")
+		}
 		logins.Delete(sha256hexs(sessionToken(req)))
 		touchGlobals()
 		jsonRes(res, 200, M{"ok": true}, M{"Set-Cookie": append([]string{cookie(req, cname(req, "cb"), "", 0)}, legacyCbClears(req)...)})

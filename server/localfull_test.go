@@ -204,8 +204,11 @@ func TestLocalServerEntry(t *testing.T) {
 	ok(t, me.Code == 200 && strings.Contains(me.Body.String(), `"local"`), "쿠키와 키로 주인", me.Body.String())
 	// The cookie of the same name made by a server on another port of 127.0.0.1 is not this one's.
 	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": "__Host-cb=" + strings.SplitN(cookie, "=", 2)[1], "X-Local-Key": lj.Key}, "").Code == 401, "다른 이름의 쿠키는 아님")
+	ok(t, localDo(t, "POST", "/api/auth/logout", host, map[string]string{"Cookie": cookie}, "").Code == 401, "쿠키만으로는 로그아웃도 못 함")
+	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": cookie, "X-Local-Key": lj.Key}, "").Code == 200, "로그인은 그대로")
 	sw := localDo(t, "GET", "/sw.js", host, nil, "")
 	ok(t, sw.Code == 200 && strings.Contains(sw.Body.String(), "X-Local-Key") && !strings.Contains(sw.Body.String(), "push"), "로컬 서버의 sw.js 는 키를 붙이는 것")
+	ok(t, strings.Contains(sw.Body.String(), "e.request.mode === 'navigate' && e.request.method !== 'GET'"), "GET 아닌 페이지 이동에는 키를 붙이지 않음")
 
 	old := lfTicket(t, tickets, nowMs()-1)
 	ok(t, localDo(t, "POST", "/api/local/login", host, jh, `{"ticket":"`+old+`"}`).Code == 403, "시간이 지난 링크 403")
