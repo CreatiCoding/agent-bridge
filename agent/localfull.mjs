@@ -5,9 +5,18 @@
 // the site in between. Its data (sessions list, groups, favourites) is its own folder and is never matched with the
 // site's account. A person gets in only through a one-time link made at this Mac's terminal.
 import fs from 'node:fs'
+import net from 'node:net'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { UPDATE_KEYS } from './keys.mjs'
+
+/**
+ * Where the signed Mac builds are also published, apart from any site (REQ-F-904): the repository's release `localfull`,
+ * assets `localfull-<arch>` and `localfull-<arch>.json` (scripts/release-localfull.mjs). Nothing there is trusted: the
+ * same signature, hash and seq checks hold. agent.json's `localFull.releases` names another such folder (a mirror).
+ */
+export const LF_RELEASES = 'https://github.com/CreatiCoding/agent-bridge/releases/download/localfull/'
 
 /** In front of what is signed: no localui bundle's or agent update's signature reads as one of these. */
 export const LF_PREFIX = 'claude-bridge localfull v1\n'
@@ -72,7 +81,8 @@ export function localFullOf(cfg, agentPort = 4317) {
   const v = cfg && typeof cfg.localFull === 'object' && cfg.localFull ? cfg.localFull : {}
   const p = Number(v.port)
   const h = Number(v.sessionHours)
-  return { on: v.on === true, port: Number.isInteger(p) && p >= 1024 && p <= 65535 ? p : agentPort + 10, sessionHours: Number.isFinite(h) ? Math.min(168, Math.max(1, Math.round(h))) : 12 }
+  const rel = typeof v.releases === 'string' && /^https:\/\/[^\s?#]+\/$/.test(v.releases) ? v.releases : LF_RELEASES
+  return { on: v.on === true, port: Number.isInteger(p) && p >= 1024 && p <= 65535 ? p : agentPort + 10, sessionHours: Number.isFinite(h) ? Math.min(168, Math.max(1, Math.round(h))) : 12, releases: rel }
 }
 
 const readJson = (p, fallback) => {
@@ -420,6 +430,69 @@ export function listenersOf(port, run) {
 }
 export const heldOnlyBy = (pids, pid) => Array.isArray(pids) && pids.length === 1 && pids[0] === pid
 
+const runText = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 })
+
+/**
+ * Before the local server is started: is 127.0.0.1:port free? Taken when anything listens there (lsof) or it cannot be
+ * bound. {ok:true} or {ok:false, why} naming who holds it: the switch is not made then (REQ-S-106).
+ */
+export async function portFree(port, { run = runText, listen = canListen } = {}) {
+  const pids = listenersOf(port, run)
+  const bound = await listen(port)
+  if (!pids && bound) return { ok: true }
+  let who = ''
+  if (pids) {
+    try {
+      who = String(run('/bin/ps', ['-o', 'pid=,comm=', '-p', pids.join(',')]) ?? '').trim().split('\n').map((l) => l.trim()).filter(Boolean).join(', ')
+    } catch {}
+    who ||= `pid ${pids.join(',')}`
+  }
+  return { ok: false, why: `127.0.0.1:${port} 를 이미 다른 프로그램이 쓰고 있어 켜지 않았어요${who ? `(${who})` : ''} — 그 프로그램을 끄거나 agent.json 의 localFull.port 를 바꿔 주세요` }
+}
+function canListen(port) {
+  return new Promise((resolve) => {
+    const s = net.createServer()
+    s.once('error', () => resolve(false))
+    s.listen({ port, host: '127.0.0.1', exclusive: true }, () => s.close(() => resolve(true)))
+  })
+}
+
+const HELLO = 'claude-bridge localfull hello v1\n'
+/** The answer only a server given this run's secret can make (server/localfull.go localHello). */
+export const lfHelloMac = (secret, n) => crypto.createHmac('sha256', secret).update(HELLO + n).digest('base64url')
+
+/**
+ * Whether the server at base knows this run's secret, asked without sending it: a nonce out, its HMAC back
+ * (REQ-S-106). A program that took the port answers /api/health but not this.
+ */
+export async function helloOk(base, secret, fetchImpl = fetch) {
+  const n = crypto.randomBytes(32).toString('base64url')
+  try {
+    const r = await fetchImpl(`${base}/api/local/hello?n=${n}`, { redirect: 'manual', signal: AbortSignal.timeout(3000) })
+    const j = r.ok ? await r.json() : null
+    const want = Buffer.from(lfHelloMac(secret, n))
+    const got = Buffer.from(typeof j?.mac === 'string' ? j.mac : '')
+    return got.length === want.length && crypto.timingSafeEqual(got, want)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A build from the published release (REQ-F-904): for a site that has none or sits behind a sign-in. Redirects are
+ * followed (the release host hands its files from another address); only the signature makes it one to take.
+ */
+export async function releaseBuild(base, arch, fetchImpl = fetch) {
+  const j = await fetchImpl(`${base}localfull-${arch}.json`, { signal: AbortSignal.timeout(20_000) })
+  if (!j.ok) throw new Error(`릴리스에 문서가 없음 (HTTP ${j.status})`)
+  const meta = await j.json().catch(() => null)
+  if (typeof meta?.doc !== 'string' || typeof meta?.sig !== 'string') throw new Error('릴리스의 문서가 맞지 않음')
+  const b = await fetchImpl(`${base}localfull-${arch}`, { signal: AbortSignal.timeout(600_000) })
+  if (!b.ok) throw new Error(`릴리스에서 빌드를 받지 못함 (HTTP ${b.status})`)
+  if (Number(b.headers?.get?.('content-length')) > LF_MAX) throw new Error('빌드가 너무 큼')
+  return { doc: meta.doc, sig: meta.sig, bytes: Buffer.from(await b.arrayBuffer()) }
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
@@ -427,7 +500,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  * here (never by a server command) and read again by the running agent every 2 s, which makes the switch.
  * Returns the exit code.
  */
-export async function localFullCli(words, { configPath, lf, site, agentPort, open, running, fetchImpl = fetch, waitMs = 30_000 }) {
+export async function localFullCli(words, { configPath, lf, site, agentPort, open, running, fetchImpl = fetch, waitMs = 30_000, checkPort = portFree }) {
   const set = (patch) => {
     const disk = readJson(configPath, {})
     disk.localFull = { ...(disk.localFull && typeof disk.localFull === 'object' ? disk.localFull : {}), ...patch }
@@ -453,22 +526,44 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
       console.error('로컬 전체 화면은 macOS(arm64·x64)에서만 써요.')
       return 1
     }
-    // The build: the site's, when it has one signed after (or as) the one here; else the one already here.
-    let got = null
-    try {
-      if (!/^https?:\/\//.test(site || '')) throw new Error('사이트 주소가 없음')
-      console.log(`${site} 에서 맥용 서버(${lf.arch})를 받는 중…`)
-      got = lf.install(await fetchBuild(site, lf.arch, fetchImpl))
-    } catch (e) {
-      got = { result: 'fetch_failed', why: e.message }
+    // The port first: a program already on it is not something to switch to, and nothing is turned on (REQ-S-106).
+    const st0 = lf.state()
+    if (!(st0.active && st0.port === now().port)) {
+      const free = await checkPort(now().port)
+      if (!free.ok) {
+        console.error(free.why)
+        return 1
+      }
+    }
+    // The build: the site's, when it has one signed after (or as) the one here; a site with none, or behind a
+    // sign-in, gives way to the published release (REQ-F-904); else the one already here.
+    const say = (from, got) => {
+      if (got.result === 'installed') console.log(`맥용 서버 ${got.version}(순번 ${got.seq})을 ${from}에서 확인하고 받았어요.`)
+      else if (got.result === 'same') console.log(`맥용 서버 ${got.version}(순번 ${got.seq}): 이미 받은 것과 같아요.`)
+      else if (got.result === 'old') console.log(`${from}의 빌드(순번 ${got.seq})가 이 맥의 것(순번 ${got.floor})보다 먼저 서명돼 받지 않았어요.`)
+      else console.log(`${from}에서 받지 못했어요: ${got.why}`)
+    }
+    const take = async (from, get) => {
+      let got
+      try {
+        got = lf.install(await get())
+      } catch (e) {
+        got = { result: 'fetch_failed', why: e.message }
+      }
+      say(from, got)
+      return got
+    }
+    const fromSite = /^https?:\/\//.test(site || '')
+      ? (console.log(`${site} 에서 맥용 서버(${lf.arch})를 받는 중…`), await take('사이트', () => fetchBuild(site, lf.arch, fetchImpl)))
+      : { result: 'fetch_failed' }
+    if (fromSite.result === 'fetch_failed' || fromSite.result === 'verify_failed') {
+      const rel = now().releases
+      console.log(`공개 릴리스(${rel})에서 받는 중…`)
+      await take('공개 릴리스', () => releaseBuild(rel, lf.arch, fetchImpl))
     }
     const have = lf.installed()
-    if (got.result === 'installed') console.log(`맥용 서버 ${got.version}(순번 ${got.seq})을 확인하고 받았어요.`)
-    else if (got.result === 'same') console.log(`맥용 서버 ${got.version}(순번 ${got.seq}): 이미 받은 것과 같아요.`)
-    else if (got.result === 'old') console.log(`사이트의 빌드(순번 ${got.seq})가 이 맥의 것(순번 ${got.floor})보다 먼저 서명돼 받지 않았어요.`)
-    else console.log(`사이트에서 받지 못했어요: ${got.why}`)
     if (!have.ok) {
-      console.error(`쓸 수 있는 맥용 서버가 없어요(${have.why}). 사이트에 연결된 상태에서 다시 하거나, 로그인한 브라우저로 받은 파일을 넣어 주세요: node agent.mjs local --full install <빌드 파일> <문서 .json>`)
+      console.error(`쓸 수 있는 맥용 서버가 없어요(${have.why}). 미리 받아 둔 파일을 넣어 주세요: node agent.mjs local --full install <빌드 파일> <문서 .json>\n  두 파일: 공개 릴리스의 localfull-${lf.arch} 와 localfull-${lf.arch}.json, 또는 로그인한 브라우저로 사이트의 /localfull/${lf.arch} 와 /localfull/${lf.arch}.json`)
       return 1
     }
     set({ on: true })
@@ -494,7 +589,7 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
     }
     const [, binFile, docFile] = words
     if (!binFile || !docFile) {
-      console.error(`사용법: node agent.mjs local --full install <빌드 파일> <문서 .json>\n  두 파일은 로그인한 브라우저로 사이트의 /localfull/${lf.arch} 와 /localfull/${lf.arch}.json 에서 받아요.`)
+      console.error(`사용법: node agent.mjs local --full install <빌드 파일> <문서 .json>\n  두 파일: 공개 릴리스(${now().releases})의 localfull-${lf.arch} 와 localfull-${lf.arch}.json, 또는 로그인한 브라우저로 사이트의 /localfull/${lf.arch} 와 /localfull/${lf.arch}.json`)
       return 1
     }
     let got

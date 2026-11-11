@@ -306,7 +306,8 @@ func secureSite(req *Req) bool {
 
 // cname: sign-in cookies are `__Host-` on a secure site (REQ-S-080).
 func cname(req *Req, base string) string {
-	// A Mac's local server: its own names, so a server of another port on 127.0.0.1 neither gets nor replaces them.
+	// A Mac's local server: its own names, so a server of another port on 127.0.0.1 does not replace them. It is still
+	// sent them (cookies do not tell ports apart): the login's key is what makes the owner there (localKeyOk).
 	if LOCAL {
 		base += "-l" + itoa(PORT)
 	}
@@ -319,7 +320,9 @@ func cname(req *Req, base string) string {
 func cookie(req *Req, name, value string, maxAge int64) string {
 	same := "Lax"
 	if LOCAL {
-		same = "Strict" // a page of another port of 127.0.0.1 is the same site: it must not send these along
+		// Strict keeps other sites' pages from sending these along. It does not stop a page of another port of
+		// 127.0.0.1 (the same site): there the login's key is what counts (localKeyOk, REQ-S-107).
+		same = "Strict"
 	}
 	s := name + "=" + value + "; Path=/; HttpOnly; SameSite=" + same + "; Max-Age=" + itoa(int(maxAge))
 	if strings.HasPrefix(name, "__Host-") || strings.HasPrefix(originOf(req), "https:") {
@@ -407,6 +410,12 @@ func whoami(req *Req) string {
 	}
 	login, ok := logins.Get(sha256hexs(token))
 	if !ok || jsNumber(login["exp"]) < float64(nowMs()) {
+		return ""
+	}
+	// A Mac's local server: the cookie alone is not the owner. A program on another port of 127.0.0.1 is sent this
+	// cookie too (cookies do not tell ports apart, and SameSite counts that port as the same site), so every request
+	// must also carry the login's key, which only this origin's service worker holds (REQ-S-107).
+	if LOCAL && !localKeyOk(req, login) {
 		return ""
 	}
 	uid := mstr(login, "uid")

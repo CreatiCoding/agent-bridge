@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -436,11 +437,81 @@ func localLogin(req *Req, res *Res) {
 	}
 	localOwner()
 	token := base64.RawURLEncoding.EncodeToString(randBytes(32))
-	logins.Set(sha256hexs(token), M{"uid": LOCAL_UID, "exp": float64(nowMs() + int64(LOCAL_HOURS)*3_600_000)})
+	// The key goes back in the body only: the page hands it to this origin's service worker (LOCAL_SW), which puts
+	// it on every request of this origin. A program that is sent the cookie (another port) does not have it.
+	key := base64.RawURLEncoding.EncodeToString(randBytes(32))
+	logins.Set(sha256hexs(token), M{"uid": LOCAL_UID, "exp": float64(nowMs() + int64(LOCAL_HOURS)*3_600_000), "key": sha256hexs(key)})
 	touchGlobals()
 	logLine("local: 일회용 링크로 로그인함")
-	jsonRes(res, 200, M{"ok": true}, M{"Set-Cookie": cookie(req, cname(req, "cb"), token, int64(LOCAL_HOURS)*3600)})
+	jsonRes(res, 200, M{"ok": true, "key": key}, M{"Set-Cookie": cookie(req, cname(req, "cb"), token, int64(LOCAL_HOURS)*3600)})
 }
+
+// localKeyOk: whether the request carries its login's key (X-Local-Key, REQ-S-107). A login without one is no
+// login on a local server.
+func localKeyOk(req *Req, login M) bool {
+	want := mstr(login, "key")
+	k := req.H("x-local-key")
+	if want == "" || !secretRe.MatchString(k) {
+		return false
+	}
+	got := sha256hexs(k)
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// LF_HELLO: what the agent's challenge is signed under (agent/localfull.mjs lfHelloMac): an answer here is no other
+// signature of this secret.
+const LF_HELLO = "claude-bridge localfull hello v1\n"
+
+// localHello: GET /api/local/hello?n=<nonce> → the run's secret's HMAC over the nonce. The agent asks before it sends
+// the secret anywhere: a program that took the port first does not know the secret and cannot answer (REQ-S-106).
+func localHello(req *Req, res *Res) {
+	n := req.URL.Query().Get("n")
+	if !secretRe.MatchString(n) || LOCAL_SECRET == "" {
+		refuse(400, "n 이 맞지 않아요")
+	}
+	m := hmac.New(sha256.New, []byte(LOCAL_SECRET))
+	m.Write([]byte(LF_HELLO + n))
+	jsonRes(res, 200, M{"mac": base64.RawURLEncoding.EncodeToString(m.Sum(nil))})
+}
+
+// LOCAL_SW: a local server's /sw.js, in place of the site's (push has no use here). It keeps the login's key in this
+// origin's Cache Storage (a page of another port cannot read it) and puts it on every request of this origin, the
+// screen's fetches, streams, images and videos and its page loads alike, so no page has to (REQ-S-107).
+const LOCAL_SW = `const STORE = 'cb-local', K = '/__local-key'
+let key = null
+const getKey = async () => {
+  if (key) return key
+  const r = await (await caches.open(STORE)).match(K)
+  key = r ? await r.text() : ''
+  return key
+}
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()))
+self.addEventListener('message', (e) => {
+  const d = e.data
+  if (!d || d.t !== 'key' || !/^[A-Za-z0-9_-]{43}$/.test(d.key)) return
+  e.waitUntil((async () => {
+    await (await caches.open(STORE)).put(K, new Response(d.key))
+    key = d.key
+    e.ports[0]?.postMessage('ok')
+  })())
+})
+async function withKey(req) {
+  const k = await getKey()
+  if (!k) return fetch(req)
+  const h = new Headers(req.headers)
+  h.set('X-Local-Key', k)
+  const init = { method: req.method, headers: h, credentials: 'same-origin', redirect: req.mode === 'navigate' ? 'manual' : req.redirect, referrerPolicy: req.referrerPolicy, signal: req.signal }
+  if (req.cache !== 'only-if-cached') init.cache = req.cache
+  if (req.method !== 'GET' && req.method !== 'HEAD') init.body = await req.blob()
+  return fetch(new Request(req.url, init))
+}
+self.addEventListener('fetch', (e) => {
+  const u = new URL(e.request.url)
+  if (u.origin !== self.location.origin || u.pathname === '/sw.js') return
+  e.respondWith(withKey(e.request))
+})
+`
 
 // LOCAL_ENTER: what a local server shows before sign-in. Its script takes the link's ticket out of the address and
 // trades it for the sign-in.
@@ -454,10 +525,20 @@ const LOCAL_ENTER_JS = `(async () => {
   history.replaceState(null, '', location.pathname)
   if (!m) return void (msg.textContent = '로그인이 필요해요.')
   try {
+    if (!navigator.serviceWorker) return void (msg.textContent = '이 브라우저는 서비스 워커를 쓸 수 없어 들어갈 수 없어요(사생활 보호 창이면 일반 창으로 여세요).')
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    await navigator.serviceWorker.ready
     const r = await fetch('/api/local/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Local-UI': '1' }, body: JSON.stringify({ ticket: m[1] }) })
-    if (r.ok) return void location.replace('/')
     const j = await r.json().catch(() => ({}))
-    msg.textContent = j.error || ('들어가지 못했어요 (HTTP ' + r.status + ')')
+    if (!r.ok || !j.key) return void (msg.textContent = j.error || ('들어가지 못했어요 (HTTP ' + r.status + ')'))
+    // The key goes to this origin's service worker only; it puts it on every request from here on.
+    await new Promise((ok, no) => {
+      const ch = new MessageChannel()
+      ch.port1.onmessage = () => ok()
+      ;(reg.active || navigator.serviceWorker.controller).postMessage({ t: 'key', key: j.key }, [ch.port2])
+      setTimeout(() => no(new Error('서비스 워커가 답하지 않음')), 5000)
+    })
+    location.replace('/')
   } catch (e) {
     msg.textContent = '들어가지 못했어요: ' + e.message
   }
@@ -486,6 +567,12 @@ func localRoute(req *Req, res *Res, p string) bool {
 	switch {
 	case p == "/api/local/login" && req.Method == "POST":
 		localLogin(req, res)
+		return true
+	case p == "/api/local/hello" && req.Method == "GET":
+		localHello(req, res)
+		return true
+	case p == "/sw.js" && req.Method == "GET":
+		res.WriteHead(200, localHeaders(M{"Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache"})).EndS(LOCAL_SW)
 		return true
 	case p == "/local-enter.js" && req.Method == "GET":
 		res.WriteHead(200, localHeaders(M{"Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store"})).EndS(LOCAL_ENTER_JS)

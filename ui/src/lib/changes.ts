@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.521',
+    date: '2026-11-12',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '서명된 맥용 서버를 저장소 릴리스 localfull 에도 올리고, local --full on 은 사이트에서 받지 못하면(로그인 화면·없음) 그 릴리스에서 같은 확인(서명·해시·순번)으로 받는다. 받는 곳은 agent.json 의 localFull.releases 로 바꿀 수 있다',
+        refs: ['REQ-F-904', 'REQ-F-902', 'ERR-369'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'server'],
+        text: '로컬 서버 포트를 다른 프로그램이 먼저 쥐고 있으면 켜지 않고 누가 쥐었는지 알린다. 띄운 뒤에는 비밀을 보내지 않는 문답(/api/local/hello, HMAC)에 맞게 답한 서버에만 붙는다',
+        refs: ['REQ-S-104', 'ERR-370', 'IF-284'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '로컬 서버의 주인은 쿠키와 X-Local-Key 가 함께 맞아야 한다. 키는 로그인 본문으로만 오고 로컬 서버의 서비스 워커(/sw.js)가 같은 출처의 모든 요청에 붙인다: 같은 맥의 다른 포트 프로그램이 쿠키를 받아도 API 를 쓰지 못한다',
+        refs: ['REQ-S-107', 'IF-284'],
+      },
+    ],
+  },
+  {
     version: '1.520',
     date: '2026-11-12',
+    commit: '97afc79',
     changes: [
       {
         kind: 'added',

@@ -4,6 +4,7 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -172,7 +173,7 @@ func localDo(t *testing.T, method, target, host string, h map[string]string, bod
 func TestLocalServerEntry(t *testing.T) {
 	_, tickets := withLocalServer(t)
 	host := "127.0.0.1:4399"
-	json := map[string]string{"Content-Type": "application/json", "X-Local-UI": "1"}
+	jh := map[string]string{"Content-Type": "application/json", "X-Local-UI": "1"}
 	ok(t, localDo(t, "GET", "/", "evil.example:4399", nil, "").Code == 403, "다른 Host(리바인딩) 403")
 	ok(t, localDo(t, "GET", "/", "127.0.0.1:4300", nil, "").Code == 403, "다른 포트 Host 403")
 	for _, o := range []string{"https://bridge.example", "http://127.0.0.1:3000", "null"} {
@@ -185,23 +186,33 @@ func TestLocalServerEntry(t *testing.T) {
 
 	tk := lfTicket(t, tickets, nowMs()+60_000)
 	ok(t, localDo(t, "POST", "/api/local/login", host, map[string]string{"Content-Type": "application/json"}, `{"ticket":"`+tk+`"}`).Code == 403, "X-Local-UI 없이 403")
-	w = localDo(t, "POST", "/api/local/login", host, json, `{"ticket":"`+tk+`"}`)
+	w = localDo(t, "POST", "/api/local/login", host, jh, `{"ticket":"`+tk+`"}`)
 	ok(t, w.Code == 200, "일회용 링크로 로그인", w.Body.String())
 	c := w.Header().Get("Set-Cookie")
 	ok(t, strings.HasPrefix(c, "__Host-cb-l4399=") && strings.Contains(c, "HttpOnly") && strings.Contains(c, "SameSite=Strict"), "이 포트만의 쿠키: "+c)
-	ok(t, localDo(t, "POST", "/api/local/login", host, json, `{"ticket":"`+tk+`"}`).Code == 403, "같은 링크는 한 번만")
+	ok(t, localDo(t, "POST", "/api/local/login", host, jh, `{"ticket":"`+tk+`"}`).Code == 403, "같은 링크는 한 번만")
 	cookie := strings.SplitN(c, ";", 2)[0]
-	me := localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": cookie}, "")
-	ok(t, me.Code == 200 && strings.Contains(me.Body.String(), `"local"`), "받은 쿠키로 주인", me.Body.String())
+	var lj struct{ Key string }
+	_ = json.Unmarshal(w.Body.Bytes(), &lj)
+	ok(t, secretRe.MatchString(lj.Key) && !strings.Contains(c, lj.Key), "머리글 키는 본문으로만", w.Body.String())
+	// AC-1757: the cookie alone is not the owner (a program on another port of 127.0.0.1 is sent it too).
+	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": cookie}, "").Code == 401, "쿠키만으로는 401")
+	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": cookie, "X-Local-Key": strings.Repeat("B", 43)}, "").Code == 401, "틀린 키 401")
+	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"X-Local-Key": lj.Key}, "").Code == 401, "키만으로는 401")
+	ok(t, localDo(t, "GET", "/", host, map[string]string{"Cookie": cookie}, "").Body.String() == LOCAL_ENTER, "쿠키만으로는 들어가는 안내")
+	me := localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": cookie, "X-Local-Key": lj.Key}, "")
+	ok(t, me.Code == 200 && strings.Contains(me.Body.String(), `"local"`), "쿠키와 키로 주인", me.Body.String())
 	// The cookie of the same name made by a server on another port of 127.0.0.1 is not this one's.
-	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": "__Host-cb=" + strings.SplitN(cookie, "=", 2)[1]}, "").Code == 401, "다른 이름의 쿠키는 아님")
+	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": "__Host-cb=" + strings.SplitN(cookie, "=", 2)[1], "X-Local-Key": lj.Key}, "").Code == 401, "다른 이름의 쿠키는 아님")
+	sw := localDo(t, "GET", "/sw.js", host, nil, "")
+	ok(t, sw.Code == 200 && strings.Contains(sw.Body.String(), "X-Local-Key") && !strings.Contains(sw.Body.String(), "push"), "로컬 서버의 sw.js 는 키를 붙이는 것")
 
 	old := lfTicket(t, tickets, nowMs()-1)
-	ok(t, localDo(t, "POST", "/api/local/login", host, json, `{"ticket":"`+old+`"}`).Code == 403, "시간이 지난 링크 403")
+	ok(t, localDo(t, "POST", "/api/local/login", host, jh, `{"ticket":"`+old+`"}`).Code == 403, "시간이 지난 링크 403")
 	for i := 0; i < 12; i++ {
-		localDo(t, "POST", "/api/local/login", host, json, `{"ticket":"`+strings.Repeat("A", 43)+`"}`)
+		localDo(t, "POST", "/api/local/login", host, jh, `{"ticket":"`+strings.Repeat("A", 43)+`"}`)
 	}
-	ok(t, localDo(t, "POST", "/api/local/login", host, json, `{"ticket":"`+strings.Repeat("A", 43)+`"}`).Code == 429, "1분에 10번 넘게 틀리면 429")
+	ok(t, localDo(t, "POST", "/api/local/login", host, jh, `{"ticket":"`+strings.Repeat("A", 43)+`"}`).Code == 429, "1분에 10번 넘게 틀리면 429")
 }
 
 // AC-1749: the bridge routes take the agent's secret only; the secret opens nothing else; what a local server never
@@ -221,6 +232,13 @@ func TestLocalServerAgentLink(t *testing.T) {
 	w = localDo(t, "POST", "/api/bridge/hello", host, map[string]string{"Content-Type": "application/json", "Authorization": "Bearer " + secret}, hello)
 	ok(t, w.Code == 200 && strings.Contains(w.Body.String(), `"conn"`), "에이전트 비밀로 연동", w.Body.String())
 	ok(t, localDo(t, "GET", "/api/sessions", host, map[string]string{"Authorization": "Bearer " + secret}, "").Code == 401, "비밀로는 다른 API 가 열리지 않음")
+	// AC-1756: the agent's challenge, answered with the secret's HMAC (agent/localfull.mjs lfHelloMac) without it.
+	n := strings.Repeat("n", 43)
+	hw := localDo(t, "GET", "/api/local/hello?n="+n, host, nil, "")
+	m := hmac.New(sha256.New, []byte(secret))
+	m.Write([]byte(LF_HELLO + n))
+	ok(t, hw.Code == 200 && strings.Contains(hw.Body.String(), base64.RawURLEncoding.EncodeToString(m.Sum(nil))) && !strings.Contains(hw.Body.String(), secret), "문답: 비밀의 HMAC", hw.Body.String())
+	ok(t, localDo(t, "GET", "/api/local/hello?n=short", host, nil, "").Code == 400, "문답: 짧은 n 400")
 	for _, p := range []string{"/api/auth/github", "/api/auth/dev", "/install.sh", "/agent.mjs", "/agent/keys.mjs", "/localfull/darwin-arm64", "/api/service/hosts"} {
 		ok(t, localDo(t, "GET", p, host, nil, "").Code == 404, "로컬 서버에는 없음: "+p)
 	}

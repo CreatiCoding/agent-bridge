@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy } from '../../agent/localfull.mjs'
+import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy, portFree, helloOk, lfHelloMac, releaseBuild, LF_RELEASES } from '../../agent/localfull.mjs'
 import { docOf, signDoc } from '../../agent/localui.mjs'
 import { localFullSrc, savedLocalFull } from '../../scripts/sign-agent.mjs'
 
@@ -61,8 +61,10 @@ test('one-time links are kept as their SHA-256 only, five at most (the local ser
 })
 
 test('agent.json localFull: off unless turned on, its port the agent port + 10', () => {
-  assert.deepEqual(localFullOf({}, 4317), { on: false, port: 4327, sessionHours: 12 })
-  assert.deepEqual(localFullOf({ localFull: { on: true, port: 80, sessionHours: 999 } }, 4400), { on: true, port: 4410, sessionHours: 168 })
+  assert.deepEqual(localFullOf({}, 4317), { on: false, port: 4327, sessionHours: 12, releases: LF_RELEASES })
+  assert.deepEqual(localFullOf({ localFull: { on: true, port: 80, sessionHours: 999 } }, 4400), { on: true, port: 4410, sessionHours: 168, releases: LF_RELEASES })
+  assert.equal(localFullOf({ localFull: { releases: 'https://mirror.example/lf/' } }).releases, 'https://mirror.example/lf/', '미러')
+  assert.equal(localFullOf({ localFull: { releases: 'http://mirror.example/lf/' } }).releases, LF_RELEASES, 'https 만')
   assert.equal(localFullOf({ localFull: { on: 'yes' } }).on, false)
   assert.equal(archOf('darwin', 'arm64'), 'darwin-arm64')
   assert.equal(archOf('darwin', 'x64'), 'darwin-amd64')
@@ -109,7 +111,7 @@ test('local --full on takes a signed build from the site and turns it on; a buil
   const log = console.log
   console.log = () => {}
   try {
-    const base = { configPath, lf, site: 'https://bridge.example', agentPort: 4317, open: null, running: async () => false, fetchImpl }
+    const base = { configPath, lf, site: 'https://bridge.example', agentPort: 4317, open: null, running: async () => false, fetchImpl, checkPort: async () => ({ ok: true }) }
     assert.equal(await localFullCli(['on'], base), 0)
     assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).localFull.on, true)
     assert.equal(lf.installed().d.seq, 5)
@@ -158,7 +160,7 @@ test('a site behind a sign-in gate: its login redirect is told apart, and the tw
   const err = console.error
   console.log = console.error = () => {}
   try {
-    const base = { configPath, lf, site: 'https://bridge.example', agentPort: 4317, open: null, running: async () => false, fetchImpl: gate }
+    const base = { configPath, lf, site: 'https://bridge.example', agentPort: 4317, open: null, running: async () => false, fetchImpl: gate, checkPort: async () => ({ ok: true }) }
     assert.equal(await localFullCli(['install'], base), 1, '파일 없이는 사용법')
     fs.writeFileSync(path.join(dir, 'bad'), Buffer.from('v7!'))
     assert.equal(await localFullCli(['install', path.join(dir, 'bad'), doc], base), 1, '해시가 다른 파일은 넣지 않음')
@@ -197,4 +199,91 @@ test('the local server log is kept apart from the site log, so the site never pa
     assert.match(body(name), /storeOf\(cmd\)/, `${name} 은 출처의 기록을 씀`)
     assert.doesNotMatch(body(name), /\bstore\.(append|page|lastSeq|remove)\(/, `${name} 이 사이트 기록을 바로 쓰지 않음`)
   }
+})
+
+test('a site with no build, or behind a sign-in, gives way to the published release; checked the same (REQ-F-904)', async () => {
+  const dir = tmp()
+  const configPath = path.join(dir, 'agent.json')
+  fs.writeFileSync(configPath, JSON.stringify({ localFull: { releases: 'https://mirror.example/lf/' } }))
+  const lf = new LocalFull({ dir: path.join(dir, 'localfull'), arch: 'darwin-arm64', keys: KEYS })
+  let rel = signed(Buffer.from('r9'), 9)
+  const asked = []
+  const fetchImpl = async (url, opt) => {
+    asked.push(url)
+    if (url.startsWith('https://bridge.example/')) return new Response('', { status: 302, headers: { Location: 'https://sso.example/login' } })
+    if (opt?.redirect === 'manual') throw new Error('릴리스는 리다이렉트를 따라가야 함')
+    return url.endsWith('.json') ? new Response(JSON.stringify({ doc: rel.doc, sig: rel.sig })) : new Response(rel.bytes)
+  }
+  const log = console.log
+  const err = console.error
+  console.log = console.error = () => {}
+  try {
+    const base = { configPath, lf, site: 'https://bridge.example', agentPort: 4317, open: null, running: async () => false, fetchImpl, checkPort: async () => ({ ok: true }) }
+    assert.equal(await localFullCli(['on'], base), 0)
+    assert.equal(lf.installed().d.seq, 9, '릴리스에서 받음')
+    assert.ok(asked.includes('https://mirror.example/lf/localfull-darwin-arm64.json') && asked.includes('https://mirror.example/lf/localfull-darwin-arm64'))
+    // A release that is not signed, or signed before the one here, is not taken.
+    rel = { ...signed(Buffer.from('r10'), 10), sig: signed(Buffer.from('x'), 10).sig }
+    assert.equal(await localFullCli(['on'], base), 0)
+    assert.equal(lf.installed().d.seq, 9, '서명이 맞지 않는 릴리스는 받지 않음')
+    rel = signed(Buffer.from('r8'), 8)
+    await localFullCli(['on'], base)
+    assert.equal(lf.installed().d.seq, 9, '먼저 서명된 릴리스는 받지 않음')
+  } finally {
+    console.log = log
+    console.error = err
+  }
+  await assert.rejects(releaseBuild('https://r.example/', 'darwin-arm64', async () => new Response('', { status: 404 })), /HTTP 404/)
+  await assert.rejects(releaseBuild('https://r.example/', 'darwin-arm64', async () => new Response('<html>')), /맞지 않음/)
+})
+
+test('a port another program holds: on is refused with who holds it, and nothing is turned on (REQ-S-106)', async () => {
+  const run = (cmd) => (cmd.endsWith('lsof') ? '777\n' : '  777 /usr/bin/nc\n')
+  const busy = await portFree(4327, { run, listen: async () => true })
+  assert.equal(busy.ok, false)
+  assert.match(busy.why, /127\.0\.0\.1:4327 를 이미 다른 프로그램이 쓰고 있어 켜지 않았어요\(777 \/usr\/bin\/nc\)/)
+  assert.equal((await portFree(4327, { run: () => '', listen: async () => false })).ok, false, '묶을 수 없으면 쓰는 중')
+  assert.equal((await portFree(4327, { run: () => '', listen: async () => true })).ok, true)
+  // A real port held here.
+  const net = await import('node:net')
+  const s = net.createServer().listen(0, '127.0.0.1')
+  await new Promise((r) => s.once('listening', r))
+  try {
+    assert.equal((await portFree(s.address().port, { run: () => '' })).ok, false, '실제로 잡힌 포트')
+  } finally {
+    s.close()
+  }
+
+  const dir = tmp()
+  const configPath = path.join(dir, 'agent.json')
+  fs.writeFileSync(configPath, '{}')
+  const lf = new LocalFull({ dir: path.join(dir, 'localfull'), arch: 'darwin-arm64', keys: KEYS })
+  const err = console.error
+  const said = []
+  console.error = (m) => said.push(m)
+  try {
+    assert.equal(await localFullCli(['on'], { configPath, lf, site: '', agentPort: 4317, open: null, running: async () => true, fetchImpl: async () => assert.fail('받기 전에 멈춤'), checkPort: async () => busy }), 1)
+  } finally {
+    console.error = err
+  }
+  assert.match(said.join('\n'), /켜지 않았어요/)
+  assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).localFull, undefined, '켜지 않음')
+})
+
+test("the server must answer the challenge only this run's secret answers, without the secret being sent (REQ-S-106)", async () => {
+  const secret = crypto.randomBytes(32).toString('base64url')
+  const sent = []
+  const real = async (url, opt) => {
+    sent.push(JSON.stringify([url, opt?.headers ?? {}]))
+    const n = new URL(url).searchParams.get('n')
+    return new Response(JSON.stringify({ mac: lfHelloMac(secret, n) }))
+  }
+  assert.equal(await helloOk('http://127.0.0.1:4327', secret, real), true)
+  assert.ok(!sent.join('').includes(secret), '비밀은 보내지 않음')
+  const other = async (url) => new Response(JSON.stringify({ mac: lfHelloMac('x'.repeat(43), new URL(url).searchParams.get('n')) }))
+  assert.equal(await helloOk('http://127.0.0.1:4327', secret, other), false, '다른 비밀')
+  assert.equal(await helloOk('http://127.0.0.1:4327', secret, async () => new Response('{"ok":true}')), false, 'health 처럼 200 만')
+  assert.equal(await helloOk('http://127.0.0.1:4327', secret, async () => new Response('', { status: 404 })), false)
+  // The same answer as the server's (server/localfull.go localHello, LF_HELLO).
+  assert.equal(lfHelloMac('s', 'n'), crypto.createHmac('sha256', 's').update('claude-bridge localfull hello v1\nn').digest('base64url'))
 })

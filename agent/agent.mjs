@@ -28,7 +28,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
-import { LocalFull, localFullOf, localFullCli, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy } from './localfull.mjs'
+import { LocalFull, localFullOf, localFullCli, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -1211,6 +1211,9 @@ async function localFullOn() {
     const have = localFull.installed()
     if (!have.ok) throw new Error(`맥용 서버를 쓸 수 없어요(${have.why}) — 터미널: node ${SELF} local --full on`)
     const v = localFullNow()
+    // A port another program already holds is not switched to: it would answer in the server's place (REQ-S-106).
+    const free = await localPortFree(v.port)
+    if (!free.ok) throw new Error(free.why)
     const secret = crypto.randomBytes(32).toString('base64url')
     localFull.ensure()
     const logFile = fs.openSync(path.join(localFull.dir, 'server.log'), 'a', 0o600)
@@ -1232,8 +1235,10 @@ async function localFullOn() {
       if (!up) await sleep(250)
     }
     if (!up) throw new Error(child.exitCode !== null ? `로컬 서버가 바로 끝남(${child.exitCode}) — ${localFull.dir}/server.log` : '로컬 서버가 20초 안에 답하지 않음')
-    // A 200 there is not proof it is the child (another program may hold the port first): the secret goes only to a
-    // port the child holds alone (REQ-S-104).
+    // A 200 there is not proof it is the child (another program may take the port in between): it must answer the
+    // challenge only this run's secret answers, asked without sending it (REQ-S-106) …
+    if (!(await localHelloOk(base, secret))) throw new Error(`127.0.0.1:${v.port} 에서 답한 것이 이 실행의 비밀을 모름(다른 프로그램이 그 포트를 씀) — 켜지 않았어요. agent.json 의 localFull.port 를 바꿔 주세요`)
+    // … and the child must hold the port alone (REQ-S-104).
     const pids = listenersOf(v.port, (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }))
     if (child.exitCode !== null || !heldOnlyBy(pids, child.pid)) throw new Error(`127.0.0.1:${v.port} 에서 답한 것이 이 에이전트가 띄운 로컬 서버가 아님(다른 프로그램이 그 포트를 씀: ${pids ? pids.join(',') : '알 수 없음'}) — agent.json 의 localFull.port 를 바꿔 주세요`)
     // The switch: the site's tab goes, the headless browser rests, and the local server takes the link.
