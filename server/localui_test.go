@@ -16,16 +16,18 @@ func TestLocalBundleIsReadAndOfferedOnlyWhenNewer(t *testing.T) {
 	defer func() { ROOT = saved }()
 	lb := loadLocalBundle(localBundlePath())
 	ok(t, lb.OK, "agent/localbundle.mjs 의 서명이 맞아야 함 (node scripts/sign-agent.mjs)")
-	ok(t, lb.Seq > 0 && lb.API == 1 && len(lb.Version) == 12)
+	ok(t, lb.Seq > 0 && lb.API >= 1 && len(lb.Version) == 12)
 	hello := func(on, ota bool, api float64, ver string, seq float64) M {
 		return M{"on": on, "ota": ota, "api": api, "active": M{"source": "builtin", "version": ver, "seq": seq}}
 	}
-	ok(t, localUiWanted(lb, hello(true, true, 1, "000000000000", lb.Seq-1)), "더 오래된 묶음을 쓰는 맥")
-	ok(t, !localUiWanted(lb, hello(true, true, 1, lb.Version, lb.Seq)), "같은 묶음")
-	ok(t, !localUiWanted(lb, hello(true, true, 1, "000000000000", lb.Seq+1)), "더 새것")
-	ok(t, !localUiWanted(lb, hello(true, false, 1, "000000000000", 1)), "ota 끔")
-	ok(t, !localUiWanted(lb, hello(false, true, 1, "000000000000", 1)), "로컬 화면 끔")
-	ok(t, !localUiWanted(lb, hello(true, true, 2, "000000000000", 1)), "다른 api")
+	api := lb.API
+	ok(t, localUiWanted(lb, hello(true, true, api, "000000000000", lb.Seq-1)), "더 오래된 묶음을 쓰는 맥")
+	ok(t, !localUiWanted(lb, hello(true, true, api, lb.Version, lb.Seq)), "같은 묶음")
+	ok(t, !localUiWanted(lb, hello(true, true, api, "000000000000", lb.Seq+1)), "더 새것")
+	ok(t, !localUiWanted(lb, hello(true, false, api, "000000000000", 1)), "ota 끔")
+	ok(t, !localUiWanted(lb, hello(false, true, api, "000000000000", 1)), "로컬 화면 끔")
+	ok(t, !localUiWanted(lb, hello(true, true, api+1, "000000000000", 1)), "다른 api")
+	ok(t, !localUiWanted(lb, hello(true, true, api-1, "000000000000", 1)), "예전 api")
 	ok(t, !localUiWanted(lb, nil), "localUi 를 모르는 예전 에이전트")
 
 	// A bundle changed after signing, or another signature, is not passed on.
