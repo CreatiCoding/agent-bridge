@@ -214,6 +214,116 @@
     else loadScreen()
   }
   // ---------- the conversation as messages ----------
+  // Markdown drawn the way the web page draws it (ui/src/lib/markdown.tsx), from the same blocks. Every piece
+  // of a message goes in as text: no message is ever read as HTML.
+  function node(tag, cls, text) {
+    var e = document.createElement(tag)
+    if (cls) e.className = cls
+    if (text != null) e.textContent = text
+    return e
+  }
+  function mdInline(parts, into) {
+    parts.forEach(function (p) {
+      if (p.t === 'text') return into.appendChild(document.createTextNode(p.text))
+      if (p.t === 'code') return into.appendChild(node('code', '', p.text))
+      if (p.t === 'link') {
+        var a = node('a', '', p.text)
+        a.href = p.href
+        a.target = '_blank'
+        a.rel = 'noopener noreferrer'
+        return into.appendChild(a)
+      }
+      var w = node(p.t === 'strong' ? 'strong' : p.t === 'del' ? 'del' : 'em')
+      mdInline(p.kids, w)
+      into.appendChild(w)
+    })
+    return into
+  }
+  function mdLines(text, into) {
+    text.split('\n').forEach(function (l, i) {
+      if (i) into.appendChild(document.createElement('br'))
+      mdInline(window.CbMd.inlineParts(l), into)
+    })
+    return into
+  }
+  function mdCode(b) {
+    var box = node('div', 'codebox')
+    if (b.lang) box.appendChild(node('span', 'codebox-lang', b.lang))
+    var copy = node('button', 'codebox-copy', '복사')
+    copy.type = 'button'
+    copy.addEventListener('click', function () {
+      if (!navigator.clipboard) return
+      navigator.clipboard.writeText(b.code).then(function () {
+        copy.textContent = '복사됨'
+        setTimeout(function () { copy.textContent = '복사' }, 1200)
+      }, function () {})
+    })
+    box.appendChild(copy)
+    var code = node('code')
+    if (window.CbMd.isDiff(b.code, b.lang)) {
+      b.code.split('\n').forEach(function (l) { code.appendChild(node('span', window.CbMd.diffLine(l) || '', l + '\n')) })
+    } else code.textContent = b.code
+    var pre = node('pre')
+    pre.appendChild(code)
+    box.appendChild(pre)
+    return box
+  }
+  function mdBlocks(text) {
+    var root = node('div', 'md')
+    window.CbMd.parse(text).forEach(function (b) {
+      if (b.t === 'p') return root.appendChild(mdLines(b.text, node('p')))
+      if (b.t === 'h') return root.appendChild(mdInline(window.CbMd.inlineParts(b.text), node('h' + Math.min(6, b.level + 1))))
+      if (b.t === 'code') return root.appendChild(mdCode(b))
+      if (b.t === 'quote') {
+        var q = node('blockquote')
+        q.appendChild(mdBlocks(b.text))
+        return root.appendChild(q)
+      }
+      if (b.t === 'hr') return root.appendChild(node('hr'))
+      if (b.t === 'table') {
+        var wrap = node('div', 'md-table')
+        var table = node('table')
+        var tr = node('tr')
+        b.head.forEach(function (c, j) {
+          var th = mdInline(window.CbMd.inlineParts(c), node('th'))
+          if (b.align[j]) th.style.textAlign = b.align[j]
+          tr.appendChild(th)
+        })
+        var thead = node('thead')
+        thead.appendChild(tr)
+        table.appendChild(thead)
+        var tbody = node('tbody')
+        b.rows.forEach(function (r) {
+          var row = node('tr')
+          b.head.forEach(function (_, j) {
+            var td = mdInline(window.CbMd.inlineParts(r[j] || ''), node('td'))
+            if (b.align[j]) td.style.textAlign = b.align[j]
+            row.appendChild(td)
+          })
+          tbody.appendChild(row)
+        })
+        table.appendChild(tbody)
+        wrap.appendChild(table)
+        return root.appendChild(wrap)
+      }
+      if (b.t === 'list') {
+        var list = node(b.ordered ? 'ol' : 'ul')
+        if (b.ordered && b.start !== 1) list.start = b.start
+        b.items.forEach(function (it) {
+          var li = node('li', it.check !== undefined ? 'task' : '')
+          if (it.depth) li.style.marginLeft = it.depth * 1.2 + 'em'
+          if (it.check !== undefined) {
+            var box = node('span', 'task-box' + (it.check ? ' on' : ''))
+            box.setAttribute('aria-hidden', 'true')
+            li.appendChild(box)
+          }
+          list.appendChild(mdLines(it.text, li))
+        })
+        root.appendChild(list)
+      }
+    })
+    return root
+  }
   function stamp(at) {
     var d = at ? new Date(at) : null
     if (!d || isNaN(d)) return ''
@@ -248,9 +358,10 @@
       list.forEach(function (m) {
         var b = document.createElement('div')
         b.className = 'bubble ' + (m.me ? 'me' : 'ai')
-        var t = document.createElement('div')
-        t.className = 'btext'
-        t.textContent = m.text
+        // Claude's answers are Markdown read by the web page's own parser (md.js); what I sent stays as typed.
+        var t = !m.me && window.CbMd ? mdBlocks(m.text) : document.createElement('div')
+        t.className = t.className ? t.className + ' btext' : 'btext'
+        if (m.me || !window.CbMd) t.textContent = m.text
         var w = document.createElement('div')
         w.className = 'when'
         w.textContent = (m.me ? '나' : 'Claude') + (stamp(m.at) ? ' · ' + stamp(m.at) : '')

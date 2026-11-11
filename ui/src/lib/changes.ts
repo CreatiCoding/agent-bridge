@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.518',
+    date: '2026-11-11',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent', 'ui'],
+        text: '로컬 화면의 대화가 웹 화면과 같은 마크다운으로 보인다: 제목·목록·할 일·인용·표·코드 블록(복사, diff 색)·인라인 코드·굵게·링크. 웹 화면의 해석기를 React 없는 ui/src/lib/md-parse.ts 로 떼어 두 화면이 같은 파일을 쓴다(scripts/local-md.mjs 가 agent/localui/md.js 로 만듦, 다르면 npm test 실패). 메시지는 HTML 로 읽지 않는다',
+        refs: ['REQ-F-899', 'REQ-F-898', 'REQ-F-843'],
+      },
+    ],
+  },
+  {
     version: '1.517',
     date: '2026-11-11',
+    commit: '24f9b20',
     changes: [
       {
         kind: 'added',
