@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.520',
+    date: '2026-11-12',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '로그인 뒤 사이트에서도 로컬 전체 화면: node agent.mjs local --full install <빌드> <문서 .json> 이 로그인한 브라우저로 받은 맥용 서버를 사이트에서 받은 것과 같이(서명·해시·순번) 확인해 넣는다. on 은 사이트가 로그인 화면으로 넘기면(3xx·JSON 아님) 그렇다고 알리고 넣어 둔 빌드로 켠다',
+        refs: ['REQ-F-902', 'REQ-F-903', 'ERR-369'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '봉인하는 맥에서 로컬 전체 화면 동안 로컬 서버가 남긴 기록을 ~/.claude-bridge/localfull/events 에 따로 둔다. 전에는 사이트 기록과 같은 곳에 평문으로 쌓여 off 뒤 사이트의 events 로 평문이 나갈 수 있었다',
+        refs: ['REQ-S-105', 'REQ-S-106'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '로컬 서버를 띄울 때 /api/health 200 만 믿지 않고, 그 포트를 띄운 자식 하나만 들을 때만(lsof) 그 실행의 비밀로 연동한다. 다른 프로그램이 포트를 먼저 잡았으면 켜지 않는다',
+        refs: ['REQ-S-104', 'ERR-370'],
+      },
+    ],
+  },
+  {
     version: '1.519',
     date: '2026-11-11',
+    commit: '9add7f5',
     changes: [
       {
         kind: 'added',

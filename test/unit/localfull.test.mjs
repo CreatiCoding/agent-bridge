@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES } from '../../agent/localfull.mjs'
+import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy } from '../../agent/localfull.mjs'
 import { docOf, signDoc } from '../../agent/localui.mjs'
 import { localFullSrc, savedLocalFull } from '../../scripts/sign-agent.mjs'
 
@@ -134,4 +134,67 @@ test('server/localfull.json: both Mac builds signed with a trusted key, from the
     assert.ok(Number.isSafeInteger(d.seq) && d.seq > 0)
   }
   assert.equal(j.src, localFullSrc(), '맥용 서버의 소스(server·ui·web·Dockerfile)가 바뀌었습니다. node scripts/sign-agent.mjs 로 다시 만들어 서명하세요(이미지 빌드가 서명과 다른 빌드를 거절합니다)')
+})
+
+test('a site behind a sign-in gate: its login redirect is told apart, and the two files a browser took go in with install (REQ-F-903)', async () => {
+  const seen = []
+  const gate = async (url, opt) => (seen.push(opt?.redirect), new Response('', { status: 302, headers: { Location: 'https://sso.example/login' } }))
+  await assert.rejects(fetchBuild('https://bridge.example', 'darwin-arm64', gate), /로그인 화면으로 넘김 \(HTTP 302\).*install/)
+  assert.deepEqual(seen, ['manual'], '리다이렉트를 따라가지 않음')
+  const page = async () => new Response('<html>login</html>', { status: 200 })
+  await assert.rejects(fetchBuild('https://bridge.example', 'darwin-arm64', page), /JSON 이 아님.*install/)
+
+  const dir = tmp()
+  const configPath = path.join(dir, 'agent.json')
+  fs.writeFileSync(configPath, '{}')
+  const lf = new LocalFull({ dir: path.join(dir, 'localfull'), arch: 'darwin-arm64', keys: KEYS })
+  const b = signed(Buffer.from('v7'), 7)
+  const bin = path.join(dir, 'darwin-arm64')
+  const doc = path.join(dir, 'darwin-arm64.json')
+  fs.writeFileSync(bin, b.bytes)
+  fs.writeFileSync(doc, JSON.stringify({ doc: b.doc, sig: b.sig }))
+  assert.deepEqual(readBuildFiles(bin, doc), { doc: b.doc, sig: b.sig, bytes: b.bytes })
+  const log = console.log
+  const err = console.error
+  console.log = console.error = () => {}
+  try {
+    const base = { configPath, lf, site: 'https://bridge.example', agentPort: 4317, open: null, running: async () => false, fetchImpl: gate }
+    assert.equal(await localFullCli(['install'], base), 1, '파일 없이는 사용법')
+    fs.writeFileSync(path.join(dir, 'bad'), Buffer.from('v7!'))
+    assert.equal(await localFullCli(['install', path.join(dir, 'bad'), doc], base), 1, '해시가 다른 파일은 넣지 않음')
+    assert.equal(lf.installed().ok, false)
+    assert.equal(await localFullCli(['install', bin, doc], base), 0)
+    assert.equal(lf.installed().d.seq, 7)
+    // The site still answers with its login page: on turns on with the build put in by hand.
+    assert.equal(await localFullCli(['on'], base), 0)
+    assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).localFull.on, true)
+  } finally {
+    console.log = log
+    console.error = err
+  }
+})
+
+test('the secret goes only to a port the started server holds alone, not to whatever answers /api/health (REQ-S-104)', () => {
+  assert.deepEqual(listenersOf(4327, () => '812\n'), [812])
+  assert.deepEqual(listenersOf(4327, () => '812\n812\n'), [812])
+  assert.equal(heldOnlyBy(listenersOf(4327, () => '812\n'), 812), true)
+  assert.equal(heldOnlyBy(listenersOf(4327, () => '900\n'), 812), false, '다른 프로그램이 그 포트를 잡음')
+  assert.equal(heldOnlyBy(listenersOf(4327, () => '812\n900\n'), 812), false, '함께 듣는 다른 프로그램')
+  assert.equal(listenersOf(4327, () => { throw new Error('lsof: no match') }), null)
+  assert.equal(heldOnlyBy(null, 812), false, '알 수 없으면 넘기지 않음')
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const on = src.slice(src.indexOf('async function localFullOn('), src.indexOf('async function localFullDown('))
+  assert.ok(on.indexOf('heldOnlyBy(') > 0 && on.indexOf('heldOnlyBy(') < on.indexOf('new LocalRelay('), '비밀을 쓰는 연결보다 먼저 확인')
+})
+
+test('the local server log is kept apart from the site log, so the site never pages it out in plain (REQ-S-106)', () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(src, /const lfStore = new EventStore\(path\.join\(STATE_DIR, 'localfull', 'events'\)\)/)
+  assert.match(src, /const storeOf = \(cmd\) => \(cmd\?\.signed === 'local' \? lfStore : store\)/)
+  const body = (name) => src.slice(src.indexOf(`  ${name}(cmd) {`), src.indexOf('\n  },', src.indexOf(`  ${name}(cmd) {`)))
+  for (const name of ['log', 'events', 'forget']) {
+    assert.ok(src.includes(`  ${name}(cmd) {`), `${name} 이 명령의 출처를 받음`)
+    assert.match(body(name), /storeOf\(cmd\)/, `${name} 은 출처의 기록을 씀`)
+    assert.doesNotMatch(body(name), /\bstore\.(append|page|lastSeq|remove)\(/, `${name} 이 사이트 기록을 바로 쓰지 않음`)
+  }
 })

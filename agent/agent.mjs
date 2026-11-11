@@ -28,7 +28,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
-import { LocalFull, localFullOf, localFullCli, Relay as LocalRelay, sseMessages, archOf as localFullArch } from './localfull.mjs'
+import { LocalFull, localFullOf, localFullCli, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -701,6 +701,15 @@ function convLive(dir, conv) {
 
 /** The numbered events of every session, as the server handed them down. The server keeps no copy. */
 const store = new EventStore(path.join(STATE_DIR, 'events'))
+/**
+ * The log the local server (local --full) numbers is kept apart from the site's (REQ-S-106): it was made while this
+ * Mac did not seal, so the site, linked again, never pages it out through `events` in plain.
+ */
+const lfStore = new EventStore(path.join(STATE_DIR, 'localfull', 'events'))
+/** The log of whoever is linked now: the local server's while local --full is on, else the site's. */
+const evStore = () => (lf.active ? lfStore : store)
+/** The log a command is about: the local server's commands are marked `signed: 'local'` (runCommand). */
+const storeOf = (cmd) => (cmd?.signed === 'local' ? lfStore : store)
 /** Pictures by id: the ones sent from the page, and the ones in the transcripts (tail). */
 const IMAGES_DIR = path.join(STATE_DIR, 'images')
 /** Transcripts as they were before 대화 기록 정리 (REQ-F-793): kept whole, never deleted by the agent. */
@@ -722,7 +731,7 @@ const STATS_TURN_MS = 5_000
 function sendStats(sid, force = false, gap = STATS_MS) {
   const was = statsSent.get(sid)
   if (!force && was && Date.now() - was.at < gap) return void ((was.dirty = true), (was.gap = Math.min(was.gap ?? STATS_MS, gap)))
-  const events = store.all(sid)
+  const events = evStore().all(sid)
   if (!events.length) return
   statsSent.set(sid, { at: Date.now(), dirty: false })
   emit({ t: 'stats', sid, stats: sessionStats(events), prs: prLinks(events) })
@@ -738,9 +747,10 @@ setInterval(() => {
 let statsQueue = []
 function sendAllStats() {
   const from = Date.now() - 90 * 86_400_000
-  const fresh = store.list().filter((sid) => {
+  const st = evStore()
+  const fresh = st.list().filter((sid) => {
     try {
-      return fs.statSync(store.file(sid)).mtimeMs >= from
+      return fs.statSync(st.file(sid)).mtimeMs >= from
     } catch {
       return false
     }
@@ -1222,6 +1232,10 @@ async function localFullOn() {
       if (!up) await sleep(250)
     }
     if (!up) throw new Error(child.exitCode !== null ? `로컬 서버가 바로 끝남(${child.exitCode}) — ${localFull.dir}/server.log` : '로컬 서버가 20초 안에 답하지 않음')
+    // A 200 there is not proof it is the child (another program may hold the port first): the secret goes only to a
+    // port the child holds alone (REQ-S-104).
+    const pids = listenersOf(v.port, (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }))
+    if (child.exitCode !== null || !heldOnlyBy(pids, child.pid)) throw new Error(`127.0.0.1:${v.port} 에서 답한 것이 이 에이전트가 띄운 로컬 서버가 아님(다른 프로그램이 그 포트를 씀: ${pids ? pids.join(',') : '알 수 없음'}) — agent.json 의 localFull.port 를 바꿔 주세요`)
     // The switch: the site's tab goes, the headless browser rests, and the local server takes the link.
     lf.proc = child
     lf.port = v.port
@@ -1309,7 +1323,7 @@ async function hello() {
   welcomed = false
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
-  for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
+  for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: evStore().tailSeq(id) })
   emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', ...(canTranslate() ? ['translate'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
@@ -4059,11 +4073,13 @@ const commands = {
     emit({ t: 'sudo', reqId, ok: true, code: r.code, out: tailOf(r.out), ms: Date.now() - started })
   },
   /** Events the server numbered, to keep (REQ-S-069). Told back by lid once on disk. */
-  log({ sid, lid, events }) {
+  log(cmd) {
+    const { sid, lid, events } = cmd
+    const st = storeOf(cmd)
     try {
-      store.append(sid, events)
+      st.append(sid, events)
       if (typeof lid === 'string') keptLids.push(lid)
-      if (sessions.has(sid) || store.has(sid)) sendStats(sid, false, Array.isArray(events) && events.some((e) => e?.k === 'status' && e.phase !== 'busy') ? STATS_TURN_MS : STATS_MS)
+      if (sessions.has(sid) || st.has(sid)) sendStats(sid, false, Array.isArray(events) && events.some((e) => e?.k === 'status' && e.phase !== 'busy') ? STATS_TURN_MS : STATS_MS)
     } catch (e) {
       log('error', 'store', `세션 기록을 저장하지 못함: ${e.message}`, sid)
     }
@@ -4081,8 +4097,9 @@ const commands = {
     }
   },
   /** The server let the session go (removed from the list): its log goes too. */
-  forget({ sid }) {
-    store.remove(sid)
+  forget(cmd) {
+    const { sid } = cmd
+    storeOf(cmd).remove(sid)
     statsSent.delete(sid)
   },
   /**
@@ -4160,10 +4177,12 @@ const commands = {
     }
   },
   /** A page of a session's log, for a page that asked the server. */
-  events({ reqId, sid, after, before, limit, kinds }) {
+  events(cmd) {
+    const { reqId, sid, after, before, limit, kinds } = cmd
+    const st = storeOf(cmd)
     try {
-      const page = store.page(sid, { after: after == null ? undefined : Number(after), before: before == null ? undefined : Number(before), limit, kinds: Array.isArray(kinds) ? kinds.map(String).slice(0, 10) : undefined })
-      emit({ t: 'events', reqId, ok: true, ...page, last: store.lastSeq(sid) })
+      const page = st.page(sid, { after: after == null ? undefined : Number(after), before: before == null ? undefined : Number(before), limit, kinds: Array.isArray(kinds) ? kinds.map(String).slice(0, 10) : undefined })
+      emit({ t: 'events', reqId, ok: true, ...page, last: st.lastSeq(sid) })
     } catch (e) {
       emit({ t: 'events', reqId, ok: false, error: e.message })
     }
@@ -4632,7 +4651,7 @@ const commands = {
       saveSessions()
       // The log so far comes along, its cards not (their buttons belong to the original); and the ids of the copied
       // lines, which the server does not draw a second time (REQ-S-069).
-      if (Number.isInteger(copyLog)) store.copy(sid, newSid, copyLog)
+      if (Number.isInteger(copyLog)) evStore().copy(sid, newSid, copyLog)
       let uuids = []
       try {
         uuids = [...fs.readFileSync(transcriptPath(from, sid), 'utf8').matchAll(/"uuid":"([0-9a-f-]{36})"/g)].map((m) => m[1])

@@ -363,16 +363,62 @@ export class Relay {
 
 // ---------- the terminal: `node agent.mjs local --full …` ----------
 
-/** A build from the site: its signed document, then its bytes. */
+/**
+ * A build from the site: its signed document, then its bytes. Redirects are not followed: a site behind a sign-in
+ * gate answers this cookie-less request with its login page, which is told apart from a missing build (REQ-F-903).
+ */
 export async function fetchBuild(site, arch, fetchImpl = fetch) {
-  const j = await fetchImpl(`${site}/localfull/${arch}.json`, { signal: AbortSignal.timeout(20_000) })
-  const meta = await j.json().catch(() => ({}))
-  if (!j.ok || typeof meta.doc !== 'string') throw new Error(meta.error || `문서를 받지 못함 (HTTP ${j.status})`)
-  const b = await fetchImpl(`${site}/localfull/${arch}`, { signal: AbortSignal.timeout(600_000) })
+  const gate = (r) => {
+    if (r.status >= 300 && r.status < 400) throw new Error(`사이트가 로그인 화면으로 넘김 (HTTP ${r.status}) — 브라우저로 받아 local --full install 로 넣어 주세요`)
+  }
+  const j = await fetchImpl(`${site}/localfull/${arch}.json`, { redirect: 'manual', signal: AbortSignal.timeout(20_000) })
+  gate(j)
+  const meta = await j.json().catch(() => null)
+  if (j.ok && !meta) throw new Error('문서가 JSON 이 아님(로그인 화면일 수 있음) — 브라우저로 받아 local --full install 로 넣어 주세요')
+  if (!j.ok || typeof meta?.doc !== 'string') throw new Error(meta?.error || `문서를 받지 못함 (HTTP ${j.status})`)
+  const b = await fetchImpl(`${site}/localfull/${arch}`, { redirect: 'manual', signal: AbortSignal.timeout(600_000) })
+  gate(b)
   if (!b.ok) throw new Error(`빌드를 받지 못함 (HTTP ${b.status})`)
   const bytes = Buffer.from(await b.arrayBuffer())
   return { doc: meta.doc, sig: meta.sig, bytes }
 }
+
+/**
+ * A build already on this Mac (`local --full install <build> <document .json>`, REQ-F-903): the same two files the
+ * site hands out, taken by a browser that is signed in to it. Checked exactly as one from the site (install).
+ */
+export function readBuildFiles(binFile, docFile) {
+  let meta
+  try {
+    meta = JSON.parse(fs.readFileSync(docFile, 'utf8'))
+  } catch (e) {
+    throw new Error(`문서 파일을 읽지 못함: ${e.code === 'ENOENT' ? '없음' : e.message}`)
+  }
+  if (!meta || typeof meta.doc !== 'string' || typeof meta.sig !== 'string') throw new Error('문서 파일에 doc·sig 가 없음(사이트의 /localfull/<arch>.json 이어야 함)')
+  let st
+  try {
+    st = fs.statSync(binFile)
+  } catch {
+    throw new Error('빌드 파일이 없음')
+  }
+  if (!st.isFile() || st.size > LF_MAX) throw new Error('빌드 파일이 아니거나 너무 큼')
+  return { doc: meta.doc, sig: meta.sig, bytes: fs.readFileSync(binFile) }
+}
+
+/**
+ * Who listens on 127.0.0.1:port (TCP), by pid, from lsof's `-t` output; null when it cannot be told. The agent hands
+ * the run's secret only to a port its own child holds alone: a 200 from /api/health is not proof (REQ-S-104).
+ */
+export function listenersOf(port, run) {
+  try {
+    const out = String(run('/usr/sbin/lsof', ['-nP', '-a', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']) ?? '')
+    const pids = out.split(/\s+/).filter(Boolean).map(Number)
+    return pids.length && pids.every((n) => Number.isSafeInteger(n) && n > 0) ? [...new Set(pids)] : null
+  } catch {
+    return null
+  }
+}
+export const heldOnlyBy = (pids, pid) => Array.isArray(pids) && pids.length === 1 && pids[0] === pid
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -422,7 +468,7 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
     else if (got.result === 'old') console.log(`사이트의 빌드(순번 ${got.seq})가 이 맥의 것(순번 ${got.floor})보다 먼저 서명돼 받지 않았어요.`)
     else console.log(`사이트에서 받지 못했어요: ${got.why}`)
     if (!have.ok) {
-      console.error(`쓸 수 있는 맥용 서버가 없어요(${have.why}). 사이트에 연결된 상태에서 다시 해 주세요.`)
+      console.error(`쓸 수 있는 맥용 서버가 없어요(${have.why}). 사이트에 연결된 상태에서 다시 하거나, 로그인한 브라우저로 받은 파일을 넣어 주세요: node agent.mjs local --full install <빌드 파일> <문서 .json>`)
       return 1
     }
     set({ on: true })
@@ -440,6 +486,29 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
     console.log(`\n로컬 전체 화면: http://127.0.0.1:${st.port}/ (이 맥에서만)\n일회용 링크(5분 안에 한 번만):\n\n  ${l}\n\n사이트로 돌아가려면: node agent.mjs local --full off`)
     open?.(l)
     return 0
+  }
+  if (cmd === 'install') {
+    if (!lf.arch) {
+      console.error('로컬 전체 화면은 macOS(arm64·x64)에서만 써요.')
+      return 1
+    }
+    const [, binFile, docFile] = words
+    if (!binFile || !docFile) {
+      console.error(`사용법: node agent.mjs local --full install <빌드 파일> <문서 .json>\n  두 파일은 로그인한 브라우저로 사이트의 /localfull/${lf.arch} 와 /localfull/${lf.arch}.json 에서 받아요.`)
+      return 1
+    }
+    let got
+    try {
+      got = lf.install(readBuildFiles(path.resolve(binFile), path.resolve(docFile)))
+    } catch (e) {
+      console.error(`넣지 못했어요: ${e.message}`)
+      return 1
+    }
+    if (got.result === 'installed') console.log(`맥용 서버 ${got.version}(순번 ${got.seq})을 확인하고 넣었어요. 켜려면: node agent.mjs local --full on`)
+    else if (got.result === 'same') console.log(`맥용 서버 ${got.version}(순번 ${got.seq}): 이미 넣은 것과 같아요.`)
+    else if (got.result === 'old') console.log(`이 빌드(순번 ${got.seq})는 이 맥의 것(순번 ${got.floor})보다 먼저 서명돼 넣지 않았어요.`)
+    else console.error(`넣지 못했어요: ${got.why}`)
+    return got.result === 'installed' || got.result === 'same' ? 0 : 1
   }
   if (cmd === 'off') {
     set({ on: false })
@@ -471,6 +540,6 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
     console.log(`맥용 서버: ${have.ok ? `${have.d.version} (순번 ${have.d.seq})` : `없음(${have.why})`} · 데이터: ${lf.dataDir}`)
     return 0
   }
-  console.error('사용법: node agent.mjs local --full on | off | open | status')
+  console.error('사용법: node agent.mjs local --full on | off | open | status | install <빌드 파일> <문서 .json>')
   return 1
 }
