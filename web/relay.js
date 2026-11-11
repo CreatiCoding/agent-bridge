@@ -509,6 +509,8 @@ export function startRelay(ui = {}, opts = {}) {
         busyTries = 0
         // The headless browser (헤드리스 연동 모드) holds the link: nothing is wrong and nothing to take over.
         if (msg.headless) return standDown('헤드리스 브라우저가 이 맥을 연동하는 중', false, true)
+        // The Mac is on its own local server (local --full, REQ-F-900): asked again only every 30 s.
+        if (msg.local) return standDown('이 맥은 지금 로컬 전체 화면(127.0.0.1)으로 연동 중이에요. 사이트로 돌아오려면 맥 터미널에서: node ~/.claude-bridge/agent.mjs local --full off', false, false, 30_000)
         return standDown('다른 브라우저의 탭이 이미 이 에이전트와 연동 중', true)
       }
       diag.fromAgent++
@@ -590,7 +592,7 @@ export function startRelay(ui = {}, opts = {}) {
   const LOCK = `cb-bridge-${agent.port}`
   const tabs = new BroadcastChannel(LOCK)
   let release = null
-  function standDown(text, offerTakeover, headless = false) {
+  function standDown(text, offerTakeover, headless = false, again = 0) {
     if (stopped) return
     stopped = true
     agentStream?.close()
@@ -609,7 +611,7 @@ export function startRelay(ui = {}, opts = {}) {
     // The control page goes back in line: when the tab that took over is closed, it carries on by itself.
     // Turned away by the agent, it waits a little longer before asking, but not long: while this tab is out of
     // the line, no tab of this browser takes over when the relaying one goes away (that gap used to be 30 s).
-    if (opts.persistent) setTimeout(() => run(false), offerTakeover ? 5000 : 1500)
+    if (opts.persistent) setTimeout(() => run(false), again || (offerTakeover ? 5000 : 1500))
   }
   tabs.onmessage = (e) => {
     const m = e.data

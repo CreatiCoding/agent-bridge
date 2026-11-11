@@ -28,6 +28,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
+import { LocalFull, localFullOf, localFullCli, Relay as LocalRelay, sseMessages, archOf as localFullArch } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -37,7 +38,7 @@ import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detec
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs', 'translate.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'localfull.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs', 'translate.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -96,6 +97,8 @@ const keepAwakeArg = bool('keep-awake')
 const allowSleepArg = bool('allow-sleep')
 /** `link --visible`: the running agent opens the headless browser's profile in a visible window to sign in (REQ-F-833). */
 const visibleArg = bool('visible')
+/** `local --full on|off|open|status`: the web screen from this Mac's own signed server (REQ-F-902). */
+const fullArg = bool('full')
 /** Started by launchd as the background service: never asks, never opens a browser. */
 const asService = bool('service')
 /** Started by `start` (cron, Raycast, a login item) with no terminal: not saved, like --service (REQ-F-813). */
@@ -198,6 +201,9 @@ const writeJson = (p, v) => {
     // So is `localUi` (the local screen, LOCAL-UI-DESIGN §3): `local on|off|ota` writes it, no server command does.
     if (disk.localUi === undefined) delete v.localUi
     else v.localUi = disk.localUi
+    // And `localFull` (local --full, REQ-F-902): only `local --full on|off` at this terminal writes it.
+    if (disk.localFull === undefined) delete v.localFull
+    else v.localFull = disk.localFull
   }
   fs.writeFileSync(`${p}.tmp`, JSON.stringify(v, null, 2), { mode: 0o600 })
   fs.renameSync(`${p}.tmp`, p)
@@ -231,6 +237,13 @@ if (trustCmd) {
   const code = await trustCli(words.slice(1), { stateDir: STATE_DIR, configPath, hostId: config.hostId, ask: (q) => rl.question(q) })
   rl.close()
   process.exit(code)
+}
+if (localCmd && fullArg) {
+  // The build is checked here and again by the running agent before it runs it; the switch itself is the agent's.
+  const lf = new LocalFull({ dir: path.join(STATE_DIR, 'localfull') })
+  const running = () => fetch(`http://127.0.0.1:${config.port}/ping`, { signal: AbortSignal.timeout(1500) }).then((r) => r.ok).catch(() => false)
+  const open = noOpen ? null : (link) => spawn('open', [link], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+  process.exit(await localFullCli(words.slice(1), { configPath, lf, site: config.site, agentPort: config.port, open, running }))
 }
 if (localCmd) {
   // A ticket is a file in localui/ that only this user can write: the running agent takes it at /local/api/login.
@@ -810,7 +823,7 @@ function keepSignedAllow(s, from) {
   Object.assign(s, { autoAllow: true, autoAllowSigned: true, ...(from.allowAll ? { allowAll: true } : {}) })
 }
 /** Whether what leaves this Mac is sealed now (§6, 1.394): chosen at the terminal, a mode, and a device to read it. */
-const trustSealing = () => trust.sealing(trustMode()) && trustSeen.seal
+const trustSealing = () => !lf.active && trust.sealing(trustMode()) && trustSeen.seal
 const trustInfo = () => trust.info(trustMode(), trustSeen.seal)
 const enforcing = () => trustMode() === 'enforce'
 /**
@@ -1123,6 +1136,160 @@ async function localHttp(req, res, url) {
   return json(404, { error: '모르는 요청' })
 }
 
+// ---------- 로컬 전체 화면 (local --full, REQ-F-900~902, REQ-S-103~105, docs/LOCAL-UI-DESIGN.md §8) ----------
+
+const localFull = new LocalFull({ dir: path.join(STATE_DIR, 'localfull') })
+/**
+ * The switch. active: this Mac is linked to its own local server (127.0.0.1:port) and to no tab of the site. proc:
+ * the server program. relay: the agent's link to it. sink: what stands for the bridge tab's stream (`client`).
+ */
+const lf = { active: false, starting: false, proc: null, relay: null, sink: null, port: 0, error: '', failedAt: 0 }
+let lfSeen = { at: 0, v: localFullOf(config, config.port) }
+/** agent.json's `localFull`, read again every 2 s: changed at the terminal (`local --full on|off`), never by a server. */
+function localFullNow() {
+  const t = Date.now()
+  if (t - lfSeen.at < 2000) return lfSeen.v
+  lfSeen = { at: t, v: localFullOf(readJson(configPath, {}), config.port) }
+  return lfSeen.v
+}
+const lfSave = () => localFull.saveState({ active: lf.active, port: lf.port, error: lf.error })
+
+/** A file the server holds for a message, kept with the pictures where a session may read it (REQ-F-761, REQ-F-830). */
+async function saveIncomingFile({ id, name, sid, body }) {
+  if (!/^[0-9a-f]{40}\.(mp4|mov|webm|m4v|bin)$/.test(id)) throw Object.assign(new Error('영상·파일 id 가 올바르지 않아요'), { code: 400 })
+  const nm = String(name || 'file').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'file'
+  const dir = path.join(STATE_DIR, 'images')
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const ext = id.split('.').pop()
+  // A file keeps its own name (its .bin is only the server's); a video gets its extension when the name has none.
+  const file = path.join(dir, `${id.slice(0, 8)}-${ext === 'bin' || nm.toLowerCase().endsWith(`.${ext}`) ? nm : `${nm}.${ext}`}`)
+  const out = fs.createWriteStream(file, { mode: 0o600 })
+  let size = 0
+  try {
+    for await (const c of body) {
+      size += c.length
+      if (size > 600 * 1024 * 1024) throw new Error('너무 커요')
+      if (!out.write(c)) await new Promise((r) => out.once('drain', r))
+    }
+    await new Promise((ok, bad) => out.end((e) => (e ? bad(e) : ok())))
+  } catch (e) {
+    out.destroy()
+    fs.rmSync(file, { force: true })
+    throw e
+  }
+  log('info', 'send', `${ext === 'bin' ? '파일' : '영상'} 받음 (${Math.round(size / 1024)} KB)`, sid || undefined)
+  return file
+}
+
+/** Stops the local server program: asked first, then made to. */
+async function lfKill(proc) {
+  if (!proc || proc.exitCode !== null) return
+  proc.kill('SIGTERM')
+  for (let i = 0; i < 50 && proc.exitCode === null; i++) await sleep(100)
+  if (proc.exitCode === null) proc.kill('SIGKILL')
+}
+
+/**
+ * On: the build checked again from disk, started at 127.0.0.1 with a secret made for this run (on its stdin, nowhere
+ * else), and once it answers, the site's link ends and the agent links to it instead (REQ-F-900).
+ */
+async function localFullOn() {
+  if (lf.starting || lf.active) return
+  lf.starting = true
+  let child = null
+  try {
+    const have = localFull.installed()
+    if (!have.ok) throw new Error(`맥용 서버를 쓸 수 없어요(${have.why}) — 터미널: node ${SELF} local --full on`)
+    const v = localFullNow()
+    const secret = crypto.randomBytes(32).toString('base64url')
+    localFull.ensure()
+    const logFile = fs.openSync(path.join(localFull.dir, 'server.log'), 'a', 0o600)
+    child = spawn(localFull.binPath, ['local', '--port', String(v.port), '--data', localFull.dataDir, '--tickets', localFull.ticketsPath, '--hours', String(v.sessionHours)], { stdio: ['pipe', logFile, logFile], env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME, TZ: process.env.TZ ?? '', LANG: process.env.LANG ?? '' } })
+    fs.closeSync(logFile)
+    child.stdin.end(`${secret}\n`)
+    child.on('error', (e) => log('error', 'localfull', `로컬 서버를 띄우지 못함: ${e.message}`))
+    child.on('exit', (code, sig) => {
+      if (lf.proc !== child) return
+      lf.proc = null
+      if (lf.active) localFullDown(`로컬 서버가 끝남(${sig || code})`)
+    })
+    // Answering on its address: up. A program that ends first, or never answers, is not switched to.
+    const base = `http://127.0.0.1:${v.port}`
+    const end = Date.now() + 20_000
+    let up = false
+    while (Date.now() < end && child.exitCode === null && !up) {
+      up = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1000) }).then((r) => r.ok, () => false)
+      if (!up) await sleep(250)
+    }
+    if (!up) throw new Error(child.exitCode !== null ? `로컬 서버가 바로 끝남(${child.exitCode}) — ${localFull.dir}/server.log` : '로컬 서버가 20초 안에 답하지 않음')
+    // The switch: the site's tab goes, the headless browser rests, and the local server takes the link.
+    lf.proc = child
+    lf.port = v.port
+    lf.active = true
+    lf.error = ''
+    if (client) client.end('data: {"t":"replaced"}\n\n')
+    if (bg.child) stopBackground()
+    const relay = new LocalRelay({ base, secret, toAgent: (cmd) => runCommand(cmd, { local: true }), saveFile: saveIncomingFile, log: (level, text) => log(level, 'localfull', text) })
+    lf.relay = relay
+    let buf = ''
+    lf.sink = {
+      write(s) {
+        const { msgs, rest } = sseMessages(buf + s)
+        buf = rest
+        for (const m of msgs) relay.fromAgent(m)
+      },
+      end() {},
+    }
+    client = lf.sink
+    clientTab = 'localfull'
+    clientBg = false
+    clientRekey = false
+    clientOldKey = false
+    clientSeen = Date.now()
+    for (const s of sessions.values()) s.statusKey = null
+    relay.start()
+    log('info', 'localfull', `로컬 전체 화면으로 바꿈: ${base} (빌드 ${have.d.version}, 순번 ${have.d.seq})`)
+    await hello()
+  } catch (e) {
+    lf.error = e.message
+    lf.failedAt = Date.now()
+    log('error', 'localfull', e.message)
+    if (child && lf.proc !== child) await lfKill(child)
+  } finally {
+    lf.starting = false
+    lfSave()
+  }
+}
+
+/** Off (or the local server ended): the agent unlinks from it; the site's tabs and the headless browser link again. */
+async function localFullDown(why) {
+  const relay = lf.relay
+  const proc = lf.proc
+  lf.relay = null
+  lf.proc = null
+  if (client === lf.sink) ((client = null), (welcomed = false), (clientTab = ''))
+  lf.sink = null
+  lf.active = false
+  lf.error = why && !/^꺼짐/.test(why) ? why : ''
+  if (lf.error) lf.failedAt = Date.now()
+  lfSave()
+  log(lf.error ? 'warn' : 'info', 'localfull', `로컬 전체 화면을 내림: ${why}`)
+  await relay?.stop()
+  await lfKill(proc)
+  // 헤드리스 연동 모드 starts its browser at the next heal, not 90 s later.
+  bg.startedAt = 0
+}
+
+// Every 2 s: follow what the terminal set. A local server that failed to start is tried again after 30 s.
+setInterval(() => {
+  if (doctorOnly || serviceCmd || linkOnly || awakeCmd) return
+  const v = localFullNow()
+  if (v.on && !lf.active && !lf.starting && Date.now() - lf.failedAt > 30_000) localFullOn().catch((e) => log('error', 'localfull', e.message))
+  else if (!v.on && (lf.active || lf.proc)) localFullDown('꺼짐(맥 터미널)').catch((e) => log('error', 'localfull', e.message))
+}, 2000).unref()
+process.on('exit', () => lf.proc?.kill('SIGTERM'))
+if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd) lfSave()
+
 /** The background work this Mac counted for a session (BgTracker, §5.3 refresh). */
 const ownBg = (s) => (s.bgTrack ? s.bgTrack.running() : [])
 
@@ -1143,7 +1310,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: store.tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', ...(canTranslate() ? ['translate'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', ...(canTranslate() ? ['translate'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 
@@ -7561,7 +7728,7 @@ async function heal() {
       repaired('lid', `덮개 잠자기 설정이 바뀌어 있어(SleepDisabled ${now ? 1 : 0}) 다시 적용함`, lidActive === !!config.keepLidAwake)
     }
   }
-  if (config.background && CHROME_BIN && !bg.visible && !(client && clientBg)) {
+  if (config.background && CHROME_BIN && !bg.visible && !(client && clientBg) && !lf.active) {
     const since = bg.startedAt ?? 0
     if (!bg.child && Date.now() - since > 90_000) {
       startBackground()
@@ -7585,7 +7752,7 @@ if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd) setInterval(autoRotate
 async function features() {
   const out = []
   const add = (id, title, state, detail, extra = {}) => out.push({ id, title, state, detail, ...extra })
-  add('link', '연동', client ? 'ok' : 'fail', client ? (clientBg ? '헤드리스 브라우저가 연동 중' : '브라우저 탭이 연동 중') : '연동 페이지가 붙어 있지 않음', client ? {} : { fix: '이 맥의 Chrome 에서 사이트를 열거나 헤드리스 연동 모드를 켜세요' })
+  add('link', '연동', client ? 'ok' : 'fail', client ? (lf.active ? `로컬 전체 화면(127.0.0.1:${lf.port})에 연동 중` : clientBg ? '헤드리스 브라우저가 연동 중' : '브라우저 탭이 연동 중') : '연동 페이지가 붙어 있지 않음', client ? {} : { fix: '이 맥의 Chrome 에서 사이트를 열거나 헤드리스 연동 모드를 켜세요' })
   const b = backgroundState()
   const visibleFix = `node ${SELF} link --visible`
   if (b.on && b.chrome && b.visible) add('background', '헤드리스 연동 모드', 'warn', '보이는 Chrome 창에서 프록시 로그인을 기다리는 중', { action: 'visible-login' })
@@ -8254,30 +8421,12 @@ const server = http.createServer(async (req, res) => {
       trust.audit('refused /file')
       return void res.writeHead(403, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: '이 맥은 서버를 믿지 않는 모드라 영상·파일을 받지 않아요' }))
     }
-    const id = url.searchParams.get('id') || ''
-    if (!/^[0-9a-f]{40}\.(mp4|mov|webm|m4v|bin)$/.test(id)) return void res.writeHead(400, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: '영상·파일 id 가 올바르지 않아요' }))
-    const name = String(url.searchParams.get('name') || 'file').replace(/[^\w.가-힣 -]/g, '_').slice(0, 120) || 'file'
-    const dir = path.join(STATE_DIR, 'images')
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-    const ext = id.split('.').pop()
-    // A file keeps its own name (its .bin is only the server's); a video gets its extension when the name has none.
-    const file = path.join(dir, `${id.slice(0, 8)}-${ext === 'bin' || name.toLowerCase().endsWith(`.${ext}`) ? name : `${name}.${ext}`}`)
-    const out = fs.createWriteStream(file, { mode: 0o600 })
-    let size = 0
     try {
-      for await (const c of req) {
-        size += c.length
-        if (size > 600 * 1024 * 1024) throw new Error('너무 커요')
-        if (!out.write(c)) await new Promise((r) => out.once('drain', r))
-      }
-      await new Promise((ok, bad) => out.end((e) => (e ? bad(e) : ok())))
+      const file = await saveIncomingFile({ id: url.searchParams.get('id') || '', name: url.searchParams.get('name'), sid: url.searchParams.get('sid'), body: req })
+      res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, path: file }))
     } catch (e) {
-      out.destroy()
-      fs.rmSync(file, { force: true })
-      return void res.writeHead(413, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: e.message }))
+      res.writeHead(e.code === 400 ? 400 : 413, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: false, error: e.message }))
     }
-    log('info', 'send', `${ext === 'bin' ? '파일' : '영상'} 받음 (${Math.round(size / 1024)} KB)`, url.searchParams.get('sid') || undefined)
-    res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, path: file }))
     return
   }
   // sudo in a session, through its helper (agent/guard.mjs askpassScript): the password, once the server says this
@@ -8354,6 +8503,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { ...cors, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
     // One tab at a time. A tab the agent just opened (takeover) wins; any other tab is turned away while the
     // current one is alive, so a forgotten tab's automatic reconnect cannot pull the agent away from it.
+    // While this Mac is on its local server (local --full), no tab of the site links it: one link at a time (REQ-F-900).
+    if (lf.active) return res.end('data: {"t":"busy","local":true}\n\n')
     const tab = url.searchParams.get('tab') || ''
     const isBg = url.searchParams.get('bg') === '1'
     const alive = client && Date.now() - clientSeen < 45_000
@@ -8417,27 +8568,44 @@ const server = http.createServer(async (req, res) => {
     } catch {
       return res.writeHead(400, cors).end()
     }
+    // A tab of the site has no say while this Mac is on its local server (local --full).
+    if (lf.active) return res.writeHead(409, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":false,"error":"로컬 전체 화면으로 연동 중"}')
     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":true}')
     if ((url.searchParams.get('tab') || clientTab) === clientTab) clientSeen = Date.now()
-    if (!cmd || typeof cmd !== 'object') return
-    const fn = commands[cmd.t]
-    if (!fn) return
-    // Signed by a paired device, or not run at all, while this Mac does not trust the server (REQ-S-091).
-    cmd = trustGate(cmd)
-    if (!cmd) return
-    const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate'].includes(cmd.t)
-    if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
-    if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)
-    try {
-      await fn(cmd)
-    } catch (e) {
-      log('error', cmd.t, `실패: ${e.stack || e.message}`, cmd.sid)
-      emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message: e.message })
-    }
-    return
+    return runCommand(cmd)
   }
   res.writeHead(404, cors).end()
 })
+
+/**
+ * A command from the linked server: through the bridge tab (/cmd), or from this Mac's own local server (local: the
+ * local --full relay). The site's commands pass the trust gate; the local server's are the person at this Mac's, who
+ * came in through a one-time link from its terminal, as on the local screen (REQ-S-105): not asked for a device's
+ * signature, marked as this Mac's own, and written to trust's log while trust is on.
+ */
+async function runCommand(cmd, { local = false } = {}) {
+  if (!cmd || typeof cmd !== 'object') return
+  const fn = commands[cmd.t]
+  if (!fn) return
+  if (local) {
+    delete cmd.signed
+    cmd.signed = 'local'
+  } else {
+    // Signed by a paired device, or not run at all, while this Mac does not trust the server (REQ-S-091).
+    cmd = trustGate(cmd)
+    if (!cmd) return
+  }
+  const quiet = ['voice', 'welcome', 'rehello', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate'].includes(cmd.t)
+  if (local && !quiet && trustOn()) trust.audit(`localfull ${cmd.t}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}`)
+  if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
+  if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)
+  try {
+    await fn(cmd)
+  } catch (e) {
+    log('error', cmd.t, `실패: ${e.stack || e.message}`, cmd.sid)
+    emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message: e.message })
+  }
+}
 
 if (doctorOnly) {
   await runChecks()

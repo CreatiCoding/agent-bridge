@@ -126,6 +126,9 @@ func route(req *Req, res *Res) {
 		jsonRes(res, 200, orderedObj{{"ok", true}, {"version", VERSION}, {"instance", handover.id}})
 		return
 	}
+	if localRoute(req, res, p) {
+		return
+	}
 	service := strings.HasPrefix(p, "/api/service/")
 	if !service {
 		pickOrigin(req)
@@ -166,6 +169,9 @@ func route(req *Req, res *Res) {
 			}
 		}
 		uid := whoami(req)
+		if LOCAL && strings.HasPrefix(p, "/api/bridge/") {
+			uid = localBridgeWho(req)
+		}
 		if uid == "" && headerOnly() {
 			refuseX(401, "로그인이 필요합니다", M{"headerOnly": true})
 		}
@@ -387,6 +393,9 @@ func route(req *Req, res *Res) {
 		res.WriteHead(200, M{"Content-Type": "application/manifest+json", "Cache-Control": "no-cache"}).EndS(jsonStr(orderedObj{{"name", APP_NAME}, {"short_name", APP_NAME}, {"start_url", "/"}, {"display", "standalone"}, {"background_color", "#262624"}, {"theme_color", "#1f1e1d"}, {"icons", []any{orderedObj{{"src", "/icon.svg"}, {"sizes", "any"}, {"type", "image/svg+xml"}}}}}))
 		return
 	}
+	if !LOCAL && serveLocalFull(res, p) {
+		return
+	}
 	if webFileRe.MatchString(p) {
 		sendFile(res, filepath.Join(ROOT, "web", p), "")
 		return
@@ -409,6 +418,9 @@ func isUpgrade(r *http.Request) bool {
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	if !localGate(w, r) {
+		return
+	}
 	if isUpgrade(r) {
 		if preview.is(r) && handover.getState() == "running" {
 			preview.upgrade(w, r)
@@ -470,6 +482,14 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "config" {
 		os.Exit(configCLI(os.Args[2:]))
 	}
+	// The Mac builds made while the image is built must be the signed ones (REQ-F-901).
+	if len(os.Args) > 1 && os.Args[1] == "localfull-verify" {
+		os.Exit(localFullVerify(os.Args[2:]))
+	}
+	// A Mac's own server, started by its agent (local --full, REQ-F-900).
+	if len(os.Args) > 1 && os.Args[1] == "local" && !startLocal(os.Args[2:]) {
+		os.Exit(1)
+	}
 	if !configure() {
 		os.Exit(1)
 	}
@@ -491,6 +511,7 @@ func main() {
 	mu.Lock()
 	prepare()
 	loadStore()
+	localOwner()
 	startFlushing()
 	loadVapid()
 	loadRetention()
@@ -543,7 +564,12 @@ func main() {
 	}
 	mu.Unlock()
 
-	ln, err := net.Listen("tcp", ":"+itoa(PORT))
+	// A Mac's local server listens on this Mac's loopback only (REQ-S-104).
+	addr := ":" + itoa(PORT)
+	if LOCAL {
+		addr = "127.0.0.1:" + itoa(PORT)
+	}
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		errorLine(err.Error())
 		os.Exit(1)

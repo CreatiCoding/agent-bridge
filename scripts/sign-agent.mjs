@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { signedText, manifestOf, manifestSigned } from '../agent/guard.mjs'
 import { makeBundle, docOf, signDoc, verify as localVerify } from '../agent/localui.mjs'
+import { lfDocOf, lfSign, lfSigned, lfVerify, LF_ARCHES } from '../agent/localfull.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export function agentFiles() {
@@ -68,6 +69,48 @@ export async function savedLocalBundle() {
     return null
   }
 }
+/**
+ * The files the Mac builds of the server are made from (local --full, REQ-F-901), as this working copy has them:
+ * what the image's localfull stage reads (the server's Go files, the web screen, web/, the build script, the
+ * Dockerfile with its Go and node images). Tracked or new, never ignored ones.
+ */
+export function localFullInputs() {
+  const out = execFileSync('git', ['-C', ROOT, 'ls-files', '-co', '--exclude-standard', '-z', '--', 'server', 'ui', 'web', 'package.json', 'extensions/agent-bridge-ext.d.ts', 'scripts/build-localfull.sh', 'Dockerfile', '.dockerignore'], { encoding: 'utf8' })
+  return [...new Set(out.split('\0').filter(Boolean))]
+    .filter((f) => (f.startsWith('server/') ? (/^server\/[^/]+\.go$/.test(f) && !f.endsWith('_test.go')) || ['server/go.mod', 'server/go.sum', 'server/quality.json'].includes(f) : true))
+    .filter((f) => fs.existsSync(path.join(ROOT, f)))
+    .sort()
+}
+/** One hash of those files: server/localfull.json keeps the one it was signed from, and `npm test` compares. */
+export function localFullSrc() {
+  const h = crypto.createHash('sha256')
+  for (const f of localFullInputs()) h.update(`${f}\0${crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, f))).digest('hex')}\n`)
+  return h.digest('hex')
+}
+export const LOCALFULL_JSON = path.join(ROOT, 'server/localfull.json')
+export function savedLocalFull() {
+  try {
+    return JSON.parse(fs.readFileSync(LOCALFULL_JSON, 'utf8'))
+  } catch {
+    return null
+  }
+}
+/**
+ * The Mac builds, made by the Dockerfile's own localfull stage (docker, the classic builder is enough): the same Go
+ * and web screen build as the image, so the bytes signed here are the bytes the image makes and checks.
+ */
+export function buildLocalFull(outDir) {
+  const tag = 'cb-localfull-sign:latest'
+  execFileSync('docker', ['build', '--target', 'localfull', '-t', tag, ROOT], { stdio: ['ignore', 'ignore', 'inherit'] })
+  const name = `cb-localfull-sign-${process.pid}`
+  try {
+    execFileSync('docker', ['create', '--name', name, tag, 'true'], { stdio: 'ignore' })
+    execFileSync('docker', ['cp', `${name}:/out/.`, outDir], { stdio: 'ignore' })
+  } finally {
+    execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' })
+  }
+}
+
 export const agentBuild = () => agentFiles().reduce((h, f) => h.update(fs.readFileSync(path.join(ROOT, 'agent', f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
@@ -109,6 +152,38 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(file
     const doc = docOf(bundle, seq)
     fs.writeFileSync(path.join(ROOT, 'agent/localbundle.mjs'), localBundleModule(doc, signDoc(doc, key), bundle))
     console.log(`agent/localbundle.mjs: 로컬 화면 묶음 ${JSON.parse(doc).version} · seq ${seq} 서명함`)
+  }
+  // The Mac builds of the server (local --full, REQ-F-901): made again and signed under this seq only when their
+  // sources changed. `--no-localfull` leaves them as they are (npm test then says when they are behind). A copy
+  // without the server and its Dockerfile (only agent/ and this script) has nothing to build.
+  if (!process.argv.includes('--no-localfull') && fs.existsSync(path.join(ROOT, 'server/go.mod')) && fs.existsSync(path.join(ROOT, 'Dockerfile'))) {
+    const src = localFullSrc()
+    const had = savedLocalFull()
+    if (had && had.src === src && LF_ARCHES.every((a) => had[a] && lfSigned(had[a].doc, had[a].sig))) console.log('server/localfull.json: 맥용 서버의 소스가 그대로라 다시 만들지 않음')
+    else {
+      const out = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-localfull-'))
+      console.log('맥용 서버를 Dockerfile 의 localfull 단계로 빌드하는 중(docker)…')
+      try {
+        buildLocalFull(out)
+      } catch (e) {
+        console.error(`맥용 서버를 빌드하지 못했습니다(docker 가 필요합니다): ${e.message}`)
+        process.exit(1)
+      }
+      const json = { src }
+      for (const a of LF_ARCHES) {
+        const bytes = fs.readFileSync(path.join(out, a))
+        const doc = lfDocOf(bytes, seq, a)
+        const sig = lfSign(doc, key)
+        if (!lfVerify({ doc, sig, bytes }, { arch: a }).ok) {
+          console.error('이 키는 에이전트가 믿는 키(agent/keys.mjs)가 아닙니다.')
+          process.exit(1)
+        }
+        json[a] = { doc, sig }
+        console.log(`server/localfull.json: ${a} ${JSON.parse(doc).version} · ${bytes.length} 바이트 · seq ${seq} 서명함`)
+      }
+      fs.writeFileSync(LOCALFULL_JSON, `${JSON.stringify(json, null, 2)}\n`)
+      fs.rmSync(out, { recursive: true, force: true })
+    }
   }
   const files = agentFileTexts()
   const msig = crypto.sign(null, Buffer.from(manifestOf(files, seq)), key).toString('base64')

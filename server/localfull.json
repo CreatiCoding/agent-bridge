@@ -1,0 +1,11 @@
+{
+  "src": "15242169caef0f46ca961505b5ae846da4c67c8145e0bd0a620d7cfa81e8702a",
+  "darwin-arm64": {
+    "doc": "{\"name\":\"localfull-darwin-arm64\",\"version\":\"66d97365a252\",\"seq\":1794406157,\"api\":1,\"integrity\":\"sha256:ZtlzZaJSUyVAWkuUKY6iwrJkY9mIjOmmfap7QuvBUC8=\",\"size\":12509666}",
+    "sig": "olPW0iG369RfjN4KHzw/8PwB82dG2L8XpbUjVqeGUmzjeYNnyzggUA/imWusJB+gm7srH0P6N5HhRUw8EqnSDw=="
+  },
+  "darwin-amd64": {
+    "doc": "{\"name\":\"localfull-darwin-amd64\",\"version\":\"2fc0202e893b\",\"seq\":1794406157,\"api\":1,\"integrity\":\"sha256:L8AgLok7gCbK7x/+dVDcIK/YbZrM/kgaI1khN4kPpc4=\",\"size\":13396080}",
+    "sig": "dIK/n7LmrAwlIPGFreny25vI/TPm+/6xDcedhOVkrK+vnvJzcUCJF/lYNFFOq1b7y2rbLyKm9tauEzxJhpR5Ag=="
+  }
+}

@@ -34,6 +34,7 @@
 
 - 화면(`ui/`)을 고쳤으면 `cd ui && corepack yarn build` 를 통과시킨다(타입 검사 포함).
 - 에이전트(`agent/`)를 고쳤으면 `node scripts/sign-agent.mjs` 로 서명해 `agent/agent.sig` 를 같은 커밋에 넣는다. 에이전트는 관리자 서명이 맞는 업데이트만 받는다(SPEC REQ-S-067). 서명 키는 이 맥의 `~/.claude-bridge-signing/` 에만 있고 저장소·서버에 두지 않는다. 서명이 파일과 맞지 않으면 `npm test` 가 실패한다. (기여자는 §7 의 서명 항목을 따른다.)
+- `server/`·`ui/`·`web/`·`Dockerfile` 을 고쳤으면 `node scripts/sign-agent.mjs` 를 돌려 맥용 서버 빌드(local --full, REQ-F-901)를 다시 만들고 서명해 `server/localfull.json` 을 같은 커밋에 넣는다(docker 필요, 캐시가 있으면 1분 안팎). 소스와 맞지 않으면 `npm test` 가 실패하고, 이미지 빌드도 서명과 다른 빌드를 거절한다.
 - `npm test`(저장소 루트)를 통과시킨다.
 - 동작을 바꿨으면 해당 e2e(`test/e2e-ui.mjs`, `test/e2e-lock.mjs`, `test/e2e-adopt.mjs`)를 로컬 서버·에이전트로 돌린다.
 
@@ -80,6 +81,6 @@ main 체크아웃(저장소 루트)에서는 파일을 고치거나 커밋하지
 
 1. 자기 포크에서 브랜치를 만들어 작업한다(`git switch -c <주제>`). `main` 에 직접 커밋·push 하지 않는다.
 2. §1(SPEC·`changes.ts`)·§2(금지)·§3(빌드·`npm test`·e2e)은 똑같이 지킨다. e2e 는 로컬 서버·에이전트로만 돌린다.
-3. 에이전트(`agent/`)를 고쳤으면 서명하지 않는다. `agent/agent.sig`·`agent/keys.mjs` 는 PR 에 넣지 않고, `npm test` 의 서명 시험(`test/unit/agent-sign.test.mjs`)만 실패하는 것은 괜찮다(PR 본문에 적는다). 메인테이너가 병합 뒤 자기 키로 서명한다. 자기 서버를 따로 운영하는 포크라면 README 의 "자기 서명 키 만들기"를 따르되, 그 키 변경은 원 저장소 PR 에 넣지 않는다.
+3. 에이전트(`agent/`)를 고쳤으면 서명하지 않는다. `agent/agent.sig`·`agent/keys.mjs` 는 PR 에 넣지 않고, `npm test` 의 서명 시험(`test/unit/agent-sign.test.mjs`, 맥용 서버 빌드의 `test/unit/localfull.test.mjs` 마지막 시험)만 실패하는 것은 괜찮다(PR 본문에 적는다). `server/localfull.json` 도 PR 에 넣지 않는다. 자기 이미지를 빌드할 때는 `--build-arg LOCALFULL_CHECK=0`. 메인테이너가 병합 뒤 자기 키로 서명한다. 자기 서버를 따로 운영하는 포크라면 README 의 "자기 서명 키 만들기"를 따르되, 그 키 변경은 원 저장소 PR 에 넣지 않는다.
 4. 올릴 때: 자기 포크로 push 하고 `CreatiCoding/agent-bridge` 의 `main` 으로 PR 을 연다. PR 에 무엇을 바꿨고 어떻게 확인했는지 적는다.
 5. 운영 서버(배포 확인, `/api/hosts/<id>/heal`, Dokploy), TestFlight 업로드(`scripts/testflight.sh`), 운영 데이터는 쓰지 않는다.

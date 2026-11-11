@@ -10,3 +10,4 @@ ui/dist
 ui/.yarn
 extensions/*/node_modules
 extensions/*/.yarn
+.claude

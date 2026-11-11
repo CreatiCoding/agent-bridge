@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.519',
+    date: '2026-11-11',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '로컬 전체 화면: 맥 터미널의 node agent.mjs local --full on 이 사이트와 같은 서버의 서명된 맥용 빌드(darwin-arm64·amd64)를 받아 확인하고, 에이전트가 사이트 연결을 끊고 그 빌드를 127.0.0.1:<에이전트 포트+10> 에 띄워 연동한다. 웹 화면 전체를 그 맥에서 쓰고, off 면 사이트로 돌아간다(동시 연결 없음). 데이터는 ~/.claude-bridge/localfull/ 에 따로',
+        refs: ['REQ-F-900', 'REQ-F-902', 'IF-284', 'ERR-369', 'ERR-370'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '맥용 서버 빌드를 재현 가능하게(Go 1.27.3, CGO 끔, -trimpath, 고정 ldflags) 만들어 관리자 키로 서명(server/localfull.json)하고, 이미지가 같은 빌드를 다시 만들어 서명과 다르면 이미지 빌드가 실패한다. GET /localfull/<arch>(.json) 로 나눠 준다',
+        refs: ['REQ-F-901', 'IF-285', 'ERR-367', 'ERR-368'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'server'],
+        text: '맥용 빌드는 UPDATE_KEYS 서명·sha256·arch 가 맞고 전에 받은 것보다 먼저 서명되지 않은 것만 받고 띄울 때마다 다시 확인한다. 로컬 서버는 127.0.0.1 에서만 듣고 Host·Origin·CSP 를 로컬 화면처럼 보며, 터미널의 일회용 링크(5분, 한 번)만 주인 쿠키(SameSite=Strict)를 준다. 에이전트 연동은 그 실행의 비밀(stdin)로만 열린다. 사이트의 짝지은 기기·trust 강제 모드는 건드리지 않는다',
+        refs: ['REQ-S-103', 'REQ-S-104', 'REQ-S-105'],
+      },
+    ],
+  },
+  {
     version: '1.518',
     date: '2026-11-11',
+    commit: 'f5b5e8f',
     changes: [
       {
         kind: 'changed',

@@ -114,9 +114,10 @@ func cacheOf(c any) any {
 	return out
 }
 
-var AGENT_FILES = []string{"agent.mjs", "dialog.mjs", "preview.mjs", "screen.mjs", "plugins.mjs", "skills.mjs", "split.mjs", "guard.mjs", "accounts.mjs", "voice.mjs", "mcp.mjs", "cache.mjs", "scrub.mjs", "store.mjs", "stats.mjs", "mux.mjs", "keys.mjs", "trust.mjs", "localui.mjs", "localbundle.mjs", "runners.mjs", "codex.mjs", "exposure.mjs", "adapters.mjs", "translate.mjs"}
+var AGENT_FILES = []string{"agent.mjs", "dialog.mjs", "preview.mjs", "screen.mjs", "plugins.mjs", "skills.mjs", "split.mjs", "guard.mjs", "accounts.mjs", "voice.mjs", "mcp.mjs", "cache.mjs", "scrub.mjs", "store.mjs", "stats.mjs", "mux.mjs", "keys.mjs", "trust.mjs", "localui.mjs", "localbundle.mjs", "localfull.mjs", "runners.mjs", "codex.mjs", "exposure.mjs", "adapters.mjs", "translate.mjs"}
 
-func env(k string) string { return os.Getenv(k) }
+// env: the process environment; a Mac's local server (startLocal) replaces it with its own few values.
+var env = func(k string) string { return os.Getenv(k) }
 
 func splitList(s string) []string {
 	out := []string{}
@@ -352,6 +353,9 @@ func prepare() {
 	}
 	AGENT_SIGNED = AGENT_SIG_OK && !AGENT_SEQ_BACK
 	LOCALUI = loadLocalBundle(localBundlePath())
+	if !LOCAL {
+		LOCALFULL = loadLocalFull(localFullDir(), localFullDocsPath())
+	}
 	if !LOCALUI.OK {
 		errorLine("agent/localbundle.mjs 의 로컬 화면 묶음 서명을 확인하지 못해 맥에 보내지 않습니다(node scripts/sign-agent.mjs).")
 	}

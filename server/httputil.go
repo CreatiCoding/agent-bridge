@@ -27,6 +27,10 @@ func cspMore(key string) string {
 }
 
 func initSecurity() {
+	if LOCAL {
+		SECURITY = localHeaders(M{})
+		return
+	}
 	SECURITY = M{
 		// Inline styles are allowed for the HTML previews (a sandboxed frame that inherits this policy).
 		// base-uri and object-src are not covered by default-src: a <base> or a plugin object stays off (REQ-S-011).
@@ -302,6 +306,10 @@ func secureSite(req *Req) bool {
 
 // cname: sign-in cookies are `__Host-` on a secure site (REQ-S-080).
 func cname(req *Req, base string) string {
+	// A Mac's local server: its own names, so a server of another port on 127.0.0.1 neither gets nor replaces them.
+	if LOCAL {
+		base += "-l" + itoa(PORT)
+	}
 	if secureSite(req) {
 		return "__Host-" + base
 	}
@@ -309,7 +317,11 @@ func cname(req *Req, base string) string {
 }
 
 func cookie(req *Req, name, value string, maxAge int64) string {
-	s := name + "=" + value + "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + itoa(int(maxAge))
+	same := "Lax"
+	if LOCAL {
+		same = "Strict" // a page of another port of 127.0.0.1 is the same site: it must not send these along
+	}
+	s := name + "=" + value + "; Path=/; HttpOnly; SameSite=" + same + "; Max-Age=" + itoa(int(maxAge))
 	if strings.HasPrefix(name, "__Host-") || strings.HasPrefix(originOf(req), "https:") {
 		s += "; Secure"
 	}

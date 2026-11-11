@@ -180,3 +180,43 @@ builtin 도 시작할 때 같은 확인을 한다(서명이 안 맞는 builtin =
 - 단위(`test/unit/localui.test.mjs`, 16개): 묶음 만들기·확인(서명·해시·형식·api·영역 구분), manifest staged→install→current, floor 로 되돌리기 거부, 확인 실패·로드 실패·booted 시간 초과 롤백, 입장권 한 번만·만료, 토큰 만료, Host·Origin 검사, `localbundle.mjs` 가 원본·서명과 맞음.
 - 서버(`server/localui_test.go`): `localbundle.mjs` 읽기·서명 확인, hello 의 seq·api·ota 비교, 에이전트 파일 목록이 `agent.mjs` 와 같은 순서.
 - e2e(`test/e2e-localui.mjs`, 37개): 서버 없이 설치본처럼 복사한 에이전트와 실제 Claude Code(haiku) 세션 → `local open` 입장권 → 거부(토큰 없음·연동 키·다른 Host·다른 Origin·머리글 없음·틀린 입장권) → 로그인 → 폴더 신뢰 창을 키로 넘김 → 보낸 글에 Claude 가 답함 → (PLAYWRIGHT 가 있으면) 브라우저에서 입장권이 주소에서 지워지고 터미널이 보이며 폰 폭 가로 스크롤 없음 → 더 새 서명 묶음 설치·booted → 예전 서명·다른 키 묶음 거부 → `local rollback`·`local off`.
+
+## 8. 로컬 전체 화면 (`local --full`, 1.519)
+
+출처: 운영자 요청 "맥에서 웹 화면과 똑같은 화면을 쓰고 싶다". 요구사항은 `SPEC.md` 의 REQ-F-900~902 / REQ-S-103~105.
+
+### 8.1 한 줄 요약
+
+사이트와 **같은 Go 서버**를 맥용(darwin-arm64·darwin-amd64)으로 재현 가능하게 빌드해 관리자 키로 서명해 두면, 맥 터미널의 `node ~/.claude-bridge/agent.mjs local --full on` 이 그 빌드를 받아 확인하고, 에이전트가 사이트 연동을 끊고 그 빌드를 `127.0.0.1:<에이전트 포트+10>` 에 띄워 거기에 연동한다. 브라우저는 터미널의 일회용 링크로만 들어간다. `off` 면 내리고 사이트로 돌아간다.
+
+### 8.2 왜 이 구조인가
+
+- 로컬 화면(§0~§7)을 웹 화면만큼 키우면 화면이 두 벌이 되어 갈라진다(1.518 이 해석기를 한 파일로 만든 이유와 같다). 같은 서버를 맥에서 돌리면 화면·API 가 하나다.
+- 서버 코드도 서버가 준 것이면 안 된다(§1). 그래서 빌드는 에이전트 업데이트와 같은 `UPDATE_KEYS` 로 서명된 것만 쓴다. 새 키·새 신뢰 경로는 없다. 접두 `claude-bridge localfull v1\n` 으로 에이전트·로컬 화면 묶음 서명과 섞이지 않는다.
+- 바이너리를 git 에 넣지 않는다. 서명은 맥에서 하고(`scripts/sign-agent.mjs`, 키는 이 맥에만), 사이트 이미지는 같은 소스·같은 Go(1.27.3)·같은 설정(`CGO_ENABLED=0 -trimpath -buildvcs=false -ldflags="-s -w -buildid="`)으로 **같은 바이트를 다시 만들어** 서명된 문서와 맞을 때만 이미지가 만들어진다(`bridge-server localfull-verify`). 서명한 것과 나눠 주는 것이 갈라질 수 없다.
+  - 재현성 확인(1.519): 서명 맥은 이미지의 `localfull` 단계(`docker build --target localfull`)를 돌려 그 바이트에 서명한다. 맥 호스트에서 `GOTOOLCHAIN=go1.27.3` 로 직접 만든 것과 docker(linux) 에서 만든 것이 바이트까지 같았고, `ui/dist` 도 운영 사이트의 파일과 sha256 이 같았다.
+  - `npm test` 는 `server/localfull.json` 의 `src`(입력 파일 목록·내용의 해시)가 지금 소스와 같은지 본다. server·ui·web·Dockerfile 을 고치면 `node scripts/sign-agent.mjs` 로 다시 서명해야 한다(docker 필요).
+- 연결은 한 단계 스위치다. 에이전트는 여전히 밖으로 연결하지 않는다는 원칙을 지키되, 로컬 서버는 에이전트가 직접 띄운 자식이라 에이전트가 연동한다(사이트 연동 탭 `web/relay.js` 가 하던 일을 `agent/localfull.mjs` 의 `Relay` 가 한다). 동시에 두 곳에 연동하지 않는다: 켜져 있는 동안 사이트 탭은 `busy local`·409 로 거절되고 30 s 마다 다시 묻는다.
+
+### 8.3 인증
+
+- 로컬 서버는 127.0.0.1 에서만 듣고, 모든 요청 맨 앞에서 Host·Origin 을 로컬 화면처럼 본다(다른 Host·Origin, 같은 맥의 다른 포트 Origin 은 403). CSP 는 `default-src 'none'` 에서 필요한 `'self'` 만.
+- 주인: 터미널의 일회용 링크(`#t=`, 5분, 한 번, 해시만 저장)만이 주인 쿠키(`__Host-cb-l<port>`, HttpOnly, SameSite=Strict)를 준다. 같은 맥이라는 것만으로는 주인이 아니다.
+- 에이전트↔로컬 서버: 에이전트가 띄울 때마다 만든 32 바이트 비밀을 stdin 으로만 넘긴다(인자·환경·파일에 없음). `/api/bridge/*` 는 그 비밀로만 열리고, 그 비밀은 다른 경로를 열지 않는다. 주인 쿠키·에이전트 연동 키로는 연동 경로가 열리지 않는다.
+- 사이트의 짝지은 기기 목록·trust 강제 모드·원격 기기 키는 쓰지도 바꾸지도 않는다. 로컬 서버에서 온 명령은 로컬 화면에서 보낸 것과 같이 맥 앞 사람의 것으로 보고(`signed:'local'`, trust 가 켜져 있으면 감사 로그), 켜져 있는 동안 봉인하지 않는다(응답이 맥 밖으로 나가지 않음). 로그인(GitHub·Apple·QR 등)·서비스·dev 경로는 닫는다.
+- 데이터는 `~/.claude-bridge/localfull/data`(0700)에 따로 두고 사이트 계정과 맞추지 않는다.
+
+### 8.4 못 막는 것
+
+L1(같은 사용자로 도는 맥 안 프로그램)·L2(관리자 키)·L3(브라우저 확장)은 §6 과 같다. 더해서:
+
+| # | 남는 위험 | 이유·완화 |
+|---|---|---|
+| L6 | 로컬 서버의 데이터(그룹·설정 등)가 사이트와 다름 | 맞추지 않기로 했다(사이트 계정 비밀을 맥에 두지 않음). 세션 자체는 맥의 것이라 그대로 보인다 |
+| L7 | 사이트가 새 빌드를 내주지 않음 | 받아 둔 빌드로 켠다. 예전 서명 빌드로 되돌리기는 floor 로 막는다 |
+
+### 8.5 시험
+
+- 단위 `test/unit/localfull.test.mjs`(8개): 서명·해시·arch·접두 구분, 설치·floor·디스크 재확인, 입장권, 설정, SSE 읽기, Relay 의 비밀, CLI on·off·open, `server/localfull.json` 이 지금 소스와 맞음.
+- Go `server/localfull_test.go`: 빌드 확인·나눠 주기, 입장(Host·Origin·입장권·쿠키·닫은 경로·CSP), 에이전트 연동 비밀, 인자.
+- e2e `test/e2e-localfull.mjs`(30개): 이 checkout 의 사이트(4393)와 설치본처럼 복사한 에이전트(4392)로 on → 거절 → 링크 로그인 → 웹 화면 → off 와 사이트 재연결. 운영 에이전트(`~/.claude-bridge`)는 건드리지 않는다.
