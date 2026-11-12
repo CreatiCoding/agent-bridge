@@ -217,7 +217,7 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
   await new Promise((r) => setTimeout(r, 120))
   queue.push(paused('c', 'http://10.0.0.1/', 'Script'))
   await stop()
-  const fetchCalls = calls.filter((c) => c[0] !== 'Runtime.evaluate')
+  const fetchCalls = calls.filter((c) => c[0].startsWith('Fetch.'))
   assert.deepEqual(fetchCalls[0], ['Fetch.enable', '[{"urlPattern":"*","requestStage":"Request"}]', null], 'every kind of request is held')
   assert.deepEqual(fetchCalls.at(-1), ['Fetch.disable', null, null])
   assert.deepEqual(fetchCalls.slice(1, -1).sort(), [
@@ -228,24 +228,34 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
     ['Fetch.failRequest', 'i', 'BlockedByClient'],
   ])
   assert.equal(refused.why, PRIVATE_WHY)
-  // open(): as ego does, the navigation ends only once its held document request is let go, and page.events() is
-  // asked meanwhile (page.goto would hold page.events() until it ended: each waited for the other, seen on ego 0.6.2.9).
-  const fake = (target) => {
+  // open(): a fake ego that runs a page's commands one at a time, as ego 0.6.2.9 does (seen on creco-macmini): while a
+  // document request is held, any command but the answers to it never returns, and page.events() waits behind it.
+  const serialEgo = (target) => {
     const q = []
-    let doc = { old: true, state: 'complete', href: 'about:blank' }
+    let held = null
+    let stuck = false
+    const never = new Promise(() => {})
     const page = {
       calls: [],
-      events: async () => q.splice(0),
+      stuck: () => stuck,
+      events: async () => (stuck ? never : q.splice(0)),
       cdp: async (m, p) => {
         page.calls.push(m)
-        if (m === 'Runtime.evaluate' && p.expression === 'window.__cbOld = 1') return { result: { value: 1 } }
-        if (m === 'Runtime.evaluate') return { result: { value: [!doc.old, doc.state, doc.href] } }
-        if (m === 'Page.navigate') {
-          q.push({ method: 'Fetch.requestPaused', params: { requestId: 'n1', resourceType: 'Document', request: { url: p.url } } })
-          return new Promise((done) => (page.release = (ok) => (ok ? ((doc = { old: false, state: 'complete', href: target }), done({})) : ((doc = { old: false, state: 'complete', href: 'chrome-error://chromewebdata/' }), done({ errorText: 'net::ERR_BLOCKED_BY_CLIENT' })))))
+        if (m === 'Fetch.continueRequest' || m === 'Fetch.failRequest') {
+          const ok = m === 'Fetch.continueRequest'
+          held = null
+          q.push({ method: 'Page.frameNavigated', params: { frame: { id: 'TOP', url: ok ? target : 'chrome-error://chromewebdata/', ...(ok ? {} : { unreachableUrl: target }) } } }, { method: 'Page.loadEventFired', params: {} })
+          return {}
         }
-        if (m === 'Fetch.continueRequest') return page.release(true)
-        if (m === 'Fetch.failRequest') return page.release(false)
+        if (held) return ((stuck = true), never)
+        if (m === 'Page.getFrameTree') return { frameTree: { frame: { id: 'TOP' } } }
+        if (m === 'Runtime.evaluate' && /location\.href = /.test(p.expression)) {
+          // The page before (ego's new tab) says it loaded; the move's document request is held.
+          held = { requestId: 'n1' }
+          q.push({ method: 'Page.loadEventFired', params: {} }, { method: 'Fetch.requestPaused', params: { requestId: 'n1', resourceType: 'Document', frameId: 'TOP', request: { url: target } } })
+          return { result: {} }
+        }
+        if (m === 'Page.navigate') return ((held = { requestId: 'n1' }), (stuck = true), never)
         return {}
       },
     }
@@ -254,20 +264,34 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
   const env = async () => new AsyncFunction(`${egoGuardScript(on, [])}; return { guardPages, refused }`)()
   {
     const { guardPages, refused } = await env()
-    const p = fake('https://example.com/')
+    const p = serialEgo('https://example.com/')
     const held = await guardPages(p)
     await held.open('https://example.com/', 3000)
+    await held.quiet(100, 1000)
+    await held.narrow()
     await held.stop()
+    assert.equal(p.stuck(), false, 'nothing waited behind the held request')
     assert.equal(refused.why, '')
     assert.ok(p.calls.includes('Fetch.continueRequest'))
+    assert.ok(!p.calls.includes('Page.navigate'))
   }
   {
     const { guardPages, refused } = await env()
-    const p = fake('http://127.0.0.1:3000/')
+    const p = serialEgo('http://127.0.0.1:3000/')
     const held = await guardPages(p)
     await assert.rejects(held.open('http://127.0.0.1:3000/', 3000), { message: PRIVATE_WHY })
     await held.stop()
+    assert.equal(p.stuck(), false)
     assert.equal(refused.why, PRIVATE_WHY)
+  }
+  {
+    // An address that does not load: Chrome's error page, not the page.
+    const { guardPages } = await new AsyncFunction(`${egoGuardScript({ on: false, allow: [] }, [])}; return { guardPages, refused }`)()
+    const p = serialEgo('https://nowhere.example/')
+    const page = { ...p, cdp: async (m, x) => (m === 'Fetch.continueRequest' ? p.cdp('Fetch.failRequest', x) : p.cdp(m, x)) }
+    const held = await guardPages(page)
+    await assert.rejects(held.open('https://nowhere.example/', 3000), /페이지를 열지 못했어요/)
+    await held.stop()
   }
   assert.deepEqual(egoSnapshotResult(`${EGO_MARK}{"refused":"${PRIVATE_WHY}"}`), { refused: PRIVATE_WHY })
   const agent = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')

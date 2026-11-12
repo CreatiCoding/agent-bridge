@@ -361,8 +361,8 @@ try {
     else throw e
   }
   if (!out) {
-    // Not page.waitForFunction (it would hold page.events()): asked here, what the page loads judged meanwhile.
-    await held.quiet(${JSON.stringify(`(${EGO_QUIET})()`)}, ${Number(budgetMs)})
+    // Not page.waitForFunction (it would hold page.events()): no new request for EGO_QUIET_MS, judged meanwhile.
+    await held.quiet(${EGO_QUIET_MS}, ${Number(budgetMs)})
     await held.narrow()
     // Links the page's scripts handle themselves (1.526): a click handler on the <a>/<area> itself (CDP
     // DOMDebugger.getEventListeners) marks it data-cb-js-click, and the sheet leaves it as it was (a route of the page's
@@ -2466,15 +2466,22 @@ const judgeOnce = (href) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // A call of ego that does not answer within ms (a page stuck in a loop) is given up on.
 const within = (p, ms) => Promise.race([p, sleep(Math.max(50, ms)).then(() => { throw new Error("ego 가 답하지 않아요") })])
+// ego 0.6.2.9 runs a page's commands one at a time (seen on creco-macmini): a command sent while the page's document
+// request is held here (page.goto, Page.navigate, even Runtime.evaluate while it moves) waits for that request, and
+// so does everything after it, page.events() too. So while a page moves, only page.events() and the answers to held
+// requests (they return at once) are sent, by one reader at a time.
 const guardPages = async (page) => {
   try { await within(page.events(), 3000) } catch {}
   // The page's own frame: only its document being refused fails the snapshot (a frame refused is counted).
   let top = ""
   try { top = (await page.cdp("Page.getFrameTree")).frameTree.frame.id || "" } catch {}
+  try { await page.cdp("Page.enable") } catch {}
   const patterns = (all) => [all ? { urlPattern: "*", requestStage: "Request" } : { urlPattern: "*", resourceType: "Document", requestStage: "Request" }]
   // Every request while the page loads and goes quiet (pictures, scripts, fetch too: the browser is signed in).
   await page.cdp("Fetch.enable", { patterns: patterns(true) })
   let going = true
+  let busy = false
+  const seen = { navigated: false, loaded: false, url: "", last: Date.now() }
   const settle = (e, fail) => {
     const id = e.params.requestId
     return (fail ? page.cdp("Fetch.failRequest", { requestId: id, errorReason: "BlockedByClient" }) : page.cdp("Fetch.continueRequest", { requestId: id })).catch(() => {})
@@ -2483,7 +2490,17 @@ const guardPages = async (page) => {
     let evs = []
     try { evs = await within(page.events(), ms) } catch {}
     await Promise.all((evs || []).map(async (e) => {
-      if (!e || e.method !== "Fetch.requestPaused" || !e.params) return
+      if (!e || !e.params) return
+      if (e.method === "Page.frameNavigated" && e.params.frame && !e.params.frame.parentId) {
+        seen.navigated = true
+        seen.url = e.params.frame.unreachableUrl ? "chrome-error:" : String(e.params.frame.url || "")
+        if (e.params.frame.id) top = e.params.frame.id
+        return
+      }
+      // A load before the page moved is the page before it (ego's new tab page).
+      if (e.method === "Page.loadEventFired") { if (seen.navigated) seen.loaded = true; return }
+      if (e.method !== "Fetch.requestPaused") return
+      seen.last = Date.now()
       const p = e.params
       const main = p.resourceType === "Document" && (!top || !p.frameId || p.frameId === top)
       const why = failAll ? PRIVATE_WHY : await judgeOnce(p.request && p.request.url)
@@ -2491,48 +2508,52 @@ const guardPages = async (page) => {
       await settle(e, !!why)
     }))
   }
-  const pump = (async () => { while (going) { await take(false); await sleep(${EGO_GUARD_POLL_MS}) } })()
-  const ask = async (expression, ms) => { const r = await within(page.cdp("Runtime.evaluate", { expression, returnByValue: true }), ms); return r && r.result ? r.result.value : undefined }
-  // Opens url without page.goto (ego holds page.events() until a goto ends, and the goto would wait for the request
-  // held here): Page.navigate is sent and not waited on, the held requests are judged meanwhile, and the page is
-  // open when a new document (not the one marked before) is complete. A refused or failed load throws.
+  const pump = (async () => { while (going) { if (!busy) await take(false); await sleep(${EGO_GUARD_POLL_MS}) } })()
+  // Opens url: the move is started by a script that returns at once (not page.goto or Page.navigate, which wait for
+  // the held request), then only page.events() is read until the page's own frame has moved and loaded.
   const open = async (url, ms) => {
     const until = Date.now() + ms
-    const left = () => until - Date.now()
-    let failed = ""
-    // Unmarked, the page before (about:blank) would pass for the new one.
-    if ((await ask("window.__cbOld = 1", left())) !== 1) throw new Error("page.goto: 지금 페이지에 표시를 하지 못했어요")
-    page.cdp("Page.navigate", { url }).then((r) => { if (r && r.errorText) failed = r.errorText }, (e) => { failed = String((e && e.message) || e) })
-    for (;;) {
-      await take(false, left())
-      if (refused.why) throw new Error(refused.why)
-      if (failed) throw new Error("page.goto: " + failed)
-      let v = null
-      try { v = await ask("[!window.__cbOld, document.readyState, location.href]", left()) } catch {}
-      if (v && v[0] && v[1] === "complete") {
-        if (/^chrome-error:/.test(v[2])) throw new Error("page.goto: 페이지를 열지 못했어요")
-        return
+    busy = true
+    try {
+      await within(page.cdp("Runtime.evaluate", { expression: "setTimeout(() => { location.href = " + JSON.stringify(url) + " }, 0)" }), ms)
+      for (;;) {
+        await take(false, until - Date.now())
+        if (refused.why) throw new Error(refused.why)
+        if (seen.loaded) {
+          if (/^chrome-error:/.test(seen.url)) throw new Error("page.goto: 페이지를 열지 못했어요")
+          return
+        }
+        if (Date.now() > until) throw new Error("page.goto timed out after " + ms + "ms")
+        await sleep(${EGO_GUARD_POLL_MS})
       }
-      if (left() <= 0) throw new Error("page.goto timed out after " + ms + "ms")
-      await sleep(${EGO_GUARD_POLL_MS})
+    } finally {
+      busy = false
     }
   }
-  // Waits, judging what the page asks for, until quiet (true from expression) or ms.
-  const quiet = async (expression, ms) => {
+  // Waits until no request has come for quietMs (the page has gone quiet), ms at most, judging what comes.
+  const quiet = async (quietMs, ms) => {
     const until = Date.now() + ms
-    while (Date.now() < until) {
-      await take(false, until - Date.now())
-      let v = false
-      try { v = await ask(expression, until - Date.now()) } catch {}
-      if (v === true) return
-      await sleep(50)
+    busy = true
+    try {
+      seen.last = Date.now()
+      while (Date.now() < until && Date.now() - seen.last < quietMs) {
+        await take(false, until - Date.now())
+        await sleep(${EGO_GUARD_POLL_MS})
+      }
+    } finally {
+      busy = false
     }
   }
-  // Before the page is read by ego's own calls (they hold page.events()): its documents alone are held from then on.
+  // Before the page is read by ego's own calls: its documents alone are held from then on.
   const narrow = async () => {
-    await take(false)
-    await page.cdp("Fetch.enable", { patterns: patterns(false) }).catch(() => {})
-    await take(false)
+    busy = true
+    try {
+      await take(false)
+      await page.cdp("Fetch.enable", { patterns: patterns(false) }).catch(() => {})
+      await take(false)
+    } finally {
+      busy = false
+    }
   }
   const stop = async () => {
     going = false
