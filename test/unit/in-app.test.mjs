@@ -98,7 +98,7 @@ test('AC-1660: a snapshot reads all the page’s pictures on the Mac; a data: pi
 test('AC-1661: ego lite’s script opens the address, finishes its task space, and its result line is found', () => {
   const s = egoSnapshotScript({ name: 'cb-snapshot-ab12', url: 'https://example.com/"x', budgetMs: 8000, gotoMs: 15000 })
   assert.match(s, /taskSpace\("cb-snapshot-ab12"\)/)
-  assert.match(s, /page\.goto\("https:\/\/example\.com\/\\"x", \{ waitUntil: "load", timeout: 15000 \}\)/)
+  assert.match(s, /await held\.open\("https:\/\/example\.com\/\\"x", 15000\)/)
   assert.match(s, /finally \{\n  if \(stop\) \{ try \{ await stop\(\) \} catch \{\} \}\n  await task\.finish\(\{ keep: \[\] \}\)/)
   assert.match(s, /credentials: "include"/)
   // The in-page function is valid JavaScript.
@@ -149,7 +149,7 @@ test('AC-1762: ego lite draws the snapshot in the same 412×915 view as Chrome, 
   const s = egoSnapshotScript({ name: 'n', url: 'https://a/', budgetMs: 8000, gotoMs: 15000 })
   const view = 'page.cdp("Emulation.setDeviceMetricsOverride", { width: 412, height: 915, deviceScaleFactor: 0, mobile: false })'
   assert.ok(s.includes(`try { await ${view} } catch (e) { viewError = `))
-  assert.ok(s.indexOf(view) < s.indexOf('page.goto('))
+  assert.ok(s.indexOf(view) < s.indexOf('await held.open('))
   assert.match(s, /if \(viewError && out\) out\.viewError = viewError/)
   // The whole script is valid JavaScript (top-level await, so as an async function body).
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor

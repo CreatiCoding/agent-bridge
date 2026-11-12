@@ -349,9 +349,11 @@ let stop = null
 try {
   const page = task.page("p1")
   try { await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${SNAPSHOT_VIEW_W}, height: ${SNAPSHOT_VIEW_H}, deviceScaleFactor: 0, mobile: false }) } catch (e) { viewError = String(e?.message ?? e).slice(0, 200) }
-  stop = await guardPages(page)
+  const held = await guardPages(page)
+  stop = held.stop
   try {
-    await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
+    // Not page.goto: ego answers page.events() only after a goto ends, and the goto waits for the request held here.
+    await held.open(${JSON.stringify(url)}, ${Number(gotoMs)})
   } catch (e) {
     // The page itself was turned away (a redirect to this Mac's network): say so, not the browser's error.
     if (refused.why) out = { refused: refused.why }
@@ -2438,12 +2440,36 @@ const guardPages = async (page) => {
       await settle(e, !!why)
     }
   }
-  const pump = (async () => { while (going) { await take(false); await new Promise((r) => setTimeout(r, ${EGO_GUARD_POLL_MS})) } })()
-  return async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const pump = (async () => { while (going) { await take(false); await sleep(${EGO_GUARD_POLL_MS}) } })()
+  // Opens url without page.goto (ego holds page.events() until a goto ends, and the goto would wait for the request
+  // held here): Page.navigate is sent and not waited on, the held requests are judged meanwhile, and the page is
+  // open when a new document (not the one marked before) is complete. A refused or failed load throws.
+  const open = async (url, ms) => {
+    const until = Date.now() + ms
+    let failed = ""
+    try { await page.cdp("Runtime.evaluate", { expression: "window.__cbOld = 1" }) } catch {}
+    page.cdp("Page.navigate", { url }).then((r) => { if (r && r.errorText) failed = r.errorText }, (e) => { failed = String((e && e.message) || e) })
+    for (;;) {
+      await take(false)
+      if (refused.why) throw new Error(refused.why)
+      if (failed) throw new Error("page.goto: " + failed)
+      let v = null
+      try { v = (await page.cdp("Runtime.evaluate", { expression: "[!window.__cbOld, document.readyState, location.href]", returnByValue: true })).result.value } catch {}
+      if (v && v[0] && v[1] === "complete") {
+        if (/^chrome-error:/.test(v[2])) throw new Error("page.goto: 페이지를 열지 못했어요")
+        return
+      }
+      if (Date.now() > until) throw new Error("page.goto timed out after " + ms + "ms")
+      await sleep(${EGO_GUARD_POLL_MS})
+    }
+  }
+  const stop = async () => {
     going = false
     await pump
     await take(true)
     await page.cdp("Fetch.disable").catch(() => {})
   }
+  return { open, stop }
 }`
 }

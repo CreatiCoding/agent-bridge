@@ -171,7 +171,8 @@ test('AC-1786: a real headless Chrome: a link that redirects to 127.0.0.1 is not
 test('AC-1786: ego lite holds every document request (redirects too) and fails what is refused; its refusal fails the snapshot', async () => {
   const s = egoSnapshotScript({ name: 'n', url: 'https://ok.test/', budgetMs: 1000, gotoMs: 1000, guard: on, own: ['https://bridge.example'] })
   assert.ok(s.includes('Fetch.enable') && s.includes('resourceType: "Document"') && s.includes('Fetch.failRequest') && s.includes('BlockedByClient') && s.includes('Fetch.disable'))
-  assert.ok(s.indexOf('stop = await guardPages(page)') < s.indexOf('page.goto('), 'held before the page is opened')
+  assert.ok(s.indexOf('const held = await guardPages(page)') < s.indexOf('await held.open('), 'held before the page is opened')
+  assert.ok(!s.includes('page.goto('), 'not page.goto: ego answers page.events() only after a goto ends')
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
   assert.doesNotThrow(() => new AsyncFunction('taskSpace', s))
   const judge = await new AsyncFunction(`${egoGuardScript({ on: true, allow: ['wiki.corp.test'] }, ['https://bridge.example'])}; return judge`)()
@@ -189,7 +190,7 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
     events: async () => queue.splice(0),
     cdp: async (m, p) => calls.push([m, p?.requestId ?? null, p?.errorReason ?? null]),
   }
-  const stop = await guardPages(page)
+  const { stop } = await guardPages(page)
   queue.push({ method: 'Fetch.requestPaused', params: { requestId: 'a', request: { url: 'https://example.com/' } } }, { method: 'Network.x' }, { method: 'Fetch.requestPaused', params: { requestId: 'b', redirectedRequestId: 'a', request: { url: 'http://127.0.0.1:3000/admin' } } })
   await new Promise((r) => setTimeout(r, 120))
   queue.push({ method: 'Fetch.requestPaused', params: { requestId: 'c', request: { url: 'http://10.0.0.1/' } } })
@@ -202,6 +203,47 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
     ['Fetch.disable', null, null],
   ])
   assert.equal(refused.why, PRIVATE_WHY)
+  // open(): as ego does, the navigation ends only once its held document request is let go, and page.events() is
+  // asked meanwhile (page.goto would hold page.events() until it ended: each waited for the other, seen on ego 0.6.2.9).
+  const fake = (target) => {
+    const q = []
+    let doc = { old: true, state: 'complete', href: 'about:blank' }
+    const page = {
+      calls: [],
+      events: async () => q.splice(0),
+      cdp: async (m, p) => {
+        page.calls.push(m)
+        if (m === 'Runtime.evaluate' && p.expression === 'window.__cbOld = 1') return {}
+        if (m === 'Runtime.evaluate') return { result: { value: [!doc.old, doc.state, doc.href] } }
+        if (m === 'Page.navigate') {
+          q.push({ method: 'Fetch.requestPaused', params: { requestId: 'n1', request: { url: p.url } } })
+          return new Promise((done) => (page.release = (ok) => (ok ? ((doc = { old: false, state: 'complete', href: target }), done({})) : ((doc = { old: false, state: 'complete', href: 'chrome-error://chromewebdata/' }), done({ errorText: 'net::ERR_BLOCKED_BY_CLIENT' })))))
+        }
+        if (m === 'Fetch.continueRequest') return page.release(true)
+        if (m === 'Fetch.failRequest') return page.release(false)
+        return {}
+      },
+    }
+    return page
+  }
+  const env = async () => new AsyncFunction(`${egoGuardScript(on, [])}; return { guardPages, refused }`)()
+  {
+    const { guardPages, refused } = await env()
+    const p = fake('https://example.com/')
+    const held = await guardPages(p)
+    await held.open('https://example.com/', 3000)
+    await held.stop()
+    assert.equal(refused.why, '')
+    assert.ok(p.calls.includes('Fetch.continueRequest'))
+  }
+  {
+    const { guardPages, refused } = await env()
+    const p = fake('http://127.0.0.1:3000/')
+    const held = await guardPages(p)
+    await assert.rejects(held.open('http://127.0.0.1:3000/', 3000), { message: PRIVATE_WHY })
+    await held.stop()
+    assert.equal(refused.why, PRIVATE_WHY)
+  }
   assert.deepEqual(egoSnapshotResult(`${EGO_MARK}{"refused":"${PRIVATE_WHY}"}`), { refused: PRIVATE_WHY })
   const agent = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(agent, /if \(r\.refused\) throw Object\.assign\(new Error\(r\.refused\), \{ code: 'CB_PRIVATE' \}\)/)
