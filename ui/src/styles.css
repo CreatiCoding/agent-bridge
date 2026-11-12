@@ -5369,6 +5369,27 @@ body.group-sorting * {
   color-scheme: light;
   background: #fff;
 }
+/* 시트 안 이동 (1.526): back and forward in the sheet's head, and a line over a kept drawing. */
+.link-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.link-nav-host {
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snapshot-status {
+  flex: none;
+  padding: 6px 16px;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+}
 /* The page could not go into its shadow root (1.523): said over the box instead of a white sheet. */
 .snapshot-late {
   position: absolute;

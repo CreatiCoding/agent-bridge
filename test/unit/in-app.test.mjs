@@ -47,7 +47,7 @@ test('link.open’s default asks the sheet before a new tab; the sheet draws dat
   // lib/snapshot-page (AC-1763), not in a frame.
   assert.equal((sheet.match(/<iframe/g) ?? []).length, 1)
   assert.match(sheet, /kind: 'frame', src: throughPreview\(/)
-  assert.match(sheet, /mountSnapshot\(host, v\.doc\)/)
+  assert.match(sheet, /mountSnapshot\(host, v\.doc, undefined, onLink\)/)
   assert.doesNotMatch(sheet, /srcDoc|allow-scripts|allow-same-origin/)
 })
 
@@ -83,7 +83,10 @@ test('AC-1660: a snapshot reads all the page’s pictures on the Mac; a data: pi
   assert.equal(readerImg('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA')
   const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
   // POST (signed), the sealed piece checked for this session, read on the screen.
-  assert.match(sheet, /post<[^>]+>\(`\/api\/sessions\/\$\{sid\}\/snapshot`, \{ url: abs \}\)/)
+  // Since 1.526 in pieces (lib/snap-stream), the request id made on the screen; a whole answer read as before.
+  const stream = readFileSync(new URL('../../ui/src/lib/snap-stream.ts', import.meta.url), 'utf8')
+  assert.match(stream, /post<Record<string, unknown>>\(`\/api\/sessions\/\$\{sid\}\/snapshot`, \{ url: u, parts: true, rid \}\)/)
+  assert.match(sheet, /snapshotStream\(sid, hostId, abs, onDraw, signal\)/)
   assert.match(sheet, /o\.kind !== 'snapshot'/)
   assert.match(sheet, /o\.sid !== sid/)
   assert.match(sheet, /readSnapshot\(s\.html, s\.url,/)
@@ -108,7 +111,7 @@ test('AC-1661: ego lite’s script opens the address, finishes its task space, a
 test('AC-1661: a Mac that does not trust the server takes a snapshot only for the address the device signed, and seals it', async () => {
   const { classOf, rebuild, sealOut } = await import('../../agent/trust.mjs')
   const rule = classOf({ t: 'snapshot' })
-  assert.deepEqual(rule, { i: ['sid', 'url'] })
+  assert.deepEqual(rule, { i: ['sid', 'url'], keep: ['parts', 'rid'] })
   assert.deepEqual(rebuild({ t: 'snapshot', reqId: 'r1', sid: 's1', url: 'https://evil/' }, rule, { sid: 's1', url: 'https://good/' }), { t: 'snapshot', reqId: 'r1', sid: 's1', url: 'https://good/' })
   const m = sealOut({ t: 'snapshot', reqId: 'r1', sid: 's1', ok: true, url: 'https://good/', html: '<p>secret</p>', images: {}, via: 'ego' }, (v, sid) => `⟦${sid}:${v}⟧`)
   assert.equal(m.html, undefined)
@@ -125,7 +128,7 @@ test('AC-1663: with no rule a session’s page takes a snapshot (localhost too) 
   assert.deepEqual(modeOf('https://other.com/', true, base, [{ host: 'other.com', mode: 'read' }]), { mode: 'read', fromRule: true })
   assert.deepEqual(modeOf('http://localhost:3000/', true, base, [{ host: 'localhost', mode: 'preview' }]), { mode: 'preview', fromRule: true })
   const sheet = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
-  assert.match(sheet, /if \(fromRule\) return snapshotView\(sid, abs\)/)
+  assert.match(sheet, /if \(fromRule\) return snapshotView\(sid, abs, show, signal\)/)
   assert.match(sheet, /if \(local\) return previewView\(url, sid\)/)
   assert.match(sheet, /스냅샷을 만들지 못해 읽기로 열었어요/)
 })
@@ -209,9 +212,10 @@ test('AC-1687: a snapshot carries the page’s style sheets and the pictures the
   // The agent asks as a browser would, sends css and width, and seals them with the page.
   const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(agent, /referer: String\(page\)/)
-  assert.match(agent, /emit\(\{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, big, css, width: r\.width \|\| 0, via \}\)/)
+  assert.match(agent, /let msg = \{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, big, css, width: r\.width \|\| 0, via \}/)
+  assert.match(agent, /const s = \{ url: r\.url, asked: page\.href, html: r\.html, images, big, css, width: r\.width \|\| 0, via, at: Date\.now\(\) \}/)
   const trust = readFileSync(new URL('../../agent/trust.mjs', import.meta.url), 'utf8')
-  assert.match(trust, /css: m\.css \?\? \{\}, width: m\.width \?\? 0/)
+  assert.match(trust, /css: m\.css \?\? \{\}, big: m\.big \?\? \{\}, width: m\.width \?\? 0/)
   // The screen puts it together with nothing left that runs or fetches.
   const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
   assert.match(sp, /'script, noscript, iframe, frame, frameset, object, embed, applet, portal, fencedframe, base, meta, link, template, source, track, animate, animateMotion, animateTransform, set'/)
@@ -253,7 +257,7 @@ test('AC-1696: a snapshot that cannot be drawn says so, and a report carries the
   const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
   // Since 1.523 a shadow root, not a frame: an error putting the page in is said over the box (no timer to wait out).
   assert.doesNotMatch(ls, /SNAPSHOT_FRAME_MS|onLoad=/)
-  assert.match(ls, /try \{\n      mountSnapshot\(host, v\.doc\)\n    \} catch \(e\) \{/)
+  assert.match(ls, /try \{\n      mountSnapshot\(host, v\.doc, undefined, onLink\)\n    \} catch \(e\) \{/)
   assert.match(ls, /v\.note\.frame = 'failed'\n      v\.note\.error = why/)
   assert.match(ls, /v\.note\.frame = 'drawn'/)
   assert.match(ls, /원본 모양을 그리지 못했어요 \(\{\(v\.doc\.bytes \/ 1048576\)\.toFixed\(1\)\} MB, 폭 \{pw\}px, \{failed\}\)/)
@@ -489,7 +493,7 @@ test('AC-1770: a big picture is not sent; its size is, and the snapshot draws a 
   assert.match(ego, /b\.size > o\.big\) \{\n        if \(nb < o\.bigCount && img\.naturalWidth > 0/)
   const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(agent, /if \(bytes\.length > SNAPSHOT_IMG_BIG\) \{\n          const size = imgs\.has\(src\) \? imageSize\(bytes\) : null/)
-  assert.match(agent, /emit\(\{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, big, css,/)
+  assert.match(agent, /let msg = \{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, big, css,/)
   const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
   assert.match(ls, /snapshotPage\(\{ url: s\.url, html: s\.html, images, css, big \}\)/)
   await inChromium(t, 'in Chromium', async (page) => {
@@ -629,7 +633,7 @@ test('AC-1773: a snapshot over 200 KB goes in by pieces, at element bounds, the 
   assert.match(sp, /export const SNAPSHOT_CHUNK = 200 \* 1024/)
   const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
   assert.match(ls, /el\?\.addEventListener\('scroll', fill, \{ passive: true \}\)/)
-  assert.match(ls, /el\.scrollTop \+ el\.clientHeight \* 3 >= host\.offsetHeight \* scale\.current; n\+\+\) if \(!snapshotMore\(host\)\) break/)
+  assert.match(ls, /el\.scrollTop \+ el\.clientHeight \* 3 >= host\.offsetHeight \* scale\.current; n\+\+\) \{\n\s+if \(!snapshotMore\(host\)\) break/)
   await inChromium(t, 'in Chromium', async (page) => {
     const item = (i) => `<section><p>${String(i).padStart(4, '0')}${'x'.repeat(296)}</p></section>`
     const html = `<div id="wrap">${Array.from({ length: 3000 }, (_, i) => item(i)).join('')}</div><p id="end">end</p>`

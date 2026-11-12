@@ -95,22 +95,40 @@ func apiLinkRules(req *Req, res *Res, uid string, get, post bool) bool {
 // Mac gave it. The server reads none of it: when the Mac seals its words, the page, its address and its pictures
 // come as one sealed piece only the person's devices open; the screen reads the DOM itself. The address is signed
 // by the person's device (X-Bridge-Auth): a Mac that does not trust this server opens only that one.
+//
+// Since 1.526 (REQ-F-906, REQ-S-110): with `parts` and the page's request id `rid`, a Mac that says `snapParts` answers
+// in pieces (snapstream.go) and this answers {stream} at once. The address may come sealed by a paired device: the
+// server then never learns it (only such a Mac opens it).
 func sessionSnapshot(req *Req, res *Res, meta *Sess) {
-	b := body(req, 8*1024)
+	b := body(req, 16*1024)
 	target := jsStringU(b["url"])
-	if len(target) > 4096 {
+	sealedURL := adapterSealRe.MatchString(target)
+	if len(target) > 4096 && !(sealedURL && len(target) <= 12*1024) {
 		refuse(400, "주소가 너무 길어요")
 	}
-	pu, err := url.Parse(target)
-	if err != nil || (pu.Scheme != "http" && pu.Scheme != "https") || pu.Host == "" {
-		refuse(400, "http(s) 주소만 스냅샷으로 열 수 있어요")
+	if !sealedURL {
+		pu, err := url.Parse(target)
+		if err != nil || (pu.Scheme != "http" && pu.Scheme != "https") || pu.Host == "" {
+			refuse(400, "http(s) 주소만 스냅샷으로 열 수 있어요")
+		}
 	}
-	if limited(req, 20, "snapshot") {
+	rid := jsStringU(b["rid"])
+	inParts := truthy(b["parts"]) && snapRidRe.MatchString(rid)
+	if limited(req, 30, "snapshot") {
 		refuse(429, "너무 자주 열었어요. 잠시 뒤에 다시 해 주세요")
 	}
 	hostID := liveHost(meta)
 	if !online(hostID) {
 		refuse(409, "세션의 맥이 연결돼 있지 않아서 스냅샷을 만들 수 없어요")
+	}
+	canParts := containsAny(asArr(live(hostID)["caps"]), "snapParts")
+	if sealedURL && !(inParts && canParts) {
+		// An agent before 1.526 cannot open the address: the page asks again with it plain.
+		refuseX(409, "그 맥의 에이전트가 봉인된 주소를 아직 열지 못해요(업데이트 전)", M{"code": "snap-old"})
+	}
+	if inParts && canParts {
+		jsonRes(res, 200, snapshotStream(meta, hostID, target, rid))
+		return
 	}
 	// The address as the device sent it: it is what the device signed.
 	r := ask(hostID, M{"t": "snapshot", "sid": meta.id(), "url": target}, SNAPSHOT_MS)

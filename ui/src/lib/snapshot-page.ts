@@ -14,6 +14,8 @@
 //     nothing; a picture function that calls anything that brings a value in (var(), --x(), if(), …) is none, and a
 //     cursor is its keyword alone (1.524).
 //   - Links to this site or its previews have no href (1.524): a new tab of this site goes with its cookies.
+//   - A link that surely goes to another page is marked data-cb-nav (linkKind, 1.526): the sheet opens that page's
+//     snapshot itself on a person's click; the rest open a new tab as before.
 //   - The page's html, body and :root become <cb-html> and <cb-body> (and form, <cb-form>), and its selectors are
 //     rewritten to them (CSSOM where the browser has constructable sheets), keeping their specificity.
 // The site's CSP (server/httputil.go: scripts only from this site, no inline; styles inline; pictures data:) is the last
@@ -51,6 +53,69 @@ export function atOwnOrigin(href: string, own: string[]): boolean {
   } catch {
     return true
   }
+}
+
+// ---------- 시트 안에서 이동 (REQ-F-906, 1.526) ----------
+// A link of a snapshot that surely goes to another page opens that page's snapshot in the same sheet (a new one, signed
+// by this device for its address, through every filter here again); one that only moves within the page scrolls
+// there. Anything less sure stays as it was (a new tab, or nothing). Judged from the markup alone.
+
+/** Roles of a link that is a control (a menu, a tab, a switch …), not a way to another page. */
+const CONTROL_ROLES = new Set(['button', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'switch', 'option', 'combobox', 'treeitem'])
+
+/**
+ * Whether host (a URL's hostname) is this Mac's own or its network's: localhost, *.localhost, *.local, 0/8, 10/8,
+ * 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, ::, ::1, fc00::/7, fe80::/10 and IPv4 inside IPv6. The Mac's
+ * browser would open those as itself, so the sheet never goes there.
+ */
+export function privateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h === 'local' || h.endsWith('.local')) return true
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  }
+  if (!h.includes(':')) return false
+  if (h === '::' || h === '::1' || /^f[cd][0-9a-f]{0,2}:/.test(h) || /^fe[89ab][0-9a-f]?:/.test(h)) return true
+  const mapped = /^(?:0{0,4}:){0,5}(?::|ffff:)(.+)$/.exec(h)?.[1] ?? /^::ffff:(.+)$/.exec(h)?.[1]
+  if (!mapped) return false
+  if (mapped.includes('.')) return privateHost(mapped)
+  const p = mapped.split(':')
+  if (p.length !== 2 || !p.every((x) => /^[0-9a-f]{1,4}$/.test(x))) return false
+  const n = parseInt(p[0], 16) * 65536 + parseInt(p[1], 16)
+  return privateHost(`${Math.floor(n / 16777216)}.${Math.floor(n / 65536) % 256}.${Math.floor(n / 256) % 256}.${n % 256}`)
+}
+
+/**
+ * What a click on link a of the page at pageUrl does in the sheet: 'nav' (another page: its snapshot, in the sheet),
+ * 'frag' (a place in this page: scrolled to), or null (as before: a new tab or nothing). 'nav' only when all hold:
+ * an <a>/<area> with an http(s) href (not empty, "#" or javascript:), no download, no data-cb-js-click (the Mac saw
+ * a click handler of the page's scripts on it), neither it nor anything around it a control (CONTROL_ROLES,
+ * aria-haspopup, aria-expanded, aria-controls), and not to this site, its previews (own) or a privateHost.
+ */
+export function linkKind(a: Element, pageUrl: string, own: string[]): 'nav' | 'frag' | null {
+  if (a.localName !== 'a' && a.localName !== 'area') return null
+  const raw = (a.getAttribute('href') ?? '').trim()
+  if (!raw || raw === '#' || /^javascript:/i.test(raw.replace(/[\s\x00-\x1f]/g, ''))) return null
+  if (a.hasAttribute('download') || a.hasAttribute('data-cb-js-click')) return null
+  for (let e: Element | null = a; e; e = e.parentElement) {
+    const role = (e.getAttribute('role') ?? '').trim().toLowerCase().split(/\s+/)[0]
+    if (CONTROL_ROLES.has(role) || e.hasAttribute('aria-haspopup') || e.hasAttribute('aria-expanded') || e.hasAttribute('aria-controls')) return null
+  }
+  let to: URL
+  let from: URL
+  try {
+    to = new URL(raw.replace(/&amp;/g, '&'), pageUrl)
+    from = new URL(pageUrl)
+  } catch {
+    return null
+  }
+  if (to.protocol !== 'http:' && to.protocol !== 'https:') return null
+  const bare = (u: URL) => u.href.slice(0, u.href.length - u.hash.length).replace(/#$/, '')
+  if (bare(to) === bare(from)) return to.hash.length > 1 ? 'frag' : null
+  if (atOwnOrigin(to.href, own) || privateHost(to.hostname)) return null
+  return 'nav'
 }
 
 /** The page made safe (1.523), in an inert document: mountSnapshot copies it into a shadow root. */
@@ -609,6 +674,8 @@ export function snapshotPage(s: SnapshotParts): SnapshotDoc {
     if (poster) m.setAttribute('poster', poster)
     else m.removeAttribute('poster')
   })
+  // Only this file says which link moves the sheet (1.526): a page's own mark is no mark.
+  doc.querySelectorAll('[data-cb-nav]').forEach((e) => e.removeAttribute('data-cb-nav'))
   doc.querySelectorAll('a, area').forEach((a) => {
     a.removeAttribute('xlink:href')
     // No href is no link (an empty one would be the page itself).
@@ -617,6 +684,9 @@ export function snapshotPage(s: SnapshotParts): SnapshotDoc {
     if (!/^https?:/i.test(href)) return void a.removeAttribute('href')
     // Nor a link to this site or its previews (1.524): a new tab of /api/… goes with this site's cookies.
     if (atOwnOrigin(href, own)) return void a.removeAttribute('href')
+    // Judged before its download attribute goes below.
+    const kind = linkKind(a, s.url, own)
+    if (kind) a.setAttribute('data-cb-nav', kind)
     a.setAttribute('href', href)
     a.setAttribute('target', '_blank')
     a.setAttribute('rel', 'noopener noreferrer')
@@ -1062,10 +1132,46 @@ export function snapshotMore(host: Element, budget = SNAPSHOT_CHUNK): boolean {
  * click or a submit inside stops at the shadow root and the host, so nothing of the page reaches this page's own
  * handlers (links still open their new tab).
  */
-export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSHOT_CHUNK): ShadowRoot {
+/** What a link of a mounted snapshot does when the person clicks it (1.526): set by mountSnapshot's onLink. */
+const linkHandlers = new WeakMap<ShadowRoot, (href: string, kind: 'nav' | 'frag') => void>()
+
+/**
+ * The place a #fragment of the page names (1.526): the element of that id (by its short name, 1.525) or an <a name>,
+ * the page's pieces put in until it is there; 'top' for #top when the page has no such place; else null.
+ */
+export function snapshotAnchor(host: Element, d: SnapshotDoc, frag: string): Element | 'top' | null {
+  const sh = host.shadowRoot
+  if (!sh) return null
+  let name = frag.replace(/^#/, '')
+  try {
+    name = decodeURIComponent(name)
+  } catch {}
+  if (!name) return null
+  const id = d.names?.ids[name] ?? name
+  const find = () => sh.getElementById(id) ?? Array.from(sh.querySelectorAll('a[name]')).find((e) => e.getAttribute('name') === name) ?? null
+  let el = find()
+  for (let n = 0; !el && n < 500 && snapshotMore(host); n++) el = find()
+  return el ?? (name.toLowerCase() === 'top' ? 'top' : null)
+}
+
+export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSHOT_CHUNK, onLink?: (href: string, kind: 'nav' | 'frag') => void): ShadowRoot {
   let sh = host.shadowRoot
   if (!sh) {
     sh = host.attachShadow({ mode: 'open' })
+    const root = sh
+    // A link this file marked (data-cb-nav) goes through the sheet (1.526): only a person's own plain click (isTrusted:
+    // nothing in a snapshot runs, and nothing it holds can click), and only the link's href as this file wrote it.
+    root.addEventListener('click', (e) => {
+      const f = linkHandlers.get(root)
+      const me = e as MouseEvent
+      if (!f || !me.isTrusted || me.button !== 0 || me.metaKey || me.ctrlKey || me.shiftKey || me.altKey) return
+      const a = me.composedPath().find((n): n is Element => n instanceof Element && (n.localName === 'a' || n.localName === 'area'))
+      const kind = a?.getAttribute('data-cb-nav')
+      const href = a?.getAttribute('href')
+      if (!a || !href || (kind !== 'nav' && kind !== 'frag')) return
+      e.preventDefault()
+      f(href, kind)
+    })
     // On the host too: a click on an inert control is dispatched to the host itself, past the shadow root.
     for (const t of ['click', 'auxclick', 'dblclick', 'submit'])
       for (const at of [sh, host])
@@ -1074,6 +1180,8 @@ export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSH
           if (t === 'submit') e.preventDefault()
         })
   }
+  if (onLink) linkHandlers.set(sh, onLink)
+  else linkHandlers.delete(sh)
   const base = document.createElement('style')
   base.textContent = SHADOW_BASE + (d.vars ? `:host{${d.vars}}` : '')
   sh.replaceChildren(base, ...d.head.map((n) => document.importNode(n, true)))

@@ -26,8 +26,45 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.526',
+    date: '2026-11-13',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '스냅샷 원본 모양에서 확실히 다른 페이지로 가는 링크(<a>/<area> 의 http(s) 주소, 메뉴·탭·펼침 단추·download·스크립트 클릭 처리기 아님, 이 사이트·localhost·사설망 아님)는 새 탭 대신 같은 시트에서 그 주소의 스냅샷을 새로 받아 보인다(기기가 새 주소에 서명). #조각만 다른 링크는 그 자리로 스크롤',
+        refs: ['REQ-F-906', 'REQ-F-881'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '스냅샷 시트 머리에 뒤로·앞으로. 뒤로 가면 맥에 다시 묻지 않고 남은 화면을 그때의 스크롤 위치로 보이고, 폰의 뒤로 쓸기도 시트 안 기록을 먼저 되돌린 뒤 첫 화면에서 시트를 닫는다',
+        refs: ['REQ-F-906'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent', 'ui'],
+        text: '맥이 그린 스냅샷을 ~/.claude-bridge/cache/snapshots(0700, 파일 0600, 주소의 해시 이름)에 두고, 같은 주소는 저장된 화면을 먼저 보낸 뒤("저장된 화면 · n분 전") 새로 그려 바꾼다(스크롤 유지). 7일·200 MB 넘으면 지우고 agent.json snapshotCache {days, mb} 또는 false, 디스크 관리에서 비울 수 있다',
+        refs: ['REQ-F-906', 'REQ-F-801'],
+      },
+      {
+        kind: 'changed',
+        scope: ['agent', 'server', 'ui'],
+        text: '스냅샷을 약 128 KB 조각으로 나눠 보낸다: 맥이 조각마다 따로 봉인(sid·요청 id·번호·전체 수, 마지막에 SHA-256)하고, 서버는 열지 않고 순서대로 넘기며 넘긴 것은 버리고(GET /api/sessions/<id>/snapshot/<reqId>?from=n), 폰은 첫 조각부터 그린다. 한 조각이라도 바뀌거나 빠지거나 순서가 바뀌면 "내용이 깨졌어요"',
+        refs: ['REQ-F-906', 'REQ-S-110', 'IF-278', 'IF-288', 'IF-289'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'ui', 'server'],
+        text: '짝지은 기기가 있는 맥은 봉인 켬과 상관없이 스냅샷을 늘 봉인하고, 봉인하지 못하면 평문으로 대신 보내지 않고 실패한다. 짝지은 기기는 스냅샷 주소도 봉인해 보내 서버가 주소를 보지 못한다. 서버는 봉인 모양이 아닌 조각·한도(조각 1 MiB, 600개, 64 MiB, 120 s)를 넘는 요청을 끊는다. 짝지은 기기는 서버가 무엇을 답하든 주소를 평문으로 다시 보내지 않는다',
+        refs: ['REQ-S-110', 'REQ-S-109'],
+      },
+    ],
+  },
+  {
     version: '1.525',
     date: '2026-11-12',
+    commit: '6ec4c9c',
     changes: [
       {
         kind: 'fixed',

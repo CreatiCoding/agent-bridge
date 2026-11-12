@@ -659,6 +659,17 @@ async function openFrom(hostId: string, s: unknown): Promise<{ d?: unknown; s?: 
   }
 }
 
+/**
+ * 스냅샷 (REQ-S-110, 1.526): one piece opened with the key of the paired Mac hostId only ({d, s, v}), or null. The
+ * pieces of a snapshot are never put through openText, which keeps what it opened (they are big and many).
+ */
+export const openFromHost = (hostId: string, s: unknown) => openFrom(hostId, s)
+/** A snapshot's address sealed for a paired Mac (whether or not it seals its words), so the server never sees it. */
+export async function sealUrlFor(hostId: string, sid: string, url: string): Promise<string> {
+  await loadTrust()
+  return pairedWith(hostId) ? sealPiece(hostId, sid, url) : url
+}
+
 /** A short text a Mac sent with its answer (an error): opened with that Mac's key when sealed, 🔒 when it does not open. */
 export async function findText(hostId: string, s: unknown): Promise<string | undefined> {
   if (typeof s !== 'string' || !s) return undefined

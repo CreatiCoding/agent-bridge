@@ -11,7 +11,9 @@ import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
 import { imageUrl, localPort, modeFor, modeOf, readerImg, throughPreview } from '../lib/in-app'
 import { readSnapshot } from '../lib/reader-dom'
-import { mountSnapshot, snapshotMore, snapshotPage, type SnapshotDoc } from '../lib/snapshot-page'
+import { mountSnapshot, snapshotAnchor, snapshotMore, snapshotPage, type SnapshotDoc } from '../lib/snapshot-page'
+import { snapshotStream, type SnapDraw } from '../lib/snap-stream'
+import { getStore } from '../lib/store'
 import { noteSnapshot, type SnapNote } from '../lib/debug'
 
 /**
@@ -20,22 +22,31 @@ import { noteSnapshot, type SnapNote } from '../lib/debug'
  */
 type Snap = { url: string; html: string; images?: Record<string, string>; big?: Record<string, unknown>; css?: Record<string, string>; width?: number; via?: string }
 import { matchRoute } from '../lib/router'
-import { LOCKED } from '../lib/trust'
-import { Button } from '../kit'
+import { LOCKED, loadTrust, pairedWith } from '../lib/trust'
+import { Button, IconButton } from '../kit'
 import { Sheet } from '../kit/overlay'
 
 // ---------- the one sheet of this window ----------
-let current: { url: string; key: number } | null = null
+/**
+ * The sheet's own history (1.526, REQ-F-906): every page it went to by a snapshot's link, with what it showed and where
+ * it was scrolled to. Going back shows what is kept here without asking the Mac again; only the last VIEWS_KEPT
+ * around the one shown keep their drawing (the address stays: it is drawn again, quickly from the Mac's disk).
+ * The phone's back gesture goes back here first (history.state.linkStep), and closes the sheet from the first page.
+ */
+type Entry = { url: string; view: View | null; status: string; scroll: number }
+type Cur = { key: number; stack: Entry[]; at: number }
+const VIEWS_KEPT = 4
+let current: Cur | null = null
 let seq = 0
 const subs = new Set<() => void>()
-const set = (v: typeof current) => ((current = v), subs.forEach((f) => f()))
+const set = (v: Cur | null) => ((current = v), subs.forEach((f) => f()))
 let mounted = false
 
 function close(fromBack = false) {
   if (!current) return
-  const key = current.key
+  const { key, at } = current
   set(null)
-  if (!fromBack && history.state?.linkSheet === key) history.back()
+  if (!fromBack && history.state?.linkSheet === key) history.go(-(at + 1))
 }
 
 /** Opens a link in the sheet (link.open's default on a touch device). */
@@ -45,13 +56,42 @@ export function openInApp(url: string) {
     const host = document.createElement('div')
     document.body.appendChild(host)
     createRoot(host).render(<LinkSheet />)
-    // The phone's back gesture closes the sheet, as it does every other sheet.
-    addEventListener('popstate', () => current && history.state?.linkSheet !== current.key && close(true))
+    // The phone's back gesture: a page back in the sheet, or closing it from its first page, as every other sheet.
+    addEventListener('popstate', () => {
+      const c = current
+      if (!c) return
+      const st = history.state
+      if (st?.linkSheet !== c.key) return close(true)
+      const at = typeof st.linkStep === 'number' ? st.linkStep : 0
+      if (at !== c.at && at >= 0 && at < c.stack.length) set({ ...c, at })
+    })
   }
   const key = ++seq
-  if (current) history.replaceState({ ...history.state, linkSheet: key }, '')
-  else history.pushState({ ...history.state, linkSheet: key }, '')
-  set({ url, key })
+  const entry: Entry = { url, view: null, status: '', scroll: 0 }
+  if (current) history.replaceState({ ...history.state, linkSheet: key, linkStep: 0 }, '')
+  else history.pushState({ ...history.state, linkSheet: key, linkStep: 0 }, '')
+  set({ key, stack: [entry], at: 0 })
+}
+
+/** A snapshot's link, in the sheet (1.526): a new page after the one shown (the ones ahead of it are gone). */
+function goTo(url: string) {
+  const c = current
+  if (!c) return
+  const stack = [...c.stack.slice(0, c.at + 1), { url, view: null, status: '', scroll: 0 }]
+  const at = stack.length - 1
+  // Only the drawings near the one shown stay in memory.
+  stack.forEach((e, i) => at - i > VIEWS_KEPT && (e.view = null))
+  history.pushState({ ...history.state, linkSheet: c.key, linkStep: at }, '')
+  set({ key: c.key, stack, at })
+}
+
+/** How long ago a kept drawing was made, as the sheet says it. */
+function ago(at: number) {
+  const m = Math.round((Date.now() - at) / 60_000)
+  if (!(at > 0) || m < 1) return '방금'
+  if (m < 60) return `${m}분 전`
+  if (m < 60 * 24) return `${Math.round(m / 60)}시간 전`
+  return `${Math.round(m / 1440)}일 전`
 }
 
 interface Block {
@@ -68,7 +108,10 @@ type View =
 
 type Page = { ok: true; url: string; title: string; site?: string; blocks: Block[]; snapshot?: boolean }
 
-async function load(url: string): Promise<View> {
+/** A drawing (or a step of one) to show now, with a line about it (저장된 화면 · n분 전, 새로 받지 못했어요). */
+type Show = (v: View, status: string) => void
+
+async function load(url: string, show: Show, signal: AbortSignal): Promise<View> {
   // 링크 열기 규칙 (REQ-F-881): the host's rule; with none, a snapshot on a session's page (1.470), elsewhere
   // localhost through the preview and the rest to read.
   const sid = sessionHere()
@@ -81,11 +124,15 @@ async function load(url: string): Promise<View> {
   if (mode === 'snapshot') {
     // Drawn by the session's Mac: only from a session's page.
     if (!sid) throw new Error('스냅샷은 세션 화면에서만 열 수 있어요. 그 세션의 맥이 페이지를 그려요')
-    if (fromRule) return snapshotView(sid, abs)
+    if (fromRule) return snapshotView(sid, abs, show, signal)
+    // A paired Mac's address never goes to the server plain (REQ-S-110): no reading by the server in its place.
+    const hostId = getStore().state?.sessions.find((x) => x.id === sid)?.hostId
+    if (hostId && (await loadTrust().then(() => pairedWith(hostId), () => false))) return snapshotView(sid, abs, show, signal)
     // A snapshot by default (no rule) goes back to the old way when the Mac cannot take it.
     try {
-      return await snapshotView(sid, abs)
+      return await snapshotView(sid, abs, show, signal)
     } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
       const why = errorText(e)
       if (local) return previewView(url, sid)
       // Both reasons when reading fails too (1.483): a site that turns away the server (403) would hide the snapshot's.
@@ -114,47 +161,87 @@ async function readView(abs: string): Promise<View> {
   return { kind: 'read', url: p.url, title: p.title, site: p.site ?? '', blocks: p.blocks }
 }
 
-async function snapshotView(sid: string, abs: string): Promise<View> {
-  {
-    // POST, signed by this device for a Mac that does not trust the server (lib/trust intentsFor).
-    const p = await post<Snap & { sealed?: string }>(`/api/sessions/${sid}/snapshot`, { url: abs })
-    let s: Snap | null = p
-    // A sealing Mac's answer is one piece (opened by api.ts): it must be a snapshot of this session.
-    if (p.sealed !== undefined) {
-      s = null
-      // Which step failed (1.486): the key, the contents, or whose snapshot it is.
-      let why = ''
-      const t = String(p.sealed)
-      if (t === LOCKED || t.startsWith('⟦bt')) why = '이 기기에 그 맥의 열쇠가 없거나 잠금을 풀지 못했어요'
-      else {
-        try {
-          const o = JSON.parse(t) as Snap & { kind?: string; sid?: string }
-          if (o.kind !== 'snapshot') why = `스냅샷이 아닌 답이에요 (${String(o.kind).slice(0, 20)})`
-          else if (o.sid !== sid) why = `다른 세션의 스냅샷이에요 (${String(o.sid).slice(0, 8)} ≠ ${sid.slice(0, 8)})`
-          else s = o
-        } catch {
-          why = `풀었지만 내용이 깨졌어요 (${t.length.toLocaleString()}자, 끝: ${JSON.stringify(t.slice(-12))})`
-        }
-      }
-      if (!s) throw new Error(`이 기기에서는 풀 수 없는 스냅샷이에요: ${why}`)
-    }
-    if (typeof s.html !== 'string' || typeof s.url !== 'string') throw new Error('맥에서 페이지를 그리지 못했어요')
-    const images = s.images && typeof s.images === 'object' ? s.images : {}
-    const sealed = p.sealed !== undefined
-    // Pictures the Mac read come as data:; the rest only when the server already saw the page (not sealed).
-    const pg = readSnapshot(s.html, s.url, (u) => (typeof images[u] === 'string' && /^data:image\//.test(images[u]) ? images[u] : sealed ? null : readerImg(u)))
-    const read = { kind: 'read' as const, url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
-    const css = s.css && typeof s.css === 'object' ? s.css : {}
-    const width = typeof s.width === 'number' && s.width > 0 && s.width <= 10000 ? s.width : 0
-    const big = s.big && typeof s.big === 'object' ? s.big : {}
-    const doc = snapshotPage({ url: s.url, html: s.html, images, css, big })
-    let site = ''
-    try {
-      site = new URL(s.url).host
-    } catch {}
-    const note = noteSnapshot({ site, bytes: doc.bytes, width, via: typeof s.via === 'string' ? s.via.slice(0, 20) : null, sealed, images: Object.keys(images).length, css: Object.keys(css).length })
-    return { kind: 'page', url: s.url, doc, width, note, read }
+/** The view of one drawing (as the Mac sent it, whole or the start of it). */
+function pageView(s: Snap, sealed: boolean): Extract<View, { kind: 'page' }> {
+  if (typeof s.html !== 'string' || typeof s.url !== 'string') throw new Error('맥에서 페이지를 그리지 못했어요')
+  const images = s.images && typeof s.images === 'object' ? s.images : {}
+  // Pictures the Mac read come as data:; the rest only when the server already saw the page (not sealed).
+  const pg = readSnapshot(s.html, s.url, (u) => (typeof images[u] === 'string' && /^data:image\//.test(images[u]) ? images[u] : sealed ? null : readerImg(u)))
+  const read = { kind: 'read' as const, url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
+  const css = s.css && typeof s.css === 'object' ? s.css : {}
+  const width = typeof s.width === 'number' && s.width > 0 && s.width <= 10000 ? s.width : 0
+  const big = s.big && typeof s.big === 'object' ? s.big : {}
+  const doc = snapshotPage({ url: s.url, html: s.html, images, css, big })
+  let site = ''
+  try {
+    site = new URL(s.url).host
+  } catch {}
+  const note = noteSnapshot({ site, bytes: doc.bytes, width, via: typeof s.via === 'string' ? s.via.slice(0, 20) : null, sealed, images: Object.keys(images).length, css: Object.keys(css).length })
+  return { kind: 'page', url: s.url, doc, width, note, read }
+}
+
+/**
+ * A snapshot (1.526): asked for in pieces (lib/snap-stream). The drawing the Mac kept shows first (저장된 화면 ·
+ * n분 전), then the one drawn now takes its place; the first drawing shows as soon as its first piece is in. When
+ * drawing anew fails after a kept one showed, the kept one stays (새로 받지 못했어요). A server or Mac before 1.526
+ * answers whole, read as before.
+ */
+async function snapshotView(sid: string, abs: string, show: Show, signal: AbortSignal): Promise<View> {
+  const hostId = getStore().state?.sessions.find((x) => x.id === sid)?.hostId ?? null
+  let shown: { view: View; gen: number; complete: boolean; at: number } | null = null
+  const onDraw = (d: SnapDraw) => {
+    // The one drawn now replaces a whole kept one only when it is whole too (no half page over a whole one).
+    if (shown && shown.gen === 0 && shown.complete && d.gen === 1 && !d.complete) return
+    const view = pageView(d, d.sealed)
+    shown = { view, gen: d.gen, complete: d.complete, at: d.at }
+    show(view, d.gen === 0 ? `저장된 화면 · ${ago(d.at)}${d.complete ? ' · 새로 받는 중…' : ''}` : '')
   }
+  let end: Awaited<ReturnType<typeof snapshotStream>>
+  try {
+    end = await snapshotStream(sid, hostId, abs, onDraw, signal)
+  } catch (e) {
+    // Drawing anew failed (a broken piece, the server gone) after the kept one showed whole: that one stays.
+    const kept = shown as { view: View; gen: number; complete: boolean; at: number } | null
+    if ((e as Error).name === 'AbortError' || !kept || kept.gen !== 0 || !kept.complete) throw e
+    end = { kind: 'stream', fresh: false, error: errorText(e) }
+  }
+  if (end.kind === 'whole') {
+    // A paired Mac seals its snapshot always (1.526): a plain whole answer is the server's own.
+    if (end.paired && end.answer.sealed === undefined) throw new Error('이 맥의 스냅샷인데 봉인되지 않은 답이 왔어요. 서버가 바꾼 답일 수 있어 보이지 않아요')
+    return wholeView(end.answer as Snap & { sealed?: unknown }, sid)
+  }
+  const last = shown as { view: View; gen: number; complete: boolean; at: number } | null
+  if (end.fresh && last) return last.view
+  if (last && last.gen === 0 && last.complete) {
+    show(last.view, `저장된 화면 · ${ago(last.at)} · 새로 받지 못했어요 (${end.error ?? ''})`)
+    return last.view
+  }
+  throw new Error(end.error ?? '맥에서 페이지를 그리지 못했어요')
+}
+
+/** A snapshot answered whole (a server or Mac before 1.526): one sealed piece opened by api.ts, or the page plain. */
+function wholeView(p: Snap & { sealed?: unknown }, sid: string): View {
+  let s: Snap | null = p
+  // A sealing Mac's answer is one piece (opened by api.ts): it must be a snapshot of this session.
+  if (p.sealed !== undefined) {
+    s = null
+    // Which step failed (1.486): the key, the contents, or whose snapshot it is.
+    let why = ''
+    const t = String(p.sealed)
+    if (t === LOCKED || t.startsWith('⟦bt')) why = '이 기기에 그 맥의 열쇠가 없거나 잠금을 풀지 못했어요'
+    else {
+      try {
+        const o = JSON.parse(t) as Snap & { kind?: string; sid?: string }
+        if (o.kind !== 'snapshot') why = `스냅샷이 아닌 답이에요 (${String(o.kind).slice(0, 20)})`
+        else if (o.sid !== sid) why = `다른 세션의 스냅샷이에요 (${String(o.sid).slice(0, 8)} ≠ ${sid.slice(0, 8)})`
+        else s = o
+      } catch {
+        why = `풀었지만 내용이 깨졌어요 (${t.length.toLocaleString()}자, 끝: ${JSON.stringify(t.slice(-12))})`
+      }
+    }
+    if (!s) throw new Error(`이 기기에서는 풀 수 없는 스냅샷이에요: ${why}`)
+  }
+  return pageView(s, p.sealed !== undefined)
 }
 
 /**
@@ -163,9 +250,12 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
  * The sheet scrolls; the page's own box is as tall as its content times the scale. What runs, loads or acts was taken
  * out by lib/snapshot-page; the box keeps the page's fixed and stacked elements inside it (contain, isolation).
  */
-function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void }) {
+function PageFrame({ v, title, onPlain, entry }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void; entry: Entry }) {
   const box = useRef<HTMLDivElement>(null)
   const page = useRef<HTMLDivElement>(null)
+  const fit = useRef<HTMLDivElement>(null)
+  // While the page is taken out and put in again, the box's scrolling is not the person's (1.526).
+  const restoring = useRef(false)
   // The page's scale in the box, for the effect that adds pieces as the box is scrolled (1.525).
   const scale = useRef(1)
   const [size, setSize] = useState({ w: 0, h: 0 })
@@ -184,8 +274,29 @@ function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; 
     const host = page.current
     if (!shown || !host) return
     const started = performance.now()
+    const el = box.current
+    // The page's height in the box now (not when React next draws): scrolling to a place needs the room there.
+    const sizeFit = () => {
+      setHeight(host.offsetHeight)
+      if (fit.current) fit.current.style.height = `${Math.ceil(host.offsetHeight * scale.current)}px`
+    }
+    // A link of the snapshot (1.526): another page in this sheet, or a place in this one.
+    const onLink = (href: string, kind: 'nav' | 'frag') => {
+      if (kind === 'nav') return goTo(href)
+      if (!el) return
+      let hash = ''
+      try {
+        hash = new URL(href).hash
+      } catch {}
+      const to = snapshotAnchor(host, v.doc, hash)
+      if (to === 'top') el.scrollTop = 0
+      else if (to) {
+        sizeFit()
+        el.scrollTop += to.getBoundingClientRect().top - el.getBoundingClientRect().top
+      }
+    }
     try {
-      mountSnapshot(host, v.doc)
+      mountSnapshot(host, v.doc, undefined, onLink)
     } catch (e) {
       const why = (e instanceof Error ? e.message : String(e)).slice(0, 200)
       v.note.frame = 'failed'
@@ -201,26 +312,48 @@ function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; 
     ro.observe(host)
     // The rest of a big page (1.525), a piece at a time, while the box's end is within three of its heights. The
     // host's own height (read now, not the state) says where the page ends.
-    const el = box.current
     const fill = () => {
       if (!el) return
-      for (let n = 0; n < 20 && el.scrollTop + el.clientHeight * 3 >= host.offsetHeight * scale.current; n++) if (!snapshotMore(host)) break
+      let added = false
+      for (let n = 0; n < 20 && el.scrollTop + el.clientHeight * 3 >= host.offsetHeight * scale.current; n++) {
+        if (!snapshotMore(host)) break
+        added = true
+      }
+      if (added) sizeFit()
     }
+    // Back where the person was on this page (1.526): going back to it, or its new drawing over the kept one. The
+    // pieces down to there go in first.
+    const target = entry.scroll
+    if (el && target > 0) {
+      for (let n = 0; n < 500 && host.offsetHeight * scale.current < target + el.clientHeight; n++) if (!snapshotMore(host)) break
+      sizeFit()
+      el.scrollTop = target
+    }
+    restoring.current = false
     fill()
+    // The room for the page at once (1.526): the observer's first word came a few hundred ms late on a page drawn over
+    // another, and until then the box could not be scrolled.
+    sizeFit()
+    const keep = () => {
+      if (el && !restoring.current) entry.scroll = el.scrollTop
+    }
     el?.addEventListener('scroll', fill, { passive: true })
+    el?.addEventListener('scroll', keep, { passive: true })
     return () => {
+      restoring.current = true
       ro.disconnect()
       el?.removeEventListener('scroll', fill)
+      el?.removeEventListener('scroll', keep)
       host.shadowRoot?.replaceChildren()
     }
-  }, [shown, v])
+  }, [shown, v, entry])
   const pw = Math.max(v.width, size.w)
   const k = size.w && pw ? size.w / pw : 1
   scale.current = k
   return (
     <div ref={box} className="snapshot-box">
       {shown ? (
-        <div className="snapshot-fit" style={{ height: Math.ceil(height * k) }}>
+        <div ref={fit} className="snapshot-fit" style={{ height: Math.ceil(height * k) }}>
           {/* The box is the wrapper, not the shadow host: page CSS can style its host (:host{…!important} and an
               @scope with no start, whose :scope is the host, win; snapshot-page drops both where the browser parses the
               sheet) but never the wrapper, so whatever the host becomes stays inside it. */}
@@ -297,42 +430,92 @@ function LinkSheet() {
     (f) => (subs.add(f), () => subs.delete(f)),
     () => current,
   )
+  const entry = cur ? cur.stack[cur.at] : null
   const [view, setView] = useState<View | null>(null)
+  // A line over the page (1.526): 저장된 화면 · n분 전, 새로 받지 못했어요.
+  const [status, setStatus] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [n, setN] = useState(0)
   // 읽기 모양: a snapshot shown in reading mode instead of as the page looked (1.488).
   const [plain, setPlain] = useState(false)
   useEffect(() => {
-    if (!cur) return
-    setView(null)
+    if (!entry) return
     setPlain(false)
     setError(null)
+    // Back to a page the sheet still holds: shown as it was, the Mac not asked again.
+    if (entry.view) {
+      setView(entry.view)
+      setStatus(entry.status)
+      return
+    }
+    setView(null)
+    setStatus('')
     let gone = false
-    load(cur.url).then(
-      (v) => !gone && setView(v),
-      (e) => !gone && setError(errorText(e)),
+    const ctl = new AbortController()
+    const show: Show = (v, st) => {
+      if (gone) return
+      entry.view = v
+      entry.status = st
+      setView(v)
+      setStatus(st)
+    }
+    load(entry.url, show, ctl.signal).then(
+      (v) => {
+        if (gone || entry.view === v) return
+        entry.view = v
+        entry.status = ''
+        setView(v)
+        setStatus('')
+      },
+      (e) => {
+        if (gone || (e as Error).name === 'AbortError') return
+        entry.view = null
+        setError(errorText(e))
+      },
     )
     return () => {
       gone = true
+      ctl.abort()
+      // Left before the new drawing came: the kept one stays, without saying it is still coming.
+      entry.status = entry.status.replace(' · 새로 받는 중…', '')
     }
-  }, [cur, n])
+  }, [cur, entry, n])
   let title = ''
   try {
-    title = cur ? new URL(cur.url, location.href).host : ''
+    title = entry ? new URL(entry.url, location.href).host : ''
   } catch {}
   // 브라우저로 열기 opens what the person pressed; a localhost address would not open on the phone itself, so its
   // preview address goes instead.
-  const outside = view?.kind === 'frame' ? view.src : cur?.url
+  const outside = view?.kind === 'frame' ? view.src : entry?.url
+  // 뒤로·앞으로 (1.526): through the window's history, so the phone's back gesture and these agree.
+  const head =
+    cur && cur.stack.length > 1 ? (
+      <span className="link-nav">
+        <IconButton icon="back" label="뒤로" disabled={cur.at === 0} onClick={() => history.back()} />
+        <IconButton icon="forward" label="앞으로" disabled={cur.at >= cur.stack.length - 1} onClick={() => history.forward()} />
+        <span className="link-nav-host">{title}</span>
+      </span>
+    ) : (
+      title
+    )
   return (
     <Sheet
       open={!!cur}
       onClose={() => close()}
       wide
       className="preview-sheet link-sheet"
-      title={title}
+      title={head}
       footer={
         <div className="hstack">
-          <Button size="sm" icon="refresh" disabled={!view && !error} onClick={() => setN((k) => k + 1)}>
+          <Button
+            size="sm"
+            icon="refresh"
+            disabled={!view && !error}
+            onClick={() => {
+              if (entry) entry.view = null
+              setN((k) => k + 1)
+            }}
+          >
             다시 불러오기
           </Button>
           {view?.kind === 'page' ? (
@@ -347,17 +530,22 @@ function LinkSheet() {
         </div>
       }
     >
+      {status && !error && view ? (
+        <div className="snapshot-status" role="status">
+          {status}
+        </div>
+      ) : null}
       {error ? (
         <div className="preview-msg">{error}</div>
-      ) : !view ? (
-        <div className="preview-msg">{cur && modeFor(cur.url, location.href, undefined, !!sessionHere()) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 1분 걸려요' : '여는 중…'}</div>
+      ) : !view || !entry ? (
+        <div className="preview-msg">{entry && modeFor(entry.url, location.href, undefined, !!sessionHere()) === 'snapshot' ? '세션의 맥에서 페이지를 그리는 중… 길면 1분 걸려요' : '여는 중…'}</div>
       ) : view.kind === 'frame' ? (
         <iframe key={n} className="preview-frame" src={view.src} title={title} allow="clipboard-write; fullscreen" />
       ) : view.kind === 'page' ? (
         plain ? (
           <Reading v={view.read} />
         ) : (
-          <PageFrame key={n} v={view} title={title} onPlain={() => setPlain(true)} />
+          <PageFrame key={n} v={view} title={title} onPlain={() => setPlain(true)} entry={entry} />
         )
       ) : view.kind === 'image' ? (
         <div className="reader-image">

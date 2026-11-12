@@ -16,9 +16,9 @@ var subresourceDest = map[string]bool{"image": true, "style": true, "font": true
 // the reader's pictures (in-app readerImg, imageUrl) and a report's videos (report-sheet, admin). All only read.
 var mediaRouteRe = regexp.MustCompile(`^/api/(?:read/img|(?:admin/)?reports/[a-zA-Z0-9-]+/video/[0-9a-f]{40}\.(?:mp4|mov|webm|m4v))$`)
 
-// GET routes that change something: a page's stream or poll (a new one pushes out the oldest, CONTROLS_MAX) and a
-// bridge tab's.
-var stateGetRe = regexp.MustCompile(`^/api/(classic/stream|classic/poll|bridge/stream|bridge/poll)$`)
+// GET routes that change something: a page's stream or poll (a new one pushes out the oldest, CONTROLS_MAX), a
+// bridge tab's, and the pieces of a snapshot (taking them lets the earlier ones go, 1.526).
+var stateGetRe = regexp.MustCompile(`^/api/(classic/stream|classic/poll|bridge/stream|bridge/poll|sessions/[a-zA-Z0-9-]+/snapshot/[0-9a-f-]{36})$`)
 
 const NOT_A_SUBRESOURCE = "페이지 안의 그림·스타일·글꼴·틀로는 이 주소를 부를 수 없습니다"
 

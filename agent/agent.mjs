@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -1308,6 +1308,13 @@ setInterval(() => {
 }, 2000).unref()
 process.on('exit', () => lf.proc?.kill('SIGTERM'))
 if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd) lfSave()
+// 스냅샷 저장 화면 (REQ-F-906): what is past its days or its size goes at start too, not only after a save.
+if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd)
+  setTimeout(() => {
+    try {
+      snapshotCache()?.prune()
+    } catch {}
+  }, 5_000).unref()
 
 /** The background work this Mac counted for a session (BgTracker, §5.3 refresh). */
 const ownBg = (s) => (s.bgTrack ? s.bgTrack.running() : [])
@@ -1329,7 +1336,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: evStore().tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', ...(canTranslate() ? ['translate'] : []), ...(localFullNow().groups ? ['groups'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(localFullNow().groups ? ['groups'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 
@@ -5017,13 +5024,44 @@ const commands = {
    * sealing is on (sealOut): the screen opens it and reads it itself, the server only passes it on. The address is
    * the one the person's device signed (TRUST_CLASS snapshot), so a server cannot make this Mac open another.
    */
-  async snapshot({ reqId, sid, url }) {
-    const fail = (error) => emit({ t: 'snapshot', reqId, sid, ok: false, error })
+  async snapshot({ reqId, sid, url, parts, rid }) {
+    // Since 1.526 (REQ-F-906, REQ-S-110): a Mac with a paired device always seals a snapshot (trust seal on or not),
+    // and never sends one plain when it cannot; in pieces of about SNAP_PIECE (`parts`, a server that relays them),
+    // the drawing kept on this disk first when there is one, then the one drawn now. The address may come sealed by
+    // the device (then the server never saw it either).
+    const devices = !lf.active && trust.devices().length > 0
+    const seal = devices ? trust.sealer() : null
+    const fail = (error) => emit({ t: 'snapshot', reqId, sid, ok: false, error: seal ? seal(String(error), sid) : error })
+    if (devices && !seal) return fail('이 맥에 봉인 열쇠가 없어 스냅샷을 봉인하지 못했어요. 평문으로 대신 보내지 않아요 — 맥 터미널에서 trust 상태를 확인해 주세요')
+    const inPieces = parts === 1 || parts === true
+    const id = typeof rid === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(rid) ? rid : ''
+    if (inPieces && !id) return fail('스냅샷 요청 번호가 올바르지 않아요')
+    let asked = String(url ?? '')
+    if (hasSeal(asked)) {
+      const opened = trust.openText(asked, sid)
+      if (opened === null) return fail('봉인된 주소를 이 맥의 열쇠로 풀지 못했어요')
+      asked = opened
+    }
     let page
     try {
-      page = new URL(String(url ?? ''))
+      page = new URL(asked)
     } catch {}
     if (!page || (page.protocol !== 'http:' && page.protocol !== 'https:')) return fail('http(s) 주소만 스냅샷으로 열 수 있어요')
+    const cache = snapshotCache()
+    let sent = 0
+    const send = (gen, s) => {
+      const list = snapPieces({ sid, rid: id, gen, payload: snapPayload(s) })
+      for (const p of list) emit({ t: 'snappart', snap: reqId, sid, ...(seal ? { sealed: seal(p, sid) } : { plain: p }) })
+      sent += list.length
+    }
+    if (inPieces && cache) {
+      const kept = cache.get(page.href)
+      try {
+        if (kept) send(0, { ...kept, asked: page.href })
+      } catch (e) {
+        log('warn', 'snapshot', `저장된 화면을 보내지 못함 (${e.message})`, sid)
+      }
+    }
     if (!EGO_BIN && !CHROME_BIN) return fail(`이 맥에 ego lite 도 Chrome 도 없어서 스냅샷을 만들 수 없어요. ${CHROME_FIX}`)
     if (snapshotsRunning >= SNAPSHOT_PARALLEL) return fail('스냅샷을 이미 만드는 중이에요. 잠시 뒤에 다시 해 주세요')
     snapshotsRunning++
@@ -5047,7 +5085,21 @@ const commands = {
       if (r.html.length > SNAPSHOT_HTML_MAX) return fail('페이지가 너무 커서 스냅샷으로 못 열어요')
       const css = await snapshotCss(r.html, r.url, r.css)
       const { images, big } = await snapshotImages(r.html, r.url, r.images, cssImageUrls([...Object.values(css), ...inlineStyles(r.html, r.url)]), r.big)
-      emit({ t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, big, css, width: r.width || 0, via })
+      const s = { url: r.url, asked: page.href, html: r.html, images, big, css, width: r.width || 0, via, at: Date.now() }
+      if (cache)
+        try {
+          cache.put(page.href, s)
+        } catch (e) {
+          log('warn', 'snapshot', `저장하지 못함 (${e.message})`, sid)
+        }
+      if (inPieces) {
+        send(1, s)
+        return emit({ t: 'snapshot', reqId, sid, ok: true, parts: sent })
+      }
+      // The whole page in one answer (a server before 1.526), sealed for a paired device whether or not sealing is on.
+      let msg = { t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, big, css, width: r.width || 0, via }
+      if (seal && !trustSealing()) msg = sealOut(msg, seal)
+      emit(msg)
     } catch (e) {
       fail(e.message)
     } finally {
@@ -6011,7 +6063,7 @@ async function diskOp(op, id, where, paths, shared) {
       disk = diskUse(fs.statfsSync(HOME))
     } catch {}
     const sharedNow = sharedDisk(shared).catch(() => null)
-    const caches = await inTurns(diskCaches(home, process.platform), 4, async (c) => {
+    const caches = await inTurns(diskCaches(home, process.platform, STATE_DIR), 4, async (c) => {
       const there = c.paths.filter((p) => fs.existsSync(p))
       if (!there.length) return null
       const sizes = await Promise.all(there.map(diskSize))
@@ -6098,7 +6150,7 @@ async function diskOp(op, id, where, paths, shared) {
     return { results, freed }
   }
   if (op === 'clean') {
-    const c = diskCaches(home, process.platform).find((x) => x.id === id)
+    const c = diskCaches(home, process.platform, STATE_DIR).find((x) => x.id === id)
     if (!c) throw new Error('모르는 항목이에요')
     const size = async () => (await Promise.all(c.paths.map(diskSize))).reduce((a, b) => a + (b ?? 0), 0)
     const before = await size()
@@ -7329,6 +7381,11 @@ const SNAPSHOT_IMG_FETCH_MS = 8_000
 const SNAPSHOT_HTML_MAX = 3 * 1024 * 1024
 const SNAPSHOT_PARALLEL = 2
 let snapshotsRunning = 0
+/** 스냅샷 저장 화면 (REQ-F-906): agent.json's `snapshotCache` ({days, mb}, false for none), read each time. */
+function snapshotCache() {
+  const c = snapCacheOf(readJson(configPath, {}))
+  return c ? new SnapCache(path.join(STATE_DIR, 'cache', 'snapshots'), c) : null
+}
 // ego lite's command (ego-browser), where its installer puts it: the agent runs under launchd with a short PATH.
 const EGO_BIN = [...String(process.env.PATH ?? '').split(':').filter(Boolean), path.join(HOME, '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin'].map((d) => path.join(d, 'ego-browser')).find((p) => fs.existsSync(p)) ?? null
 

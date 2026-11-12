@@ -28,6 +28,18 @@ var (
 func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 	m := sessionRouteRe.FindStringSubmatch(u.Path)
 	if m == nil {
+		// The pieces of a snapshot (IF-288, 1.526), behind the session's lock like its other routes.
+		if sm := snapStreamRouteRe.FindStringSubmatch(u.Path); sm != nil {
+			if req.Method != "GET" {
+				refuse(405, "지원하지 않는 요청입니다")
+			}
+			sm1 := ownSession(uid, sm[1])
+			if truthy(sm1.get("lock")) && !req.internal && !unlockedBy(req, sm1) {
+				refuseX(423, LOCKED, M{"locked": true})
+			}
+			snapshotTake(res, sm1, uid, sm[2], qstr(u, "from"))
+			return true
+		}
 		return false
 	}
 	get := req.Method == "GET"

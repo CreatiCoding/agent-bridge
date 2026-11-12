@@ -161,8 +161,10 @@ export const TRUST_CLASS = {
   btw: { i: ['sid', 'textH'], keep: ['text'] },
   killserver: { i: ['sid', 'port'] },
   // 스냅샷 (REQ-F-881, 1.469): the address is the one the person's device signed, so a server cannot name what this
-  // Mac's browser (signed in where the person is) opens.
-  snapshot: { i: ['sid', 'url'] },
+  // Mac's browser (signed in where the person is) opens. Since 1.526 the url may be sealed by the device (the Mac opens
+  // it), and the server's `parts` (send it in pieces) and the page's request id `rid` (bound inside every piece) ride
+  // along unsigned: a server that changes them only gets pieces the page throws away.
+  snapshot: { i: ['sid', 'url'], keep: ['parts', 'rid'] },
   background: { i: ['on', 'proxy'], keep: ['login'] },
   heal: { i: ['action'] },
   awake: { i: ['idle', 'lid'] },
@@ -724,7 +726,9 @@ export function sealOut(msg, seal) {
     case 'snapshot':
       // 스냅샷 (1.469): the page, its address and its pictures in one piece bound to the session; the screen reads it.
       if (typeof m.html === 'string') {
-        m.sealed = S(JSON.stringify({ kind: 'snapshot', sid, url: m.url, html: m.html, images: m.images ?? {}, css: m.css ?? {}, width: m.width ?? 0, via: m.via }))
+        m.sealed = S(JSON.stringify({ kind: 'snapshot', sid, url: m.url, html: m.html, images: m.images ?? {}, css: m.css ?? {}, big: m.big ?? {}, width: m.width ?? 0, via: m.via }))
+        // The big pictures' addresses too (1.526): they name the page's own files.
+        delete m.big
         delete m.url
         delete m.html
         delete m.images

@@ -13,7 +13,7 @@ import (
 
 const (
 	AUTH_TOKENS_MAX = 8
-	AUTH_TOKEN_MAX  = 2048
+	AUTH_TOKEN_MAX  = 4608 // the agent takes p up to 4,096 (a snapshot's sealed address, 1.526)
 	AUTH_KEEP_MS    = 30_000
 )
 

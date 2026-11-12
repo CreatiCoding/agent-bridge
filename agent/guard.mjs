@@ -247,6 +247,36 @@ export const EGO_QUIET = `() => {
   return now - q.at >= ${EGO_QUIET_MS} && now - last >= ${EGO_QUIET_MS}
 }`
 
+/** How many of a page's links are asked about their click handlers (one CDP call each). */
+export const SNAPSHOT_JS_CLICK_MAX = 1500
+/** How long the asking may take in all: the links past it go unmarked. */
+export const SNAPSHOT_JS_CLICK_MS = 3000
+/** The events whose handler on a link makes it the page's own route, not a plain link. */
+export const JS_CLICK_EVENTS = ['click', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend']
+/**
+ * In the ego script: marks every <a href>/<area href> (SNAPSHOT_JS_CLICK_MAX at most, SNAPSHOT_JS_CLICK_MS in all) that has a handler of
+ * JS_CLICK_EVENTS on itself with data-cb-js-click, through CDP on the page's own objects. Errors go up (the snapshot
+ * goes on unmarked).
+ */
+export const EGO_MARK_JS_CLICKS = `async (page) => {
+  const list = await page.cdp("Runtime.evaluate", { expression: "Array.from(document.querySelectorAll('a[href], area[href]')).slice(0, ${SNAPSHOT_JS_CLICK_MAX})", objectGroup: "cb-js-click" })
+  const id = list && list.result && list.result.objectId
+  if (!id) return 0
+  const props = await page.cdp("Runtime.getProperties", { objectId: id, ownProperties: true })
+  let n = 0
+  const until = Date.now() + ${SNAPSHOT_JS_CLICK_MS}
+  for (const p of (props && props.result) || []) {
+    if (Date.now() > until) break
+    if (!/^\\d+$/.test(p.name) || !p.value || !p.value.objectId) continue
+    const ls = await page.cdp("DOMDebugger.getEventListeners", { objectId: p.value.objectId, depth: 0 })
+    if (!((ls && ls.listeners) || []).some((l) => ${JSON.stringify(JS_CLICK_EVENTS)}.includes(l.type))) continue
+    await page.cdp("Runtime.callFunctionOn", { objectId: p.value.objectId, functionDeclaration: "function () { this.setAttribute('data-cb-js-click', '') }" })
+    n++
+  }
+  try { await page.cdp("Runtime.releaseObjectGroup", { objectGroup: "cb-js-click" }) } catch {}
+  return n
+}`
+
 /**
  * The script `ego-browser nodejs` runs for a snapshot (stdin): a task space of its own name, its page set to the
  * SNAPSHOT_VIEW_W × SNAPSHOT_VIEW_H view before the address is opened (ego has no viewport call, so raw CDP; mobile:
@@ -305,7 +335,8 @@ export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
   const dt = document.doctype ? "<!DOCTYPE " + document.doctype.name + ">" : ""
   return { url: location.href, html: dt + document.documentElement.outerHTML, images, big, css, width: document.documentElement.scrollWidth }
 }`
-  return `const task = await taskSpace(${JSON.stringify(name)})
+  return `const markJsClicks = ${EGO_MARK_JS_CLICKS}
+const task = await taskSpace(${JSON.stringify(name)})
 let out
 let viewError = ""
 try {
@@ -313,6 +344,10 @@ try {
   try { await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${SNAPSHOT_VIEW_W}, height: ${SNAPSHOT_VIEW_H}, deviceScaleFactor: 0, mobile: false }) } catch (e) { viewError = String(e?.message ?? e).slice(0, 200) }
   await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
   try { await page.waitForFunction(${EGO_QUIET}, undefined, { timeout: ${Number(budgetMs)} }) } catch {}
+  // Links the page's scripts handle themselves (1.526): a click handler on the <a>/<area> itself (CDP
+  // DOMDebugger.getEventListeners) marks it data-cb-js-click, and the sheet leaves it as it was (a route of the page's
+  // own, not a page of its own). A handler delegated to the document is not the link's: its href is where it goes.
+  try { await markJsClicks(page) } catch {}
   out = await page.evaluate(${inPage}, ${JSON.stringify(opts)})
   if (viewError && out) out.viewError = viewError
 } finally {
@@ -953,7 +988,7 @@ export function lastCwd(tail) {
  * `contents` empties the folders, `readonly` does too after making them writable (Go's module cache is read-only),
  * `trash` empties the Trash, which is the one that cannot be undone.
  */
-export function diskCaches(home, platform) {
+export function diskCaches(home, platform, stateDir = path.join(home, '.claude-bridge')) {
   const mac = platform === 'darwin'
   const c = (p) => path.join(home, p)
   const lib = (p) => c(path.join('Library', p))
@@ -967,6 +1002,8 @@ export function diskCaches(home, platform) {
     { id: 'go-mod', title: 'Go 모듈 캐시', paths: [c('go/pkg/mod')], how: 'readonly' },
     { id: 'pip', title: 'pip 캐시', paths: [mac ? lib('Caches/pip') : xdg('pip')], how: 'contents' },
     { id: 'playwright', title: 'Playwright 브라우저', paths: [mac ? lib('Caches/ms-playwright') : xdg('ms-playwright')], how: 'contents' },
+    // 스냅샷 저장 화면 (REQ-F-906): the pages this Mac drew for a phone, shown again at once; drawn anew when gone.
+    { id: 'snapshots', title: '스냅샷 저장 화면', paths: [path.join(stateDir, 'cache', 'snapshots')], how: 'contents' },
     ...(mac
       ? [
           { id: 'xcode-derived', title: 'Xcode 빌드 산출물(DerivedData)', paths: [lib('Developer/Xcode/DerivedData')], how: 'contents' },
@@ -1812,5 +1849,184 @@ export function sharedMake(realRoot, want) {
       if (e.code !== 'EEXIST') throw e
     }
     sharedInside(realRoot, d)
+  }
+}
+
+// What this Mac drew for a snapshot is kept on its own disk
+// (~/.claude-bridge/cache/snapshots, never on the server), so the same address shows at once the next time while it
+// is drawn again; and a snapshot goes out in pieces of about SNAP_PIECE characters, each sealed on its own, so the
+// phone starts drawing on the first and the server passes on pieces it cannot open, one at a time.
+
+/** About how much of a snapshot one piece holds (characters of the payload). */
+// 128 K characters: sealed (JSON twice, base64) a piece of quotes or Korean stays under the server's 1 MiB.
+export const SNAP_PIECE = 128 * 1024
+/** The most pieces one drawing goes out in: a bigger payload is refused (the server's own limit is above two of these). */
+export const SNAP_PIECES_MAX = 240
+export const SNAP_CACHE_DAYS = 7
+export const SNAP_CACHE_MB = 200
+
+/** agent.json's `snapshotCache`: {days, mb} within bounds, or null when it is false (no cache). */
+export function snapCacheOf(config) {
+  const v = config?.snapshotCache
+  if (v === false) return null
+  const o = v && typeof v === 'object' ? v : {}
+  const num = (x, d, lo, hi) => (Number.isFinite(x) && x >= lo && x <= hi ? x : d)
+  return { days: num(o.days, SNAP_CACHE_DAYS, 0.01, 365), mb: num(o.mb, SNAP_CACHE_MB, 1, 100_000) }
+}
+
+/** The file name an address is kept under: a hash, never the address itself. */
+export const snapKey = (url) => crypto.createHash('sha256').update(`cb-snapshot|${url}`, 'utf8').digest('hex')
+
+/**
+ * The payload a drawing goes out as: one line of what the page is (its addresses, width, how it was drawn, when,
+ * its big pictures' sizes and its style sheets, `hl` the length of its HTML), the HTML itself, then a line of its
+ * pictures. The phone can draw from the first line and the start of the HTML; the pictures come last.
+ */
+export function snapPayload(s) {
+  const html = String(s.html ?? '')
+  const head = { url: s.url, asked: s.asked ?? s.url, width: s.width || 0, via: s.via ?? '', at: s.at || 0, big: s.big ?? {}, css: s.css ?? {}, hl: html.length }
+  return `${JSON.stringify(head)}\n${html}\n${JSON.stringify(s.images ?? {})}`
+}
+
+/** The payload read back (tests; the phone has its own): {head, html, images} or null. */
+export function snapUnpayload(p) {
+  const i = p.indexOf('\n')
+  if (i < 0) return null
+  try {
+    const head = JSON.parse(p.slice(0, i))
+    const html = p.slice(i + 1, i + 1 + head.hl)
+    if (p[i + 1 + head.hl] !== '\n') return null
+    return { head, html, images: JSON.parse(p.slice(i + 2 + head.hl)) }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The pieces of one drawing (gen 0: the kept one, 1: drawn now) of request rid for session sid, as the JSON texts
+ * that go out (sealed each by the caller). Every piece names the session, the request, the drawing, its number and
+ * how many there are; the last also the SHA-256 of the whole payload (UTF-8), so a piece changed, dropped, repeated
+ * or moved is seen.
+ */
+export function snapPieces({ sid, rid, gen, payload, size = SNAP_PIECE }) {
+  const of = Math.max(1, Math.ceil(payload.length / size))
+  if (of > SNAP_PIECES_MAX) throw new Error('페이지가 너무 커서 스냅샷으로 못 보내요')
+  const hash = crypto.createHash('sha256').update(payload, 'utf8').digest('hex')
+  const out = []
+  for (let n = 0; n < of; n++) {
+    const body = payload.slice(n * size, (n + 1) * size)
+    out.push(JSON.stringify({ kind: 'snappart', sid, rid, gen, n, of, ...(n === of - 1 ? { hash } : {}), body }))
+  }
+  return out
+}
+
+/**
+ * The kept drawings: one file per page (<key of its final address>.json, 0600, in a 0700 folder), written to a
+ * temporary name and renamed so a Mac that stops half way leaves no broken one; a small `<key of the address
+ * asked>.alias` names it when the page moved on (a redirect). mtime is when it was drawn (it goes after `days`),
+ * atime when it was last shown (the least shown go first past `mb`).
+ */
+export class SnapCache {
+  constructor(dir, { days = SNAP_CACHE_DAYS, mb = SNAP_CACHE_MB, now = Date.now } = {}) {
+    Object.assign(this, { dir, days, mb, now })
+  }
+  ensure() {
+    fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    fs.chmodSync(this.dir, 0o700)
+  }
+  fileOf(key) {
+    return path.join(this.dir, `${key}.json`)
+  }
+  /** The kept drawing of url (the address asked, or a final one): {url, asked, html, images, css, big, width, via, at} or null. */
+  get(url) {
+    let key = snapKey(url)
+    if (!fs.existsSync(this.fileOf(key))) {
+      try {
+        key = fs.readFileSync(path.join(this.dir, `${key}.alias`), 'utf8').trim()
+      } catch {
+        return null
+      }
+      if (!/^[0-9a-f]{64}$/.test(key)) return null
+    }
+    const f = this.fileOf(key)
+    try {
+      const st = fs.statSync(f)
+      if (this.now() - st.mtimeMs > this.days * DAY_MS) return null
+      const v = JSON.parse(fs.readFileSync(f, 'utf8'))
+      if (!v || typeof v.html !== 'string' || typeof v.url !== 'string') return null
+      fs.utimesSync(f, new Date(this.now()), st.mtime)
+      return v
+    } catch {
+      return null
+    }
+  }
+  /** Keeps a drawing (asked: the address asked for; s.url its final one), then tidies. */
+  put(asked, s) {
+    this.ensure()
+    const key = snapKey(s.url)
+    const at = this.now()
+    const text = JSON.stringify({ url: s.url, asked, html: s.html, images: s.images ?? {}, css: s.css ?? {}, big: s.big ?? {}, width: s.width || 0, via: s.via ?? '', at })
+    const write = (file, data) => {
+      const tmp = `${file}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`
+      fs.writeFileSync(tmp, data, { mode: 0o600 })
+      fs.renameSync(tmp, file)
+    }
+    write(this.fileOf(key), text)
+    const t = new Date(at)
+    fs.utimesSync(this.fileOf(key), t, t)
+    if (asked !== s.url) write(path.join(this.dir, `${snapKey(asked)}.alias`), key)
+    this.prune()
+  }
+  /** Goes over the folder: drawings older than `days` and, past `mb` in all, the least lately shown; what is left half written; names of what is gone. */
+  prune() {
+    let names
+    try {
+      names = fs.readdirSync(this.dir)
+    } catch {
+      return { removed: 0, bytes: 0 }
+    }
+    const now = this.now()
+    let removed = 0
+    const rm = (n) => {
+      try {
+        fs.rmSync(path.join(this.dir, n), { force: true })
+        removed++
+      } catch {}
+    }
+    const pages = []
+    for (const n of names) {
+      let st
+      try {
+        st = fs.lstatSync(path.join(this.dir, n))
+      } catch {
+        continue
+      }
+      if (!st.isFile()) continue
+      if (/\.tmp-/.test(n)) {
+        if (now - st.mtimeMs > 3_600_000) rm(n)
+      } else if (/^[0-9a-f]{64}\.json$/.test(n)) {
+        if (now - st.mtimeMs > this.days * DAY_MS) rm(n)
+        else pages.push({ n, size: st.size, used: Math.max(st.atimeMs, st.mtimeMs) })
+      } else if (!/^[0-9a-f]{64}\.alias$/.test(n)) rm(n)
+    }
+    pages.sort((a, b) => a.used - b.used)
+    let total = pages.reduce((s, p) => s + p.size, 0)
+    const max = this.mb * 1024 * 1024
+    while (total > max && pages.length) {
+      const p = pages.shift()
+      rm(p.n)
+      total -= p.size
+    }
+    // An alias whose page is gone goes too.
+    const kept = new Set(pages.map((p) => p.n.slice(0, 64)))
+    for (const n of names)
+      if (/^[0-9a-f]{64}\.alias$/.test(n)) {
+        let to = ''
+        try {
+          to = fs.readFileSync(path.join(this.dir, n), 'utf8').trim()
+        } catch {}
+        if (!kept.has(to)) rm(n)
+      }
+    return { removed, bytes: total }
   }
 }

@@ -9,3 +9,4 @@ ui/.yarn
 /server/server
 /server/bridge-server
 extensions/*/.yarn
+ui/.e2e-nav/
