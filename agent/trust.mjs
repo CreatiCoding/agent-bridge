@@ -175,6 +175,8 @@ export const TRUST_CLASS = {
   rebootNow: { i: [], always: true },
   // 세션 정리 (REQ-F-839): the timed batch only reports while trust is on (agent.mjs tidyRun); what a person picks is signed.
   tidyRun: 'free',
+  // 세션 그룹 넘겨주기 (REQ-F-905): only kept as the list's arrangement and handed to the next server; runs nothing.
+  groups: 'free',
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
   // 로컬 어댑터 (REQ-F-893, 서명 REQ-S-101): a call is signed with its extension, session, action, read or write,

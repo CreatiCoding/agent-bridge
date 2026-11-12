@@ -82,7 +82,30 @@ export function localFullOf(cfg, agentPort = 4317) {
   const p = Number(v.port)
   const h = Number(v.sessionHours)
   const rel = typeof v.releases === 'string' && /^https:\/\/[^\s?#]+\/$/.test(v.releases) ? v.releases : LF_RELEASES
-  return { on: v.on === true, port: Number.isInteger(p) && p >= 1024 && p <= 65535 ? p : agentPort + 10, sessionHours: Number.isFinite(h) ? Math.min(168, Math.max(1, Math.round(h))) : 12, releases: rel }
+  // groups: whether this Mac carries the session list's groups between the site and its local server (REQ-F-905).
+  return { on: v.on === true, port: Number.isInteger(p) && p >= 1024 && p <= 65535 ? p : agentPort + 10, sessionHours: Number.isFinite(h) ? Math.min(168, Math.max(1, Math.round(h))) : 12, releases: rel, groups: v.groups !== false }
+}
+
+/** The most this Mac keeps of a server's groups (JSON). */
+export const GROUPS_MAX = 1024 * 1024
+/** The same 5 minutes the server allows (server/groupsync.go GROUPS_SYNC_SKEW). */
+export const GROUPS_SKEW = 5 * 60_000
+
+/**
+ * 세션 그룹 넘겨주기 (REQ-F-905): what to do with the groups a server handed this Mac ({at, groups, loose, collapsed},
+ * `at` when they last changed there), given the ones it keeps. Newer: kept. Older than the kept ones: those go up (the
+ * one changed last wins). The same time: nothing. {do:'keep', rec} | {do:'send', msg} | {do:'none'}.
+ */
+export function groupsStep(mine, got, now = Date.now()) {
+  const at = Number(got?.at)
+  // A time more than GROUPS_SKEW ahead of this Mac's clock is no time a change was made: taken, it would win forever.
+  const late = now + GROUPS_SKEW
+  if (!got || typeof got !== 'object' || !Number.isFinite(at) || at < 0 || at > late) return { do: 'none' }
+  const arr = (v) => (Array.isArray(v) ? v : [])
+  const mineAt = mine && typeof mine === 'object' && Number.isFinite(mine.at) && mine.at <= late ? mine.at : -1
+  if (at > mineAt) return { do: 'keep', rec: { at, groups: arr(got.groups), loose: arr(got.loose), collapsed: arr(got.collapsed) } }
+  if (mineAt > at) return { do: 'send', msg: { t: 'groups', at: mineAt, groups: arr(mine.groups), loose: arr(mine.loose), collapsed: arr(mine.collapsed) } }
+  return { do: 'none' }
 }
 
 const readJson = (p, fallback) => {
@@ -111,6 +134,7 @@ export class LocalFull {
     this.ticketsPath = path.join(dir, 'tickets.json')
     this.statePath = path.join(dir, 'state.json')
     this.dataDir = path.join(dir, 'data')
+    this.groupsPath = path.join(dir, 'groups.json')
   }
   ensure() {
     for (const d of [this.dir, this.binDir]) {
@@ -168,6 +192,19 @@ export class LocalFull {
   }
   dropTickets() {
     fs.rmSync(this.ticketsPath, { force: true })
+  }
+  /** The session list's groups this Mac carries (REQ-F-905), or null. */
+  groups() {
+    const g = readJson(this.groupsPath, null)
+    return g && typeof g === 'object' && Number.isFinite(g.at) ? g : null
+  }
+  saveGroups(rec) {
+    const text = JSON.stringify(rec)
+    if (text.length > GROUPS_MAX) return false
+    this.ensure()
+    fs.writeFileSync(`${this.groupsPath}.tmp`, text, { mode: 0o600 })
+    fs.renameSync(`${this.groupsPath}.tmp`, this.groupsPath)
+    return true
   }
   /** What the running agent says about the switch, for the terminal: {on, active, port, version, error, at}. */
   state() {

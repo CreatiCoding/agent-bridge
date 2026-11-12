@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.522',
+    date: '2026-11-12',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['agent', 'server'],
+        text: '세션 그룹(그룹·그룹 없음·접힘)을 맥이 들고 사이트와 local --full 로컬 서버 사이에서 넘겨준다. 각 서버는 그룹이 마지막으로 바뀐 시각을 두고 hello·바뀔 때마다 맥에 주며, 맥은 더 늦은 것을 두었다가 연동한 서버 것이 더 이르면 올린다: 마지막에 바꾼 쪽이 이긴다. 다른 맥의 세션 id 는 지우지 않고, 세션 기록·설정은 넘기지 않는다. agent.json 의 localFull.groups: false 로 끈다',
+        refs: ['REQ-F-905', 'IF-286', 'IF-287', 'REQ-F-900'],
+      },
+    ],
+  },
+  {
     version: '1.521',
     date: '2026-11-12',
+    commit: 'a2d5bf7',
     changes: [
       {
         kind: 'added',

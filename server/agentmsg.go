@@ -130,6 +130,8 @@ func init() {
 		"hello":  helloFromAgent,
 		"lines":  linesFromAgent,
 		"status": statusFromAgent,
+		// 세션 그룹 넘겨주기 (REQ-F-905): the groups this Mac carries, newer than the ones here.
+		"groups": groupsFromAgent,
 		"delivered": func(uid, hostID string, msg M) {
 			meta := sessOf(msg)
 			if !owns(meta, uid, hostID) {
@@ -466,6 +468,10 @@ func helloFromAgent(uid, hostID string, msg M) {
 		}
 	}
 	toHost(hostID, M{"t": "welcome", "sessions": known})
+	// The groups here and when they changed, to a Mac that carries them (REQ-F-905): it keeps them or sends newer ones.
+	if carriesGroups(hostID) {
+		toHost(hostID, groupsCmd(uid))
+	}
 	// What it did not say it kept goes again, then the copies this server kept before (REQ-S-069).
 	if storeOn(hostID) {
 		if q := logOut[hostID]; q != nil {

@@ -562,8 +562,13 @@ func prefsOf(uid string) M {
 }
 
 func savePrefs(uid string) {
+	// The groups' time first (REQ-F-905): a change of them goes to the owner's Macs that carry them.
+	changed := groupsStamp(uid, prefsOf(uid))
 	writeJson(prefsFile(uid), prefsOf(uid))
 	broadcastState(uid)
+	if changed {
+		groupsToHosts(uid, "")
+	}
 }
 
 // githubLoginOf: the GitHub login of a person signed in with GitHub; "" for Apple and demo accounts.

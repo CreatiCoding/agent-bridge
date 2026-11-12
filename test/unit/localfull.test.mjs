@@ -6,7 +6,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy, portFree, helloOk, lfHelloMac, releaseBuild, LF_RELEASES } from '../../agent/localfull.mjs'
+import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy, portFree, helloOk, lfHelloMac, releaseBuild, LF_RELEASES, groupsStep, GROUPS_MAX } from '../../agent/localfull.mjs'
+import { classOf } from '../../agent/trust.mjs'
 import { docOf, signDoc } from '../../agent/localui.mjs'
 import { localFullSrc, savedLocalFull } from '../../scripts/sign-agent.mjs'
 
@@ -61,8 +62,8 @@ test('one-time links are kept as their SHA-256 only, five at most (the local ser
 })
 
 test('agent.json localFull: off unless turned on, its port the agent port + 10', () => {
-  assert.deepEqual(localFullOf({}, 4317), { on: false, port: 4327, sessionHours: 12, releases: LF_RELEASES })
-  assert.deepEqual(localFullOf({ localFull: { on: true, port: 80, sessionHours: 999 } }, 4400), { on: true, port: 4410, sessionHours: 168, releases: LF_RELEASES })
+  assert.deepEqual(localFullOf({}, 4317), { on: false, port: 4327, sessionHours: 12, releases: LF_RELEASES, groups: true })
+  assert.deepEqual(localFullOf({ localFull: { on: true, port: 80, sessionHours: 999 } }, 4400), { on: true, port: 4410, sessionHours: 168, releases: LF_RELEASES, groups: true })
   assert.equal(localFullOf({ localFull: { releases: 'https://mirror.example/lf/' } }).releases, 'https://mirror.example/lf/', '미러')
   assert.equal(localFullOf({ localFull: { releases: 'http://mirror.example/lf/' } }).releases, LF_RELEASES, 'https 만')
   assert.equal(localFullOf({ localFull: { on: 'yes' } }).on, false)
@@ -308,4 +309,46 @@ test("the server must answer the challenge only this run's secret answers, witho
   assert.equal(await helloOk('http://127.0.0.1:4327', secret, async () => new Response('', { status: 404 })), false)
   // The same answer as the server's (server/localfull.go localHello, LF_HELLO).
   assert.equal(lfHelloMac('s', 'n'), crypto.createHmac('sha256', 's').update('claude-bridge localfull hello v1\nn').digest('base64url'))
+})
+
+// AC-1761: 세션 그룹 넘겨주기 (REQ-F-905). The Mac keeps the newest groups it was handed and sends its own up to a
+// server whose are older, so the one changed last wins whichever way the switch goes. agent.json's localFull.groups
+// false turns it off; the command runs nothing, so trust lets it through like the other free ones.
+test('groups go with the Mac between the site and its local server: the one changed last wins (REQ-F-905)', () => {
+  const site = { at: 100, groups: [{ id: 'aaaa1111', name: '일', items: ['s-a', 's-other-mac'] }], loose: ['s-b'], collapsed: ['loose'] }
+  // Linked to the site: nothing kept yet, its groups are kept.
+  const kept = groupsStep(null, site)
+  assert.equal(kept.do, 'keep')
+  assert.deepEqual(kept.rec, { at: 100, groups: site.groups, loose: site.loose, collapsed: site.collapsed })
+  // `on`: a new local server has none (time 0), so the site's go up to it.
+  const up = groupsStep(kept.rec, { at: 0, groups: [], loose: [], collapsed: [] })
+  assert.equal(up.do, 'send')
+  assert.deepEqual(up.msg, { t: 'groups', ...kept.rec })
+  // Changed on the local server: kept. `off`: the site's are older, so these go up there.
+  const local = { at: 200, groups: [{ id: 'bbbb2222', name: '새', items: ['s-a'] }], loose: ['s-other-mac'], collapsed: [] }
+  const kept2 = groupsStep(kept.rec, local)
+  assert.equal(kept2.do, 'keep')
+  assert.equal(groupsStep(kept2.rec, site).do, 'send')
+  // The same time: nothing; a broken one: nothing.
+  assert.equal(groupsStep(kept2.rec, local).do, 'none')
+  assert.equal(groupsStep(kept2.rec, { at: 'x' }).do, 'none')
+  assert.equal(groupsStep(kept2.rec, null).do, 'none')
+  // Far ahead of this Mac's clock: not taken, and one kept like that gives way to the server's.
+  const now = Date.now()
+  assert.equal(groupsStep(null, { at: now + 10 * 60_000, groups: [] }, now).do, 'none')
+  assert.equal(groupsStep({ at: now + 10 * 60_000, groups: [] }, site, now).do, 'keep')
+  // What is not a list is kept as an empty one.
+  assert.deepEqual(groupsStep(null, { at: 1, groups: 'x' }).rec, { at: 1, groups: [], loose: [], collapsed: [] })
+
+  const lf = new LocalFull({ dir: tmp(), arch: 'darwin-arm64', keys: KEYS })
+  assert.equal(lf.groups(), null)
+  assert.equal(lf.saveGroups(kept2.rec), true)
+  assert.deepEqual(lf.groups(), kept2.rec)
+  assert.equal((fs.statSync(lf.groupsPath).mode & 0o777).toString(8), '600')
+  assert.equal(lf.saveGroups({ at: 3, groups: ['x'.repeat(GROUPS_MAX)] }), false, '너무 크면 두지 않음')
+  assert.deepEqual(lf.groups(), kept2.rec)
+
+  assert.equal(localFullOf({}).groups, true, '기본은 켬')
+  assert.equal(localFullOf({ localFull: { groups: false } }).groups, false)
+  assert.equal(classOf({ t: 'groups' }), 'free')
 })
