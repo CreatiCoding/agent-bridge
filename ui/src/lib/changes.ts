@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.524',
+    date: '2026-11-12',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: '스냅샷의 CSS 사용자 함수(@function, \\66unction·@media 안 중첩 포함)를 시트 글과 CSSOM 에서 빼고 --x() 호출은 none: image-set(--u() 1x) 가 앱 출처 /api 로 쿠키 실린 그림 요청을 보내던 것. 그림 함수 안은 허용 목록(url·type·그림·그라디언트·색·calc 등)만, var·env·attr·if·--x 등이 있으면 none. 걸러내기 전에 CR LF·CR·FF 를 브라우저처럼 LF 로 읽는다',
+        refs: ['REQ-S-108', 'REQ-F-881'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui', 'server'],
+        text: '스냅샷 안 링크가 이 사이트·미리보기 출처(/api/me 의 새 previewOrigins)를 가리키면 href 를 뺀다. cursor 는 키워드만 남겨 그림 커서로 클릭 위치를 속이지 못하게 하고, 시작점 없는 @scope·바깥 :scope 규칙은 버려 Shadow 호스트를 꾸미지 못하게 한다',
+        refs: ['REQ-S-108', 'REQ-F-881', 'IF-008'],
+      },
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '/api/ 요청의 Sec-Fetch-Dest 가 image·style·font·script·audio·video·track·object·embed·iframe·frame 이면 403(이 사이트가 <img>·<video> 로 받는 /api/read/img·보고서 영상은 same-origin 일 때만 허용). classic·bridge 의 stream·poll GET 은 Sec-Fetch-Site 가 same-origin 이 아니면 403. 헤더 없는 맥 에이전트·앱 요청은 그대로',
+        refs: ['REQ-S-109', 'ERR-371', 'ERR-018'],
+      },
+    ],
+  },
+  {
     version: '1.523',
     date: '2026-11-12',
+    commit: 'bedaba7',
     changes: [
       {
         kind: 'fixed',

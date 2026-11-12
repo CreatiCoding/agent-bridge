@@ -9,6 +9,7 @@ import type { Me } from './lib/types'
 import { startBackgroundRelay } from './components/relay-status'
 import { setFeatures } from './lib/features'
 import { setLinkRules } from './lib/in-app'
+import { setAppOrigins } from './lib/snapshot-page'
 import { openSession } from './lib/builtin-actions'
 import { claimPrimary } from './lib/primary'
 import { askExtensions, startExtensions } from './lib/ext-host'
@@ -47,6 +48,8 @@ get<Me>('/api/me').then(
     if (me.icons) applyIcons(me.icons)
     // An older server leaves the rules out: keep the ones this browser has.
     if (me.linkRules) setLinkRules(me.linkRules)
+    // A snapshot keeps no link to this server's own origins (1.524).
+    setAppOrigins([me.origin, ...(Array.isArray(me.previewOrigins) ? me.previewOrigins : [])])
     setFeatures(me.features)
     if (!me.demo && me.linkHere !== false) startBackgroundRelay()
     // Extensions (REQ-F-827): the agreed ones first (up to 1.5 s, none: no wait), then the question about new ones.

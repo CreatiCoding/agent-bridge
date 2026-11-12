@@ -7,8 +7,11 @@
 //     links, every attribute that names an address (src, srcset, background, poster, href, ping, formaction, …) unless
 //     it became a data: picture the Mac sent.
 //   - Forms become <cb-form> (not a form: nothing to submit) and controls are inert (no focus, no typing, no click).
-//   - Styles: @import, @font-face and @namespace are dropped, and every address a style could fetch (url() in any
-//     case or CSS escape, src(), image-set()/image()/cross-fade() strings) becomes a picture the Mac sent or nothing.
+//   - Styles: @import, @font-face, @namespace and @function are dropped, and every address a style could fetch (url()
+//     in any case or CSS escape, src(), image-set()/image()/cross-fade() strings) becomes a picture the Mac sent or
+//     nothing; a picture function that calls anything that brings a value in (var(), --x(), if(), …) is none, and a
+//     cursor is its keyword alone (1.524).
+//   - Links to this site or its previews have no href (1.524): a new tab of this site goes with its cookies.
 //   - The page's html, body and :root become <cb-html> and <cb-body> (and form, <cb-form>), and its selectors are
 //     rewritten to them (CSSOM where the browser has constructable sheets), keeping their specificity.
 // The site's CSP (server/httputil.go: scripts only from this site, no inline; styles inline; pictures data:) is the last
@@ -19,6 +22,31 @@ export interface SnapshotParts {
   html: string
   images?: Record<string, string>
   css?: Record<string, string>
+  /** This site's own origins (1.524): a link to one of them is no link. Left out: this page's and setAppOrigins'. */
+  own?: string[]
+}
+
+/** The server's other origins of its own (its primary one, the previews'), from /api/me (1.524). */
+let appOrigins: string[] = []
+export function setAppOrigins(list: unknown[]) {
+  appOrigins = list.filter((o): o is string => typeof o === 'string' && /^https?:\/\//i.test(o))
+}
+/** The origins whose links a snapshot keeps none of: this page's, and the server's own (setAppOrigins). */
+export const ownOrigins = () => [...(typeof location === 'undefined' ? [] : [location.origin]), ...appOrigins]
+/** Whether href (absolute) is at one of own. */
+export function atOwnOrigin(href: string, own: string[]): boolean {
+  try {
+    const o = new URL(href).origin
+    return own.some((x) => {
+      try {
+        return new URL(x).origin === o
+      } catch {
+        return false
+      }
+    })
+  } catch {
+    return true
+  }
 }
 
 /** The page made safe (1.523), in an inert document: mountSnapshot copies it into a shadow root. */
@@ -40,7 +68,7 @@ const NO_IMG = 'data:,'
 const DROP =
   'script, noscript, iframe, frame, frameset, object, embed, applet, portal, fencedframe, base, meta, link, template, source, track, animate, animateMotion, animateTransform, set'
 /** Attributes that name an address, act, or steal focus: never kept (src and href are seen to on their own). */
-const DROP_ATTRS = ['srcset', 'imagesrcset', 'sizes', 'data-src', 'loading', 'background', 'lowsrc', 'dynsrc', 'longdesc', 'ping', 'download', 'srcdoc', 'formaction', 'formmethod', 'formtarget', 'formenctype', 'form', 'action', 'autofocus', 'contenteditable', 'popover', 'popovertarget', 'popovertargetaction', 'commandfor', 'command', 'manifest', 'archive', 'codebase', 'classid', 'itemtype', 'attributionsrc', 'accesskey']
+const DROP_ATTRS = ['srcset', 'imagesrcset', 'sizes', 'data-src', 'loading', 'background', 'lowsrc', 'dynsrc', 'longdesc', 'ping', 'download', 'srcdoc', 'formaction', 'formmethod', 'formtarget', 'formenctype', 'form', 'action', 'autofocus', 'contenteditable', 'popover', 'popovertarget', 'popovertargetaction', 'commandfor', 'command', 'manifest', 'archive', 'codebase', 'classid', 'itemtype', 'attributionsrc', 'accesskey', 'cursor']
 /** Attributes whose text is never a style (left alone even when it holds "url("). */
 const TEXT_ATTRS = /^(alt|title|value|placeholder|label|content|class|id|name|lang|dir|aria-.*|data-.*)$/i
 
@@ -57,6 +85,12 @@ const unescapeCss = (s: string) =>
     const n = parseInt(h ?? '', 16)
     return n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '�'
   })
+/**
+ * CSS's own preprocessing (1.524): CR LF, CR and FF are one LF, NUL is U+FFFD. Done first, so that this file reads
+ * escapes and strings as the browser does: `ur\6c\r\n(` is url( to a browser, and was not to a reader that took the
+ * escape's one whitespace as the CR alone.
+ */
+export const cssPre = (t: string) => t.replace(/\r\n?|\f/g, '\n').replace(/\0/g, '�')
 /** Where a quoted string that starts at i ends (after its closing quote, or at a line end or the end). */
 const endOfString = (t: string, i: number) => {
   const q = t[i]
@@ -98,11 +132,30 @@ const stringValue = (s: string) => unescapeCss(s.slice(1, s.endsWith(s[0]) && s.
 /** A CSS string of s, quoted. */
 export const cssString = (s: string) => `"${s.replace(/[\\"]/g, '\\$&').replace(/[\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `)}"`
 
+/** Where the block whose { is at i ends (after its matching }, strings, comments and escapes stepped over). */
+const endOfBlock = (t: string, i: number) => {
+  let depth = 0
+  for (let j = i; j < t.length; ) {
+    const c = t[j]
+    if (c === '"' || c === "'") j = endOfString(t, j)
+    else if (c === '/' && t[j + 1] === '*') j = endOfComment(t, j)
+    else if (c === '\\') j += 2
+    else {
+      if (c === '{') depth++
+      else if (c === '}' && --depth === 0) return j + 1
+      j++
+    }
+  }
+  return t.length
+}
+
 /**
- * Every @import rule taken out (1.490): `@import "a"`, `@import url(a)`, in any case and with CSS escapes. Strings and
- * comments are stepped over, so an "@import" inside one is left alone and a cut never eats a comment's end.
+ * Every at-rule called `name` taken out, in any case and with CSS escapes, at any depth (inside @media, @supports,
+ * @layer, …). A statement (`@import "a";`) goes to its `;`, a block (`@function --u() {…}`) to its matching `}`.
+ * Strings and comments are stepped over, so a name inside one is left alone and a cut never eats a comment's end.
  */
-export function dropImports(t: string): string {
+function dropAtRule(t: string, name: string, block: boolean): string {
+  t = cssPre(t)
   let out = ''
   let from = 0
   let i = 0
@@ -114,7 +167,7 @@ export function dropImports(t: string): string {
     else if (c === '@') {
       AT_NAME.lastIndex = i + 1
       const m = AT_NAME.exec(t)
-      if (!m || unescapeCss(m[0]).toLowerCase() !== 'import') {
+      if (!m || unescapeCss(m[0]).toLowerCase() !== name) {
         i += 1 + (m ? m[0].length : 0)
         continue
       }
@@ -126,18 +179,58 @@ export function dropImports(t: string): string {
         else j += t[j] === '\\' ? 2 : 1
       }
       if (t[j] === ';') j++
+      else if (block && t[j] === '{') j = endOfBlock(t, j)
       i = from = j
     } else i++
   }
   return out + t.slice(from)
 }
 
+/** Every @import rule taken out (1.490): `@import "a"`, `@import url(a)`, in any case and with CSS escapes. */
+export const dropImports = (t: string) => dropAtRule(t, 'import', false)
+
+/**
+ * Every @function rule taken out (1.524), `@\66unction` and inside @media too: a custom function returns a value
+ * where it is called, so `@function --u(){result:"/api/x"}` and `image-set(--u() 1x)` fetched /api/x from this site
+ * with its cookies. Calls of one left anywhere become none in scrubCss.
+ */
+export const dropFunctions = (t: string) => dropAtRule(t, 'function', true)
+
 /** Functions whose strings are pictures to fetch (image-set("a.png" 1x)). */
 const IMAGE_FNS = new Set(['image-set', '-webkit-image-set', 'image', 'cross-fade', '-webkit-cross-fade'])
-/** Functions whose value comes later, from elsewhere. */
-const FILLED = new Set(['var', 'env', 'attr'])
-/** Whether t calls one of names (CSS escapes undone), strings and comments stepped over. */
-function callsAny(t: string, names: Set<string>): boolean {
+/**
+ * The only functions a picture function may hold (1.524): addresses (made pictures here), type(), pictures, gradients,
+ * colours and maths, none of which brings a value from elsewhere. Anything else is none: var(), env(), attr(), a
+ * custom --x(), if() and whatever substitutes a value next could hand image-set() a string the browser then fetches
+ * from this site with its cookies.
+ */
+const IMAGE_ARGS = new Set([
+  ...IMAGE_FNS,
+  'url',
+  'src',
+  'type',
+  'rgb',
+  'rgba',
+  'hsl',
+  'hsla',
+  'hwb',
+  'lab',
+  'lch',
+  'oklab',
+  'oklch',
+  'color',
+  'color-mix',
+  'calc',
+  'min',
+  'max',
+  'clamp',
+  'from',
+  'to',
+  'color-stop',
+])
+const imageArg = (name: string) => IMAGE_ARGS.has(name) || /^(-webkit-)?(repeating-)?(linear|radial|conic)-gradient$|^-webkit-gradient$/.test(name)
+/** Whether t calls only functions that ok allows (CSS escapes undone), strings and comments stepped over. */
+function callsOnly(t: string, ok: (name: string) => boolean): boolean {
   for (let i = 0; i < t.length; ) {
     const c = t[i]
     if (c === '"' || c === "'") i = endOfString(t, i)
@@ -146,10 +239,84 @@ function callsAny(t: string, names: Set<string>): boolean {
       IDENT.lastIndex = i
       const raw = IDENT.exec(t)?.[0] ?? t[i]
       i += raw.length
-      if (t[i] === '(' && names.has(unescapeCss(raw).toLowerCase())) return true
+      if (t[i] === '(' && !ok(unescapeCss(raw).toLowerCase())) return false
     } else i += c === '\\' ? 2 : 1
   }
-  return false
+  return true
+}
+
+/** The parts of a value split at its top-level commas (strings, comments and brackets stepped over). */
+function topLevelParts(v: string): string[] {
+  const parts: string[] = []
+  let from = 0
+  for (let i = 0; i < v.length; ) {
+    const c = v[i]
+    if (c === '"' || c === "'") i = endOfString(v, i)
+    else if (c === '/' && v[i + 1] === '*') i = endOfComment(v, i)
+    else if (c === '\\') i += 2
+    else if (c === '(') i = endOfCall(v, i)
+    else {
+      if (c === ',') (parts.push(v.slice(from, i)), (from = i + 1))
+      i++
+    }
+  }
+  parts.push(v.slice(from))
+  return parts
+}
+
+/**
+ * Every `cursor` declaration made its keyword alone (1.524): a cursor picture (url(), image-set(), a data: one too) can
+ * draw a pointer away from where the mouse really is, over this page's own buttons. `cursor:url(a) 1 1, pointer` is
+ * `cursor:pointer`, and one with no keyword of its own (`cursor:var(--c)`) is `auto`. A selector (`cursor:hover{`)
+ * is told apart by the { that ends it; strings and comments are left alone.
+ */
+export function keywordCursors(t: string): string {
+  t = cssPre(t)
+  let out = ''
+  let from = 0
+  let prev = ''
+  for (let i = 0; i < t.length; ) {
+    const c = t[i]
+    if (c === '/' && t[i + 1] === '*') {
+      i = endOfComment(t, i)
+      continue
+    }
+    if (c === '"' || c === "'") {
+      i = endOfString(t, i)
+      prev = c
+      continue
+    }
+    if (isIdentStart(t, i)) {
+      IDENT.lastIndex = i
+      const raw = IDENT.exec(t)?.[0] ?? t[i]
+      const at = prev === '' || prev === '{' || prev === ';' || prev === '}'
+      i += raw.length
+      prev = 'a'
+      if (!at || unescapeCss(raw).toLowerCase() !== 'cursor') continue
+      let k = i
+      while (k < t.length && /\s/.test(t[k])) k++
+      if (t[k] !== ':') continue
+      let e = k + 1
+      while (e < t.length && t[e] !== ';' && t[e] !== '}' && t[e] !== '{') {
+        if (t[e] === '"' || t[e] === "'") e = endOfString(t, e)
+        else if (t[e] === '/' && t[e + 1] === '*') e = endOfComment(t, e)
+        else if (t[e] === '(') e = endOfCall(t, e)
+        else e += t[e] === '\\' ? 2 : 1
+      }
+      if (t[e] === '{') continue
+      const value = t.slice(k + 1, e)
+      if (!/[(,\\]/.test(value)) continue
+      const important = /!\s*important\s*$/i.test(value)
+      const last = topLevelParts(value.replace(/!\s*important\s*$/i, '')).pop()?.trim() ?? ''
+      const kw = /^[a-zA-Z-]+$/.test(last) ? last : 'auto'
+      out += t.slice(from, k + 1) + kw + (important ? ' !important' : '')
+      from = i = e
+      continue
+    }
+    if (!/\s/.test(c)) prev = c
+    i += c === '\\' ? 2 : 1
+  }
+  return out + t.slice(from)
 }
 
 /**
@@ -160,6 +327,7 @@ function callsAny(t: string, names: Set<string>): boolean {
  * it from reaching out; the site's CSP is only the last line.
  */
 export function scrubCss(t: string, picture: (raw: string) => string): string {
+  t = cssPre(t)
   let out = ''
   let i = 0
   let depth = 0
@@ -196,11 +364,19 @@ export function scrubCss(t: string, picture: (raw: string) => string): string {
         i = e
         continue
       }
+      if (name.startsWith('--')) {
+        // A custom function's call (1.524): its @function is gone (dropFunctions), so it was nothing already, and
+        // none wherever it stands (a picture function or a picture's place, `background-image:--u()`).
+        out += 'none'
+        i = endOfCall(t, j)
+        continue
+      }
       if (IMAGE_FNS.has(name)) {
-        // A value filled in later (var(), env(), attr()) can be a string the browser then fetches, from this site
-        // with its cookies: `--u:"/api/x"; background:image-set(var(--u) 1x)`. Such a picture is none.
+        // A value filled in later (var(), env(), attr(), --x(), if()) can be a string the browser then fetches, from
+        // this site with its cookies: `--u:"/api/x"; background:image-set(var(--u) 1x)`. Such a picture is none, and
+        // so is one that calls anything but the few functions that bring nothing in (IMAGE_ARGS).
         const e = endOfCall(t, j)
-        if (callsAny(t.slice(j + 1, e), FILLED)) {
+        if (!callsOnly(t.slice(j + 1, e), imageArg)) {
           out += 'none'
           i = e
           continue
@@ -223,7 +399,7 @@ export function scrubCss(t: string, picture: (raw: string) => string): string {
       i++
     }
   }
-  return out
+  return keywordCursors(out)
 }
 
 /** The page's own roots, as they are in a shadow root (1.523): same specificity as the type selector they replace. */
@@ -272,15 +448,32 @@ export function hostSelector(sel: string): string {
   return out
 }
 
-/** Style rules' selectors made this snapshot's, and the rules that only load (font faces, imports, namespaces) dropped. */
-function fixRules(list: CSSRuleList, drop: (i: number) => void) {
+/**
+ * Style rules' selectors made this snapshot's, and dropped: the rules that only load (font faces, imports,
+ * namespaces), custom functions (@function, 1.524), and every rule that could style the host. `scoped` is whether the
+ * rule is inside an @scope with a start of its own, where :scope is an element of the page.
+ */
+function fixRules(list: CSSRuleList, drop: (i: number) => void, scoped = false) {
   for (let i = list.length - 1; i >= 0; i--) {
     const r = list[i]
-    // A rule that styles the host (:host, :host(), :host-context(), @scope (:host)) would reach past the box: inside a
-    // shadow root its !important wins over this page's own rules, so `:host{position:fixed!important;inset:0!important}`
-    // covered the whole sheet. The browser has written the selector out plainly (no escapes).
-    const prelude = r.cssText.slice(0, Math.max(0, r.cssText.indexOf('{')))
-    if (r instanceof CSSFontFaceRule || r instanceof CSSImportRule || r instanceof CSSNamespaceRule || /:host/i.test(prelude)) {
+    // A rule that styles the host would reach past the box: inside a shadow root its !important wins over this page's
+    // own rules, so `:host{position:fixed!important;inset:0!important}` covered the whole sheet. So does an @scope with
+    // no start of its own (1.524): its root is the <style>'s parent, which for one in the head is the shadow root's
+    // host, and `@scope { :scope {position:fixed!important} }` styled it; and :scope outside a started @scope (`@scope
+    // (:scope)` too). The browser has written the selector out plainly (no escapes).
+    const text = r.cssText
+    const prelude = text.slice(0, Math.max(0, text.indexOf('{')))
+    const scope = /^@scope\b/i.test(text)
+    const start = scope ? ((r as CSSRule & { start?: string | null }).start ?? '') : ''
+    if (
+      r instanceof CSSFontFaceRule ||
+      r instanceof CSSImportRule ||
+      r instanceof CSSNamespaceRule ||
+      /^@function\b/i.test(text) ||
+      /:host/i.test(prelude) ||
+      (scope && (!start.trim() || (!scoped && /:scope|&/i.test(start)))) ||
+      (!scoped && !scope && r instanceof CSSStyleRule && /:scope/i.test(r.selectorText))
+    ) {
       drop(i)
       continue
     }
@@ -288,10 +481,11 @@ function fixRules(list: CSSRuleList, drop: (i: number) => void) {
       const s = hostSelector(r.selectorText)
       if (s !== r.selectorText) r.selectorText = s
     }
-    // Groups (@media, @supports, @layer, @container, …) and nested style rules; a keyframes rule holds no selectors.
+    // Groups (@media, @supports, @layer, @container, @scope, …) and nested style rules; a keyframes rule holds no
+    // selectors.
     if (!(r instanceof CSSKeyframesRule) && 'cssRules' in r && 'deleteRule' in r) {
       const g = r as CSSGroupingRule
-      fixRules(g.cssRules, (j) => g.deleteRule(j))
+      fixRules(g.cssRules, (j) => g.deleteRule(j), scoped || scope)
     }
   }
 }
@@ -299,6 +493,7 @@ function fixRules(list: CSSRuleList, drop: (i: number) => void) {
 /** A style sheet's text as it goes into the shadow root (1.523). */
 function sheetText(text: string, picture: (raw: string) => string): string {
   let t = dropImports(text)
+  t = dropFunctions(t)
   try {
     const sh = new CSSStyleSheet()
     sh.replaceSync(t)
@@ -314,6 +509,7 @@ function sheetText(text: string, picture: (raw: string) => string): string {
 export function snapshotPage(s: SnapshotParts): SnapshotDoc {
   const images = s.images ?? {}
   const css = s.css ?? {}
+  const own = s.own ?? ownOrigins()
   const abs = (u: string, base = s.url) => {
     try {
       return new URL(u.trim().replace(/&amp;/g, '&'), base).href
@@ -380,6 +576,8 @@ export function snapshotPage(s: SnapshotParts): SnapshotDoc {
     if (!a.hasAttribute('href')) return
     const href = abs(a.getAttribute('href') ?? '')
     if (!/^https?:/i.test(href)) return void a.removeAttribute('href')
+    // Nor a link to this site or its previews (1.524): a new tab of /api/… goes with this site's cookies.
+    if (atOwnOrigin(href, own)) return void a.removeAttribute('href')
     a.setAttribute('href', href)
     a.setAttribute('target', '_blank')
     a.setAttribute('rel', 'noopener noreferrer')

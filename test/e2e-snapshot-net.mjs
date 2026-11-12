@@ -3,7 +3,9 @@
 // nothing: no @import (quoted, url(), escaped, in a sheet the Mac sent), no url() the Mac did not send (escaped too),
 // no image-set()/src() string, no @font-face, no legacy picture attribute, no form that sends. Its inline styles,
 // data: pictures and rewritten html/body/:root selectors still apply; this page's styles do not reach in and its
-// styles do not reach out; its fixed and stacked elements stay inside its box; a click inside stops there.
+// styles do not reach out; its fixed and stacked elements stay inside its box; a click inside stops there. Since 1.524
+// (AC-1764~AC-1767): no @function (escaped, nested) or call of one, no link to this site, a cursor without its
+// picture, and an @scope with no start does not reach the host.
 // A control (the raw page in a frame) must fetch, or this test proves nothing.
 // Needs no bridge server or agent, only Playwright (and Chromium, or CHROME=<path to a Chrome>).
 //   PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs node test/e2e-snapshot-net.mjs [screenshot.png]
@@ -44,6 +46,8 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const O = `http://127.0.0.1:${server.address().port}`
 const cap = (m) => `${O}/capture?m=${m}`
+// Another origin for a link that must stay one (a snapshot keeps none to this site's own, 1.524).
+const OTHER = O.replace('127.0.0.1', 'localhost')
 
 const html = `<html class="dark" style="--from-html:rgb(11, 12, 13)"><head>
 <style>@import "${cap('str')}";</style>
@@ -64,6 +68,12 @@ p{color:rgb(1, 2, 3)}
 .fixed{position:fixed;top:0;left:0;width:100%;height:100vh;z-index:2147483647;background:rgb(255, 0, 0);opacity:.2}
 .var{--u:"${cap('varstr')}";background-image:image-set(var(--u) 1x);width:10px;height:10px}
 :host{position:fixed!important;inset:0!important;transform:none!important;contain:none!important;width:auto!important;z-index:2147483647!important}
+@function --u(){result:"${cap('fn')}"}
+.fn{background:image-set(--u() 1x);cursor:image-set(--u() 1x),auto;list-style-image:image-set(--u() 1x);mask-image:image-set(--u() 1x);border-image-source:image-set(--u() 1x)}
+@\\66unction --e(){result:"${cap('fnesc')}"} .fe{background:image-set(--e() 1x)}
+@media screen{@supports (display:block){@function --n(){result:"${cap('fnmedia')}"}}} .fm{background:image-set(--n() 1x)}
+@scope { :scope { position:fixed!important; inset:0!important; outline:5px solid rgb(255, 0, 0)!important } }
+.cur{cursor:url(${PNG}) 1 1, pointer}
 @media screen{:is(:host){position:fixed!important;inset:0!important}}
 </style>
 </head><body background="${cap('bodybg')}" class="page">
@@ -78,7 +88,9 @@ p{color:rgb(1, 2, 3)}
 <svg><image href="${cap('svg')}"/><rect fill="url(${cap('svgfill')})" width="1" height="1"/><a xlink:href="javascript:alert(1)"><text>x</text></a><set attributeName="href" to="javascript:alert(2)"/></svg>
 <video poster="${cap('poster')}" src="${cap('video')}"></video>
 <form id="f" class="search" action="${cap('form')}" method="get"><input name="q" value="x" id="q"><button id="send" formaction="${cap('formaction')}">send</button></form>
-<a id="link" href="${O}/s/abc">same site link</a> <a id="js" href="javascript:alert(3)">js</a>
+<a id="link" href="${OTHER}/s/abc">another site's link</a> <a id="own" href="${O}/api/x">this site's link</a> <a id="js" href="javascript:alert(3)">js</a>
+<ul class="fn"><li>fn</li></ul><div class="fe">fe</div><div class="fm">fm</div><div id="fnattr" style="background-image:image-set(--u() 1x);cursor:image-set(--u() 1x),auto">fa</div>
+<div id="cur" class="cur">cur</div><div id="curattr" style="cursor:url(${PNG}) 2 2, move">cur2</div>
 <div class="fixed" id="fixed"></div><div class="var">v</div><a id="named" name="x">named</a><img src="${O}/pic.png" attributionsrc="${cap('attrsrc')}">
 <div id="plain" onclick="alert(4)">plain</div>
 </body></html>`
@@ -135,6 +147,10 @@ const look = await page.evaluate(() => {
     form: $('form') === null && $('cb-form#f.search') !== null,
     inert: $('#q').inert && $('#send').inert,
     link: [$('#link').getAttribute('target'), $('#link').getAttribute('rel')].join(' '),
+    own: $('#own').hasAttribute('href'),
+    cursors: [cs('#cur').cursor, cs('#curattr').cursor, cs('#fnattr').cursor, cs('ul.fn').cursor].join(' '),
+    pics: ['ul.fn', '.fe', '.fm', '#fnattr'].map((s) => cs(s).backgroundImage + '|' + cs(s).listStyleImage).join(' '),
+    hostLook: [getComputedStyle(document.getElementById('host')).position, getComputedStyle(document.getElementById('host')).outlineStyle].join(' '),
     js: $('#js').hasAttribute('href'),
     svgA: sh.querySelector('svg a').hasAttribute('xlink:href'),
     set: sh.querySelector('svg set') === null,
@@ -161,6 +177,12 @@ ok(look.link === '_blank noopener noreferrer' && !look.js && !look.svgA && look.
 ok(look.fixedInside, `a fixed element stays in the snapshot's box (top ${look.fixedTop}, box ${look.boxTop})`)
 ok(look.hostInside, `":host{position:fixed!important;inset:0!important…}" does not take the host out of the box (${look.host})`)
 ok(!look.named, 'an <a> with no href stays no link')
+// 1.524: custom functions, links to this site, cursor pictures and an @scope with no start.
+ok(/@function/.test(html) && !/@function|@\\66unction|--[ufen]\(/i.test(out.text), 'no @function and no call of one is left')
+ok(look.pics === 'none|none none|none none|none none|none', `a picture named by a custom function is none (${look.pics})`)
+ok(!look.own, 'a link to this site has no href')
+ok(look.cursors === 'pointer move auto auto', `a cursor is its keyword alone (${look.cursors})`)
+ok(look.hostLook === 'static none', `"@scope { :scope {…!important} }" does not reach the host (${look.hostLook})`)
 ok(look.over !== 'host' && look.over !== 'wrap', `nothing of it covers this page outside the box (${look.over || 'body'})`)
 
 // A click inside stops at the shadow root; the form sends nothing.

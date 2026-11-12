@@ -122,6 +122,8 @@ func route(req *Req, res *Res) {
 	}
 	u := req.URL
 	p := u.Path
+	// Not as a picture, a sheet or a frame, and a stream or poll from this site only (REQ-S-109).
+	fetchMetaGuard(req, p)
 	if p == "/api/health" {
 		jsonRes(res, 200, orderedObj{{"ok", true}, {"version", VERSION}, {"instance", handover.id}})
 		return

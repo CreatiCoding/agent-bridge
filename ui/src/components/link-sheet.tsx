@@ -207,8 +207,9 @@ function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; 
     <div ref={box} className="snapshot-box">
       {shown ? (
         <div className="snapshot-fit" style={{ height: Math.ceil(height * k) }}>
-          {/* The box is the wrapper, not the shadow host: page CSS can style its host (:host{…!important} wins) but
-              never the wrapper, so whatever the host becomes stays inside it. */}
+          {/* The box is the wrapper, not the shadow host: page CSS can style its host (:host{…!important} and an
+              @scope with no start, whose :scope is the host, win; snapshot-page drops both where the browser parses the
+              sheet) but never the wrapper, so whatever the host becomes stays inside it. */}
           <div className="snapshot-page" style={{ width: pw, transform: `scale(${k})`, '--cb-vh': `${Math.round(size.h / k)}px` } as CSSProperties}>
             <div ref={page} className="snapshot-host" role="document" aria-label={title} />
           </div>

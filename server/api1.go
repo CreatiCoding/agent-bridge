@@ -133,6 +133,9 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		if rs := recipients(); len(rs) > 0 {
 			out["recipients"] = rs // where this server sends conversations (REQ-F-818): origins and events only
 		}
+		if preview != nil && len(preview.ORIGINS) > 0 {
+			out["previewOrigins"] = preview.ORIGINS // a snapshot keeps no link to them (REQ-S-108); the CSP names them too
+		}
 		if isDemoUid(uid) {
 			out["demo"] = true
 		} else if appBuild != nil {

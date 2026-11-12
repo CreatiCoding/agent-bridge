@@ -244,7 +244,7 @@ test('AC-1689: a snapshot has no @import left', async () => {
   assert.equal(dropImports('@import "a" p{color:red}'), '{color:red}')
   // Every sheet goes through dropImports and then scrubCss (AC-1763), the document CSP of 1.490 no longer exists.
   const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
-  assert.match(sp, /let t = dropImports\(text\)/)
+  assert.match(sp, /let t = dropImports\(text\)\n  t = dropFunctions\(t\)/)
   assert.match(sp, /return scrubCss\(t, picture\)/)
   assert.doesNotMatch(sp, /SNAPSHOT_CSP|http-equiv', 'Content-Security-Policy/)
 })
@@ -317,7 +317,7 @@ test('AC-1763: a snapshot in a shadow root sends no form, keeps no address, and 
   assert.match(sp, /a\.setAttribute\('rel', 'noopener noreferrer'\)/)
   assert.match(sp, /for \(const at of \[sh, host\]\)/)
   // Rules that style the host are dropped (their !important would win over the box), and the box wraps the host.
-  assert.match(sp, /\/:host\/i\.test\(prelude\)\) \{\n      drop\(i\)/)
+  assert.match(sp, /\/:host\/i\.test\(prelude\) \|\|/)
   assert.match(sp, /'attributionsrc', 'accesskey'/)
   assert.match(sp, /if \(!a\.hasAttribute\('href'\)\) return/)
   const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
@@ -325,4 +325,85 @@ test('AC-1763: a snapshot in a shadow root sends no form, keeps no address, and 
   // The box keeps the page's fixed and stacked elements inside it.
   const styles = readFileSync(new URL('../../ui/src/styles.css', import.meta.url), 'utf8')
   assert.match(styles, /\.snapshot-page \{[^}]*transform-origin: 0 0;\n  contain: layout paint;\n  isolation: isolate;\n  overflow: hidden;/)
+})
+
+test('AC-1764: a snapshot keeps no custom function, and a picture function holds nothing that brings a value in', async () => {
+  const { dropFunctions, scrubCss } = await import('../../ui/src/lib/snapshot-page.ts')
+  const pic = (raw) => (raw === 'ok.png' ? 'var(--cb-i0)' : 'url("data:,")')
+  const sheet = (t) => scrubCss(dropFunctions(t), pic)
+  // The reported case: @function returns a string, image-set() fetches it from this site with its cookies.
+  assert.equal(sheet('@function --u(){result:"/api/fn"} p{background:image-set(--u() 1x)}'), ' p{background:none}')
+  // Escaped name, nested in @media/@supports/@layer, with arguments and a body that holds a brace in a string.
+  assert.equal(dropFunctions('@\\66unction --e(){result:"/api/x"} q{}'), ' q{}')
+  assert.equal(dropFunctions('@FUNCTION --e() returns <string> {result:"}"} q{}'), ' q{}')
+  assert.equal(dropFunctions('@media screen{@supports (a:b){@layer l{@function --n(--a <length>){result:var(--a)}}} p{color:red}}'), '@media screen{@supports (a:b){@layer l{}} p{color:red}}')
+  assert.equal(dropFunctions('p::after{content:"@function --x(){}"} /* @function --y(){} */'), 'p::after{content:"@function --x(){}"} /* @function --y(){} */')
+  // A style attribute (no rules): the call is none in a picture function, and anywhere else.
+  for (const prop of ['background', 'background-image', 'list-style-image', 'border-image-source', 'mask-image', 'content'])
+    assert.equal(scrubCss(`${prop}:image-set(--u() 1x)`, pic), `${prop}:none`, prop)
+  assert.equal(scrubCss('background-image:--u()', pic), 'background-image:none')
+  assert.equal(scrubCss('background-image:-\\-u()', pic), 'background-image:none')
+  assert.equal(scrubCss('color:--c(1px)', pic), 'color:none')
+  // Picture functions: only addresses, type(), pictures, gradients, colours and maths inside; anything else is none.
+  assert.equal(scrubCss('a{background:image-set("x.png" type("image/png") 1x, url(ok.png) 2dppx)}', pic), 'a{background:image-set(url("data:,") type(url("data:,")) 1x, var(--cb-i0) 2dppx)}')
+  assert.equal(scrubCss('a{background:image-set(linear-gradient(rgb(1 2 3), calc(50% - 1px), red) 1x)}', pic), 'a{background:image-set(linear-gradient(rgb(1 2 3), calc(50% - 1px), red) 1x)}')
+  assert.equal(scrubCss('a{background:cross-fade(url(ok.png) 50%, -webkit-image-set(url(ok.png) 1x))}', pic), 'a{background:cross-fade(var(--cb-i0) 50%, -webkit-image-set(var(--cb-i0) 1x))}')
+  for (const inner of ['if(style(--x:1): "/api/a"; else: "/api/b")', 'var(--u)', 'env(x)', 'attr(data-u)', 'inherit(--u)', 'linear-gradient(var(--c), red)', 'calc(var(--n) * 1px)', 'somefuture(--u)'])
+    assert.equal(scrubCss(`a{background:image-set(${inner} 1x)}`, pic), 'a{background:none}', inner)
+  // Read as the browser reads: CR LF, CR and FF are one LF before anything (an escape's whitespace, a string's end).
+  assert.equal(scrubCss('a{background:ur\\6c\r\n(/api/x)}', pic), 'a{background:url("data:,")}')
+  assert.equal(scrubCss('a{--z:"x\\\r\n";background:url(/api/x)/*"*/}', pic), 'a{--z:"x\\\n";background:url("data:,")/*"*/}')
+  assert.equal(dropFunctions('@\\66 \r\nunction --u(){result:"/api/x"} q{}'), '@\\66 \nunction --u(){result:"/api/x"} q{}')
+  assert.equal(dropFunctions('@\\66\r\nunction --u(){result:"/api/x"} q{}'), ' q{}')
+  // A site's own pictures named by var() outside a picture function are untouched.
+  assert.equal(scrubCss('a{background-image:var(--cb-i3);mask:var(--cb-i0) center}', pic), 'a{background-image:var(--cb-i3);mask:var(--cb-i0) center}')
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /\/\^@function\\b\/i\.test\(text\)/)
+})
+
+test('AC-1765: a snapshot keeps no link to this site or its previews; other links open a new tab', async () => {
+  const { atOwnOrigin, ownOrigins } = await import('../../ui/src/lib/snapshot-page.ts')
+  const own = ['https://bridge.example.com', 'https://lp.bridge.example.com', 'https://lp1-bridge.example.com']
+  assert.equal(atOwnOrigin('https://bridge.example.com/api/x', own), true)
+  assert.equal(atOwnOrigin('https://BRIDGE.example.com:443/api/x', own), true)
+  assert.equal(atOwnOrigin('https://lp1-bridge.example.com/t/a.b/', own), true)
+  assert.equal(atOwnOrigin('https://example.com/', own), false)
+  assert.equal(atOwnOrigin('http://bridge.example.com/api/x', own), false)
+  assert.equal(atOwnOrigin('not a url', own), true)
+  assert.deepEqual(ownOrigins(), [])
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /if \(atOwnOrigin\(href, own\)\) return void a\.removeAttribute\('href'\)/)
+  assert.match(sp, /const own = s\.own \?\? ownOrigins\(\)/)
+  const main = readFileSync(new URL('../../ui/src/main.tsx', import.meta.url), 'utf8')
+  assert.match(main, /setAppOrigins\(\[me\.origin, \.\.\.\(Array\.isArray\(me\.previewOrigins\) \? me\.previewOrigins : \[\]\)\]\)/)
+})
+
+test('AC-1766: a snapshot’s cursor is its keyword alone, never a picture', async () => {
+  const { scrubCss, keywordCursors } = await import('../../ui/src/lib/snapshot-page.ts')
+  const pic = (raw) => (/^data:image\//.test(raw) ? `url("${raw}")` : 'url("data:,")')
+  assert.equal(scrubCss('cursor:url(data:image/png;base64,AAAA) 1 1, pointer', pic), 'cursor:pointer')
+  assert.equal(scrubCss('a{cursor: image-set("x.png" 1x) 2 2 , POINTER !important;color:red}', pic), 'a{cursor:POINTER !important;color:red}')
+  assert.equal(keywordCursors('a{CURSOR:var(--c)}'), 'a{CURSOR:auto}')
+  assert.equal(keywordCursors('a{cursor:url(x)}'), 'a{cursor:auto}')
+  assert.equal(keywordCursors('a{cursor:pointer} b{cursor : grab }'), 'a{cursor:pointer} b{cursor : grab }')
+  // Not a declaration: a selector, a custom property, a string or a comment.
+  assert.equal(
+    keywordCursors('cursor:hover{cursor:url(x),move} a{--cursor:url(x),move;content:"cursor:url(x),a"} /* cursor:url(x),b */'),
+    'cursor:hover{cursor:move} a{--cursor:url(x),move;content:"cursor:url(x),a"} /* cursor:url(x),b */',
+  )
+  // Nested rules: after a nested block too.
+  assert.equal(keywordCursors('.a{.b{color:red} cursor:url(x) 1 1,help}'), '.a{.b{color:red} cursor:help}')
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /'attributionsrc', 'accesskey', 'cursor'\]/)
+  assert.match(sp, /return keywordCursors\(out\)/)
+})
+
+test('AC-1767: an @scope with no start of its own, and :scope outside a started @scope, are dropped', () => {
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /\(scope && \(!start\.trim\(\) \|\| \(!scoped && \/:scope\|&\/i\.test\(start\)\)\)\) \|\|/)
+  assert.match(sp, /\(!scoped && !scope && r instanceof CSSStyleRule && \/:scope\/i\.test\(r\.selectorText\)\)/)
+  assert.match(sp, /fixRules\(g\.cssRules, \(j\) => g\.deleteRule\(j\), scoped \|\| scope\)/)
+  // The comment says what is so: page CSS can style the host, and these rules are why it does not here.
+  const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(ls, /an\n\s*@scope with no start, whose :scope is the host/)
 })

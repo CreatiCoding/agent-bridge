@@ -5353,7 +5353,8 @@ body.group-sorting * {
 /*
  * Around the shadow root's host (1.523). Its transform and containment make it the box of the page's fixed and
  * absolute elements, and isolation keeps their z-index inside it: nothing of the page covers the sheet. It is not the
- * host itself, which the page's CSS could reach with :host{…!important}. :host{all:initial} inside keeps this page's
+ * host itself, which the page's CSS could reach with :host{…!important} or `@scope { :scope {…!important} }` (both
+ * dropped by lib/snapshot-page where CSSOM is, 1.524; this wrapper holds where it is not). :host{all:initial} keeps this page's
  * font, colour and dark scheme out.
  */
 .snapshot-page {

@@ -413,6 +413,8 @@ export interface Me {
   linkHere?: boolean
   /** Where this server sends conversations (bridge.yaml notify, REQ-F-818): the origin and the events; left out when none. */
   recipients?: { origin: string; events: string[] }[]
+  /** The local previews' origins (1.524): a snapshot keeps no link to them. An older server leaves it out. */
+  previewOrigins?: string[]
 }
 
 /** The server's feature flags (REQ-F-812). background is read-only (headless link and screenless hosts), always on
