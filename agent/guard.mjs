@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import net from 'node:net'
+import { pipeline } from 'node:stream'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { UPDATE_KEYS } from './keys.mjs'
@@ -360,7 +361,9 @@ try {
     else throw e
   }
   if (!out) {
-    try { await page.waitForFunction(${EGO_QUIET}, undefined, { timeout: ${Number(budgetMs)} }) } catch {}
+    // Not page.waitForFunction (it would hold page.events()): asked here, what the page loads judged meanwhile.
+    await held.quiet(${JSON.stringify(`(${EGO_QUIET})()`)}, ${Number(budgetMs)})
+    await held.narrow()
     // Links the page's scripts handle themselves (1.526): a click handler on the <a>/<area> itself (CDP
     // DOMDebugger.getEventListeners) marks it data-cb-js-click, and the sheet leaves it as it was (a route of the page's
     // own, not a page of its own). A handler delegated to the document is not the link's: its href is where it goes.
@@ -1929,7 +1932,13 @@ export function clearSnapCache(dir) {
 }
 
 /** A log line of a snapshot with its addresses taken out (REQ-S-111 (5)): a Mac that does not seal sends its log plain. */
-export const snapLogText = (text) => String(text).replace(/\b(?:https?|wss?|ftp|file|data|blob):\/?\/?[^\s)'"<>\]]+/gi, '(주소)')
+export const snapLogText = (text) =>
+  String(text)
+    .replace(/\b(?:https?|wss?|ftp|file|data|blob):[^\s'"<>]+/gi, '(주소)')
+    .replace(/(^|[\s("'=])\/\/[^\s'"<>]+/g, '$1(주소)')
+    .replace(/\[[0-9a-f:.]+\]|\b\d{1,3}(?:\.\d{1,3}){3}\b/gi, '(주소)')
+    // A name with a dot (wiki.corp.example), not a call of the scripts (page.goto, net::ERR_…).
+    .replace(/\b(?!(?:page|task|window|document|location|net|ego|node|e)\.)[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z][a-z0-9-]{1,62}\b/gi, '(주소)')
 
 /**
  * The payload a drawing goes out as: one line of what the page is (its addresses, width, how it was drawn, when,
@@ -2178,6 +2187,7 @@ export function blockedIp(ip) {
   const zero = (from, to) => g.slice(from, to).every((x) => x === 0)
   if (zero(0, 8) || (zero(0, 7) && g[7] === 1)) return true
   if (zero(0, 5) && (g[5] === 0xffff || g[5] === 0)) return v4(g[6], g[7])
+  if (zero(0, 4) && g[4] === 0xffff && g[5] === 0) return v4(g[6], g[7])
   if (g[0] === 0x64 && g[1] === 0xff9b) return zero(2, 6) ? v4(g[6], g[7]) : true
   if (g[0] === 0x2002) return v4(g[1], g[2])
   if (g[0] === 0x100 && zero(1, 4)) return true
@@ -2285,15 +2295,19 @@ export async function guardedGet(url, { headers = {}, ms = 8000, max = 16 * 1024
       continue
     }
     const enc = String(r.headers['content-encoding'] ?? '').trim().toLowerCase()
-    const stream = enc === 'gzip' ? r.pipe(zlib.createGunzip()) : enc === 'deflate' ? r.pipe(zlib.createInflate()) : enc === 'br' ? r.pipe(zlib.createBrotliDecompress()) : r
+    const dec = enc === 'gzip' ? zlib.createGunzip() : enc === 'deflate' ? zlib.createInflate() : enc === 'br' ? zlib.createBrotliDecompress() : null
+    // pipeline, not pipe: the response cut (a timeout, the server gone) ends the decoder too, so nothing waits for good.
+    const stream = dec ? pipeline(r, dec, () => {}) : r
+    const end = (err) => (r.destroy(err), dec?.destroy(err))
+    r.on('aborted', () => end(new Error('응답이 끊겼어요')))
     const chunks = []
     let size = 0
-    const timer = setTimeout(() => r.destroy(new Error('시간이 지났어요')), Math.max(1, until - Date.now()))
+    const timer = setTimeout(() => end(new Error('시간이 지났어요')), Math.max(1, until - Date.now()))
     try {
       for await (const c of stream) {
         size += c.length
         if (size > max) {
-          r.destroy()
+          end()
           throw new Error('너무 커요')
         }
         chunks.push(c)
@@ -2317,6 +2331,20 @@ export function snapProxy({ guard, own = [], lookup = dns.lookup }) {
   const state = { refused: 0, port: 0 }
   const look = guardLookup(guard, lookup)
   const server = http.createServer(async (req, res) => {
+    try {
+      await pass(req, res)
+    } catch {
+      // Never up to the agent: one odd request must not end it.
+      if (!res.headersSent) res.writeHead(400)
+      res.end()
+    }
+  })
+  const pass = async (req, res) => {
+    // Only plain http comes as a request (https goes through CONNECT).
+    if (!/^http:\/\//i.test(String(req.url))) {
+      res.writeHead(400)
+      return res.end()
+    }
     const why = await urlRefusal(req.url, { guard, own, lookup })
     if (why) {
       state.refused++
@@ -2337,7 +2365,8 @@ export function snapProxy({ guard, own = [], lookup = dns.lookup }) {
       res.end()
     })
     req.pipe(up)
-  })
+  }
+  server.on('clientError', (e, sock) => sock.destroy())
   server.on('connect', async (req, sock, head) => {
     sock.on('error', () => {})
     const m = /^([^:]+|\[[^\]]+\]):(\d{1,5})$/.exec(String(req.url))
@@ -2347,7 +2376,12 @@ export function snapProxy({ guard, own = [], lookup = dns.lookup }) {
       state.refused++
       return sock.end('HTTP/1.1 403 Forbidden\r\n\r\n')
     }
-    const up = net.connect({ host: m[1].replace(/^\[|\]$/g, ''), port, lookup: look })
+    let up
+    try {
+      up = net.connect({ host: m[1].replace(/^\[|\]$/g, ''), port, lookup: look })
+    } catch {
+      return sock.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+    }
     up.on('connect', () => {
       sock.write('HTTP/1.1 200 Connection Established\r\n\r\n')
       if (head?.length) up.write(head)
@@ -2421,55 +2455,91 @@ const judge = async (href) => {
   }
   return ""
 }
+const verdicts = new Map()
+// One verdict per origin (a page asks for many things of the same few): a promise, so requests at once share it.
+const judgeOnce = (href) => {
+  let k
+  try { k = new URL(href).origin } catch { return Promise.resolve("") }
+  if (!verdicts.has(k)) verdicts.set(k, judge(href))
+  return verdicts.get(k)
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// A call of ego that does not answer within ms (a page stuck in a loop) is given up on.
+const within = (p, ms) => Promise.race([p, sleep(Math.max(50, ms)).then(() => { throw new Error("ego 가 답하지 않아요") })])
 const guardPages = async (page) => {
-  try { await page.events() } catch {}
-  await page.cdp("Fetch.enable", { patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Request" }] })
+  try { await within(page.events(), 3000) } catch {}
+  // The page's own frame: only its document being refused fails the snapshot (a frame refused is counted).
+  let top = ""
+  try { top = (await page.cdp("Page.getFrameTree")).frameTree.frame.id || "" } catch {}
+  const patterns = (all) => [all ? { urlPattern: "*", requestStage: "Request" } : { urlPattern: "*", resourceType: "Document", requestStage: "Request" }]
+  // Every request while the page loads and goes quiet (pictures, scripts, fetch too: the browser is signed in).
+  await page.cdp("Fetch.enable", { patterns: patterns(true) })
   let going = true
-  const settle = async (e, fail) => {
+  const settle = (e, fail) => {
     const id = e.params.requestId
-    if (fail) await page.cdp("Fetch.failRequest", { requestId: id, errorReason: "BlockedByClient" }).catch(() => {})
-    else await page.cdp("Fetch.continueRequest", { requestId: id }).catch(() => {})
+    return (fail ? page.cdp("Fetch.failRequest", { requestId: id, errorReason: "BlockedByClient" }) : page.cdp("Fetch.continueRequest", { requestId: id })).catch(() => {})
   }
-  const take = async (failAll) => {
+  const take = async (failAll, ms = 5000) => {
     let evs = []
-    try { evs = await page.events() } catch {}
-    for (const e of evs || []) {
-      if (!e || e.method !== "Fetch.requestPaused" || !e.params) continue
-      const why = failAll ? PRIVATE_WHY : await judge(e.params.request && e.params.request.url)
-      if (why) { refused.n++; if (!failAll) refused.why ||= why }
+    try { evs = await within(page.events(), ms) } catch {}
+    await Promise.all((evs || []).map(async (e) => {
+      if (!e || e.method !== "Fetch.requestPaused" || !e.params) return
+      const p = e.params
+      const main = p.resourceType === "Document" && (!top || !p.frameId || p.frameId === top)
+      const why = failAll ? PRIVATE_WHY : await judgeOnce(p.request && p.request.url)
+      if (why) { refused.n++; if (!failAll && main) refused.why ||= why }
       await settle(e, !!why)
-    }
+    }))
   }
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const pump = (async () => { while (going) { await take(false); await sleep(${EGO_GUARD_POLL_MS}) } })()
+  const ask = async (expression, ms) => { const r = await within(page.cdp("Runtime.evaluate", { expression, returnByValue: true }), ms); return r && r.result ? r.result.value : undefined }
   // Opens url without page.goto (ego holds page.events() until a goto ends, and the goto would wait for the request
   // held here): Page.navigate is sent and not waited on, the held requests are judged meanwhile, and the page is
   // open when a new document (not the one marked before) is complete. A refused or failed load throws.
   const open = async (url, ms) => {
     const until = Date.now() + ms
+    const left = () => until - Date.now()
     let failed = ""
-    try { await page.cdp("Runtime.evaluate", { expression: "window.__cbOld = 1" }) } catch {}
+    // Unmarked, the page before (about:blank) would pass for the new one.
+    if ((await ask("window.__cbOld = 1", left())) !== 1) throw new Error("page.goto: 지금 페이지에 표시를 하지 못했어요")
     page.cdp("Page.navigate", { url }).then((r) => { if (r && r.errorText) failed = r.errorText }, (e) => { failed = String((e && e.message) || e) })
     for (;;) {
-      await take(false)
+      await take(false, left())
       if (refused.why) throw new Error(refused.why)
       if (failed) throw new Error("page.goto: " + failed)
       let v = null
-      try { v = (await page.cdp("Runtime.evaluate", { expression: "[!window.__cbOld, document.readyState, location.href]", returnByValue: true })).result.value } catch {}
+      try { v = await ask("[!window.__cbOld, document.readyState, location.href]", left()) } catch {}
       if (v && v[0] && v[1] === "complete") {
         if (/^chrome-error:/.test(v[2])) throw new Error("page.goto: 페이지를 열지 못했어요")
         return
       }
-      if (Date.now() > until) throw new Error("page.goto timed out after " + ms + "ms")
+      if (left() <= 0) throw new Error("page.goto timed out after " + ms + "ms")
       await sleep(${EGO_GUARD_POLL_MS})
     }
+  }
+  // Waits, judging what the page asks for, until quiet (true from expression) or ms.
+  const quiet = async (expression, ms) => {
+    const until = Date.now() + ms
+    while (Date.now() < until) {
+      await take(false, until - Date.now())
+      let v = false
+      try { v = await ask(expression, until - Date.now()) } catch {}
+      if (v === true) return
+      await sleep(50)
+    }
+  }
+  // Before the page is read by ego's own calls (they hold page.events()): its documents alone are held from then on.
+  const narrow = async () => {
+    await take(false)
+    await page.cdp("Fetch.enable", { patterns: patterns(false) }).catch(() => {})
+    await take(false)
   }
   const stop = async () => {
     going = false
     await pump
-    await take(true)
+    await take(true, 3000)
     await page.cdp("Fetch.disable").catch(() => {})
   }
-  return { open, stop }
+  return { open, quiet, narrow, stop }
 }`
 }

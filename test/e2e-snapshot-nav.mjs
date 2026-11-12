@@ -59,6 +59,8 @@ const PAGES = {
   'https://example.com/trap': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">TRAP ${gen}</h1><a data-t="plain" href="https://example.com/c">plain to c</a>
     <a data-t="internal" href="http://foo.internal/">internal</a> <a data-t="nip" href="http://127.0.0.1.nip.io/">nip</a> <a data-t="bench" href="http://198.18.0.1/">bench</a> <a data-t="nat64" href="http://[64:ff9b::7f00:1]/">nat64</a>
     ${tall(20)}<a data-t="trap" href="https://example.com/b" style="position:fixed;inset:0;opacity:0;z-index:9">trap</a></body></html>`,
+  // A visible little link whose child covers the screen (its own box does not): the point under a click is it.
+  'https://example.com/trap2': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">TRAP2 ${gen}</h1>${tall(20)}<a data-t="trap2" href="https://example.com/b">small<span style="position:fixed;inset:0;z-index:9"></span></a></body></html>`,
   'https://example.com/bad': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">BAD ${gen}</h1>${tall(30)}</body></html>`,
 }
 
@@ -249,6 +251,15 @@ ok(await shows('TRAP fresh'), 'back on the trap page')
 await inPage('[data-t=trap]').evaluate((a) => a.remove())
 await inPage('[data-t=plain]').click()
 ok(await shows('C page fresh'), 'a plain link: one click')
+await page.keyboard.press('Escape')
+await wait(300)
+await page.evaluate(() => window.openInApp('https://example.com/trap2'))
+ok(await shows('TRAP2 fresh'), 'the second trap page is drawn')
+const before2 = asked.length
+const bx2 = await box().boundingBox()
+await page.mouse.click(bx2.x + bx2.width / 2, bx2.y + bx2.height / 2)
+await wait(500)
+ok(asked.length === before2 && (await page.locator('[data-t=link-ask]').count()) === 1, 'a link whose child covers the screen asks first')
 
 ok(tabs === tabsAtStart || true, `new tabs opened by the plain links: ${tabs - tabsAtStart}`)
 ok(errors.length === 0, `no page errors (${errors.join(' | ')})`)

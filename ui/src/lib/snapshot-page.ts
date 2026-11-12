@@ -125,34 +125,53 @@ export function privateHost(host: string): boolean {
   const zero = (from: number, to: number) => g.slice(from, to).every((x) => x === 0)
   if (zero(0, 8) || (zero(0, 7) && g[7] === 1)) return true
   if (zero(0, 5) && (g[5] === 0xffff || g[5] === 0)) return v4(g[6], g[7])
+  if (zero(0, 4) && g[4] === 0xffff && g[5] === 0) return v4(g[6], g[7])
   if (g[0] === 0x64 && g[1] === 0xff9b) return zero(2, 6) ? v4(g[6], g[7]) : true
   if (g[0] === 0x2002) return v4(g[1], g[2])
   return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xffc0) === 0xfec0 || (g[0] & 0xff00) === 0xff00
 }
 
+/** The points sneakyLink tries on screen (a 5 × 5 grid): the link on top at half of them covers the screen. */
+const SNEAK_GRID = 5
+
 /**
- * Whether a link may be a trap rather than a link the person meant (1.527): it, or a box around it, is all but
- * transparent (opacity under 0.1) or not visible, or its boxes cover half or more of view (the part of the
- * snapshot on screen). A click on such a link asks first (the sheet shows where it goes; the same link clicked again
- * goes).
+ * Whether a link may be a trap rather than a link the person meant (1.527): it is all but transparent (its opacity
+ * times every box's around it under 0.1, or a filter with opacity) or not visible, or it is what is on top at half or
+ * more of the points of a grid over view (the part of the snapshot on screen; a box of its own, a child or a
+ * ::before over the screen alike), as root (the snapshot's shadow root) finds the top element at a point. Without
+ * root, its own boxes' area is used. A click on such a link asks first (the sheet shows where it goes; the same link
+ * clicked again goes).
  */
-export function sneakyLink(a: Element, view: { left: number; top: number; right: number; bottom: number }): boolean {
+export function sneakyLink(a: Element, view: { left: number; top: number; right: number; bottom: number }, root?: { elementFromPoint(x: number, y: number): Element | null }): boolean {
   const win = a.ownerDocument?.defaultView
   if (!win) return true
+  let opacity = 1
   for (let e: Element | null = a; e; e = e.parentElement) {
     const cs = win.getComputedStyle(e)
-    if (Number(cs.opacity) < 0.1) return true
+    opacity *= Number(cs.opacity)
+    if (/opacity\(\s*0*(\.0\d*)?%?\s*\)/.test(cs.filter ?? '')) return true
     if (e === a && (cs.visibility !== 'visible' || cs.display === 'none')) return true
   }
-  const area = Math.max(0, view.right - view.left) * Math.max(0, view.bottom - view.top)
-  if (area <= 0) return false
+  if (!(opacity >= 0.1)) return true
+  const w = view.right - view.left
+  const h = view.bottom - view.top
+  if (w <= 0 || h <= 0) return false
+  if (root) {
+    let on = 0
+    for (let i = 0; i < SNEAK_GRID; i++)
+      for (let j = 0; j < SNEAK_GRID; j++) {
+        const hit = root.elementFromPoint(view.left + (w * (i + 0.5)) / SNEAK_GRID, view.top + (h * (j + 0.5)) / SNEAK_GRID)
+        if (hit && (hit === a || a.contains(hit))) on++
+      }
+    return on * 2 >= SNEAK_GRID * SNEAK_GRID
+  }
   let cover = 0
   for (const r of Array.from(a.getClientRects())) {
-    const w = Math.min(r.right, view.right) - Math.max(r.left, view.left)
-    const h = Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top)
-    if (w > 0 && h > 0) cover += w * h
+    const cw = Math.min(r.right, view.right) - Math.max(r.left, view.left)
+    const ch = Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top)
+    if (cw > 0 && ch > 0) cover += cw * ch
   }
-  return cover >= area / 2
+  return cover * 2 >= w * h
 }
 
 /**
@@ -1241,7 +1260,7 @@ export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSH
       // The part of the snapshot on screen: a link covering half of it, or one not seen, is asked about (1.527).
       const hr = host.getBoundingClientRect()
       const view = { left: Math.max(hr.left, 0), top: Math.max(hr.top, 0), right: Math.min(hr.right, window.innerWidth), bottom: Math.min(hr.bottom, window.innerHeight) }
-      f(href, kind, kind === 'nav' && sneakyLink(a, view))
+      f(href, kind, kind === 'nav' && sneakyLink(a, view, root))
     })
     // On the host too: a click on an inert control is dispatched to the host itself, past the shadow root.
     for (const t of ['click', 'auxclick', 'dblclick', 'submit'])

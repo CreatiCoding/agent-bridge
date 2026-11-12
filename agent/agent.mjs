@@ -7471,7 +7471,7 @@ async function chromeSnapshot(page, guard) {
   const proxy = await snapProxy({ guard, own: [SITE_ORIGIN] })
   try {
     const ua = snapshotUserAgent(await chromeVersionOnce(), IS_MAC)
-    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
     const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
     if (proxy.state.refused && chromeErrorPage(html)) throw Object.assign(new Error(PRIVATE_WHY), { code: 'CB_PRIVATE' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')

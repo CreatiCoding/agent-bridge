@@ -136,7 +136,7 @@ test('AC-1663: with no rule a session’s page takes a snapshot (localhost too) 
 test('AC-1668: ego lite’s snapshot waits for the page to go quiet in the page, not for ego’s networkidle', () => {
   const s = egoSnapshotScript({ name: 'cb-snapshot-ab12', url: 'https://example.com/', budgetMs: 8000, gotoMs: 15000 })
   assert.doesNotMatch(s, /networkidle/)
-  assert.ok(s.includes(`page.waitForFunction(${EGO_QUIET}, undefined, { timeout: 8000 })`))
+  assert.ok(s.includes(`await held.quiet(${JSON.stringify(`(${EGO_QUIET})()`)}, 8000)`))
   assert.doesNotThrow(() => new Function(`return (${EGO_QUIET})`))
   assert.match(EGO_QUIET, /document\.readyState !== "complete"/)
   assert.match(EGO_QUIET, /getEntriesByType\("resource"\)/)
