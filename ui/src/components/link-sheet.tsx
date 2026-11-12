@@ -5,13 +5,13 @@
 // 스냅샷 (REQ-F-881) is the page the session's Mac rendered, read here by lib/reader-dom.
 // http://localhost:<port> is a Mac's own app, made of scripts: when the session on screen started that server, it
 // shows through the site's preview origin in a frame (the same address 로컬 서버 열기 uses, REQ-F-727).
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { createRoot } from 'react-dom/client'
 import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
 import { imageUrl, localPort, modeFor, modeOf, readerImg, throughPreview } from '../lib/in-app'
 import { readSnapshot } from '../lib/reader-dom'
-import { snapshotPage } from '../lib/snapshot-page'
+import { mountSnapshot, snapshotPage, type SnapshotDoc } from '../lib/snapshot-page'
 import { noteSnapshot, type SnapNote } from '../lib/debug'
 
 /**
@@ -63,8 +63,8 @@ type View =
   | { kind: 'frame'; src: string }
   | { kind: 'image'; src: string }
   | { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string }
-  // 스냅샷 as the page looked (1.488): one self-contained document, and the same page in reading mode.
-  | { kind: 'page'; url: string; doc: string; width: number; note: SnapNote; read: { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string } }
+  // 스냅샷 as the page looked (1.488): the page made safe for a shadow root (1.523), and the same page in reading mode.
+  | { kind: 'page'; url: string; doc: SnapshotDoc; width: number; note: SnapNote; read: { kind: 'read'; url: string; title: string; site: string; blocks: Block[]; snapshot?: boolean; note?: string } }
 
 type Page = { ok: true; url: string; title: string; site?: string; blocks: Block[]; snapshot?: boolean }
 
@@ -151,25 +151,24 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
     try {
       site = new URL(s.url).host
     } catch {}
-    const note = noteSnapshot({ site, bytes: doc.length, width, via: typeof s.via === 'string' ? s.via.slice(0, 20) : null, sealed, images: Object.keys(images).length, css: Object.keys(css).length })
+    const note = noteSnapshot({ site, bytes: doc.bytes, width, via: typeof s.via === 'string' ? s.via.slice(0, 20) : null, sealed, images: Object.keys(images).length, css: Object.keys(css).length })
     return { kind: 'page', url: s.url, doc, width, note, read }
   }
 }
 
 /**
- * The page as the Mac drew it (1.488), in a frame that runs nothing and loads nothing (lib/snapshot-page), laid out
- * at the page's own width and scaled to the sheet, as a phone's browser shows a wide page.
+ * The page as the Mac drew it (1.488), in a shadow root of this sheet (1.523, before it a sandboxed frame that iOS
+ * Safari left white): laid out at the page's own width and scaled to the sheet, as a phone's browser shows a wide page.
+ * The sheet scrolls; the page's own box is as tall as its content times the scale. What runs, loads or acts was taken
+ * out by lib/snapshot-page; the box keeps the page's fixed and stacked elements inside it (contain, isolation).
  */
-/** How long the snapshot's frame has to open before the sheet says so instead of staying white (1.495). */
-const SNAPSHOT_FRAME_MS = 10_000
-
 function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void }) {
   const box = useRef<HTMLDivElement>(null)
+  const page = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
-  // Whether the frame opened (1.495): it runs nothing and has no origin of its own, so its load event is all this
-  // page can know of it. Not opened in time, the sheet tells so over it; a late load still takes the notice away.
-  const [state, setState] = useState<'waiting' | 'loaded' | 'late'>('waiting')
-  const started = useRef(0)
+  const [height, setHeight] = useState(0)
+  // Whether the page went into its shadow root (1.523): an error there is said over the box instead of a white sheet.
+  const [failed, setFailed] = useState<string | null>(null)
   useEffect(() => {
     const el = box.current
     if (!el) return
@@ -179,38 +178,46 @@ function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; 
   }, [])
   const shown = size.w > 0
   useEffect(() => {
-    if (!shown) return
-    started.current = performance.now()
-    const t = setTimeout(() => {
-      setState((s) => (s === 'waiting' ? 'late' : s))
-      if (v.note.frame === 'waiting') v.note.frame = 'late'
-    }, SNAPSHOT_FRAME_MS)
-    return () => clearTimeout(t)
+    const host = page.current
+    if (!shown || !host) return
+    const started = performance.now()
+    try {
+      mountSnapshot(host, v.doc)
+    } catch (e) {
+      const why = (e instanceof Error ? e.message : String(e)).slice(0, 200)
+      v.note.frame = 'failed'
+      v.note.error = why
+      setFailed(why)
+      return
+    }
+    v.note.frame = 'drawn'
+    v.note.error = null
+    v.note.ms = Math.round(performance.now() - started)
+    setFailed(null)
+    const ro = new ResizeObserver(() => setHeight(host.offsetHeight))
+    ro.observe(host)
+    return () => {
+      ro.disconnect()
+      host.shadowRoot?.replaceChildren()
+    }
   }, [shown, v])
-  const loaded = () => {
-    setState('loaded')
-    v.note.frame = 'loaded'
-    v.note.ms = Math.round(performance.now() - started.current)
-  }
   const pw = Math.max(v.width, size.w)
   const k = size.w && pw ? size.w / pw : 1
   return (
     <div ref={box} className="snapshot-box">
       {shown ? (
-        <iframe
-          className="snapshot-frame"
-          sandbox="allow-popups allow-popups-to-escape-sandbox"
-          referrerPolicy="no-referrer"
-          srcDoc={v.doc}
-          title={title}
-          onLoad={loaded}
-          style={{ width: pw, height: size.h / k, transform: `scale(${k})` }}
-        />
+        <div className="snapshot-fit" style={{ height: Math.ceil(height * k) }}>
+          {/* The box is the wrapper, not the shadow host: page CSS can style its host (:host{…!important} wins) but
+              never the wrapper, so whatever the host becomes stays inside it. */}
+          <div className="snapshot-page" style={{ width: pw, transform: `scale(${k})`, '--cb-vh': `${Math.round(size.h / k)}px` } as CSSProperties}>
+            <div ref={page} className="snapshot-host" role="document" aria-label={title} />
+          </div>
+        </div>
       ) : null}
-      {state === 'late' ? (
+      {failed !== null ? (
         <div className="snapshot-late" role="alert">
           <p>
-            원본 모양을 {SNAPSHOT_FRAME_MS / 1000}초 안에 그리지 못했어요 ({(v.doc.length / 1048576).toFixed(1)} MB, 폭 {pw}px). 읽기 모양으로 보거나 브라우저로 열어 주세요
+            원본 모양을 그리지 못했어요 ({(v.doc.bytes / 1048576).toFixed(1)} MB, 폭 {pw}px, {failed}). 읽기 모양으로 보거나 브라우저로 열어 주세요
           </p>
           <Button size="sm" onClick={onPlain}>
             읽기 모양으로 보기

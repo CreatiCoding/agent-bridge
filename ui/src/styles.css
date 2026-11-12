@@ -5333,15 +5333,42 @@ body.group-sorting * {
   border: 0;
   background: #fff;
 }
-/* 스냅샷 as the page looked (REQ-F-881, 1.488): laid out at the page's width, scaled to the sheet. */
+/* 스냅샷 as the page looked (REQ-F-881, 1.488): laid out at the page's width, scaled to the sheet, which scrolls. */
 .snapshot-box {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   background: #fff;
 }
-/* The frame did not open in time (1.495): said over it instead of a white sheet. */
+/* The scaled page's room: as tall as the page times the scale (the page's own box keeps its unscaled height). */
+.snapshot-fit {
+  position: relative;
+  overflow: hidden;
+}
+/*
+ * Around the shadow root's host (1.523). Its transform and containment make it the box of the page's fixed and
+ * absolute elements, and isolation keeps their z-index inside it: nothing of the page covers the sheet. It is not the
+ * host itself, which the page's CSS could reach with :host{…!important}. :host{all:initial} inside keeps this page's
+ * font, colour and dark scheme out.
+ */
+.snapshot-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  transform-origin: 0 0;
+  contain: layout paint;
+  isolation: isolate;
+  overflow: hidden;
+  color-scheme: light;
+  background: #fff;
+}
+/* The page could not go into its shadow root (1.523): said over the box instead of a white sheet. */
 .snapshot-late {
   position: absolute;
   inset: 0;
@@ -5360,14 +5387,6 @@ body.group-sorting * {
   margin: 0;
   max-width: 420px;
   color: var(--muted);
-}
-.snapshot-frame {
-  position: absolute;
-  top: 0;
-  left: 0;
-  border: 0;
-  background: #fff;
-  transform-origin: 0 0;
 }
 /* The in-app browser of a touch device (REQ-F-879): a page in reading mode, drawn by this page. */
 .reader {

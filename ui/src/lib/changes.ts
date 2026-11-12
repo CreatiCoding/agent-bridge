@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.523',
+    date: '2026-11-12',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: 'ego lite 스냅샷도 Chrome 처럼 폰 폭 412×915 에서 그린다(Emulation.setDeviceMetricsOverride). 맥 창 폭(예: 1496)으로 그린 페이지를 시트가 크게 줄여 아이폰 Safari 에서 원본 모양이 흰 화면이던 것',
+        refs: ['REQ-F-881'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '스냅샷 원본 모양을 sandbox 틀 대신 시트 안 Shadow DOM 에 그린다. 페이지의 html·body·:root 선택자는 <cb-html>·<cb-body> 로 바꾸고, position:fixed·z-index 는 상자 안에 가두며, 앱 스타일은 들어가지 않는다. 그리지 못하면 10초를 기다리지 않고 바로 안내와 읽기 모양',
+        refs: ['REQ-F-881', 'REQ-F-735'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: 'Shadow DOM 스냅샷은 틀·문서 CSP 없이도 아무것도 받지도 보내지도 않는다: 폼은 <cb-form>·컨트롤 inert, url()(CSS escape 포함)·image-set·src()·@font-face·background 속성 등 주소는 data: 그림이나 빈 값으로, var()/attr() 를 받는 그림 함수는 none, :host 규칙은 버리고 호스트는 감싸개 안에 가둠, 안의 클릭·제출은 Shadow 에서 멈춤',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.522',
     date: '2026-11-12',
+    commit: '1d8c963',
     changes: [
       {
         kind: 'added',

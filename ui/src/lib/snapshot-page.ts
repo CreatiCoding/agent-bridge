@@ -1,10 +1,18 @@
-// 스냅샷의 원본 모양 (REQ-F-881, 1.488): the page the session's Mac rendered, put together here as one self-contained
-// document for a sandboxed frame. Its style sheets come as <style>, its pictures (and those its styles name) as
-// data:, and everything that would run or reach out is taken away: scripts, frames, plugins, <base>, refresh, every
-// address left over. The frame has no scripts and no origin of its own (sandbox without allow-scripts or
-// allow-same-origin), and it carries its own CSP (SNAPSHOT_CSP, 1.490) on top of this site's, which still lets a style
-// fetch from this site: under both it loads nothing but inline styles and data: pictures.
-// Links open in a new tab (allow-popups). DOMParser builds an inert document: nothing in it runs or loads here.
+// 스냅샷의 원본 모양 (REQ-F-881, 1.488, Shadow DOM since 1.523): the page the session's Mac rendered, put together
+// here from an inert parse (DOMParser: nothing in it runs or loads) and drawn in a shadow root of the sheet.
+// Its style sheets come as <style>, its pictures (and those its styles name) as data:, and everything that would run,
+// reach out or act is taken away here, because nothing else stands between it and this page: no frame sandbox, no
+// document CSP of its own. Left: inline styles, data: pictures, and links that open a new tab.
+//   - Elements that run, embed, load or refresh (DROP) are gone; on* attributes, javascript: and other non-http(s)
+//     links, every attribute that names an address (src, srcset, background, poster, href, ping, formaction, …) unless
+//     it became a data: picture the Mac sent.
+//   - Forms become <cb-form> (not a form: nothing to submit) and controls are inert (no focus, no typing, no click).
+//   - Styles: @import, @font-face and @namespace are dropped, and every address a style could fetch (url() in any
+//     case or CSS escape, src(), image-set()/image()/cross-fade() strings) becomes a picture the Mac sent or nothing.
+//   - The page's html, body and :root become <cb-html> and <cb-body> (and form, <cb-form>), and its selectors are
+//     rewritten to them (CSSOM where the browser has constructable sheets), keeping their specificity.
+// The site's CSP (server/httputil.go: scripts only from this site, no inline; styles inline; pictures data:) is the last
+// line under all this, not the first. Ids and names inside a shadow root do not become globals of this window.
 
 export interface SnapshotParts {
   url: string
@@ -13,20 +21,36 @@ export interface SnapshotParts {
   css?: Record<string, string>
 }
 
+/** The page made safe (1.523), in an inert document: mountSnapshot copies it into a shadow root. */
+export interface SnapshotDoc {
+  /** The <style> elements of the page's <head>, in order. */
+  head: Element[]
+  /** <cb-html><cb-body>…</cb-body></cb-html> */
+  root: Element
+  /** The pictures' custom properties (1.489), `--cb-i0:url("data:…");…`, set on :host. */
+  vars: string
+  /** About how big it is, for a report. */
+  bytes: number
+}
+
 const DATA_IMG = /^data:image\/(png|jpeg|gif|webp|avif);base64,/
 /** What a picture the Mac did not send becomes: an empty data: address (nothing is fetched). */
 const NO_IMG = 'data:,'
-const URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)"'\s]*))\s*\)/gi
-const DROP = 'script, noscript, iframe, frame, frameset, object, embed, applet, portal, base, meta[http-equiv], template'
-/**
- * The document's own policy (1.490), first in its <head> so it holds before anything of the page is read: inline
- * styles and data: pictures, nothing else. The site's CSP the frame inherits still lets a style fetch from this
- * site ('self'), and the frame's sandbox does not stop styles fetching: this does, whatever this file failed to strip.
- */
-export const SNAPSHOT_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
-/** An at-keyword's name after the @, CSS escapes included (`@\69mport` is @import). */
-const AT_NAME = /(?:[\w-]|\\[0-9a-fA-F]{1,6}[ \t\r\n\f]?|\\[^\r\n\f0-9a-fA-F])+/y
+/** Elements that run, embed, load, refresh or animate an address: dropped with all they hold. */
+const DROP =
+  'script, noscript, iframe, frame, frameset, object, embed, applet, portal, fencedframe, base, meta, link, template, source, track, animate, animateMotion, animateTransform, set'
+/** Attributes that name an address, act, or steal focus: never kept (src and href are seen to on their own). */
+const DROP_ATTRS = ['srcset', 'imagesrcset', 'sizes', 'data-src', 'loading', 'background', 'lowsrc', 'dynsrc', 'longdesc', 'ping', 'download', 'srcdoc', 'formaction', 'formmethod', 'formtarget', 'formenctype', 'form', 'action', 'autofocus', 'contenteditable', 'popover', 'popovertarget', 'popovertargetaction', 'commandfor', 'command', 'manifest', 'archive', 'codebase', 'classid', 'itemtype', 'attributionsrc', 'accesskey']
+/** Attributes whose text is never a style (left alone even when it holds "url("). */
+const TEXT_ATTRS = /^(alt|title|value|placeholder|label|content|class|id|name|lang|dir|aria-.*|data-.*)$/i
+
+/** The base of every snapshot's shadow root: none of this page's styles come in, a white page as a browser's. */
+export const SHADOW_BASE =
+  ':host{all:initial;display:block;color-scheme:light;background:#fff;color:#000}cb-body,cb-form{display:block}cb-html{display:flow-root;min-height:var(--cb-vh,0px)}cb-body{margin:8px}'
+
+/** An identifier, CSS escapes and non-ASCII included (`@\69mport` is @import, `\75 rl(` is url(). */
+const IDENT = /(?:[\w-]|[^\x00-\x7f]|\\[0-9a-fA-F]{1,6}[ \t\r\n\f]?|\\[^\r\n\f0-9a-fA-F])+/y
+const AT_NAME = IDENT
 const unescapeCss = (s: string) =>
   s.replace(/\\([0-9a-fA-F]{1,6})[ \t\r\n\f]?|\\(.)/g, (_, h?: string, c?: string) => {
     if (c !== undefined) return c
@@ -47,6 +71,33 @@ const endOfComment = (t: string, i: number) => {
   const e = t.indexOf('*/', i + 2)
   return e < 0 ? t.length : e + 2
 }
+/** Where the function whose ( is at i ends (after its matching ), strings and comments stepped over). */
+const endOfCall = (t: string, i: number) => {
+  let depth = 0
+  for (let j = i; j < t.length; ) {
+    const c = t[j]
+    if (c === '"' || c === "'") j = endOfString(t, j)
+    else if (c === '/' && t[j + 1] === '*') j = endOfComment(t, j)
+    else if (c === '\\') j += 2
+    else {
+      if (c === '(') depth++
+      else if (c === ')' && --depth === 0) return j + 1
+      j++
+    }
+  }
+  return t.length
+}
+const isIdentStart = (t: string, i: number) => {
+  const c = t[i]
+  if (c === undefined) return false
+  if (c === '\\') return t[i + 1] !== undefined && !/[\r\n\f]/.test(t[i + 1])
+  return /[A-Za-z_-]/.test(c) || c > '\x7f'
+}
+/** The text of a quoted CSS string, unescaped. */
+const stringValue = (s: string) => unescapeCss(s.slice(1, s.endsWith(s[0]) && s.length > 1 ? -1 : undefined))
+/** A CSS string of s, quoted. */
+export const cssString = (s: string) => `"${s.replace(/[\\"]/g, '\\$&').replace(/[\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16)} `)}"`
+
 /**
  * Every @import rule taken out (1.490): `@import "a"`, `@import url(a)`, in any case and with CSS escapes. Strings and
  * comments are stepped over, so an "@import" inside one is left alone and a cut never eats a comment's end.
@@ -81,7 +132,186 @@ export function dropImports(t: string): string {
   return out + t.slice(from)
 }
 
-export function snapshotPage(s: SnapshotParts): string {
+/** Functions whose strings are pictures to fetch (image-set("a.png" 1x)). */
+const IMAGE_FNS = new Set(['image-set', '-webkit-image-set', 'image', 'cross-fade', '-webkit-cross-fade'])
+/** Functions whose value comes later, from elsewhere. */
+const FILLED = new Set(['var', 'env', 'attr'])
+/** Whether t calls one of names (CSS escapes undone), strings and comments stepped over. */
+function callsAny(t: string, names: Set<string>): boolean {
+  for (let i = 0; i < t.length; ) {
+    const c = t[i]
+    if (c === '"' || c === "'") i = endOfString(t, i)
+    else if (c === '/' && t[i + 1] === '*') i = endOfComment(t, i)
+    else if (isIdentStart(t, i)) {
+      IDENT.lastIndex = i
+      const raw = IDENT.exec(t)?.[0] ?? t[i]
+      i += raw.length
+      if (t[i] === '(' && names.has(unescapeCss(raw).toLowerCase())) return true
+    } else i += c === '\\' ? 2 : 1
+  }
+  return false
+}
+
+/**
+ * Every address a style could fetch, made a picture the Mac sent or nothing (1.523): `url()` in any case or with CSS
+ * escapes (`\75 rl(`), `src("…")`, the strings of image-set()/image()/cross-fade(), and `expression()` taken out.
+ * `picture` gets the address as written and gives what replaces the whole call (a url() or a var()). Strings and
+ * comments elsewhere are left alone. With no frame and no document CSP around a snapshot any more, this is what keeps
+ * it from reaching out; the site's CSP is only the last line.
+ */
+export function scrubCss(t: string, picture: (raw: string) => string): string {
+  let out = ''
+  let i = 0
+  let depth = 0
+  const images: number[] = []
+  while (i < t.length) {
+    const c = t[i]
+    if (c === '/' && t[i + 1] === '*') {
+      const e = endOfComment(t, i)
+      out += t.slice(i, e)
+      i = e
+    } else if (c === '"' || c === "'") {
+      const e = endOfString(t, i)
+      out += images.length ? picture(stringValue(t.slice(i, e))) : t.slice(i, e)
+      i = e
+    } else if (isIdentStart(t, i)) {
+      IDENT.lastIndex = i
+      const m = IDENT.exec(t)
+      const raw = m ? m[0] : t[i]
+      const j = i + raw.length
+      const name = unescapeCss(raw).toLowerCase()
+      if (t[j] !== '(') {
+        out += raw
+        i = j
+        continue
+      }
+      if (name === 'url' || name === 'src' || name === 'expression') {
+        const e = endOfCall(t, j)
+        if (name === 'expression') out += 'none'
+        else {
+          const body = t.slice(j + 1, t[e - 1] === ')' ? e - 1 : e).trim()
+          const q = body.match(/^(?:"(?:[^"\\\n]|\\[\s\S])*"?|'(?:[^'\\\n]|\\[\s\S])*'?)/)
+          out += picture(q ? stringValue(q[0]) : unescapeCss(body))
+        }
+        i = e
+        continue
+      }
+      if (IMAGE_FNS.has(name)) {
+        // A value filled in later (var(), env(), attr()) can be a string the browser then fetches, from this site
+        // with its cookies: `--u:"/api/x"; background:image-set(var(--u) 1x)`. Such a picture is none.
+        const e = endOfCall(t, j)
+        if (callsAny(t.slice(j + 1, e), FILLED)) {
+          out += 'none'
+          i = e
+          continue
+        }
+        images.push(depth + 1)
+      }
+      out += raw + '('
+      depth++
+      i = j + 1
+    } else if (c === '\\') {
+      out += t.slice(i, i + 2)
+      i += 2
+    } else {
+      if (c === '(') depth++
+      else if (c === ')') {
+        if (images.length && images[images.length - 1] === depth) images.pop()
+        depth = Math.max(0, depth - 1)
+      }
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
+/** The page's own roots, as they are in a shadow root (1.523): same specificity as the type selector they replace. */
+const ROOTS: Record<string, string> = { html: 'cb-html', body: 'cb-body', form: 'cb-form' }
+
+/**
+ * A selector with the page's `html`, `body`, `form` and `:root` turned into this snapshot's <cb-html>, <cb-body> and
+ * <cb-form> (1.523): a shadow root has no html or body, and :root is this page's. Strings and [attribute] tests are
+ * left alone, and so are names that are only part of one (`.body`, `#html`, `tbody`, `:has(body)` is rewritten).
+ */
+export function hostSelector(sel: string): string {
+  let out = ''
+  let i = 0
+  while (i < sel.length) {
+    const c = sel[i]
+    if (c === '"' || c === "'") {
+      const e = endOfString(sel, i)
+      out += sel.slice(i, e)
+      i = e
+    } else if (c === '[') {
+      let j = i + 1
+      while (j < sel.length && sel[j] !== ']') j = sel[j] === '"' || sel[j] === "'" ? endOfString(sel, j) : j + (sel[j] === '\\' ? 2 : 1)
+      out += sel.slice(i, j + 1)
+      i = j + 1
+    } else if (c === ':' && sel[i + 1] !== ':' && sel[i - 1] !== ':' && isIdentStart(sel, i + 1)) {
+      IDENT.lastIndex = i + 1
+      const raw = IDENT.exec(sel)?.[0] ?? ''
+      out += unescapeCss(raw).toLowerCase() === 'root' && sel[i + 1 + raw.length] !== '(' ? ':is(cb-html)' : ':' + raw
+      i += 1 + raw.length
+    } else if (isIdentStart(sel, i)) {
+      IDENT.lastIndex = i
+      const raw = IDENT.exec(sel)?.[0] ?? sel[i]
+      const prev = sel[i - 1]
+      const typeAt = prev === undefined || /[\s>+~,(|]/.test(prev)
+      const to = ROOTS[unescapeCss(raw).toLowerCase()]
+      out += typeAt && to && sel[i + raw.length] !== '(' ? to : raw
+      i += raw.length
+    } else if (c === '\\') {
+      out += sel.slice(i, i + 2)
+      i += 2
+    } else {
+      out += c
+      i++
+    }
+  }
+  return out
+}
+
+/** Style rules' selectors made this snapshot's, and the rules that only load (font faces, imports, namespaces) dropped. */
+function fixRules(list: CSSRuleList, drop: (i: number) => void) {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const r = list[i]
+    // A rule that styles the host (:host, :host(), :host-context(), @scope (:host)) would reach past the box: inside a
+    // shadow root its !important wins over this page's own rules, so `:host{position:fixed!important;inset:0!important}`
+    // covered the whole sheet. The browser has written the selector out plainly (no escapes).
+    const prelude = r.cssText.slice(0, Math.max(0, r.cssText.indexOf('{')))
+    if (r instanceof CSSFontFaceRule || r instanceof CSSImportRule || r instanceof CSSNamespaceRule || /:host/i.test(prelude)) {
+      drop(i)
+      continue
+    }
+    if (r instanceof CSSStyleRule) {
+      const s = hostSelector(r.selectorText)
+      if (s !== r.selectorText) r.selectorText = s
+    }
+    // Groups (@media, @supports, @layer, @container, …) and nested style rules; a keyframes rule holds no selectors.
+    if (!(r instanceof CSSKeyframesRule) && 'cssRules' in r && 'deleteRule' in r) {
+      const g = r as CSSGroupingRule
+      fixRules(g.cssRules, (j) => g.deleteRule(j))
+    }
+  }
+}
+
+/** A style sheet's text as it goes into the shadow root (1.523). */
+function sheetText(text: string, picture: (raw: string) => string): string {
+  let t = dropImports(text)
+  try {
+    const sh = new CSSStyleSheet()
+    sh.replaceSync(t)
+    fixRules(sh.cssRules, (i) => sh.deleteRule(i))
+    t = Array.from(sh.cssRules, (r) => r.cssText).join('\n')
+  } catch {
+    // No constructable sheets: the selectors stay as written (they match nothing of html or body here), and what a
+    // style could fetch is still taken out below.
+  }
+  return scrubCss(t, picture)
+}
+
+export function snapshotPage(s: SnapshotParts): SnapshotDoc {
   const images = s.images ?? {}
   const css = s.css ?? {}
   const abs = (u: string, base = s.url) => {
@@ -96,8 +326,8 @@ export function snapshotPage(s: SnapshotParts): string {
     const d = images[abs(u)]
     return typeof d === 'string' && DATA_IMG.test(d) ? d : ''
   }
-  // Every url(...) of a style: its picture when the Mac sent it, else nothing to fetch. A picture is written once, as
-  // a custom property on :root, and every style names it by var() (1.489): a sprite named by hundreds of rules made
+  // Every address of a style: its picture when the Mac sent it, else nothing to fetch. A picture is written once, as
+  // a custom property on :host, and every style names it by var() (1.489): a sprite named by hundreds of rules made
   // coupang.com's page 15 MB from 3.7 MB of pictures, and an iPhone drew nothing of it.
   const vars = new Map<string, string>()
   const varOf = (d: string) => {
@@ -105,17 +335,18 @@ export function snapshotPage(s: SnapshotParts): string {
     if (!v) vars.set(d, (v = `--cb-i${vars.size}`))
     return `var(${v})`
   }
-  const styled = (text: string, base = s.url) =>
-    dropImports(text).replace(URL_RE, (all, a?: string, b?: string, c?: string) => {
-      const raw = (a ?? b ?? c ?? '').trim()
-      if (raw.startsWith('#')) return all
-      if (raw.startsWith('data:')) return DATA_IMG.test(raw) ? all : `url("${NO_IMG}")`
-      const d = images[abs(raw, base)]
+  const pictureFor =
+    (base = s.url) =>
+    (raw: string) => {
+      const r = raw.trim()
+      if (r.startsWith('#')) return `url(${cssString(r)})`
+      if (DATA_IMG.test(r)) return `url(${cssString(r)})`
+      const d = images[abs(r, base)]
       return typeof d === 'string' && DATA_IMG.test(d) ? varOf(d) : `url("${NO_IMG}")`
-    })
+    }
 
   const doc = new DOMParser().parseFromString(s.html, 'text/html')
-  doc.querySelectorAll(DROP).forEach((e) => e.remove())
+  const done = new Set<Element>()
   doc.querySelectorAll('link').forEach((l) => {
     const rel = (l.getAttribute('rel') ?? '').toLowerCase().split(/\s+/)
     const href = abs(l.getAttribute('href') ?? '')
@@ -124,65 +355,109 @@ export function snapshotPage(s: SnapshotParts): string {
     const st = doc.createElement('style')
     const media = l.getAttribute('media')
     if (media) st.setAttribute('media', media)
-    st.textContent = styled(text, href)
+    st.textContent = sheetText(text, pictureFor(href))
+    done.add(st)
     l.replaceWith(st)
   })
-  doc.querySelectorAll('style').forEach((st) => (st.textContent = styled(st.textContent ?? '')))
-  doc.querySelectorAll('[style]').forEach((e) => e.setAttribute('style', styled(e.getAttribute('style') ?? '')))
-  // <picture> sources and media would fetch their own addresses: the <img> inside stays.
-  doc.querySelectorAll('source, track').forEach((e) => e.remove())
+  doc.querySelectorAll(DROP).forEach((e) => e.remove())
+  doc.querySelectorAll('style').forEach((st) => {
+    if (!done.has(st)) st.textContent = sheetText(st.textContent ?? '', pictureFor())
+  })
   doc.querySelectorAll('img, input[type=image]').forEach((img) => {
     const first = (img.getAttribute('srcset') ?? '').trim().split(/\s+/)[0]
     const d = pic(img.getAttribute('src')) || pic(img.getAttribute('data-src')) || pic(first)
-    for (const a of ['srcset', 'sizes', 'data-src', 'loading']) img.removeAttribute(a)
-    if (d) img.setAttribute('src', d)
-    else img.removeAttribute('src')
+    img.setAttribute('src', d)
+    if (!d) img.removeAttribute('src')
   })
   doc.querySelectorAll('video, audio').forEach((m) => {
-    m.removeAttribute('src')
     const poster = pic(m.getAttribute('poster'))
     if (poster) m.setAttribute('poster', poster)
     else m.removeAttribute('poster')
   })
-  // SVG <image>/<use> and the like name addresses too: only a data: picture stays.
-  doc.querySelectorAll('[href], [xlink\\:href]').forEach((e) => {
-    if (e.tagName.toLowerCase() === 'a') return
-    for (const a of ['href', 'xlink:href']) {
-      const v = e.getAttribute(a)
-      if (v != null && !v.startsWith('#')) {
-        const d = pic(v)
-        if (d) e.setAttribute(a, d)
-        else e.removeAttribute(a)
-      }
-    }
-  })
-  doc.querySelectorAll('a').forEach((a) => {
+  doc.querySelectorAll('a, area').forEach((a) => {
+    a.removeAttribute('xlink:href')
+    // No href is no link (an empty one would be the page itself).
+    if (!a.hasAttribute('href')) return
     const href = abs(a.getAttribute('href') ?? '')
     if (!/^https?:/i.test(href)) return void a.removeAttribute('href')
     a.setAttribute('href', href)
     a.setAttribute('target', '_blank')
     a.setAttribute('rel', 'noopener noreferrer')
   })
-  doc.querySelectorAll('form').forEach((f) => f.removeAttribute('action'))
-  doc.querySelectorAll('*').forEach((e) => {
-    for (const a of Array.from(e.attributes)) if (/^on/i.test(a.name)) e.removeAttribute(a.name)
+  // A form becomes a block that is not one: nothing can be sent to this site with its cookies, or anywhere.
+  doc.querySelectorAll('form').forEach((f) => {
+    const b = doc.createElement('cb-form')
+    for (const a of ['class', 'id', 'style', 'dir', 'lang', 'title', 'role']) {
+      const v = f.getAttribute(a)
+      if (v != null) b.setAttribute(a, v)
+    }
+    b.append(...Array.from(f.childNodes))
+    f.replaceWith(b)
   })
-  const head = doc.head ?? doc.documentElement
-  if (vars.size) {
-    const defs = doc.createElement('style')
-    defs.textContent = `:root{${[...vars].map(([d, v]) => `${v}:url("${d}")`).join(';')}}`
-    head.prepend(defs)
+  doc.querySelectorAll('button, input, select, textarea, fieldset').forEach((e) => {
+    e.setAttribute('inert', '')
+    e.setAttribute('tabindex', '-1')
+  })
+  doc.querySelectorAll('*').forEach((e) => {
+    const tag = e.tagName.toLowerCase()
+    for (const a of Array.from(e.attributes)) {
+      const n = a.name.toLowerCase()
+      if (/^on/.test(n) || DROP_ATTRS.includes(n)) e.removeAttribute(a.name)
+      else if (n === 'src') {
+        // Only a picture the Mac sent (set above).
+        if (!((tag === 'img' || tag === 'input') && DATA_IMG.test(a.value))) e.removeAttribute(a.name)
+      } else if (n === 'href' || n === 'xlink:href') {
+        // A link's was seen to above. SVG <image>/<use>, MathML and the like: a #fragment or a picture the Mac sent.
+        if (tag === 'a' || tag === 'area' || a.value.startsWith('#')) continue
+        const d = pic(a.value)
+        if (d) e.setAttribute(a.name, d)
+        else e.removeAttribute(a.name)
+      } else if (n === 'style') e.setAttribute('style', scrubCss(a.value, pictureFor()))
+      else if (!TEXT_ATTRS.test(n) && /\(|\\/.test(a.value)) e.setAttribute(a.name, scrubCss(a.value, pictureFor()))
+    }
+  })
+
+  // The page's html and body as this snapshot's own roots, with their class, style and the like.
+  const root = doc.createElement('cb-html')
+  const body = doc.createElement('cb-body')
+  const keep = ['class', 'id', 'style', 'dir', 'lang']
+  for (const [from, to] of [
+    [doc.documentElement, root],
+    [doc.body, body],
+  ] as const) {
+    if (!from) continue
+    for (const a of keep) {
+      const v = from.getAttribute(a)
+      if (v != null) to.setAttribute(a, v)
+    }
   }
-  const meta = doc.createElement('meta')
-  meta.setAttribute('name', 'referrer')
-  meta.setAttribute('content', 'no-referrer')
-  head.prepend(meta)
-  const policy = doc.createElement('meta')
-  policy.setAttribute('http-equiv', 'Content-Security-Policy')
-  policy.setAttribute('content', SNAPSHOT_CSP)
-  head.prepend(policy)
-  const cs = doc.createElement('meta')
-  cs.setAttribute('charset', 'utf-8')
-  head.prepend(cs)
-  return '<!doctype html>' + doc.documentElement.outerHTML
+  if (doc.body) body.append(...Array.from(doc.body.childNodes))
+  root.append(body)
+  const head = doc.head ? Array.from(doc.head.querySelectorAll('style')) : []
+  const varsText = [...vars].map(([d, v]) => `${v}:url(${cssString(d)})`).join(';')
+  const bytes = root.outerHTML.length + head.reduce((n, st) => n + (st.textContent?.length ?? 0), 0) + varsText.length
+  return { head, root, vars: varsText, bytes }
+}
+
+/**
+ * The snapshot drawn in host's own shadow root (1.523), anew each time: the base, the page's head styles, its body. A
+ * click or a submit inside stops at the shadow root and the host, so nothing of the page reaches this page's own
+ * handlers (links still open their new tab).
+ */
+export function mountSnapshot(host: HTMLElement, d: SnapshotDoc): ShadowRoot {
+  let sh = host.shadowRoot
+  if (!sh) {
+    sh = host.attachShadow({ mode: 'open' })
+    // On the host too: a click on an inert control is dispatched to the host itself, past the shadow root.
+    for (const t of ['click', 'auxclick', 'dblclick', 'submit'])
+      for (const at of [sh, host])
+        at.addEventListener(t, (e) => {
+          e.stopPropagation()
+          if (t === 'submit') e.preventDefault()
+        })
+  }
+  const base = document.createElement('style')
+  base.textContent = SHADOW_BASE + (d.vars ? `:host{${d.vars}}` : '')
+  sh.replaceChildren(base, ...d.head.map((n) => document.importNode(n, true)), document.importNode(d.root, true))
+  return sh
 }

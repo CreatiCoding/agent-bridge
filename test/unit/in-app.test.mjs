@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { imageUrl, localPort, modeFor, modeOf, opensInApp, readerImg, ruleFor, ruleHost, throughPreview } from '../../ui/src/lib/in-app.ts'
-import { snapshotImageUrls, snapshotUserAgent, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_IMG_COUNT, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET } from '../../agent/guard.mjs'
+import { snapshotImageUrls, snapshotUserAgent, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_IMG_COUNT, egoSnapshotScript, egoSnapshotResult, EGO_MARK, EGO_QUIET, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H } from '../../agent/guard.mjs'
 
 const base = 'https://bridge.example/s/abc'
 
@@ -43,12 +43,12 @@ test('link.open’s default asks the sheet before a new tab; the sheet draws dat
   assert.match(sheet, /openLink\(outside, 'inapp'\)/)
   assert.match(sheet, /\/api\/read\?u=/)
   assert.doesNotMatch(sheet, /dangerouslySetInnerHTML|innerHTML/)
-  // Two frames: the localhost preview, and the snapshot as the page looked (1.488), which runs nothing and has no
-  // origin of its own (sandbox without allow-scripts or allow-same-origin).
-  assert.equal((sheet.match(/<iframe/g) ?? []).length, 2)
+  // One frame: the localhost preview. The snapshot as the page looked is drawn in a shadow root (1.523), made safe by
+  // lib/snapshot-page (AC-1763), not in a frame.
+  assert.equal((sheet.match(/<iframe/g) ?? []).length, 1)
   assert.match(sheet, /kind: 'frame', src: throughPreview\(/)
-  assert.match(sheet, /sandbox="allow-popups allow-popups-to-escape-sandbox"\s+referrerPolicy="no-referrer"\s+srcDoc=\{v\.doc\}/)
-  assert.doesNotMatch(sheet, /allow-scripts|allow-same-origin/)
+  assert.match(sheet, /mountSnapshot\(host, v\.doc\)/)
+  assert.doesNotMatch(sheet, /srcDoc|allow-scripts|allow-same-origin/)
 })
 
 // REQ-F-881: per host, how the sheet opens a link.
@@ -140,6 +140,25 @@ test('AC-1668: ego lite’s snapshot waits for the page to go quiet in the page,
   assert.match(EGO_QUIET, />= 500/)
 })
 
+test('AC-1762: ego lite draws the snapshot in the same 412×915 view as Chrome, set before the page opens', () => {
+  assert.equal(SNAPSHOT_VIEW_W, 412)
+  assert.equal(SNAPSHOT_VIEW_H, 915)
+  const s = egoSnapshotScript({ name: 'n', url: 'https://a/', budgetMs: 8000, gotoMs: 15000 })
+  const view = 'page.cdp("Emulation.setDeviceMetricsOverride", { width: 412, height: 915, deviceScaleFactor: 0, mobile: false })'
+  assert.ok(s.includes(`try { await ${view} } catch (e) { viewError = `))
+  assert.ok(s.indexOf(view) < s.indexOf('page.goto('))
+  assert.match(s, /if \(viewError && out\) out\.viewError = viewError/)
+  // The whole script is valid JavaScript (top-level await, so as an async function body).
+  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
+  assert.doesNotThrow(() => new AsyncFunction('taskSpace', s))
+  assert.equal(egoSnapshotResult(`${EGO_MARK}{"url":"https://e/","html":"","width":1496,"viewError":"no cdp"}`).viewError, 'no cdp')
+  assert.equal('viewError' in egoSnapshotResult(`${EGO_MARK}{"url":"https://e/","html":"","width":412}`), false)
+  const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.ok(agent.includes('`--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`'))
+  assert.match(agent, /width: SNAPSHOT_VIEW_W \}/)
+  assert.match(agent, /if \(r\.viewError\) log\('warn', 'snapshot'/)
+})
+
 test('AC-1677: the snapshot’s headless Chrome sends a windowed Chrome’s User-Agent, without "Headless"', () => {
   const mac = snapshotUserAgent('Google Chrome 156.0.8078.47\n', true)
   assert.equal(mac, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36')
@@ -195,21 +214,22 @@ test('AC-1687: a snapshot carries the page’s style sheets and the pictures the
   assert.match(trust, /css: m\.css \?\? \{\}, width: m\.width \?\? 0/)
   // The screen puts it together with nothing left that runs or fetches.
   const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
-  assert.match(sp, /script, noscript, iframe, frame, frameset, object, embed, applet, portal, base, meta\[http-equiv\]/)
+  assert.match(sp, /'script, noscript, iframe, frame, frameset, object, embed, applet, portal, fencedframe, base, meta, link, template, source, track, animate, animateMotion, animateTransform, set'/)
   assert.match(sp, /new DOMParser\(\)\.parseFromString/)
-  assert.match(sp, /\/\^on\/i\.test\(a\.name\)/)
+  assert.match(sp, /if \(\/\^on\/\.test\(n\) \|\| DROP_ATTRS\.includes\(n\)\) e\.removeAttribute\(a\.name\)/)
   assert.match(sp, /a\.setAttribute\('target', '_blank'\)/)
 })
 
-test('AC-1688: a picture of the page’s styles is written once, on :root, and named by var()', () => {
+test('AC-1688: a picture of the page’s styles is written once, on :host, and named by var()', () => {
   const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
   assert.match(sp, /`--cb-i\$\{vars\.size\}`/)
   assert.match(sp, /return `var\(\$\{v\}\)`/)
-  assert.match(sp, /`:root\{\$\{\[\.\.\.vars\]\.map\(\(\[d, v\]\) => `\$\{v\}:url\("\$\{d\}"\)`\)\.join\(';'\)\}\}`/)
+  assert.match(sp, /const varsText = \[\.\.\.vars\]\.map\(\(\[d, v\]\) => `\$\{v\}:url\(\$\{cssString\(d\)\}\)`\)\.join\(';'\)/)
+  assert.match(sp, /SHADOW_BASE \+ \(d\.vars \? `:host\{\$\{d\.vars\}\}` : ''\)/)
 })
 
-test('AC-1689: a snapshot document carries its own CSP first and has no @import left', async () => {
-  const { dropImports, SNAPSHOT_CSP } = await import('../../ui/src/lib/snapshot-page.ts')
+test('AC-1689: a snapshot has no @import left', async () => {
+  const { dropImports } = await import('../../ui/src/lib/snapshot-page.ts')
   assert.equal(dropImports('@import "http://a/x";p{color:red}'), 'p{color:red}')
   assert.equal(dropImports("@import url(http://a/x) screen; p{}"), ' p{}')
   assert.equal(dropImports("@IMPORT 'a';p{}"), 'p{}')
@@ -222,23 +242,87 @@ test('AC-1689: a snapshot document carries its own CSP first and has no @import 
   assert.equal(dropImports('p::after{content:"@import x;"}'), 'p::after{content:"@import x;"}')
   assert.equal(dropImports('@media screen{p{color:red}}@importx{}'), '@media screen{p{color:red}}@importx{}')
   assert.equal(dropImports('@import "a" p{color:red}'), '{color:red}')
-  assert.match(SNAPSHOT_CSP, /^default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'$/)
+  // Every sheet goes through dropImports and then scrubCss (AC-1763), the document CSP of 1.490 no longer exists.
   const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
-  assert.match(sp, /dropImports\(text\)\.replace\(URL_RE/)
-  // Prepended last so it lands right after <meta charset>, before every element of the page.
-  assert.match(sp, /policy\.setAttribute\('http-equiv', 'Content-Security-Policy'\)[\s\S]*head\.prepend\(policy\)\n  const cs = doc\.createElement\('meta'\)/)
+  assert.match(sp, /let t = dropImports\(text\)/)
+  assert.match(sp, /return scrubCss\(t, picture\)/)
+  assert.doesNotMatch(sp, /SNAPSHOT_CSP|http-equiv', 'Content-Security-Policy/)
 })
 
-test('AC-1696: a snapshot frame that does not load in time says so, and a report carries the last snapshots', () => {
+test('AC-1696: a snapshot that cannot be drawn says so, and a report carries the last snapshots', () => {
   const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
-  assert.match(ls, /const SNAPSHOT_FRAME_MS = 10_000/)
-  assert.match(ls, /onLoad=\{loaded\}/)
-  assert.match(ls, /setState\(\(s\) => \(s === 'waiting' \? 'late' : s\)\)/)
-  assert.match(ls, /원본 모양을 \{SNAPSHOT_FRAME_MS \/ 1000\}초 안에 그리지 못했어요/)
+  // Since 1.523 a shadow root, not a frame: an error putting the page in is said over the box (no timer to wait out).
+  assert.doesNotMatch(ls, /SNAPSHOT_FRAME_MS|onLoad=/)
+  assert.match(ls, /try \{\n      mountSnapshot\(host, v\.doc\)\n    \} catch \(e\) \{/)
+  assert.match(ls, /v\.note\.frame = 'failed'\n      v\.note\.error = why/)
+  assert.match(ls, /v\.note\.frame = 'drawn'/)
+  assert.match(ls, /원본 모양을 그리지 못했어요 \(\{\(v\.doc\.bytes \/ 1048576\)\.toFixed\(1\)\} MB, 폭 \{pw\}px, \{failed\}\)/)
   assert.match(ls, /읽기 모양으로 보기/)
   // The host only, never the whole address.
   assert.match(ls, /site = new URL\(s\.url\)\.host/)
   const dbg = readFileSync(new URL('../../ui/src/lib/debug.ts', import.meta.url), 'utf8')
   assert.match(dbg, /const SNAPS_MAX = 5/)
   assert.match(dbg, /snapshots: snaps\.map/)
+  assert.match(dbg, /frame: 'waiting' \| 'drawn' \| 'failed'; error: string \| null/)
+})
+
+test('AC-1763: a snapshot in a shadow root sends no form, keeps no address, and its html, body and :root are its own', async () => {
+  const { hostSelector, scrubCss, SHADOW_BASE } = await import('../../ui/src/lib/snapshot-page.ts')
+  // html, body, :root and form become the snapshot's own roots, same specificity; parts of names and strings do not.
+  assert.equal(hostSelector('html'), 'cb-html')
+  assert.equal(hostSelector('html.dark body > .x, BODY'), 'cb-html.dark cb-body > .x, cb-body')
+  assert.equal(hostSelector(':root'), ':is(cb-html)')
+  assert.equal(hostSelector('html:root .a'), 'cb-html:is(cb-html) .a')
+  assert.equal(hostSelector(':not(body) form input'), ':not(cb-body) cb-form input')
+  assert.equal(hostSelector('\\62 ody'), 'cb-body')
+  assert.equal(hostSelector('.body #html tbody .html-x [data-x="body"] a[title=html]'), '.body #html tbody .html-x [data-x="body"] a[title=html]')
+  assert.equal(hostSelector('::part(x) :root-ish p::before'), '::part(x) :root-ish p::before')
+  // Every address a style could fetch becomes a picture the Mac sent or nothing; strings and comments elsewhere stay.
+  const seen = []
+  const pic = (raw) => (seen.push(raw), raw === 'ok.png' ? 'var(--cb-i0)' : 'url("data:,")')
+  const out = scrubCss(
+    [
+      '.a{background:url(http://e/a.png)}',
+      '.b{background:URL( "http://e/b.png" )}',
+      ".c{background:\\75 rl('http://e/c.png')}",
+      '.d{background:u\\rl(http://e/d.png)}',
+      '.e{background-image:image-set("http://e/e.png" 1x, url(ok.png) 2x)}',
+      '.f{background-image:-webkit-image-set("http://e/f.png" 1x)}',
+      '.g{background:src("http://e/g.png")}',
+      '.h{width:expression(alert(1))}',
+      '@font-face{font-family:x;src:url(http://e/font.woff2)}',
+      '.i::after{content:"url(http://e/kept-text)"} /* url(http://e/comment) */',
+    ].join('\n'),
+    pic,
+  )
+  for (const x of ['a.png', 'b.png', 'c.png', 'd.png', 'e.png', 'f.png', 'g.png', 'font.woff2']) assert.ok(!out.includes(`http://e/${x}`), x)
+  assert.deepEqual(seen, ['http://e/a.png', 'http://e/b.png', 'http://e/c.png', 'http://e/d.png', 'http://e/e.png', 'ok.png', 'http://e/f.png', 'http://e/g.png', 'http://e/font.woff2'])
+  assert.match(out, /image-set\(url\("data:,"\) 1x, var\(--cb-i0\) 2x\)/)
+  assert.match(out, /\.h\{width:none\}/)
+  assert.match(out, /content:"url\(http:\/\/e\/kept-text\)"/)
+  assert.match(out, /\/\* url\(http:\/\/e\/comment\) \*\//)
+  // A picture function that takes a value filled in later (var, env, attr) is none: the string could be an address.
+  assert.equal(scrubCss('.v{--u:"/api/x";background:image-set(var(--u) 1x)}', pic), '.v{--u:"/api/x";background:none}')
+  assert.equal(scrubCss('.v{background:-webkit-image-set(v\\61r(--u))}', pic), '.v{background:none}')
+  assert.equal(scrubCss('.v{background:image(attr(data-u))} .w{content:var(--x)}', pic), '.v{background:none} .w{content:var(--x)}')
+  // The shadow root's base keeps this page's styles out and paints a white page.
+  assert.match(SHADOW_BASE, /^:host\{all:initial;display:block;color-scheme:light;background:#fff;color:#000\}/)
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  // A form becomes <cb-form> (not a form), controls are inert, and attributes that act or name an address go.
+  assert.match(sp, /doc\.querySelectorAll\('form'\)\.forEach\(\(f\) => \{\n    const b = doc\.createElement\('cb-form'\)/)
+  assert.match(sp, /querySelectorAll\('button, input, select, textarea, fieldset'\)\.forEach\(\(e\) => \{\n    e\.setAttribute\('inert', ''\)/)
+  for (const a of ['formaction', 'action', 'ping', 'download', 'srcdoc', 'background', 'autofocus', 'popovertarget', 'contenteditable']) assert.match(sp, new RegExp(`'${a}'`))
+  // Links: http(s) only, a new tab without referrer; a click or a submit stops at the shadow root and its host.
+  assert.match(sp, /if \(!\/\^https\?:\/i\.test\(href\)\) return void a\.removeAttribute\('href'\)/)
+  assert.match(sp, /a\.setAttribute\('rel', 'noopener noreferrer'\)/)
+  assert.match(sp, /for \(const at of \[sh, host\]\)/)
+  // Rules that style the host are dropped (their !important would win over the box), and the box wraps the host.
+  assert.match(sp, /\/:host\/i\.test\(prelude\)\) \{\n      drop\(i\)/)
+  assert.match(sp, /'attributionsrc', 'accesskey'/)
+  assert.match(sp, /if \(!a\.hasAttribute\('href'\)\) return/)
+  const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(ls, /<div className="snapshot-page" style=\{[^\n]*\n\s*<div ref=\{page\} className="snapshot-host"/)
+  // The box keeps the page's fixed and stacked elements inside it.
+  const styles = readFileSync(new URL('../../ui/src/styles.css', import.meta.url), 'utf8')
+  assert.match(styles, /\.snapshot-page \{[^}]*transform-origin: 0 0;\n  contain: layout paint;\n  isolation: isolate;\n  overflow: hidden;/)
 })

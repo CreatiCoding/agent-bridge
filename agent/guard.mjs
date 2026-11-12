@@ -164,6 +164,14 @@ export function cssImageUrls(texts) {
   return out
 }
 
+/**
+ * The phone-sized view both snapshot paths draw the page in (1.523): headless Chrome's --window-size and ego lite's
+ * Emulation.setDeviceMetricsOverride. ego lite used to draw in the person's own window (1496 wide seen), and the
+ * sheet then scaled a frame that wide down on a phone, which iOS Safari left blank.
+ */
+export const SNAPSHOT_VIEW_W = 412
+export const SNAPSHOT_VIEW_H = 915
+
 /** The marker in front of the one line an ego-browser snapshot script prints its result on. */
 export const EGO_MARK = 'CB-SNAPSHOT '
 
@@ -185,8 +193,10 @@ export const EGO_QUIET = `() => {
 }`
 
 /**
- * The script `ego-browser nodejs` runs for a snapshot (stdin): a task space of its own name, the address opened in
- * its page, a wait for the page to go quiet (EGO_QUIET, budgetMs at most), then in the page the rendered DOM and the page's
+ * The script `ego-browser nodejs` runs for a snapshot (stdin): a task space of its own name, its page set to the
+ * SNAPSHOT_VIEW_W × SNAPSHOT_VIEW_H view before the address is opened (ego has no viewport call, so raw CDP; mobile:
+ * false lays out exactly that wide as Chrome's --window-size does; a failure goes on and is told as viewError), a wait
+ * for the page to go quiet (EGO_QUIET, budgetMs at most), then in the page the rendered DOM and the page's
  * own-origin pictures fetched with its cookies (credentials: include) as data: addresses. The task space is always
  * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
  */
@@ -236,11 +246,14 @@ export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
 }`
   return `const task = await taskSpace(${JSON.stringify(name)})
 let out
+let viewError = ""
 try {
   const page = task.page("p1")
+  try { await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${SNAPSHOT_VIEW_W}, height: ${SNAPSHOT_VIEW_H}, deviceScaleFactor: 0, mobile: false }) } catch (e) { viewError = String(e?.message ?? e).slice(0, 200) }
   await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
   try { await page.waitForFunction(${EGO_QUIET}, undefined, { timeout: ${Number(budgetMs)} }) } catch {}
   out = await page.evaluate(${inPage}, ${JSON.stringify(opts)})
+  if (viewError && out) out.viewError = viewError
 } finally {
   await task.finish({ keep: [] })
 }
@@ -260,7 +273,9 @@ export function egoSnapshotResult(stdout) {
     if (!v || typeof v.html !== 'string' || typeof v.url !== 'string') return null
     const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
     const width = Number.isFinite(v.width) && v.width > 0 ? Math.round(v.width) : 0
-    return { url: v.url, html: v.html, images: obj(v.images), css: obj(v.css), width }
+    const r = { url: v.url, html: v.html, images: obj(v.images), css: obj(v.css), width }
+    if (typeof v.viewError === 'string' && v.viewError) r.viewError = v.viewError.slice(0, 200)
+    return r
   } catch {
     return null
   }

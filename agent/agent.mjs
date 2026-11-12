@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -7362,13 +7362,15 @@ function runCapture(bin, args, { input, max, ms, slow, big, gone, both }) {
   })
 }
 
-/** The page through ego lite: {url, html, images} (its own-origin pictures read with its cookies). */
+/** The page through ego lite, drawn SNAPSHOT_VIEW_W wide: {url, html, images, css, width} (its own-origin pictures read with its cookies). */
 async function egoSnapshot(page, reqId) {
   const name = `cb-snapshot-${String(reqId ?? crypto.randomUUID()).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12)}`
   const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS })
   const out = await runCapture(EGO_BIN, ['nodejs'], { input: script, max: 16 * 1024 * 1024, ms: SNAPSHOT_EGO_TIMEOUT_MS, slow: 'ego lite 가 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'ego-browser 를 띄우지 못했어요', both: true })
   const r = egoSnapshotResult(out)
   if (!r) throw new Error(`ego lite 가 결과를 주지 않았어요: ${out.trim().split('\n').pop()?.slice(0, 200) ?? ''}`)
+  // The page still came, drawn in ego's own window width: say so, the width sent shows it.
+  if (r.viewError) log('warn', 'snapshot', `ego lite 에 폰 폭(${SNAPSHOT_VIEW_W}×${SNAPSHOT_VIEW_H})을 정하지 못해 창 폭 ${r.width} 로 그렸어요 (${r.viewError})`)
   return r
 }
 
@@ -7389,15 +7391,15 @@ function chromeVersionOnce() {
   return chromeVersion
 }
 
-/** The page through a headless Chrome of a throwaway profile: {url, html, images: {}, css: {}, width} (its window is 412 wide). */
+/** The page through a headless Chrome of a throwaway profile: {url, html, images: {}, css: {}, width} (its window is SNAPSHOT_VIEW_W wide). */
 async function chromeSnapshot(page) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
   try {
     const ua = snapshotUserAgent(await chromeVersionOnce(), IS_MAC)
-    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', '--window-size=412,915', `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
     const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
-    return { url: page.href, html, images: {}, css: {}, width: 412 }
+    return { url: page.href, html, images: {}, css: {}, width: SNAPSHOT_VIEW_W }
   } finally {
     fs.rm(profile, { recursive: true, force: true }, () => {})
   }

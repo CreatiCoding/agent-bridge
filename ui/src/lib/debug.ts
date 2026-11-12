@@ -17,14 +17,14 @@ const consoleError = console.error.bind(console)
 console.error = (...a: unknown[]) => (keep('console', a.map(say).join(' ')), consoleError(...a))
 
 /**
- * The last snapshots shown as the page looked (REQ-F-881, 1.495): how big the document was and whether its frame
- * opened, so a report of a blank snapshot says what the phone was given. The site's host only, never the address.
+ * The last snapshots shown as the page looked (REQ-F-881, 1.495): how big the page was and whether it went into its
+ * shadow root (1.523, the error when not), so a report of a blank snapshot says what the phone was given. The site's host only, never the address.
  */
-export type SnapNote = { at: number; site: string; bytes: number; width: number; via: string | null; sealed: boolean; images: number; css: number; frame: 'waiting' | 'loaded' | 'late'; ms: number | null }
+export type SnapNote = { at: number; site: string; bytes: number; width: number; via: string | null; sealed: boolean; images: number; css: number; frame: 'waiting' | 'drawn' | 'failed'; error: string | null; ms: number | null }
 const SNAPS_MAX = 5
 const snaps: SnapNote[] = []
-export function noteSnapshot(n: Omit<SnapNote, 'at' | 'frame' | 'ms'>): SnapNote {
-  const s: SnapNote = { at: Date.now(), ...n, frame: 'waiting', ms: null }
+export function noteSnapshot(n: Omit<SnapNote, 'at' | 'frame' | 'error' | 'ms'>): SnapNote {
+  const s: SnapNote = { at: Date.now(), ...n, frame: 'waiting', error: null, ms: null }
   snaps.push(s)
   if (snaps.length > SNAPS_MAX) snaps.shift()
   return s
