@@ -67,3 +67,21 @@ func TestSnapshotAnswerCSS(t *testing.T) {
 	b := snapshotAnswer(M{"ok": true, "html": "<p>a</p>", "width": 99999.0}, "https://a/")
 	ok(t, b["width"] == 0 && len(asM(b["css"])) == 0, "a width out of range is 0; no sheets is empty")
 }
+
+// AC-1770: the sizes of the big pictures the Mac did not send go with the page, only as [width, height] (1.525).
+func TestSnapshotAnswerBig(t *testing.T) {
+	a := snapshotAnswer(M{"ok": true, "html": "<p>a</p>", "big": M{
+		"https://a/x.png":   []any{640.0, 480.0},
+		"javascript:alert":  []any{1.0, 1.0},
+		"https://a/y.png":   []any{0.0, 10.0},
+		"https://a/z.png":   []any{1.5, 10.0},
+		"https://a/w.png":   "640x480",
+		"https://a/big.png": []any{100001.0, 1.0},
+	}}, "https://a/")
+	big := asM(a["big"])
+	ok(t, len(big) == 1, "only http(s) addresses with two whole sizes 1–100000")
+	wh, _ := big["https://a/x.png"].([]any)
+	ok(t, len(wh) == 2 && wh[0] == 640 && wh[1] == 480, "the size as it came")
+	b := snapshotAnswer(M{"ok": true, "html": "<p>a</p>"}, "https://a/")
+	ok(t, len(asM(b["big"])) == 0, "none is empty")
+}

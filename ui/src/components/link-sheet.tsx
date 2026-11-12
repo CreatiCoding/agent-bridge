@@ -11,14 +11,14 @@ import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
 import { imageUrl, localPort, modeFor, modeOf, readerImg, throughPreview } from '../lib/in-app'
 import { readSnapshot } from '../lib/reader-dom'
-import { mountSnapshot, snapshotPage, type SnapshotDoc } from '../lib/snapshot-page'
+import { mountSnapshot, snapshotMore, snapshotPage, type SnapshotDoc } from '../lib/snapshot-page'
 import { noteSnapshot, type SnapNote } from '../lib/debug'
 
 /**
  * What the session's Mac rendered (IF-278): the DOM, its final address, its pictures as data: by address, its style
  * sheets as text by address and the page's width (1.488).
  */
-type Snap = { url: string; html: string; images?: Record<string, string>; css?: Record<string, string>; width?: number; via?: string }
+type Snap = { url: string; html: string; images?: Record<string, string>; big?: Record<string, unknown>; css?: Record<string, string>; width?: number; via?: string }
 import { matchRoute } from '../lib/router'
 import { LOCKED } from '../lib/trust'
 import { Button } from '../kit'
@@ -146,7 +146,8 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
     const read = { kind: 'read' as const, url: s.url, title: pg.title, site: pg.site, blocks: pg.blocks, snapshot: true }
     const css = s.css && typeof s.css === 'object' ? s.css : {}
     const width = typeof s.width === 'number' && s.width > 0 && s.width <= 10000 ? s.width : 0
-    const doc = snapshotPage({ url: s.url, html: s.html, images, css })
+    const big = s.big && typeof s.big === 'object' ? s.big : {}
+    const doc = snapshotPage({ url: s.url, html: s.html, images, css, big })
     let site = ''
     try {
       site = new URL(s.url).host
@@ -165,6 +166,8 @@ async function snapshotView(sid: string, abs: string): Promise<View> {
 function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   const page = useRef<HTMLDivElement>(null)
+  // The page's scale in the box, for the effect that adds pieces as the box is scrolled (1.525).
+  const scale = useRef(1)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [height, setHeight] = useState(0)
   // Whether the page went into its shadow root (1.523): an error there is said over the box instead of a white sheet.
@@ -196,13 +199,24 @@ function PageFrame({ v, title, onPlain }: { v: Extract<View, { kind: 'page' }>; 
     setFailed(null)
     const ro = new ResizeObserver(() => setHeight(host.offsetHeight))
     ro.observe(host)
+    // The rest of a big page (1.525), a piece at a time, while the box's end is within three of its heights. The
+    // host's own height (read now, not the state) says where the page ends.
+    const el = box.current
+    const fill = () => {
+      if (!el) return
+      for (let n = 0; n < 20 && el.scrollTop + el.clientHeight * 3 >= host.offsetHeight * scale.current; n++) if (!snapshotMore(host)) break
+    }
+    fill()
+    el?.addEventListener('scroll', fill, { passive: true })
     return () => {
       ro.disconnect()
+      el?.removeEventListener('scroll', fill)
       host.shadowRoot?.replaceChildren()
     }
   }, [shown, v])
   const pw = Math.max(v.width, size.w)
   const k = size.w && pw ? size.w / pw : 1
+  scale.current = k
   return (
     <div ref={box} className="snapshot-box">
       {shown ? (

@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ONE_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -5046,8 +5046,8 @@ const commands = {
       }
       if (r.html.length > SNAPSHOT_HTML_MAX) return fail('페이지가 너무 커서 스냅샷으로 못 열어요')
       const css = await snapshotCss(r.html, r.url, r.css)
-      const images = await snapshotImages(r.html, r.url, r.images, cssImageUrls([...Object.values(css), ...inlineStyles(r.html, r.url)]))
-      emit({ t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, css, width: r.width || 0, via })
+      const { images, big } = await snapshotImages(r.html, r.url, r.images, cssImageUrls([...Object.values(css), ...inlineStyles(r.html, r.url)]), r.big)
+      emit({ t: 'snapshot', reqId, sid, ok: true, url: r.url, html: r.html, images, big, css, width: r.width || 0, via })
     } catch (e) {
       fail(e.message)
     } finally {
@@ -7455,17 +7455,23 @@ const inlineStyles = (html, pageUrl) => [...String(html).matchAll(/<style\b[^>]*
 /**
  * The page's pictures as data: addresses by their full address: what the browser already read (have, with the page's
  * cookies), the rest read here without cookies, all at once within SNAPSHOT_IMG_FETCH_MS, within the size limits.
+ * A picture over SNAPSHOT_IMG_BIG is not sent (1.525): an <img>'s goes as its size (big, its header read by
+ * imageSize; haveBig, what the browser saw), a style's (more) is left out.
  */
-async function snapshotImages(html, pageUrl, have = {}, more = []) {
+async function snapshotImages(html, pageUrl, have = {}, more = [], haveBig = {}) {
   const out = {}
+  const big = bigSizes(haveBig)
+  const imgs = new Set(snapshotImageUrls(html, pageUrl))
   let total = 0
   for (const [k, v] of Object.entries(have)) {
     if (typeof v !== 'string' || !/^data:image\/(png|jpeg|gif|webp|avif);base64,/.test(v)) continue
+    // A data: address is the picture's bytes times 4/3.
+    if (v.length > SNAPSHOT_IMG_BIG * 1.4) continue
     if (total + v.length > SNAPSHOT_IMG_ALL_MAX * 1.4) break
     total += v.length
     out[k] = v
   }
-  const want = [...new Set([...snapshotImageUrls(html, pageUrl), ...more])].filter((u) => !out[u])
+  const want = [...new Set([...imgs, ...more])].filter((u) => !out[u] && !big[u])
   const got = await Promise.all(
     want.map(async (src) => {
       try {
@@ -7473,18 +7479,26 @@ async function snapshotImages(html, pageUrl, have = {}, more = []) {
         const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
         if (!r.ok || !SNAPSHOT_IMG_TYPES.includes(type)) return null
         const bytes = Buffer.from(await r.arrayBuffer())
-        return bytes.length > SNAPSHOT_IMG_ONE_MAX ? null : [src, `data:${type};base64,${bytes.toString('base64')}`]
+        if (bytes.length > SNAPSHOT_IMG_BIG) {
+          const size = imgs.has(src) ? imageSize(bytes) : null
+          return size ? [src, null, size] : null
+        }
+        return [src, `data:${type};base64,${bytes.toString('base64')}`]
       } catch {
         return null
       }
     }),
   )
   for (const x of got) {
+    if (x && !x[1]) {
+      if (Object.keys(big).length < SNAPSHOT_BIG_COUNT) big[x[0]] = x[2]
+      continue
+    }
     if (!x || total + x[1].length > SNAPSHOT_IMG_ALL_MAX * 1.4) continue
     total += x[1].length
     out[x[0]] = x[1]
   }
-  return out
+  return { images: out, big }
 }
 /**
  * visible: the Chrome window `link --visible` opened on the same profile, for a person to pass the proxy's sign-in

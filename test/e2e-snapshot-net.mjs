@@ -16,7 +16,9 @@ const { chromium } = await import(process.env.PLAYWRIGHT)
 const ok = (c, w) => (console.log(`${c ? 'PASS' : 'FAIL'} ${w}`), c || (process.exitCode = 1))
 
 const src = fs.readFileSync(new URL('../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
-const lib = stripTypeScriptTypes(src).replace(/^export /gm, '') + '\nwindow.snapshotPage = snapshotPage\nwindow.mountSnapshot = mountSnapshot\n'
+const lib = stripTypeScriptTypes(src).replace(/^export /gm, '') + '\nwindow.snapshotPage = snapshotPage\nwindow.mountSnapshot = mountSnapshot\n' +
+  // A selector of the page as the snapshot names it (1.525: classes and ids are made short).
+  'window.sel = (s) => (window.snapNames ? renameSelector(s, window.snapNames.classes, window.snapNames.ids) : s)\n'
 // The site's own CSP (server/httputil.go), the parts that bear on a snapshot's styles and pictures.
 const SITE_CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-src 'self'; base-uri 'self'; object-src 'none'"
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
@@ -109,6 +111,7 @@ const out = await page.evaluate((a) => {
   wrap.style.width = '412px'
   wrap.style.transform = `scale(${k})`
   wrap.style.setProperty('--cb-vh', `${Math.round(400 / k)}px`)
+  window.snapNames = d.names
   const sh = window.mountSnapshot(host, d)
   document.getElementById('fit').style.height = `${Math.ceil(host.offsetHeight * k)}px`
   window.clicks = 0
@@ -127,7 +130,7 @@ ok(hits.length === 0, `the snapshot fetched nothing (${hits.join(', ') || 'none'
 
 const look = await page.evaluate(() => {
   const sh = document.getElementById('host').shadowRoot
-  const $ = (s) => sh.querySelector(s)
+  const $ = (s) => sh.querySelector(window.sel(s))
   const cs = (s) => getComputedStyle($(s))
   const host = document.getElementById('host').getBoundingClientRect()
   const wrap = document.getElementById('wrap').getBoundingClientRect()
@@ -138,7 +141,7 @@ const look = await page.evaluate(() => {
     v: cs('#v').color,
     d: cs('#d').color,
     margin: cs('cb-body').marginTop,
-    body: $('cb-body').className,
+    body: $('cb-body').className === (window.snapNames?.classes.page ?? 'page') ? 'page' : $('cb-body').className,
     htmlVar: cs('cb-html').getPropertyValue('--from-html').trim(),
     pic: $('#pic').naturalWidth,
     deco: cs('#keep').textDecorationLine,
@@ -188,7 +191,7 @@ ok(look.over !== 'host' && look.over !== 'wrap', `nothing of it covers this page
 // A click inside stops at the shadow root; the form sends nothing.
 const send = await page.evaluate(() => {
   // Into the box's view first: a point below the box is this page, not the snapshot.
-  const b = document.getElementById('host').shadowRoot.querySelector('#send')
+  const b = document.getElementById('host').shadowRoot.querySelector(window.sel('#send'))
   b.scrollIntoView({ block: 'center' })
   const r = b.getBoundingClientRect()
   const box = document.getElementById('box').getBoundingClientRect()
@@ -196,13 +199,13 @@ const send = await page.evaluate(() => {
 })
 ok(send.inside, 'its button is in the box’s view when pressed')
 await page.mouse.click(send.x, send.y)
-await page.evaluate(() => document.getElementById('host').shadowRoot.querySelector('#plain').click())
+await page.evaluate(() => document.getElementById('host').shadowRoot.querySelector(window.sel('#plain')).click())
 await page.waitForTimeout(800)
 ok(hits.length === 0, `pressing its button sent nothing (${hits.join(', ') || 'none'})`)
 ok((await page.evaluate(() => window.clicks)) === 0, `a click inside does not reach this page (${await page.evaluate(() => window.clickPaths.join(' | ') || 'none')})`)
 // Its links still open a new tab, never this page's router.
 const popup = page.waitForEvent('popup', { timeout: 5000 }).catch(() => null)
-await page.evaluate(() => document.getElementById('host').shadowRoot.querySelector('#link').click())
+await page.evaluate(() => document.getElementById('host').shadowRoot.querySelector(window.sel('#link')).click())
 const tab = await popup
 ok(!!tab && page.url() === `${O}/`, `a link opens a new tab and this page stays (${tab ? 'popup' : 'no popup'})`)
 await tab?.close()

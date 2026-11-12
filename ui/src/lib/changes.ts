@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.525',
+    date: '2026-11-12',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '원본 모양 스냅샷에서 닫힌 메뉴·툴팁(GitHub 의 <anchored-position popover>, <tool-tip popover> 등)이 펼쳐진 채 본문을 덮던 것(1.523 부터). popover 속성은 여전히 지우되, 그 요소는 style 을 display:none!important 로 바꿔 브라우저가 숨기던 대로 숨긴다(열린 <dialog popover> 는 그대로 보임)',
+        refs: ['REQ-F-881', 'REQ-S-108'],
+      },
+      {
+        kind: 'changed',
+        scope: ['agent', 'server', 'ui'],
+        text: '스냅샷의 256 KiB(SNAPSHOT_IMG_BIG) 넘는 그림은 맥이 보내지 않고, <img> 는 크기만 big {주소: [폭, 높이]}(200개까지)로 실어 화면이 같은 크기·비율의 회색 자리로 그린다. 스타일 속 큰 그림은 뺀다',
+        refs: ['REQ-F-881', 'IF-278'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '원본 모양 스냅샷을 가볍게: 페이지에 맞는 요소가 없는 CSS 규칙을 지우고(:hover·::before·@media·@keyframes 등 애매한 것은 남김), 주석·공백을 덜고, 클래스·id 를 짧은 이름으로 바꾼다. 고쳐 쓴 시트는 기존 걸러내기를 다시 거친다',
+        refs: ['REQ-F-881', 'REQ-S-108'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '큰 스냅샷은 약 200 KB(SNAPSHOT_CHUNK) 씩 블록 경계에서 나눠 넣고, 아래로 내리면 다음 조각을 이어 붙인다',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.524',
     date: '2026-11-12',
+    commit: 'd102d92',
     changes: [
       {
         kind: 'security',

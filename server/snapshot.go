@@ -17,6 +17,8 @@ const (
 	SNAPSHOT_MS     = 75_000 // the agent: ego lite 30 s, then Chrome 30 s, then the pictures 8 s
 	SNAPSHOT_IMGMAX = 12 << 20
 	SNAPSHOT_CSSMAX = 4 << 20
+	// The most big pictures whose size alone the Mac sends (1.525, agent SNAPSHOT_BIG_COUNT).
+	SNAPSHOT_BIGCOUNT = 200
 )
 
 var LINK_MODES = []string{"read", "snapshot", "preview", "browser"}
@@ -154,7 +156,29 @@ func snapshotAnswer(r M, target string) M {
 	if width < 0 || width > 10000 {
 		width = 0
 	}
-	return M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "css": css, "width": int(width), "via": r["via"]}
+	return M{"ok": true, "url": orStr(r["url"], target), "html": html, "images": images, "big": snapshotBig(r["big"]), "css": css, "width": int(width), "via": r["via"]}
+}
+
+// snapshotBig: the sizes of the pictures the Mac did not send for being big (1.525), as the agent's bigSizes keeps
+// them: http(s) addresses to [width, height], whole numbers 1–100000, SNAPSHOT_BIGCOUNT at most.
+func snapshotBig(v any) M {
+	out := M{}
+	for k, x := range asM(v) {
+		if len(out) >= SNAPSHOT_BIGCOUNT {
+			break
+		}
+		a, isList := x.([]any)
+		if !isList || len(a) != 2 || len(k) > 4096 || !(strings.HasPrefix(k, "https://") || strings.HasPrefix(k, "http://")) {
+			continue
+		}
+		w, _ := a[0].(float64)
+		h, _ := a[1].(float64)
+		if w < 1 || h < 1 || w > 100000 || h > 100000 || w != float64(int(w)) || h != float64(int(h)) {
+			continue
+		}
+		out[k] = []any{int(w), int(h)}
+	}
+	return out
 }
 
 var snapshotDataRe = regexp.MustCompile(`^data:image/(png|jpeg|gif|webp|avif);base64,[A-Za-z0-9+/=]+$`)

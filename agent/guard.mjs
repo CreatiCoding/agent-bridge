@@ -61,6 +61,61 @@ export const SNAPSHOT_IMG_ALL_MAX = 8 * 1024 * 1024
 export const SNAPSHOT_IMG_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']
 
 /**
+ * A picture bigger than this is not sent (1.525): only its size goes ({address: [width, height]}, SNAPSHOT_BIG_COUNT at
+ * most), and the screen draws a grey box of that size in its place, so the page keeps its layout. 256 KiB keeps
+ * icons, avatars, logos and most pictures in a page's text, and leaves out the photos and screenshots that made most
+ * of a snapshot's weight (8 MB of pictures went to a phone for one page). A picture in a style is only left out: a
+ * background takes no room of its own.
+ */
+export const SNAPSHOT_IMG_BIG = 256 * 1024
+export const SNAPSHOT_BIG_COUNT = 200
+
+/**
+ * The width and height a picture's own bytes say (PNG, GIF, JPEG, WebP, AVIF), or null. Only the header is read: a
+ * big picture's size is all a snapshot keeps of it (1.525).
+ */
+export function imageSize(buf) {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf ?? [])
+  const ok = (w, h) => (Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 100000 && h <= 100000 ? [w, h] : null)
+  if (b.length >= 24 && b.readUInt32BE(0) === 0x89504e47 && b.toString('latin1', 12, 16) === 'IHDR') return ok(b.readUInt32BE(16), b.readUInt32BE(20))
+  if (b.length >= 10 && /^GIF8[79]a$/.test(b.toString('latin1', 0, 6))) return ok(b.readUInt16LE(6), b.readUInt16LE(8))
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8) {
+    // JPEG: the first start-of-frame marker (C0–CF but C4 DHT, C8 JPG, CC DAC) holds height then width.
+    for (let i = 2; i + 9 < b.length; ) {
+      if (b[i] !== 0xff) return null
+      const m = b[i + 1]
+      if (m === 0xff) {
+        i++
+        continue
+      }
+      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
+        i += 2
+        continue
+      }
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return ok(b.readUInt16BE(i + 7), b.readUInt16BE(i + 5))
+      i += 2 + b.readUInt16BE(i + 2)
+    }
+    return null
+  }
+  if (b.length >= 30 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') {
+    const kind = b.toString('latin1', 12, 16)
+    if (kind === 'VP8X') return ok(1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3))
+    if (kind === 'VP8L' && b[20] === 0x2f) {
+      const v = b.readUInt32LE(21)
+      return ok(1 + (v & 0x3fff), 1 + ((v >> 14) & 0x3fff))
+    }
+    if (kind === 'VP8 ' && b[23] === 0x9d && b[24] === 0x01 && b[25] === 0x2a) return ok(b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff)
+    return null
+  }
+  if (b.length >= 12 && b.toString('latin1', 4, 8) === 'ftyp' && /avi[fs]/.test(b.toString('latin1', 8, Math.min(b.length, 64)))) {
+    // AVIF: the first image spatial extents box (ispe): version/flags, then width and height.
+    const at = b.indexOf('ispe', 0, 'latin1')
+    if (at >= 4 && at + 16 <= b.length) return ok(b.readUInt32BE(at + 8), b.readUInt32BE(at + 12))
+  }
+  return null
+}
+
+/**
  * The addresses of a rendered page's pictures that the agent reads for its snapshot: the address the screen's reader
  * takes for each <img> (src; data-src when src is empty or data:; else srcset's first), resolved on the page's
  * address, http(s) of any site. All of them are read on the Mac (1.469): the server never learns which pictures a
@@ -201,7 +256,7 @@ export const EGO_QUIET = `() => {
  * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
  */
 export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
-  const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES, cssAll: SNAPSHOT_CSS_ALL_MAX }
+  const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, big: SNAPSHOT_IMG_BIG, bigCount: SNAPSHOT_BIG_COUNT, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES, cssAll: SNAPSHOT_CSS_ALL_MAX }
   const inPage = `async (o) => {
   const pick = (img) => {
     let s = img.getAttribute("src") || ""
@@ -210,18 +265,24 @@ export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
     return s.startsWith("data:") ? "" : s
   }
   const images = {}
-  let total = 0, n = 0
+  // A picture over o.big goes as its size alone (1.525), the size it has in the page.
+  const big = {}
+  let total = 0, n = 0, nb = 0
   for (const img of Array.from(document.images)) {
     if (n >= o.count) break
     const s = pick(img)
     if (!s) continue
     let u
     try { u = new URL(s, location.href) } catch { continue }
-    if (u.origin !== location.origin || images[u.href]) continue
+    if (u.origin !== location.origin || images[u.href] || big[u.href]) continue
     n++
     try {
       const r = await fetch(u.href, { credentials: "include" })
       const b = await r.blob()
+      if (r.ok && o.types.includes(b.type) && b.size > o.big) {
+        if (nb < o.bigCount && img.naturalWidth > 0 && img.naturalHeight > 0) { big[u.href] = [img.naturalWidth, img.naturalHeight]; nb++ }
+        continue
+      }
       if (!r.ok || !o.types.includes(b.type) || b.size > o.one || total + b.size > o.all) continue
       total += b.size
       images[u.href] = await new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = rej; f.readAsDataURL(b) })
@@ -242,7 +303,7 @@ export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
     }
   }
   const dt = document.doctype ? "<!DOCTYPE " + document.doctype.name + ">" : ""
-  return { url: location.href, html: dt + document.documentElement.outerHTML, images, css, width: document.documentElement.scrollWidth }
+  return { url: location.href, html: dt + document.documentElement.outerHTML, images, big, css, width: document.documentElement.scrollWidth }
 }`
   return `const task = await taskSpace(${JSON.stringify(name)})
 let out
@@ -261,6 +322,24 @@ console.log(${JSON.stringify(EGO_MARK)} + JSON.stringify(out))
 `
 }
 
+/**
+ * The big pictures' sizes as they go out (1.525): http(s) addresses to [width, height], whole numbers 1–100000,
+ * SNAPSHOT_BIG_COUNT at most; anything else is left out.
+ */
+export function bigSizes(x) {
+  const out = {}
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return out
+  let n = 0
+  for (const [k, v] of Object.entries(x)) {
+    if (n >= SNAPSHOT_BIG_COUNT) break
+    if (!/^https?:\/\//i.test(k) || k.length > 4096 || !Array.isArray(v) || v.length !== 2) continue
+    if (!v.every((d) => Number.isInteger(d) && d > 0 && d <= 100000)) continue
+    out[k] = [v[0], v[1]]
+    n++
+  }
+  return out
+}
+
 /** The result line of an ego-browser snapshot script's output, or null. */
 export function egoSnapshotResult(stdout) {
   const line = String(stdout)
@@ -273,7 +352,7 @@ export function egoSnapshotResult(stdout) {
     if (!v || typeof v.html !== 'string' || typeof v.url !== 'string') return null
     const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
     const width = Number.isFinite(v.width) && v.width > 0 ? Math.round(v.width) : 0
-    const r = { url: v.url, html: v.html, images: obj(v.images), css: obj(v.css), width }
+    const r = { url: v.url, html: v.html, images: obj(v.images), big: bigSizes(v.big), css: obj(v.css), width }
     if (typeof v.viewError === 'string' && v.viewError) r.viewError = v.viewError.slice(0, 200)
     return r
   } catch {

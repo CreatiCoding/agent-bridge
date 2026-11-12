@@ -100,7 +100,7 @@ test('AC-1661: ego lite’s script opens the address, finishes its task space, a
   assert.match(s, /credentials: "include"/)
   // The in-page function is valid JavaScript.
   assert.doesNotThrow(() => new Function(`return (${s.slice(s.indexOf('page.evaluate(') + 14, s.lastIndexOf(', {"count"'))})`))
-  assert.deepEqual(egoSnapshotResult(`[ego] hello\n${EGO_MARK}{"url":"https://e/","html":"<p>a</p>","images":{"https://e/a.png":"data:image/png;base64,AA"}}\n`), { url: 'https://e/', html: '<p>a</p>', images: { 'https://e/a.png': 'data:image/png;base64,AA' }, css: {}, width: 0 })
+  assert.deepEqual(egoSnapshotResult(`[ego] hello\n${EGO_MARK}{"url":"https://e/","html":"<p>a</p>","images":{"https://e/a.png":"data:image/png;base64,AA"}}\n`), { url: 'https://e/', html: '<p>a</p>', images: { 'https://e/a.png': 'data:image/png;base64,AA' }, big: {}, css: {}, width: 0 })
   assert.equal(egoSnapshotResult('no result'), null)
   assert.equal(egoSnapshotResult(`${EGO_MARK}{"html":1}`), null)
 })
@@ -209,7 +209,7 @@ test('AC-1687: a snapshot carries the page’s style sheets and the pictures the
   // The agent asks as a browser would, sends css and width, and seals them with the page.
   const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.match(agent, /referer: String\(page\)/)
-  assert.match(agent, /emit\(\{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, css, width: r\.width \|\| 0, via \}\)/)
+  assert.match(agent, /emit\(\{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, big, css, width: r\.width \|\| 0, via \}\)/)
   const trust = readFileSync(new URL('../../agent/trust.mjs', import.meta.url), 'utf8')
   assert.match(trust, /css: m\.css \?\? \{\}, width: m\.width \?\? 0/)
   // The screen puts it together with nothing left that runs or fetches.
@@ -396,6 +396,280 @@ test('AC-1766: a snapshot’s cursor is its keyword alone, never a picture', asy
   const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
   assert.match(sp, /'attributionsrc', 'accesskey', 'cursor'\]/)
   assert.match(sp, /return keywordCursors\(out\)/)
+})
+
+// Snapshots in a real browser (PLAYWRIGHT=<path to playwright/index.mjs>, CHROME=<a Chrome> as test/e2e-snapshot-net.mjs;
+// CI has none, so there these parts are skipped and the source checks around them stand).
+const SNAPSHOT_TS = new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url)
+async function inChromium(t, name, fn) {
+  await t.test(name, { skip: !process.env.PLAYWRIGHT && 'PLAYWRIGHT not set' }, async () => {
+    const { stripTypeScriptTypes } = await import('node:module')
+    const { chromium } = await import(process.env.PLAYWRIGHT)
+    const lib =
+      stripTypeScriptTypes(readFileSync(SNAPSHOT_TS, 'utf8')).replace(/^export /gm, '') +
+      '\nObject.assign(window, { snapshotPage, mountSnapshot, snapshotMore, renameSelector, SNAPSHOT_CHUNK })\n' +
+      // A selector of the page as the snapshot names it (1.525: classes and ids are made short).
+      'window.named = (d, sel) => (d.names ? renameSelector(sel, d.names.classes, d.names.ids) : sel)\n'
+    const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {})
+    try {
+      const page = await browser.newPage({ viewport: { width: 412, height: 700 } })
+      await page.setContent('<div id="host"></div><div id="host2"></div>')
+      await page.addScriptTag({ content: lib })
+      await fn(page)
+    } finally {
+      await browser.close()
+    }
+  })
+}
+
+test('AC-1769: a snapshot keeps no popover attribute, and what was a popover stays hidden', async (t) => {
+  const sp = readFileSync(SNAPSHOT_TS, 'utf8')
+  // The attribute still goes (no top layer over this page, 1.523) ...
+  assert.match(sp, /'contenteditable', 'popover', 'popovertarget'/)
+  // ... and the closed menu or tooltip it hid stays hidden, by the one declaration no page rule can win over.
+  assert.match(sp, /const closed = e\.hasAttribute\('popover'\) && !\(tag === 'dialog' && e\.hasAttribute\('open'\)\)/)
+  assert.match(sp, /if \(closed\) \{\n      e\.setAttribute\('style', 'display:none!important'\)/)
+  await inChromium(t, 'in Chromium', async (page) => {
+    const html = `<html><head><style>
+anchored-position{display:block!important} .force[popover]{display:flex!important;position:static} #tip{display:block}
+</style></head><body>
+<div popover="auto" id="menu"><a href="https://example.com/">메뉴</a></div><p id="body">본문</p>
+<anchored-position popover="auto" id="ap" class="force"><a href="https://example.com/more">더 보기</a></anchored-position>
+<tool-tip popover="manual" id="tip" style="display:block!important">툴팁</tool-tip>
+<div popover id="bare" style="color:red/*">비어 있는 popover</div>
+<dialog open popover id="dlg">열린 dialog</dialog>
+</body></html>`
+    const r = await page.evaluate((a) => {
+      const d = window.snapshotPage(a)
+      const sh = window.mountSnapshot(document.getElementById('host'), d)
+      const el = (id) => sh.querySelector(window.named(d, `#${id}`))
+      const shown = (id) => getComputedStyle(el(id)).display !== 'none' && el(id).getBoundingClientRect().height > 0
+      return {
+        attrs: sh.querySelectorAll('[popover]').length,
+        display: ['menu', 'ap', 'tip', 'bare'].map((id) => getComputedStyle(el(id)).display),
+        body: shown('body'),
+        dialog: shown('dlg'),
+      }
+    }, { url: 'https://example.com/page', html, own: [] })
+    assert.equal(r.attrs, 0, 'no popover attribute is left')
+    assert.deepEqual(r.display, ['none', 'none', 'none', 'none'])
+    assert.equal(r.body, true, 'the text beside it shows')
+    // As the browser's own rule: an open <dialog popover> is drawn.
+    assert.equal(r.dialog, true)
+  })
+})
+
+test('AC-1770: a big picture is not sent; its size is, and the snapshot draws a grey box that size', async (t) => {
+  const { imageSize, bigSizes, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, egoSnapshotScript } = await import('../../agent/guard.mjs')
+  assert.equal(SNAPSHOT_IMG_BIG, 256 * 1024)
+  assert.equal(SNAPSHOT_BIG_COUNT, 200)
+  // The size from the picture's own header.
+  const png = Buffer.alloc(24)
+  png.writeUInt32BE(0x89504e47, 0)
+  png.write('IHDR', 12, 'latin1')
+  png.writeUInt32BE(640, 16)
+  png.writeUInt32BE(480, 20)
+  assert.deepEqual(imageSize(png), [640, 480])
+  assert.deepEqual(imageSize(Buffer.from('GIF89a\x20\x03\x58\x02', 'latin1')), [800, 600])
+  const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, ...Array(14).fill(0), 0xff, 0xc0, 0x00, 0x11, 0x08, 0x01, 0x2c, 0x01, 0x90, 0x03, ...Array(9).fill(0)])
+  assert.deepEqual(imageSize(jpg), [400, 300])
+  const webp = Buffer.alloc(30)
+  webp.write('RIFF', 0, 'latin1')
+  webp.write('WEBPVP8X', 8, 'latin1')
+  webp.writeUIntLE(1023, 24, 3)
+  webp.writeUIntLE(767, 27, 3)
+  assert.deepEqual(imageSize(webp), [1024, 768])
+  const avif = Buffer.concat([Buffer.from('\0\0\0\x1cftypavif', 'latin1'), Buffer.alloc(16), Buffer.from('\0\0\0\x14ispe', 'latin1'), Buffer.from([0, 0, 0, 0, 0, 0, 7, 0x80, 0, 0, 4, 0x38])])
+  assert.deepEqual(imageSize(avif), [1920, 1080])
+  assert.equal(imageSize(Buffer.from('not a picture')), null)
+  // What goes out: http(s) addresses, two whole sizes 1–100000.
+  assert.deepEqual(bigSizes({ 'https://a/x.png': [640, 480], 'javascript:x': [1, 1], 'https://a/y': [0, 1], 'https://a/z': [1.5, 2], 'https://a/w': '640x480' }), { 'https://a/x.png': [640, 480] })
+  // ego lite: a picture over the line goes as its size in the page; the agent: as its header says, not its bytes.
+  const ego = egoSnapshotScript({ name: 'n', url: 'https://a/', budgetMs: 1, gotoMs: 1 })
+  assert.match(ego, /b\.size > o\.big\) \{\n        if \(nb < o\.bigCount && img\.naturalWidth > 0/)
+  const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(agent, /if \(bytes\.length > SNAPSHOT_IMG_BIG\) \{\n          const size = imgs\.has\(src\) \? imageSize\(bytes\) : null/)
+  assert.match(agent, /emit\(\{ t: 'snapshot', reqId, sid, ok: true, url: r\.url, html: r\.html, images, big, css,/)
+  const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(ls, /snapshotPage\(\{ url: s\.url, html: s\.html, images, css, big \}\)/)
+  await inChromium(t, 'in Chromium', async (page) => {
+    const html = `<style>img{max-width:100%;height:auto} .half{width:206px}</style>
+<img id="a" src="/a.jpg" alt="a"><img id="b" class="half" src="/b.jpg"><img id="c" width="100" src="/c.jpg"><img id="d" src="/d.png">`
+    const big = { 'https://example.com/a.jpg': [1600, 1200], 'https://example.com/b.jpg': [800, 400], 'https://example.com/c.jpg': [300, 150], 'https://example.com/d.png': 'x' }
+    const r = await page.evaluate((a) => {
+      const d = window.snapshotPage(a)
+      const sh = window.mountSnapshot(document.getElementById('host'), d)
+      return ['a', 'b', 'c', 'd'].map((id) => {
+        const e = sh.querySelector(window.named(d, `#${id}`))
+        const b = e.getBoundingClientRect()
+        return { src: (e.getAttribute('src') ?? '').slice(0, 30), w: Math.round(b.width), h: Math.round(b.height), wa: e.getAttribute('width'), ha: e.getAttribute('height'), big: e.hasAttribute('data-cb-big') }
+      })
+    }, { url: 'https://example.com/page', html, big, own: [] })
+    const grey = 'data:image/png;base64,iVBORw0K'
+    // Full width (the host's 396 less the snapshot body's 8px margins), at the picture's own ratio.
+    assert.deepEqual(r[0], { src: grey, w: 380, h: 285, wa: '1600', ha: '1200', big: true })
+    assert.deepEqual(r[1], { src: grey, w: 206, h: 103, wa: '800', ha: '400', big: true })
+    // Its own width attribute stays; the height follows the picture's ratio.
+    assert.deepEqual(r[2], { src: grey, w: 100, h: 50, wa: '100', ha: null, big: true })
+    // A size that is not two numbers is no size: the picture is left out as before.
+    assert.equal(r[3].src, '')
+    assert.equal(r[3].big, false)
+  })
+})
+
+test('AC-1771: a snapshot drops the style rules that match nothing, and keeps those it cannot judge', async (t) => {
+  const sp = readFileSync(SNAPSHOT_TS, 'utf8')
+  assert.match(sp, /if \(!nested && !\/\[:&\]\/\.test\(r\.selectorText\) && !matches\(r\.selectorText\)\) del\(i\)/)
+  // What lighten writes goes through the filters again.
+  assert.match(sp, /const names = lighten\(root, head, \(t\) => scrubCss\(dropFunctions\(dropImports\(t\)\), pictureFor\(\)\)\)/)
+  await inChromium(t, 'in Chromium', async (page) => {
+    const html = `<style>.used{color:rgb(1, 1, 1)} .unused{color:rgb(2, 2, 2)} .unused:hover{color:rgb(3, 3, 3)} p::before{content:"b"}
+@media (min-width:1px){.unused2{color:rgb(4, 4, 4)}} @layer l{.gone{color:rgb(5, 5, 5)} .used{color:rgb(6, 6, 6)}}
+@keyframes k{from{color:rgb(7, 7, 7)}} div > .used{margin:9px}
+.a{background:url(http://e/x.png)} @import "http://e/y.css"; :host{position:fixed}</style><p class="used">x</p>`
+    const r = await page.evaluate((a) => {
+      const d = window.snapshotPage(a)
+      const sh = window.mountSnapshot(document.getElementById('host'), d)
+      const css = Array.from(sh.querySelectorAll('style'), (s) => s.textContent).join('\n')
+      return { css, color: getComputedStyle(sh.querySelector('p')).color, margin: getComputedStyle(sh.querySelector('p')).marginTop }
+    }, { url: 'https://example.com/page', html, own: [] })
+    for (const gone of ['rgb(2, 2, 2)', 'rgb(5, 5, 5)', 'margin: 9px']) assert.ok(!r.css.includes(gone), `${gone} is gone`)
+    for (const kept of ['rgb(3, 3, 3)', 'rgb(4, 4, 4)', 'rgb(6, 6, 6)', 'rgb(7, 7, 7)', 'content: "b"']) assert.ok(r.css.includes(kept), `${kept} is kept`)
+    assert.equal(r.color, 'rgb(1, 1, 1)')
+    assert.equal(r.margin, '16px')
+    // Nothing taken out before comes back through the browser's writing of the sheet.
+    assert.ok(!/http:\/\/e\/|@import|:host\{position/.test(r.css), r.css)
+  })
+})
+
+test('AC-1772: a snapshot is written short (comments, layout whitespace, short names) and looks the same', async (t) => {
+  const sp = readFileSync(SNAPSHOT_TS, 'utf8')
+  assert.match(sp, /function nameTests\(sel: string/)
+  assert.match(sp, /if \(fixed \|\| \(blocked\['\.'\] && blocked\['#'\]\)\) \{\n    write\(pruned\)\n    return null\n  \}/)
+  await inChromium(t, 'in Chromium', async (page) => {
+    const html = `<style>.card .title{color:rgb(10, 20, 30)} #main{padding:3px} .pre-ish{white-space:pre}</style>
+<!-- a comment -->
+<div id="main" class="card wide">
+  <h1 class="title" id="t">Title</h1>
+  <label for="q" id="lab">L</label><input id="q" aria-labelledby="lab t">
+  <svg width="20" height="20"><defs><linearGradient id="grad"><stop offset="0" stop-color="red"/></linearGradient><symbol id="icon"><rect width="5" height="5"/></symbol></defs><rect id="r" width="10" height="10" fill="url(#grad)"/><use id="u" href="#icon"/></svg>
+  <pre id="code">  a
+    b</pre>
+  <div class="pre-ish" id="ws">${'   \n   '}</div>
+  <span id="s1">a</span>${'   \n   '}<span id="s2">b</span>
+</div>`
+    const r = await page.evaluate((a) => {
+      const d = window.snapshotPage(a)
+      const sh = window.mountSnapshot(document.getElementById('host'), d)
+      const $ = (s) => sh.querySelector(window.named(d, s))
+      const w = document.createTreeWalker(sh, NodeFilter.SHOW_COMMENT)
+      return {
+        names: d.names,
+        title: getComputedStyle($('#main .title')).color,
+        pad: getComputedStyle($('#main')).paddingTop,
+        mainClass: $('#main').getAttribute('class'),
+        labFor: $('#lab').getAttribute('for'),
+        labelled: $('#q').getAttribute('aria-labelledby'),
+        fill: $('#r').getAttribute('fill'),
+        use: $('#u').getAttribute('href'),
+        code: $('#code').textContent,
+        ws: $('#ws').textContent,
+        between: $('#s1').nextSibling.data,
+        comments: w.nextNode() === null,
+        html: sh.innerHTML,
+      }
+    }, { url: 'https://example.com/page', html, own: [] })
+    const { classes, ids } = r.names
+    assert.ok(classes.card.length <= 2 && ids.main.length <= 2, JSON.stringify(r.names))
+    assert.equal(r.title, 'rgb(10, 20, 30)')
+    assert.equal(r.pad, '3px')
+    assert.equal(r.mainClass, `${classes.card} ${classes.wide}`)
+    assert.equal(r.labFor, ids.q)
+    assert.equal(r.labelled, `${ids.lab} ${ids.t}`)
+    // (sheetText's filters write every url() quoted)
+    assert.equal(r.fill, `url("#${ids.grad}")`)
+    assert.equal(r.use, `#${ids.icon}`)
+    // Whitespace that shows stays: in <pre>, and where a style keeps it; layout whitespace is one space.
+    assert.equal(r.code, '  a\n    b')
+    assert.equal(r.ws, '   \n   ')
+    assert.equal(r.between, ' ')
+    assert.equal(r.comments, true)
+    for (const long of ['card', 'pre-ish', 'linearGradient id="grad"', 'a comment']) assert.ok(!r.html.includes(long), long)
+  })
+  await inChromium(t, 'a name a selector tests as text keeps its own, and no short name passes the test', async (page) => {
+    const look = (html) =>
+      page.evaluate(
+        (a) => {
+          const d = window.snapshotPage(a)
+          const sh = window.mountSnapshot(document.getElementById('host'), d)
+          return { names: d.names, cls: Array.from(sh.querySelectorAll('div'), (e) => e.className), color: Array.from(sh.querySelectorAll('div'), (e) => getComputedStyle(e).color) }
+        },
+        { url: 'https://example.com/page', html, own: [] },
+      )
+    // [class*=wi] matched "wide": it still does; "other" is made short.
+    const a = await look('<style>[class*=wi]{color:rgb(9, 9, 9)} .other{margin:1px}</style><div class="wide other">x</div>')
+    assert.equal(a.cls[0], `wide ${a.names.classes.other}`)
+    assert.equal(a.names.classes.wide, undefined)
+    assert.equal(a.color[0], 'rgb(9, 9, 9)')
+    // [class^=a] matched nothing (kept, in @media): the short names skip "a…", so it still matches nothing.
+    const b = await look('<style>@media screen{[class^=a]{color:rgb(9, 9, 9)}} .x{margin:1px}</style><div class="wide">x</div><div class="x">y</div>')
+    assert.ok(Object.values(b.names.classes).every((n) => !n.startsWith('a')), JSON.stringify(b.names))
+    assert.deepEqual(b.color, ['rgb(0, 0, 0)', 'rgb(0, 0, 0)'])
+    // A test of two names at once: classes stay as they are, ids are still made short.
+    const c = await look('<style>[class="p q"]{color:rgb(9, 9, 9)} #i{margin:1px}</style><div class="p q" id="i">x</div>')
+    assert.deepEqual(c.names.classes, {})
+    assert.equal(c.cls[0], 'p q')
+    assert.equal(c.color[0], 'rgb(9, 9, 9)')
+    assert.ok(c.names.ids.i)
+  })
+})
+
+test('AC-1773: a snapshot over 200 KB goes in by pieces, at element bounds, the rest as the box is scrolled', async (t) => {
+  const sp = readFileSync(SNAPSHOT_TS, 'utf8')
+  assert.match(sp, /export const SNAPSHOT_CHUNK = 200 \* 1024/)
+  const ls = readFileSync(new URL('../../ui/src/components/link-sheet.tsx', import.meta.url), 'utf8')
+  assert.match(ls, /el\?\.addEventListener\('scroll', fill, \{ passive: true \}\)/)
+  assert.match(ls, /el\.scrollTop \+ el\.clientHeight \* 3 >= host\.offsetHeight \* scale\.current; n\+\+\) if \(!snapshotMore\(host\)\) break/)
+  await inChromium(t, 'in Chromium', async (page) => {
+    const item = (i) => `<section><p>${String(i).padStart(4, '0')}${'x'.repeat(296)}</p></section>`
+    const html = `<div id="wrap">${Array.from({ length: 3000 }, (_, i) => item(i)).join('')}</div><p id="end">end</p>`
+    const r = await page.evaluate((a) => {
+      const d = window.snapshotPage(a)
+      const host = document.getElementById('host')
+      const sh = window.mountSnapshot(host, d)
+      const full = window.mountSnapshot(document.getElementById('host2'), d, Infinity).querySelector('cb-html').outerHTML
+      const first = sh.querySelector('cb-html').outerHTML.length
+      const whole = Array.from(sh.querySelectorAll('p'), (p) => p.textContent.length).every((n) => n === 300)
+      let pieces = 1
+      while (window.snapshotMore(host)) pieces++
+      pieces++
+      return { first, whole, pieces, same: sh.querySelector('cb-html').outerHTML === full, size: full.length, more: window.snapshotMore(host), chunk: window.SNAPSHOT_CHUNK }
+    }, { url: 'https://example.com/page', html, own: [] })
+    // About the size: its boxes' own tags are counted as they go in, within a few characters.
+    assert.ok(r.first <= r.chunk * 1.01 && r.first > r.chunk * 0.9, `the first piece is about ${r.chunk} (${r.first})`)
+    assert.equal(r.whole, true, 'no paragraph is cut')
+    assert.ok(r.pieces >= Math.floor(r.size / r.chunk), `${r.pieces} pieces for ${r.size}`)
+    assert.equal(r.same, true, 'all the pieces are the page, in its order')
+    assert.equal(r.more, false)
+    // A small page goes in at once.
+    const small = await page.evaluate((a) => {
+      const host = document.getElementById('host')
+      window.mountSnapshot(host, window.snapshotPage(a))
+      return window.snapshotMore(host)
+    }, { url: 'https://example.com/page', html: '<p>small</p>', own: [] })
+    assert.equal(small, false)
+    // A big <style> in the body (as github.com writes one) goes with the head's, in order: the first piece is the page.
+    const styled = await page.evaluate(
+      (a) => {
+        const host = document.getElementById('host')
+        const sh = window.mountSnapshot(host, window.snapshotPage(a))
+        const p = sh.querySelector('cb-body p')
+        return { first: p?.textContent ?? null, color: p ? getComputedStyle(p).color : null, inBody: sh.querySelectorAll('cb-body style').length, last: getComputedStyle(sh.querySelectorAll('cb-body p')[1] ?? p).color }
+      },
+      { url: 'https://example.com/page', html: `<style>.t{color:rgb(9, 9, 9)}</style><p class="t">first</p><style>.t{color:rgb(1, 2, 3)}${'.u{color:rgb(4, 5, 6)}'.repeat(12000)}</style><p class="u">x</p>`, own: [] },
+    )
+    assert.deepEqual(styled, { first: 'first', color: 'rgb(1, 2, 3)', inBody: 0, last: 'rgb(4, 5, 6)' })
+  })
 })
 
 test('AC-1767: an @scope with no start of its own, and :scope outside a started @scope, are dropped', () => {
