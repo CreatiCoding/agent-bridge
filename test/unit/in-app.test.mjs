@@ -99,7 +99,7 @@ test('AC-1661: ego lite’s script opens the address, finishes its task space, a
   const s = egoSnapshotScript({ name: 'cb-snapshot-ab12', url: 'https://example.com/"x', budgetMs: 8000, gotoMs: 15000 })
   assert.match(s, /taskSpace\("cb-snapshot-ab12"\)/)
   assert.match(s, /page\.goto\("https:\/\/example\.com\/\\"x", \{ waitUntil: "load", timeout: 15000 \}\)/)
-  assert.match(s, /finally \{\n  await task\.finish\(\{ keep: \[\] \}\)/)
+  assert.match(s, /finally \{\n  if \(stop\) \{ try \{ await stop\(\) \} catch \{\} \}\n  await task\.finish\(\{ keep: \[\] \}\)/)
   assert.match(s, /credentials: "include"/)
   // The in-page function is valid JavaScript.
   assert.doesNotThrow(() => new Function(`return (${s.slice(s.indexOf('page.evaluate(') + 14, s.lastIndexOf(', {"count"'))})`))
@@ -158,7 +158,7 @@ test('AC-1762: ego lite draws the snapshot in the same 412×915 view as Chrome, 
   assert.equal('viewError' in egoSnapshotResult(`${EGO_MARK}{"url":"https://e/","html":"","width":412}`), false)
   const agent = readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   assert.ok(agent.includes('`--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`'))
-  assert.match(agent, /width: SNAPSHOT_VIEW_W \}/)
+  assert.match(agent, /width: SNAPSHOT_VIEW_W[ ,]/)
   assert.match(agent, /if \(r\.viewError\) log\('warn', 'snapshot'/)
 })
 

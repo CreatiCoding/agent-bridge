@@ -42,9 +42,25 @@ const subs = new Set<() => void>()
 const set = (v: Cur | null) => ((current = v), subs.forEach((f) => f()))
 let mounted = false
 
+/**
+ * A link that may be a trap (1.527, sneakyLink: not seen, or covering half the screen) is asked about first: the
+ * sheet says where it goes, and only the same link clicked again within ASK_MS goes there.
+ */
+type Ask = { href: string; at: number }
+let asking: Ask | null = null
+const ASK_MS = 15_000
+const setAsk = (v: Ask | null) => ((asking = v), subs.forEach((f) => f()))
+
+/** A snapshot's link clicked: to the sheet's next page, or (sneaky) asked about first. */
+function goLink(href: string, sneaky: boolean) {
+  if (sneaky && !(asking && asking.href === href && Date.now() - asking.at < ASK_MS)) return setAsk({ href, at: Date.now() })
+  goTo(href)
+}
+
 function close(fromBack = false) {
   if (!current) return
   const { key, at } = current
+  asking = null
   set(null)
   if (!fromBack && history.state?.linkSheet === key) history.go(-(at + 1))
 }
@@ -77,6 +93,7 @@ export function openInApp(url: string) {
 function goTo(url: string) {
   const c = current
   if (!c) return
+  asking = null
   const stack = [...c.stack.slice(0, c.at + 1), { url, view: null, status: '', scroll: 0 }]
   const at = stack.length - 1
   // Only the drawings near the one shown stay in memory.
@@ -281,8 +298,8 @@ function PageFrame({ v, title, onPlain, entry }: { v: Extract<View, { kind: 'pag
       if (fit.current) fit.current.style.height = `${Math.ceil(host.offsetHeight * scale.current)}px`
     }
     // A link of the snapshot (1.526): another page in this sheet, or a place in this one.
-    const onLink = (href: string, kind: 'nav' | 'frag') => {
-      if (kind === 'nav') return goTo(href)
+    const onLink = (href: string, kind: 'nav' | 'frag', sneaky: boolean) => {
+      if (kind === 'nav') return goLink(href, sneaky)
       if (!el) return
       let hash = ''
       try {
@@ -431,6 +448,14 @@ function LinkSheet() {
     () => current,
   )
   const entry = cur ? cur.stack[cur.at] : null
+  const ask = useSyncExternalStore(
+    (f) => (subs.add(f), () => subs.delete(f)),
+    () => asking,
+  )
+  let askHost = ''
+  try {
+    askHost = ask ? new URL(ask.href).host : ''
+  } catch {}
   const [view, setView] = useState<View | null>(null)
   // A line over the page (1.526): 저장된 화면 · n분 전, 새로 받지 못했어요.
   const [status, setStatus] = useState('')
@@ -530,6 +555,14 @@ function LinkSheet() {
         </div>
       }
     >
+      {ask && !error && view ? (
+        <div className="snapshot-status link-ask" role="alert" data-t="link-ask">
+          이 링크는 보이지 않거나 화면을 덮고 있어요. <b>{askHost}</b> 로 가려면 같은 곳을 한 번 더 눌러 주세요
+          <button type="button" className="link-ask-no" onClick={() => setAsk(null)}>
+            취소
+          </button>
+        </div>
+      ) : null}
       {status && !error && view ? (
         <div className="snapshot-status" role="status">
           {status}

@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.527',
+    date: '2026-11-13',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '스냅샷이 맥이나 그 맥의 네트워크로 가지 않게 맥에서도 막는다: 이름을 풀어 나온 IP 가 루프백·사설·링크로컬·CGNAT·198.18/15·ULA·fec0::/10·IPv6 안의 사설 IPv4 이거나 .internal·.lan·.home.arpa·nip.io 같은 이름이면 "내부 주소라 열지 않았어요" 로 실패한다. 리다이렉트도 같다(ego lite 는 문서 요청을 CDP 로 멈춰 확인, 헤드리스 Chrome 은 확인하는 로컬 프록시를 거침). 맥이 CSS·그림을 받을 때도 넘겨주기마다 확인하고, 확인한 IP 로만 연결한다. 이 사이트 주소도 열지 않는다. agent.json snapshotGuard 를 false 로 끄거나 사내 이름을 허용({allow: ["wiki.corp.example", "*.corp.example"]})할 수 있다',
+        refs: ['REQ-S-111', 'REQ-F-906'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: '스냅샷에서 보이지 않거나(투명도 0.1 미만, 숨김) 화면의 절반 이상을 덮는 링크는 한 번 눌러서는 이동하지 않고, 시트 위에 갈 곳을 보인 뒤 같은 곳을 15초 안에 한 번 더 눌러야 간다. 폰의 내부 주소 판정에 .internal·.lan·.home.arpa·nip.io 류·198.18/15·fec0::/10·NAT64 를 더했다',
+        refs: ['REQ-S-111', 'REQ-F-906'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '스냅샷 저장 화면의 파일 이름을 맥마다 다른 무작위 소금(0600)의 HMAC 으로 바꿨다(이름 목록으로 본 주소를 짐작하지 못하게, 1.526 의 파일은 지움). snapshotCache: false 로 시작하면 그 폴더를 비운다. 스냅샷 로그에서 주소를 뺐다',
+        refs: ['REQ-S-111', 'REQ-F-906'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '스냅샷 시트의 "저장된 화면 · n분 전" 줄이 페이지 위가 아니라 옆에 붙어 페이지를 좁히던 것',
+        refs: ['REQ-F-906'],
+      },
+    ],
+  },
+  {
     version: '1.526',
     date: '2026-11-13',
+    commit: 'abf2a51',
     changes: [
       {
         kind: 'added',

@@ -5327,6 +5327,10 @@ body.group-sorting * {
   display: flex;
   overflow: hidden;
 }
+/* The link sheet's lines over the page (저장된 화면, a link asked about) go above it, not beside it (1.527). */
+.link-sheet .sheet-body {
+  flex-direction: column;
+}
 .preview-frame {
   flex: 1;
   width: 100%;
@@ -5389,6 +5393,19 @@ body.group-sorting * {
   color: var(--muted);
   background: var(--raised);
   border-bottom: 1px solid var(--line);
+}
+.link-ask {
+  color: var(--text, inherit);
+  background: var(--amber-soft);
+}
+.link-ask-no {
+  margin-left: 8px;
+  background: none;
+  border: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
 }
 /* The page could not go into its shadow root (1.523): said over the box instead of a white sheet. */
 .snapshot-late {

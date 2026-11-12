@@ -1,4 +1,4 @@
-// End-to-end (AC-1782~AC-1785, REQ-F-906, 1.526): the snapshot sheet itself (ui/src/components/link-sheet.tsx, built
+// End-to-end (AC-1782~AC-1785, AC-1788, REQ-F-906, 1.526·1.527): the snapshot sheet itself (ui/src/components/link-sheet.tsx, built
 // by vite as the site builds it) on a phone-sized Chrome, against a stand-in for the server and the Mac that answers
 // in pieces (agent/guard.mjs snapPieces, plain: a Mac with no paired device). It checks that
 //   - a sure link moves the sheet (a new snapshot request for that address; the sheet's title and page change), a
@@ -55,6 +55,10 @@ const PAGES = {
   'https://example.com/b': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">B page ${gen}</h1><a data-t="toC" href="https://example.com/c">to c</a>${tall(40)}</body></html>`,
   'https://example.com/c': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">C page ${gen}</h1>${tall(5)}</body></html>`,
   'https://example.com/slow': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">SLOW ${gen}</h1>${'<p>' + 'z'.repeat(400) + '</p>'.repeat(1)}${tall(3000)}<h2 data-t="end">END</h2></body></html>`,
+  // 1.527: a link over the whole screen that cannot be seen, and links to a network's own names.
+  'https://example.com/trap': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">TRAP ${gen}</h1><a data-t="plain" href="https://example.com/c">plain to c</a>
+    <a data-t="internal" href="http://foo.internal/">internal</a> <a data-t="nip" href="http://127.0.0.1.nip.io/">nip</a> <a data-t="bench" href="http://198.18.0.1/">bench</a> <a data-t="nat64" href="http://[64:ff9b::7f00:1]/">nat64</a>
+    ${tall(20)}<a data-t="trap" href="https://example.com/b" style="position:fixed;inset:0;opacity:0;z-index:9">trap</a></body></html>`,
   'https://example.com/bad': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">BAD ${gen}</h1>${tall(30)}</body></html>`,
 }
 
@@ -216,6 +220,35 @@ await page.evaluate(() => window.openInApp('https://example.com/bad'))
 await page.locator('.link-sheet .preview-msg').filter({ hasText: '깨졌어요' }).waitFor({ timeout: 5000 }).catch(() => {})
 const msg = await page.locator('.link-sheet .preview-msg').innerText().catch(() => '')
 ok(/내용이 깨졌어요/.test(msg), `a changed piece breaks it (${msg.slice(0, 120)})`)
+
+await page.keyboard.press('Escape')
+await wait(300)
+
+// ---- AC-1788 (1.527): a link not seen over the whole screen does not move the sheet on one click ----
+await page.evaluate(() => window.openInApp('https://example.com/trap'))
+ok(await shows('TRAP fresh'), 'the trap page is drawn')
+const tk = await page.evaluate(() => Object.fromEntries(Array.from(document.querySelector('.snapshot-host').shadowRoot.querySelectorAll('a')).map((a) => [a.getAttribute('data-t'), a.getAttribute('data-cb-nav')])))
+ok(['internal', 'nip', 'bench', 'nat64'].every((k) => tk[k] === null), `.internal, nip.io, 198.18/15 and NAT64 links are not moved to (${JSON.stringify(tk)})`)
+const before = asked.length
+const bx = await box().boundingBox()
+await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+await wait(500)
+ok(asked.length === before, 'one click on the screen-wide invisible link asked the Mac nothing')
+const askText = await page.locator('[data-t=link-ask]').innerText().catch(() => '')
+ok(/example\.com/.test(askText) && /한 번 더/.test(askText), `the sheet says where it goes (${askText.slice(0, 80)})`)
+ok(await shows('TRAP fresh'), 'and stays on the page')
+if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT })
+if (process.env.DEBUG_TRAP) console.log(JSON.stringify(await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); const inner = e?.shadowRoot?.elementFromPoint(x, y); return { outer: e?.className, inner: inner?.outerHTML?.slice(0, 120), box: document.querySelector('.snapshot-box').getBoundingClientRect().toJSON() } }, [bx.x + bx.width / 2, bx.y + bx.height / 2])))
+await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+ok(await shows('B page fresh'), 'the same link again: it goes')
+ok(asked.length === before + 1 && asked[asked.length - 1].url === 'https://example.com/b', 'one request, for that link')
+ok((await page.locator('[data-t=link-ask]').count()) === 0, 'the question is gone')
+await page.evaluate(() => history.back())
+ok(await shows('TRAP fresh'), 'back on the trap page')
+// A plain link under it is still one click: the trap covers it, so it is reached by its own element.
+await inPage('[data-t=trap]').evaluate((a) => a.remove())
+await inPage('[data-t=plain]').click()
+ok(await shows('C page fresh'), 'a plain link: one click')
 
 ok(tabs === tabsAtStart || true, `new tabs opened by the plain links: ${tabs - tabsAtStart}`)
 ok(errors.length === 0, `no page errors (${errors.join(' | ')})`)

@@ -2,8 +2,13 @@
 // files. Each one answers a finding of review report #1; kept apart from agent.mjs so they can be tested.
 import crypto from 'node:crypto'
 import { execFile } from 'node:child_process'
+import dns from 'node:dns'
 import fs from 'node:fs'
+import http from 'node:http'
+import https from 'node:https'
+import net from 'node:net'
 import path from 'node:path'
+import zlib from 'node:zlib'
 import { UPDATE_KEYS } from './keys.mjs'
 
 /**
@@ -285,7 +290,7 @@ export const EGO_MARK_JS_CLICKS = `async (page) => {
  * own-origin pictures fetched with its cookies (credentials: include) as data: addresses. The task space is always
  * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
  */
-export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
+export function egoSnapshotScript({ name, url, budgetMs, gotoMs, guard = { on: false, allow: [] }, own = [] }) {
   const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, big: SNAPSHOT_IMG_BIG, bigCount: SNAPSHOT_BIG_COUNT, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES, cssAll: SNAPSHOT_CSS_ALL_MAX }
   const inPage = `async (o) => {
   const pick = (img) => {
@@ -336,21 +341,34 @@ export function egoSnapshotScript({ name, url, budgetMs, gotoMs }) {
   return { url: location.href, html: dt + document.documentElement.outerHTML, images, big, css, width: document.documentElement.scrollWidth }
 }`
   return `const markJsClicks = ${EGO_MARK_JS_CLICKS}
+${egoGuardScript(guard, own)}
 const task = await taskSpace(${JSON.stringify(name)})
 let out
 let viewError = ""
+let stop = null
 try {
   const page = task.page("p1")
   try { await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${SNAPSHOT_VIEW_W}, height: ${SNAPSHOT_VIEW_H}, deviceScaleFactor: 0, mobile: false }) } catch (e) { viewError = String(e?.message ?? e).slice(0, 200) }
-  await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
-  try { await page.waitForFunction(${EGO_QUIET}, undefined, { timeout: ${Number(budgetMs)} }) } catch {}
-  // Links the page's scripts handle themselves (1.526): a click handler on the <a>/<area> itself (CDP
-  // DOMDebugger.getEventListeners) marks it data-cb-js-click, and the sheet leaves it as it was (a route of the page's
-  // own, not a page of its own). A handler delegated to the document is not the link's: its href is where it goes.
-  try { await markJsClicks(page) } catch {}
-  out = await page.evaluate(${inPage}, ${JSON.stringify(opts)})
-  if (viewError && out) out.viewError = viewError
+  stop = await guardPages(page)
+  try {
+    await page.goto(${JSON.stringify(url)}, { waitUntil: "load", timeout: ${Number(gotoMs)} })
+  } catch (e) {
+    // The page itself was turned away (a redirect to this Mac's network): say so, not the browser's error.
+    if (refused.why) out = { refused: refused.why }
+    else throw e
+  }
+  if (!out) {
+    try { await page.waitForFunction(${EGO_QUIET}, undefined, { timeout: ${Number(budgetMs)} }) } catch {}
+    // Links the page's scripts handle themselves (1.526): a click handler on the <a>/<area> itself (CDP
+    // DOMDebugger.getEventListeners) marks it data-cb-js-click, and the sheet leaves it as it was (a route of the page's
+    // own, not a page of its own). A handler delegated to the document is not the link's: its href is where it goes.
+    try { await markJsClicks(page) } catch {}
+    out = await page.evaluate(${inPage}, ${JSON.stringify(opts)})
+    if (viewError && out) out.viewError = viewError
+    if (out && refused.n) out.refusedCount = refused.n
+  }
 } finally {
+  if (stop) { try { await stop() } catch {} }
   await task.finish({ keep: [] })
 }
 console.log(${JSON.stringify(EGO_MARK)} + JSON.stringify(out))
@@ -384,10 +402,13 @@ export function egoSnapshotResult(stdout) {
   if (!line) return null
   try {
     const v = JSON.parse(line.slice(EGO_MARK.length))
-    if (!v || typeof v.html !== 'string' || typeof v.url !== 'string') return null
+    if (!v || typeof v !== 'object') return null
     const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {})
     const width = Number.isFinite(v.width) && v.width > 0 ? Math.round(v.width) : 0
+    if (typeof v.refused === 'string' && v.refused) return { refused: v.refused.slice(0, 200) }
+    if (!v || typeof v.html !== 'string' || typeof v.url !== 'string') return null
     const r = { url: v.url, html: v.html, images: obj(v.images), big: bigSizes(v.big), css: obj(v.css), width }
+    if (Number.isInteger(v.refusedCount) && v.refusedCount > 0) r.refusedCount = v.refusedCount
     if (typeof v.viewError === 'string' && v.viewError) r.viewError = v.viewError.slice(0, 200)
     return r
   } catch {
@@ -1874,8 +1895,39 @@ export function snapCacheOf(config) {
   return { days: num(o.days, SNAP_CACHE_DAYS, 0.01, 365), mb: num(o.mb, SNAP_CACHE_MB, 1, 100_000) }
 }
 
-/** The file name an address is kept under: a hash, never the address itself. */
-export const snapKey = (url) => crypto.createHash('sha256').update(`cb-snapshot|${url}`, 'utf8').digest('hex')
+/**
+ * The file name an address is kept under: never the address itself. With salt (1.527, this Mac's own random key,
+ * SnapCache.salt), an HMAC, so the names in a folder listing do not tell which addresses were seen; without, the
+ * plain hash of 1.526 (tests).
+ */
+export const snapKey = (url, salt) => (salt ? crypto.createHmac('sha256', salt).update(`cb-snapshot|${url}`, 'utf8').digest('hex') : crypto.createHash('sha256').update(`cb-snapshot|${url}`, 'utf8').digest('hex'))
+
+/** The salt file's name in the folder. */
+export const SNAP_SALT = 'salt'
+
+/**
+ * Empties the kept drawings' folder (1.527: snapshotCache turned off). Only what is in it, never through a link:
+ * rmSync removes a link, not what it points at. {removed}.
+ */
+export function clearSnapCache(dir) {
+  let names
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return { removed: 0 }
+  }
+  let removed = 0
+  for (const n of names) {
+    try {
+      fs.rmSync(path.join(dir, n), { recursive: true, force: true })
+      removed++
+    } catch {}
+  }
+  return { removed }
+}
+
+/** A log line of a snapshot with its addresses taken out (REQ-S-111 (5)): a Mac that does not seal sends its log plain. */
+export const snapLogText = (text) => String(text).replace(/\b(?:https?|wss?|ftp|file|data|blob):\/?\/?[^\s)'"<>\]]+/gi, '(주소)')
 
 /**
  * The payload a drawing goes out as: one line of what the page is (its addresses, width, how it was drawn, when,
@@ -1937,9 +1989,34 @@ export class SnapCache {
   fileOf(key) {
     return path.join(this.dir, `${key}.json`)
   }
+  /**
+   * This Mac's key for the file names (0600, made the first time). A new one makes the names before it useless:
+   * those files go at once (1.526's plain hashes among them).
+   */
+  salt() {
+    if (this.saltKey) return this.saltKey
+    const f = path.join(this.dir, SNAP_SALT)
+    try {
+      const v = fs.readFileSync(f, 'utf8').trim()
+      if (/^[0-9a-f]{64}$/.test(v)) return (this.saltKey = v)
+    } catch {}
+    this.ensure()
+    clearSnapCache(this.dir)
+    const v = crypto.randomBytes(32).toString('hex')
+    const tmp = `${f}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`
+    fs.writeFileSync(tmp, v, { mode: 0o600 })
+    fs.renameSync(tmp, f)
+    return (this.saltKey = v)
+  }
+  /** A name's key, salted; null when there is no salt yet (nothing kept). */
+  keyOf(url, make = false) {
+    if (!make && !fs.existsSync(path.join(this.dir, SNAP_SALT))) return null
+    return snapKey(url, this.salt())
+  }
   /** The kept drawing of url (the address asked, or a final one): {url, asked, html, images, css, big, width, via, at} or null. */
   get(url) {
-    let key = snapKey(url)
+    let key = this.keyOf(url)
+    if (!key) return null
     if (!fs.existsSync(this.fileOf(key))) {
       try {
         key = fs.readFileSync(path.join(this.dir, `${key}.alias`), 'utf8').trim()
@@ -1963,7 +2040,7 @@ export class SnapCache {
   /** Keeps a drawing (asked: the address asked for; s.url its final one), then tidies. */
   put(asked, s) {
     this.ensure()
-    const key = snapKey(s.url)
+    const key = this.keyOf(s.url, true)
     const at = this.now()
     const text = JSON.stringify({ url: s.url, asked, html: s.html, images: s.images ?? {}, css: s.css ?? {}, big: s.big ?? {}, width: s.width || 0, via: s.via ?? '', at })
     const write = (file, data) => {
@@ -1974,7 +2051,7 @@ export class SnapCache {
     write(this.fileOf(key), text)
     const t = new Date(at)
     fs.utimesSync(this.fileOf(key), t, t)
-    if (asked !== s.url) write(path.join(this.dir, `${snapKey(asked)}.alias`), key)
+    if (asked !== s.url) write(path.join(this.dir, `${this.keyOf(asked, true)}.alias`), key)
     this.prune()
   }
   /** Goes over the folder: drawings older than `days` and, past `mb` in all, the least lately shown; what is left half written; names of what is gone. */
@@ -2007,7 +2084,7 @@ export class SnapCache {
       } else if (/^[0-9a-f]{64}\.json$/.test(n)) {
         if (now - st.mtimeMs > this.days * DAY_MS) rm(n)
         else pages.push({ n, size: st.size, used: Math.max(st.atimeMs, st.mtimeMs) })
-      } else if (!/^[0-9a-f]{64}\.alias$/.test(n)) rm(n)
+      } else if (n !== SNAP_SALT && !/^[0-9a-f]{64}\.alias$/.test(n)) rm(n)
     }
     pages.sort((a, b) => a.used - b.used)
     let total = pages.reduce((s, p) => s + p.size, 0)
@@ -2029,4 +2106,344 @@ export class SnapCache {
       }
     return { removed, bytes: total }
   }
+}
+
+// 내부 주소 막기 (REQ-S-111, 1.527): a snapshot is drawn by this Mac's browser, signed in where the person is, so an
+// address a page leads to must not reach this Mac or its network: not by its name, not by what the name resolves to,
+// not through a redirect, and not through the sheets and pictures read here. The check is made where the connection
+// is made (a lookup that refuses), so a name that answers one address to the check and another to the connection
+// (DNS rebinding) does not get through either.
+
+export const PRIVATE_WHY = '내부 주소라 열지 않았어요'
+
+const V4_BLOCKED = [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+]
+const v4Num = (s) => {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s)
+  if (!m) return null
+  const p = m.slice(1).map(Number)
+  return p.some((x) => x > 255) ? null : ((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]
+}
+const v4Blocked = (n) => V4_BLOCKED.some(([base, bits]) => Math.floor(n / 2 ** (32 - bits)) === Math.floor(v4Num(base) / 2 ** (32 - bits)))
+
+/** An IPv6 address as its 8 groups (an IPv4 tail taken in), or null. */
+function v6Groups(s) {
+  let h = String(s).toLowerCase().replace(/^\[|\]$/g, '').replace(/%.*$/, '')
+  const tail = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(h)
+  if (tail) {
+    const n = v4Num(tail[2])
+    if (n === null) return null
+    h = `${tail[1]}${Math.floor(n / 65536).toString(16)}:${(n % 65536).toString(16)}`
+  }
+  const halves = h.split('::')
+  if (halves.length > 2) return null
+  const part = (x) => (x ? x.split(':') : [])
+  const a = part(halves[0])
+  const b = halves.length === 2 ? part(halves[1]) : []
+  const fill = 8 - a.length - b.length
+  if (halves.length === 2 ? fill < 1 : fill !== 0) return null
+  const all = [...a, ...Array(halves.length === 2 ? fill : 0).fill('0'), ...b]
+  if (all.length !== 8 || !all.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null
+  return all.map((g) => parseInt(g, 16))
+}
+
+/**
+ * Whether ip (v4 or v6) is of this Mac or a network of its own: loopback, private, link-local, CGNAT (100.64/10),
+ * benchmarking (198.18/15), multicast, reserved, ULA (fc00::/7), site-local (fec0::/10), and an IPv4 inside IPv6
+ * (mapped, compatible, NAT64 64:ff9b::/96, 6to4) judged as that IPv4. Not an address: true (refused).
+ */
+export function blockedIp(ip) {
+  const s = String(ip ?? '')
+  const n4 = v4Num(s)
+  if (n4 !== null) return v4Blocked(n4)
+  const g = v6Groups(s)
+  if (!g) return true
+  const v4 = (hi, lo) => v4Blocked(hi * 65536 + lo)
+  const zero = (from, to) => g.slice(from, to).every((x) => x === 0)
+  if (zero(0, 8) || (zero(0, 7) && g[7] === 1)) return true
+  if (zero(0, 5) && (g[5] === 0xffff || g[5] === 0)) return v4(g[6], g[7])
+  if (g[0] === 0x64 && g[1] === 0xff9b) return zero(2, 6) ? v4(g[6], g[7]) : true
+  if (g[0] === 0x2002) return v4(g[1], g[2])
+  if (g[0] === 0x100 && zero(1, 4)) return true
+  return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xffc0) === 0xfec0 || (g[0] & 0xff00) === 0xff00
+}
+
+/** Names that are of a home or an office network by their shape, or that name an address inside them (nip.io and the like). */
+const PRIVATE_SUFFIX = /(^|\.)(localhost|local|localdomain|internal|intranet|lan|home\.arpa|nip\.io|sslip\.io|xip\.io|traefik\.me|localtest\.me|lvh\.me|vcap\.me|localho\.st)$/
+/** Whether a host name (not an address) is a network's own by its shape: one label (the search domain makes it one), or PRIVATE_SUFFIX. */
+export function blockedName(host) {
+  const h = String(host ?? '').toLowerCase().replace(/\.$/, '')
+  return !h || !h.includes('.') || PRIVATE_SUFFIX.test(h)
+}
+
+/**
+ * agent.json's `snapshotGuard` (1.527): {on, allow}. false turns the check off; {allow: ["wiki.corp.example",
+ * "*.corp.example"]} lets those names through (a company's own pages, drawn on purpose). Anything else: on, none allowed.
+ */
+export function snapGuardOf(config) {
+  const v = config?.snapshotGuard
+  if (v === false) return { on: false, allow: [] }
+  const list = v && typeof v === 'object' && Array.isArray(v.allow) ? v.allow : []
+  const allow = list
+    .filter((x) => typeof x === 'string')
+    .map((x) => x.trim().toLowerCase().replace(/\.$/, ''))
+    .filter((x) => /^(\*\.)?[a-z0-9.-]+$/.test(x) && x.length <= 253)
+    .slice(0, 100)
+  return { on: true, allow }
+}
+const allowedHost = (host, allow) => {
+  const h = String(host).toLowerCase().replace(/\.$/, '')
+  return allow.some((a) => (a.startsWith('*.') ? h.endsWith(a.slice(1)) && h.length > a.length - 1 : h === a))
+}
+
+/** A refusal of the check: code CB_PRIVATE, message PRIVATE_WHY. */
+const privateError = () => Object.assign(new Error(PRIVATE_WHY), { code: 'CB_PRIVATE' })
+
+/**
+ * dns.lookup that refuses a name resolving to any blockedIp (for http.request and net.connect, so the address checked is
+ * the one connected to). guard {on, allow}; an allowed name is not checked.
+ */
+export function guardLookup(guard, lookup = dns.lookup) {
+  return (host, options, cb) => {
+    if (typeof options === 'function') [cb, options] = [options, {}]
+    const opts = typeof options === 'number' ? { family: options } : (options ?? {})
+    lookup(host, { ...opts, all: true }, (err, list) => {
+      if (err) return cb(err)
+      if (guard.on && !allowedHost(host, guard.allow) && (!list.length || list.some((a) => blockedIp(a.address)))) return cb(privateError())
+      if (opts.all) return cb(null, list)
+      cb(null, list[0].address, list[0].family)
+    })
+  }
+}
+
+/**
+ * Why url may not be opened for a snapshot, or '' (1.527): not http(s); this site's own origin (own, always); then,
+ * with the check on and the name not allowed, an address that is blockedIp, a name that is blockedName, or a name that
+ * resolves to a blockedIp.
+ */
+export async function urlRefusal(url, { guard, own = [], lookup = dns.lookup }) {
+  let u
+  try {
+    u = new URL(url)
+  } catch {
+    return 'http(s) 주소만 스냅샷으로 열 수 있어요'
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return 'http(s) 주소만 스냅샷으로 열 수 있어요'
+  if (own.includes(u.origin)) return '이 사이트 주소는 스냅샷으로 열지 않아요'
+  if (!guard.on || allowedHost(u.hostname, guard.allow)) return ''
+  const host = u.hostname.replace(/^\[|\]$/g, '')
+  if (net.isIP(host)) return blockedIp(host) ? PRIVATE_WHY : ''
+  if (blockedName(host)) return PRIVATE_WHY
+  try {
+    await new Promise((ok, no) => guardLookup(guard, lookup)(host, {}, (e) => (e ? no(e) : ok())))
+  } catch (e) {
+    return e.code === 'CB_PRIVATE' ? PRIVATE_WHY : ''
+  }
+  return ''
+}
+
+/**
+ * A GET for a snapshot's sheet or picture (1.527, was fetch with redirect: 'follow'): every hop (5 at most) checked
+ * by urlRefusal, connected through guardLookup, the body undone of gzip/deflate/br and cut at max bytes.
+ * {ok, status, type, url, body} or a throw (PRIVATE_WHY among them).
+ */
+export async function guardedGet(url, { headers = {}, ms = 8000, max = 16 * 1024 * 1024, guard, own = [], lookup = dns.lookup }) {
+  const until = Date.now() + ms
+  let at = String(url)
+  for (let hop = 0; hop <= 5; hop++) {
+    const why = await urlRefusal(at, { guard, own, lookup })
+    if (why) throw Object.assign(new Error(why), { code: why === PRIVATE_WHY ? 'CB_PRIVATE' : 'CB_REFUSED' })
+    const u = new URL(at)
+    const r = await new Promise((resolve, reject) => {
+      const left = until - Date.now()
+      if (left <= 0) return reject(new Error('시간이 지났어요'))
+      const req = (u.protocol === 'https:' ? https : http).request(u, { method: 'GET', headers: { ...headers, 'accept-encoding': 'gzip, deflate, br' }, lookup: guardLookup(guard, lookup), timeout: left }, resolve)
+      req.on('timeout', () => req.destroy(new Error('시간이 지났어요')))
+      req.on('error', reject)
+      req.end()
+    })
+    const loc = r.headers.location
+    if (r.statusCode >= 300 && r.statusCode < 400 && loc) {
+      r.resume()
+      at = new URL(loc, at).href
+      continue
+    }
+    const enc = String(r.headers['content-encoding'] ?? '').trim().toLowerCase()
+    const stream = enc === 'gzip' ? r.pipe(zlib.createGunzip()) : enc === 'deflate' ? r.pipe(zlib.createInflate()) : enc === 'br' ? r.pipe(zlib.createBrotliDecompress()) : r
+    const chunks = []
+    let size = 0
+    const timer = setTimeout(() => r.destroy(new Error('시간이 지났어요')), Math.max(1, until - Date.now()))
+    try {
+      for await (const c of stream) {
+        size += c.length
+        if (size > max) {
+          r.destroy()
+          throw new Error('너무 커요')
+        }
+        chunks.push(c)
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+    const type = String(r.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+    return { ok: r.statusCode >= 200 && r.statusCode < 300, status: r.statusCode, type, url: at, body: Buffer.concat(chunks) }
+  }
+  throw new Error('넘겨주기가 너무 많아요')
+}
+
+/**
+ * A proxy on 127.0.0.1 for the headless Chrome a snapshot is drawn in (1.527): every request it makes (the page,
+ * each redirect, its sheets, pictures, scripts, sockets) comes here, is checked by urlRefusal and is connected through
+ * guardLookup, so nothing of this Mac's network is reached. `refused` counts what was turned away. Chrome must be
+ * started with --proxy-server and --proxy-bypass-list=<-loopback> (else it goes to localhost by itself).
+ */
+export function snapProxy({ guard, own = [], lookup = dns.lookup }) {
+  const state = { refused: 0, port: 0 }
+  const look = guardLookup(guard, lookup)
+  const server = http.createServer(async (req, res) => {
+    const why = await urlRefusal(req.url, { guard, own, lookup })
+    if (why) {
+      state.refused++
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+      return res.end(why)
+    }
+    const u = new URL(req.url)
+    const headers = { ...req.headers }
+    delete headers['proxy-connection']
+    delete headers['proxy-authorization']
+    const up = http.request(u, { method: req.method, headers, lookup: look }, (r) => {
+      res.writeHead(r.statusCode ?? 502, r.headers)
+      r.pipe(res)
+    })
+    up.on('error', (e) => {
+      if (e.code === 'CB_PRIVATE') state.refused++
+      if (!res.headersSent) res.writeHead(e.code === 'CB_PRIVATE' ? 403 : 502)
+      res.end()
+    })
+    req.pipe(up)
+  })
+  server.on('connect', async (req, sock, head) => {
+    sock.on('error', () => {})
+    const m = /^([^:]+|\[[^\]]+\]):(\d{1,5})$/.exec(String(req.url))
+    const port = m ? Number(m[2]) : 0
+    const why = m && port > 0 && port < 65536 ? await urlRefusal(`https://${m[1]}:${port}/`, { guard, own, lookup }) : PRIVATE_WHY
+    if (why) {
+      state.refused++
+      return sock.end('HTTP/1.1 403 Forbidden\r\n\r\n')
+    }
+    const up = net.connect({ host: m[1].replace(/^\[|\]$/g, ''), port, lookup: look })
+    up.on('connect', () => {
+      sock.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      if (head?.length) up.write(head)
+      up.pipe(sock)
+      sock.pipe(up)
+    })
+    up.on('error', (e) => {
+      if (e.code === 'CB_PRIVATE') state.refused++
+      sock.end('HTTP/1.1 502 Bad Gateway\r\n\r\n')
+    })
+  })
+  return new Promise((resolve, reject) => {
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      state.port = server.address().port
+      resolve({
+        state,
+        get port() {
+          return state.port
+        },
+        close: () => new Promise((done) => (server.closeAllConnections?.(), server.close(() => done()))),
+      })
+    })
+  })
+}
+
+/**
+ * Whether a page Chrome dumped is not the page: Chrome's own error page (a CONNECT refused), or the proxy's refusal
+ * shown as the page (a plain http request refused: Chrome draws the 403's text).
+ */
+export const chromeErrorPage = (html) => {
+  const h = String(html).slice(0, 200_000)
+  return /<body[^>]*class="[^"]*\bneterror\b|id="main-frame-error"/.test(h) || new RegExp(`<body><pre[^>]*>${PRIVATE_WHY}</pre></body>`).test(h)
+}
+
+/** How often the ego script asks for the requests it holds (ego has no event listener, only page.events()). */
+export const EGO_GUARD_POLL_MS = 15
+/**
+ * The part of the ego script that keeps the page off this Mac's network (1.527): every document request of the page
+ * (the address, each redirect, a frame, a move made by script) is held (CDP Fetch, resourceType Document) and judged
+ * as urlRefusal does (own origin; then, with the check on and the name not allowed, blockedIp, blockedName, and what
+ * the name resolves to when node:dns is there), then let go or failed (BlockedByClient). guardPages(page) starts it
+ * and gives the stop: it fails whatever is still held, then turns Fetch off. refused: {why, n}.
+ */
+export function egoGuardScript(guard, own) {
+  return `const V4_BLOCKED = ${JSON.stringify(V4_BLOCKED)}
+const v4Num = ${v4Num.toString()}
+const v4Blocked = ${v4Blocked.toString()}
+${v6Groups.toString()}
+${blockedIp.toString()}
+const PRIVATE_SUFFIX = ${PRIVATE_SUFFIX.toString()}
+${blockedName.toString()}
+const allowedHost = ${allowedHost.toString()}
+const PRIVATE_WHY = ${JSON.stringify(PRIVATE_WHY)}
+const guard = ${JSON.stringify({ on: !!guard.on, allow: guard.allow ?? [] })}
+const own = ${JSON.stringify(own)}
+const refused = { why: "", n: 0 }
+let lookupAll = null
+try { const d = await import("node:dns"); lookupAll = (h) => d.promises.lookup(h, { all: true }) } catch {}
+const judge = async (href) => {
+  let u
+  try { u = new URL(href) } catch { return "" }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return ""
+  if (own.includes(u.origin)) return "이 사이트 주소는 스냅샷으로 열지 않아요"
+  if (!guard.on || allowedHost(u.hostname, guard.allow)) return ""
+  const host = u.hostname.replace(/^\\[|\\]$/g, "")
+  if (/^[0-9.]+$/.test(host) || host.includes(":")) return blockedIp(host) ? PRIVATE_WHY : ""
+  if (blockedName(host)) return PRIVATE_WHY
+  if (lookupAll) {
+    try { const list = await lookupAll(host); if (!list.length || list.some((a) => blockedIp(a.address))) return PRIVATE_WHY } catch {}
+  }
+  return ""
+}
+const guardPages = async (page) => {
+  try { await page.events() } catch {}
+  await page.cdp("Fetch.enable", { patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Request" }] })
+  let going = true
+  const settle = async (e, fail) => {
+    const id = e.params.requestId
+    if (fail) await page.cdp("Fetch.failRequest", { requestId: id, errorReason: "BlockedByClient" }).catch(() => {})
+    else await page.cdp("Fetch.continueRequest", { requestId: id }).catch(() => {})
+  }
+  const take = async (failAll) => {
+    let evs = []
+    try { evs = await page.events() } catch {}
+    for (const e of evs || []) {
+      if (!e || e.method !== "Fetch.requestPaused" || !e.params) continue
+      const why = failAll ? PRIVATE_WHY : await judge(e.params.request && e.params.request.url)
+      if (why) { refused.n++; if (!failAll) refused.why ||= why }
+      await settle(e, !!why)
+    }
+  }
+  const pump = (async () => { while (going) { await take(false); await new Promise((r) => setTimeout(r, ${EGO_GUARD_POLL_MS})) } })()
+  return async () => {
+    going = false
+    await pump
+    await take(true)
+    await page.cdp("Fetch.disable").catch(() => {})
+  }
+}`
 }

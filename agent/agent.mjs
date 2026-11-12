@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -1312,7 +1312,10 @@ if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd) lfSave()
 if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd)
   setTimeout(() => {
     try {
-      snapshotCache()?.prune()
+      // Off (snapshotCache: false): what was kept before goes, so no page stays on this disk (1.527).
+      const c = snapshotCache()
+      if (c) c.prune()
+      else clearSnapCache(SNAP_CACHE_DIR)
     } catch {}
   }, 5_000).unref()
 
@@ -5047,6 +5050,10 @@ const commands = {
       page = new URL(asked)
     } catch {}
     if (!page || (page.protocol !== 'http:' && page.protocol !== 'https:')) return fail('http(s) 주소만 스냅샷으로 열 수 있어요')
+    // 내부 주소 막기 (REQ-S-111, 1.527): not this site, not this Mac's network, by name or by what it resolves to.
+    const guard = snapshotGuard()
+    const refusal = await urlRefusal(page.href, { guard, own: [SITE_ORIGIN] })
+    if (refusal) return fail(refusal)
     const cache = snapshotCache()
     let sent = 0
     const send = (gen, s) => {
@@ -5059,7 +5066,7 @@ const commands = {
       try {
         if (kept) send(0, { ...kept, asked: page.href })
       } catch (e) {
-        log('warn', 'snapshot', `저장된 화면을 보내지 못함 (${e.message})`, sid)
+        log('warn', 'snapshot', snapLogText(`저장된 화면을 보내지 못함 (${e.message})`), sid)
       }
     }
     if (!EGO_BIN && !CHROME_BIN) return fail(`이 맥에 ego lite 도 Chrome 도 없어서 스냅샷을 만들 수 없어요. ${CHROME_FIX}`)
@@ -5071,26 +5078,30 @@ const commands = {
       let egoWhy = ''
       if (EGO_BIN) {
         try {
-          r = await egoSnapshot(page, reqId)
+          r = await egoSnapshot(page, reqId, guard)
         } catch (e) {
+          // Turned away on purpose (the page led to this Mac's network): Chrome is not asked to try.
+          if (e.code === 'CB_PRIVATE') return fail(e.message)
           egoWhy = e.message
-          log('warn', 'snapshot', `ego lite 로 못 그려 Chrome 으로 (${egoWhy})`, sid)
+          // Addresses stay out of the log (REQ-S-111 (5)): a Mac that does not seal sends its log plain.
+          log('warn', 'snapshot', snapLogText(`ego lite 로 못 그려 Chrome 으로 (${egoWhy})`), sid)
         }
       }
       if (!r) {
         if (!CHROME_BIN) return fail(`ego lite 로 페이지를 그리지 못했어요 (${egoWhy})`)
         via = 'chrome'
-        r = await chromeSnapshot(page)
+        r = await chromeSnapshot(page, guard)
       }
+      if (r.refusedCount) log('info', 'snapshot', `페이지가 부른 내부 주소 ${r.refusedCount}개를 막았어요`, sid)
       if (r.html.length > SNAPSHOT_HTML_MAX) return fail('페이지가 너무 커서 스냅샷으로 못 열어요')
-      const css = await snapshotCss(r.html, r.url, r.css)
-      const { images, big } = await snapshotImages(r.html, r.url, r.images, cssImageUrls([...Object.values(css), ...inlineStyles(r.html, r.url)]), r.big)
+      const css = await snapshotCss(r.html, r.url, r.css, guard)
+      const { images, big } = await snapshotImages(r.html, r.url, r.images, cssImageUrls([...Object.values(css), ...inlineStyles(r.html, r.url)]), r.big, guard)
       const s = { url: r.url, asked: page.href, html: r.html, images, big, css, width: r.width || 0, via, at: Date.now() }
       if (cache)
         try {
           cache.put(page.href, s)
         } catch (e) {
-          log('warn', 'snapshot', `저장하지 못함 (${e.message})`, sid)
+          log('warn', 'snapshot', snapLogText(`저장하지 못함 (${e.message})`), sid)
         }
       if (inPieces) {
         send(1, s)
@@ -7382,10 +7393,13 @@ const SNAPSHOT_HTML_MAX = 3 * 1024 * 1024
 const SNAPSHOT_PARALLEL = 2
 let snapshotsRunning = 0
 /** 스냅샷 저장 화면 (REQ-F-906): agent.json's `snapshotCache` ({days, mb}, false for none), read each time. */
+const SNAP_CACHE_DIR = path.join(STATE_DIR, 'cache', 'snapshots')
 function snapshotCache() {
   const c = snapCacheOf(readJson(configPath, {}))
-  return c ? new SnapCache(path.join(STATE_DIR, 'cache', 'snapshots'), c) : null
+  return c ? new SnapCache(SNAP_CACHE_DIR, c) : null
 }
+/** 내부 주소 막기 (REQ-S-111): agent.json's `snapshotGuard` ({allow: [...]}, false for off), read each time. */
+const snapshotGuard = () => snapGuardOf(readJson(configPath, {}))
 // ego lite's command (ego-browser), where its installer puts it: the agent runs under launchd with a short PATH.
 const EGO_BIN = [...String(process.env.PATH ?? '').split(':').filter(Boolean), path.join(HOME, '.local/bin'), '/opt/homebrew/bin', '/usr/local/bin'].map((d) => path.join(d, 'ego-browser')).find((p) => fs.existsSync(p)) ?? null
 
@@ -7420,12 +7434,13 @@ function runCapture(bin, args, { input, max, ms, slow, big, gone, both }) {
 }
 
 /** The page through ego lite, drawn SNAPSHOT_VIEW_W wide: {url, html, images, css, width} (its own-origin pictures read with its cookies). */
-async function egoSnapshot(page, reqId) {
+async function egoSnapshot(page, reqId, guard) {
   const name = `cb-snapshot-${String(reqId ?? crypto.randomUUID()).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12)}`
-  const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS })
+  const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS, guard, own: [SITE_ORIGIN] })
   const out = await runCapture(EGO_BIN, ['nodejs'], { input: script, max: 16 * 1024 * 1024, ms: SNAPSHOT_EGO_TIMEOUT_MS, slow: 'ego lite 가 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'ego-browser 를 띄우지 못했어요', both: true })
   const r = egoSnapshotResult(out)
   if (!r) throw new Error(`ego lite 가 결과를 주지 않았어요: ${out.trim().split('\n').pop()?.slice(0, 200) ?? ''}`)
+  if (r.refused) throw Object.assign(new Error(r.refused), { code: 'CB_PRIVATE' })
   // The page still came, drawn in ego's own window width: say so, the width sent shows it.
   if (r.viewError) log('warn', 'snapshot', `ego lite 에 폰 폭(${SNAPSHOT_VIEW_W}×${SNAPSHOT_VIEW_H})을 정하지 못해 창 폭 ${r.width} 로 그렸어요 (${r.viewError})`)
   return r
@@ -7449,15 +7464,20 @@ function chromeVersionOnce() {
 }
 
 /** The page through a headless Chrome of a throwaway profile: {url, html, images: {}, css: {}, width} (its window is SNAPSHOT_VIEW_W wide). */
-async function chromeSnapshot(page) {
+async function chromeSnapshot(page, guard) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
+  // Every request of this Chrome goes through a proxy here that turns away this Mac's network (REQ-S-111): the page,
+  // its redirects, its frames and everything it loads. <-loopback> stops Chrome going to localhost by itself.
+  const proxy = await snapProxy({ guard, own: [SITE_ORIGIN] })
   try {
     const ua = snapshotUserAgent(await chromeVersionOnce(), IS_MAC)
-    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
     const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
+    if (proxy.state.refused && chromeErrorPage(html)) throw Object.assign(new Error(PRIVATE_WHY), { code: 'CB_PRIVATE' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
-    return { url: page.href, html, images: {}, css: {}, width: SNAPSHOT_VIEW_W }
+    return { url: page.href, html, images: {}, css: {}, width: SNAPSHOT_VIEW_W, ...(proxy.state.refused ? { refusedCount: proxy.state.refused } : {}) }
   } finally {
+    await proxy.close()
     fs.rm(profile, { recursive: true, force: true }, () => {})
   }
 }
@@ -7467,7 +7487,7 @@ async function chromeSnapshot(page) {
  * (have, ego), the rest of the linked sheets read here without cookies, all at once within SNAPSHOT_IMG_FETCH_MS,
  * one level of @import put in front of the sheet that imports it, within the size limits.
  */
-async function snapshotCss(html, pageUrl, have = {}) {
+async function snapshotCss(html, pageUrl, have = {}, guard = snapshotGuard()) {
   const out = {}
   let total = 0
   const keep = (href, text) => {
@@ -7477,10 +7497,11 @@ async function snapshotCss(html, pageUrl, have = {}) {
   }
   const read = async (href) => {
     try {
-      const r = await fetch(href, { headers: await snapshotHeaders(pageUrl, 'text/css,*/*;q=0.1'), signal: AbortSignal.timeout(SNAPSHOT_IMG_FETCH_MS), redirect: 'follow' })
-      const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+      // Every hop checked, and connected through the check (REQ-S-111): never this Mac's network.
+      const r = await guardedGet(href, { headers: await snapshotHeaders(pageUrl, 'text/css,*/*;q=0.1'), ms: SNAPSHOT_IMG_FETCH_MS, max: SNAPSHOT_CSS_ONE_MAX * 4, guard, own: [SITE_ORIGIN] })
+      const type = r.type
       if (!r.ok || (type && type !== 'text/css' && type !== 'text/plain')) return null
-      const text = await r.text()
+      const text = r.body.toString('utf8')
       return text.length > SNAPSHOT_CSS_ONE_MAX ? null : cssReady(text, r.url || href)
     } catch {
       return null
@@ -7515,7 +7536,7 @@ const inlineStyles = (html, pageUrl) => [...String(html).matchAll(/<style\b[^>]*
  * A picture over SNAPSHOT_IMG_BIG is not sent (1.525): an <img>'s goes as its size (big, its header read by
  * imageSize; haveBig, what the browser saw), a style's (more) is left out.
  */
-async function snapshotImages(html, pageUrl, have = {}, more = [], haveBig = {}) {
+async function snapshotImages(html, pageUrl, have = {}, more = [], haveBig = {}, guard = snapshotGuard()) {
   const out = {}
   const big = bigSizes(haveBig)
   const imgs = new Set(snapshotImageUrls(html, pageUrl))
@@ -7532,10 +7553,10 @@ async function snapshotImages(html, pageUrl, have = {}, more = [], haveBig = {})
   const got = await Promise.all(
     want.map(async (src) => {
       try {
-        const r = await fetch(src, { headers: await snapshotHeaders(pageUrl, 'image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5'), signal: AbortSignal.timeout(SNAPSHOT_IMG_FETCH_MS), redirect: 'follow' })
-        const type = String(r.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
+        const r = await guardedGet(src, { headers: await snapshotHeaders(pageUrl, 'image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5'), ms: SNAPSHOT_IMG_FETCH_MS, max: 16 * 1024 * 1024, guard, own: [SITE_ORIGIN] })
+        const type = r.type
         if (!r.ok || !SNAPSHOT_IMG_TYPES.includes(type)) return null
-        const bytes = Buffer.from(await r.arrayBuffer())
+        const bytes = r.body
         if (bytes.length > SNAPSHOT_IMG_BIG) {
           const size = imgs.has(src) ? imageSize(bytes) : null
           return size ? [src, null, size] : null

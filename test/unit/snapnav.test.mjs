@@ -157,10 +157,12 @@ test('AC-1780: kept drawings: 0700 folder, 0600 files, by hash, alias for the ad
   c.put('https://example.com/a', draw)
   assert.equal(fs.statSync(dir).mode & 0o777, 0o700)
   const names = fs.readdirSync(dir).sort()
-  assert.deepEqual(names, [`${snapKey('https://example.com/a')}.alias`, `${snapKey('https://example.com/b')}.json`].sort())
+  // Names are this Mac's HMAC of the address (1.527), with its salt beside them.
+  assert.deepEqual(names, [`${c.keyOf('https://example.com/a')}.alias`, `${c.keyOf('https://example.com/b')}.json`, 'salt'].sort())
+  assert.notEqual(c.keyOf('https://example.com/a'), snapKey('https://example.com/a'))
   for (const n of names) assert.equal(fs.statSync(path.join(dir, n)).mode & 0o777, 0o600, n)
   // No address in a name.
-  assert.ok(names.every((n) => /^[0-9a-f]{64}\.(json|alias)$/.test(n)))
+  assert.ok(names.every((n) => n === 'salt' || /^[0-9a-f]{64}\.(json|alias)$/.test(n)))
   for (const u of ['https://example.com/a', 'https://example.com/b']) {
     const v = c.get(u)
     assert.equal(v.html, draw.html)
@@ -177,7 +179,7 @@ test('AC-1780: kept drawings: 0700 folder, 0600 files, by hash, alias for the ad
   now += 8 * DAY_MS
   assert.equal(c.get('https://example.com/a'), null)
   c.prune()
-  assert.deepEqual(fs.readdirSync(dir), [])
+  assert.deepEqual(fs.readdirSync(dir), ['salt'])
 })
 
 test('AC-1780: past its size, the least lately shown go first; off with snapshotCache: false; on the disk page', () => {

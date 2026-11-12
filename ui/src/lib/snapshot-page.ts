@@ -63,28 +63,96 @@ export function atOwnOrigin(href: string, own: string[]): boolean {
 /** Roles of a link that is a control (a menu, a tab, a switch …), not a way to another page. */
 const CONTROL_ROLES = new Set(['button', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'switch', 'option', 'combobox', 'treeitem'])
 
+const V4_PRIVATE: [number, number, number][] = [
+  [0, 0, 8],
+  [10, 0, 8],
+  [100, 64, 10],
+  [127, 0, 8],
+  [169, 254, 16],
+  [172, 16, 12],
+  [192, 0, 24],
+  [192, 168, 16],
+  [198, 18, 15],
+  [224, 0, 4],
+  [240, 0, 4],
+]
+const v4Private = (n: number) => V4_PRIVATE.some(([a, b, bits]) => Math.floor(n / 2 ** (32 - bits)) === Math.floor((a * 16777216 + b * 65536) / 2 ** (32 - bits)))
+const v4Of = (s: string): number | null => {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s)
+  if (!m) return null
+  const p = m.slice(1).map(Number)
+  return p.some((x) => x > 255) ? null : ((p[0] * 256 + p[1]) * 256 + p[2]) * 256 + p[3]
+}
+/** An IPv6 address as its 8 groups (an IPv4 tail taken in), or null. */
+function v6Of(s: string): number[] | null {
+  let h = s
+  const tail = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(h)
+  if (tail) {
+    const n = v4Of(tail[2])
+    if (n === null) return null
+    h = `${tail[1]}${Math.floor(n / 65536).toString(16)}:${(n % 65536).toString(16)}`
+  }
+  const halves = h.split('::')
+  if (halves.length > 2) return null
+  const part = (x: string) => (x ? x.split(':') : [])
+  const a = part(halves[0])
+  const b = halves.length === 2 ? part(halves[1]) : []
+  const fill = 8 - a.length - b.length
+  if (halves.length === 2 ? fill < 1 : fill !== 0) return null
+  const all = [...a, ...Array<string>(halves.length === 2 ? fill : 0).fill('0'), ...b]
+  if (all.length !== 8 || !all.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null
+  return all.map((g) => parseInt(g, 16))
+}
+/** Names of a home or an office network by their shape, or that name an address inside one (nip.io and the like) (1.527). */
+const PRIVATE_NAME = /(^|\.)(localhost|local|localdomain|internal|intranet|lan|home\.arpa|nip\.io|sslip\.io|xip\.io|traefik\.me|localtest\.me|lvh\.me|vcap\.me|localho\.st)$/
+
 /**
- * Whether host (a URL's hostname) is this Mac's own or its network's: localhost, *.localhost, *.local, 0/8, 10/8,
- * 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, ::, ::1, fc00::/7, fe80::/10 and IPv4 inside IPv6. The Mac's
- * browser would open those as itself, so the sheet never goes there.
+ * Whether host (a URL's hostname) is this Mac's own or its network's by what it says: a name of one label, localhost,
+ * .local, .internal, .lan, .home.arpa, nip.io and the like; 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12,
+ * 192.168/16, 198.18/15, multicast and reserved; ::, ::1, fc00::/7, fe80::/10, fec0::/10, ff00::/8 and an IPv4 inside
+ * IPv6 (mapped, NAT64 64:ff9b::/96, 6to4). The Mac's browser would open those as itself, so the sheet never goes
+ * there. What a public name resolves to is checked by the Mac (REQ-S-111).
  */
 export function privateHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
-  if (!h || h === 'localhost' || h.endsWith('.localhost') || h === 'local' || h.endsWith('.local')) return true
-  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])]
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  if (!h) return true
+  const n4 = v4Of(h)
+  if (n4 !== null) return v4Private(n4)
+  if (!h.includes(':')) return !h.includes('.') || PRIVATE_NAME.test(h)
+  const g = v6Of(h)
+  if (!g) return true
+  const v4 = (hi: number, lo: number) => v4Private(hi * 65536 + lo)
+  const zero = (from: number, to: number) => g.slice(from, to).every((x) => x === 0)
+  if (zero(0, 8) || (zero(0, 7) && g[7] === 1)) return true
+  if (zero(0, 5) && (g[5] === 0xffff || g[5] === 0)) return v4(g[6], g[7])
+  if (g[0] === 0x64 && g[1] === 0xff9b) return zero(2, 6) ? v4(g[6], g[7]) : true
+  if (g[0] === 0x2002) return v4(g[1], g[2])
+  return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xffc0) === 0xfec0 || (g[0] & 0xff00) === 0xff00
+}
+
+/**
+ * Whether a link may be a trap rather than a link the person meant (1.527): it, or a box around it, is all but
+ * transparent (opacity under 0.1) or not visible, or its boxes cover half or more of view (the part of the
+ * snapshot on screen). A click on such a link asks first (the sheet shows where it goes; the same link clicked again
+ * goes).
+ */
+export function sneakyLink(a: Element, view: { left: number; top: number; right: number; bottom: number }): boolean {
+  const win = a.ownerDocument?.defaultView
+  if (!win) return true
+  for (let e: Element | null = a; e; e = e.parentElement) {
+    const cs = win.getComputedStyle(e)
+    if (Number(cs.opacity) < 0.1) return true
+    if (e === a && (cs.visibility !== 'visible' || cs.display === 'none')) return true
   }
-  if (!h.includes(':')) return false
-  if (h === '::' || h === '::1' || /^f[cd][0-9a-f]{0,2}:/.test(h) || /^fe[89ab][0-9a-f]?:/.test(h)) return true
-  const mapped = /^(?:0{0,4}:){0,5}(?::|ffff:)(.+)$/.exec(h)?.[1] ?? /^::ffff:(.+)$/.exec(h)?.[1]
-  if (!mapped) return false
-  if (mapped.includes('.')) return privateHost(mapped)
-  const p = mapped.split(':')
-  if (p.length !== 2 || !p.every((x) => /^[0-9a-f]{1,4}$/.test(x))) return false
-  const n = parseInt(p[0], 16) * 65536 + parseInt(p[1], 16)
-  return privateHost(`${Math.floor(n / 16777216)}.${Math.floor(n / 65536) % 256}.${Math.floor(n / 256) % 256}.${n % 256}`)
+  const area = Math.max(0, view.right - view.left) * Math.max(0, view.bottom - view.top)
+  if (area <= 0) return false
+  let cover = 0
+  for (const r of Array.from(a.getClientRects())) {
+    const w = Math.min(r.right, view.right) - Math.max(r.left, view.left)
+    const h = Math.min(r.bottom, view.bottom) - Math.max(r.top, view.top)
+    if (w > 0 && h > 0) cover += w * h
+  }
+  return cover >= area / 2
 }
 
 /**
@@ -1133,7 +1201,7 @@ export function snapshotMore(host: Element, budget = SNAPSHOT_CHUNK): boolean {
  * handlers (links still open their new tab).
  */
 /** What a link of a mounted snapshot does when the person clicks it (1.526): set by mountSnapshot's onLink. */
-const linkHandlers = new WeakMap<ShadowRoot, (href: string, kind: 'nav' | 'frag') => void>()
+const linkHandlers = new WeakMap<ShadowRoot, (href: string, kind: 'nav' | 'frag', sneaky: boolean) => void>()
 
 /**
  * The place a #fragment of the page names (1.526): the element of that id (by its short name, 1.525) or an <a name>,
@@ -1154,7 +1222,7 @@ export function snapshotAnchor(host: Element, d: SnapshotDoc, frag: string): Ele
   return el ?? (name.toLowerCase() === 'top' ? 'top' : null)
 }
 
-export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSHOT_CHUNK, onLink?: (href: string, kind: 'nav' | 'frag') => void): ShadowRoot {
+export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSHOT_CHUNK, onLink?: (href: string, kind: 'nav' | 'frag', sneaky: boolean) => void): ShadowRoot {
   let sh = host.shadowRoot
   if (!sh) {
     sh = host.attachShadow({ mode: 'open' })
@@ -1170,7 +1238,10 @@ export function mountSnapshot(host: HTMLElement, d: SnapshotDoc, budget = SNAPSH
       const href = a?.getAttribute('href')
       if (!a || !href || (kind !== 'nav' && kind !== 'frag')) return
       e.preventDefault()
-      f(href, kind)
+      // The part of the snapshot on screen: a link covering half of it, or one not seen, is asked about (1.527).
+      const hr = host.getBoundingClientRect()
+      const view = { left: Math.max(hr.left, 0), top: Math.max(hr.top, 0), right: Math.min(hr.right, window.innerWidth), bottom: Math.min(hr.bottom, window.innerHeight) }
+      f(href, kind, kind === 'nav' && sneakyLink(a, view))
     })
     // On the host too: a click on an inert control is dispatched to the host itself, past the shadow root.
     for (const t of ['click', 'auxclick', 'dblclick', 'submit'])
