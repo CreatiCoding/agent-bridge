@@ -271,6 +271,9 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
     await held.narrow()
     await held.stop()
     assert.equal(p.stuck(), false, 'nothing waited behind the held request')
+    // Nothing left to keep a process running once it is done (a timer of within() kept ego's node 15 s).
+    const timers = process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length
+    assert.ok(timers <= 1, `timers left: ${timers}`)
     assert.equal(refused.why, '')
     assert.ok(p.calls.includes('Fetch.continueRequest'))
     assert.ok(!p.calls.includes('Page.navigate'))

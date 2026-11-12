@@ -2465,7 +2465,12 @@ const judgeOnce = (href) => {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // A call of ego that does not answer within ms (a page stuck in a loop) is given up on.
-const within = (p, ms) => Promise.race([p, sleep(Math.max(50, ms)).then(() => { throw new Error("ego 가 답하지 않아요") })])
+// Its timer is cleared once p answers: a timer left behind keeps ego's node running (15 s more per snapshot, seen).
+const within = (p, ms) => {
+  let t
+  const late = new Promise((_, no) => { t = setTimeout(() => no(new Error("ego 가 답하지 않아요")), Math.max(50, ms)) })
+  return Promise.race([p, late]).finally(() => clearTimeout(t))
+}
 // ego 0.6.2.9 runs a page's commands one at a time (seen on creco-macmini): a command sent while the page's document
 // request is held here (page.goto, Page.navigate, even Runtime.evaluate while it moves) waits for that request, and
 // so does everything after it, page.events() too. So while a page moves, only page.events() and the answers to held
