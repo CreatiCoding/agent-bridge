@@ -1,11 +1,11 @@
 {
-  "src": "7e3b989740af201bf103ccb6820f40de66511d187e9b8d58bb68ba3088ed12da",
+  "src": "112adcda59ba705cf3920c676f752b30c1c7fbeb505f3cd662e4429ef481adc7",
   "darwin-arm64": {
-    "doc": "{\"name\":\"localfull-darwin-arm64\",\"version\":\"5fb42c4eb78d\",\"seq\":1794413367,\"api\":1,\"integrity\":\"sha256:X7QsTreNWIUwRQiIKrDIbD97ADGuRdM6evSUgqs3A8A=\",\"size\":12526178}",
-    "sig": "aUDLSxZFDeSHNvQeuUcOmp4/zCH9OutpiUanWMtmmpoATR/+NuAKARCovQvEVK6MTKB7/oF2za/IOvNCvCAsAA=="
+    "doc": "{\"name\":\"localfull-darwin-arm64\",\"version\":\"e9508bc22d9f\",\"seq\":1794460312,\"api\":1,\"integrity\":\"sha256:6VCLwi2fHUow+JPab006uLFKVxo+ENwekVw7aVoHr1Y=\",\"size\":12542706}",
+    "sig": "YIWIYCFtC5IT2ZtmWlwdMtxI0xqUTu6y019W+V+6BEpkSZTPk+J9jgb0ucpjz9mGk60m4ENNeZ+uOyJicZWdCA=="
   },
   "darwin-amd64": {
-    "doc": "{\"name\":\"localfull-darwin-amd64\",\"version\":\"d862f4615911\",\"seq\":1794413367,\"api\":1,\"integrity\":\"sha256:2GL0YVkREheBjBtFnkTXUVBZ/T7vSpwma1MRHb+lJF0=\",\"size\":13404272}",
-    "sig": "dAfmeDI5T5Epc8H1rCDnLrGgmsclQpYMUv/xIqZjGX28h1SrZGp7GJndj+Lo4W+e64z7hqPk+Cs0EDn1mes7CA=="
+    "doc": "{\"name\":\"localfull-darwin-amd64\",\"version\":\"4c15dfe42457\",\"seq\":1794460312,\"api\":1,\"integrity\":\"sha256:TBXf5CRXsSP6d7C+tv/yQOSa9hhMbBIT6o6Oat+oGXU=\",\"size\":13428864}",
+    "sig": "mmwBmvYbb9uGRFRmf0VWKoVKi43VigxkmjwnqB49n2QvPoT0F/F421n7HK4OYXvp09hi4kSOMY/VPwdWQD/VCA=="
   }
 }
