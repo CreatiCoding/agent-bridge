@@ -148,6 +148,10 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		jsonRes(res, 200, orderedObj{{"ok", true}, {"raw", strField(r, "raw")}, {"text", strField(r, "text")}, {"sec", r["sec"]}, {"backend", r["backend"]}, {"model", r["model"]}, {"denoise", r["denoise"]}, {"ms", r["ms"]}}.dropNil())
 		return true
 	}
+	if post && op == "talk" {
+		apiTalk(res, req, uid, meta)
+		return true
+	}
 	if post && op == "preview" {
 		needFeature("preview")
 	}

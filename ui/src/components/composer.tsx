@@ -5,7 +5,7 @@
 // With 음성 입력 on (설정 → 음성), a microphone button turns 음성 모드 on: the box gives way to a panel that keeps
 // listening and gathers what is said, sent with one press (components/voice-mode.tsx); on a PC a key does the same.
 import { SlotSections } from './slot-parts'
-import { forwardRef, Fragment, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
+import { forwardRef, Fragment, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react'
 import { get } from '../lib/api'
 import { shrinkImage } from '../lib/image'
 import { isVideo, uploadable, uploadVideo, UPLOADS, type SentVideo } from '../lib/video'
@@ -72,7 +72,7 @@ interface Action {
   menu?: { label: string; icon?: IconName; enabled?: (ctx: ComposerCtx) => boolean; run: (ctx: ComposerCtx) => void }
 }
 
-export const Composer = forwardRef<ComposerHandle, { session: Session; history: string[]; disabled?: string; busy: boolean; onSend: (text: string, images: { data: string; name: string }[], videos?: SentVideo[]) => Promise<boolean>; onDraft?: (shown: string) => VoiceDraft; onStop: () => void; tools?: ReactNode }>(function Composer({ session, history, disabled, busy, onSend, onDraft, onStop, tools }, ref) {
+export const Composer = forwardRef<ComposerHandle, { session: Session; history: string[]; disabled?: string; busy: boolean; onSend: (text: string, images: { data: string; name: string }[], videos?: SentVideo[]) => Promise<boolean>; onDraft?: (shown: string) => VoiceDraft; onStop: () => void; tools?: ReactNode; answers?: { key: string; text: string }[] }>(function Composer({ session, history, disabled, busy, onSend, onDraft, onStop, tools, answers }, ref) {
   const [text, setText] = useState(() => getDraft(session.id))
   const [images, setImages] = useState<{ data: string; name: string }[]>([])
   // Videos go up as they are when the message is sent (REQ-F-761); pct is how far that has got.
@@ -418,6 +418,8 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
   }
 
   const empty = !text.trim() && !images.length && !videos.length
+  // 대화 모드 (REQ-F-907): the answers, kept as one object while they are the same (a new one is read aloud).
+  const talkProp = useMemo(() => (answers ? { answers } : undefined), [answers])
   const dev = getVoiceDevice()
   // composer.actions (REQ-F-824): the box's own buttons under their ids, and what an extension adds. On a narrow
   // screen an added item beyond the first folds into one ⋯ (the box's own never fold).
@@ -563,6 +565,7 @@ export const Composer = forwardRef<ComposerHandle, { session: Session; history: 
           paneNo={hereShared ? shared!.targetNo : 0}
           onRoute={hereShared ? (no, said, end) => splitHost()?.voiceRoute(no, said, end) : undefined}
           carry={hereShared ? () => splitHost()?.voiceCarry() ?? null : undefined}
+          talk={!hereShared && answers ? talkProp : undefined}
         />
       ) : (
       /* One glass card: the text on top, and under it a row of 사진 · the session's chips · 보내기. */

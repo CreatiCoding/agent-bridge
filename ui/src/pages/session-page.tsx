@@ -683,6 +683,8 @@ export function SessionPage({ id }: { id: string }) {
   // the Mac (REQ-F-580): the box keeps the words, and empties itself if the conversation shows them within 30 s.
   const unsure = useRef<{ text: string; at: number } | null>(null)
   const itemsNow = useRef(log.folded.items)
+  // 대화 모드 reads the new answers aloud (REQ-F-907).
+  const answers = useMemo(() => (log.folded.items.filter((i) => i.t === 'text') as { key: string; text: string }[]).map((i) => ({ key: i.key, text: i.text })), [log.folded.items])
   itemsNow.current = log.folded.items
   const checkUnsure = useCallback(() => {
     const u = unsure.current
@@ -946,6 +948,7 @@ export function SessionPage({ id }: { id: string }) {
           onSend={send}
           onDraft={draft}
           onStop={() => void stop()}
+          answers={answers}
           tools={
             /* The model and what warns always show; the rest a phone folds under 더보기 (red when a gauge is). */
             <>

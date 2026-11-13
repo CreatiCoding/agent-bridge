@@ -121,7 +121,7 @@ export const TRUST_CLASS = {
   // the local screen's bundle: checked by the maintainer's signature and a seq that only grows, like update (REQ-F-844)
   localui: 'free',
   // reads: what comes back is sealed
-  events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free', translate: 'free',
+  events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free', translate: 'free', talk: 'free',
   // the bridge MCP's attach (by the id the session made) and another Mac's read_session (refused while sealing)
   attachment: 'free', convread: 'free',
   // 세션 찾기 (REQ-F-895): the words searched are signed (qH, the hash of the sealed words as sent: a paired device

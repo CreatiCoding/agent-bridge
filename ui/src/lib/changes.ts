@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.529',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '대화 모드: 음성 모드에서 말을 멈추면 알아서 보내고, 답을 맥의 한국어 목소리로 읽어요. 읽는 중에 말하면 멈추고 들어요. 말이 끝났는지 애매할 때만 맥의 작은 모델이 판단해요',
+        refs: ['REQ-F-907', 'IF-290'],
+      },
+    ],
+  },
+  {
     version: '1.528',
     date: '2026-11-13',
+    commit: '02be9c3',
     changes: [
       {
         kind: 'security',

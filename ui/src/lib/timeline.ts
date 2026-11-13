@@ -2,6 +2,13 @@
 // (a tool's result, a card's answer, a reaction on a message) changes that item instead of adding a row.
 import type { Card, Ev, Todo } from './types'
 
+// 대화 모드 (REQ-F-907): kept here, as this file is read on its own (by the tests too).
+/** What a message sent from 대화 모드 carries, so the answer comes back ready to be read aloud. */
+export const TALK_HINT = '(음성 대화 중: 말로 듣기 좋게 짧게 답해 줘. 코드·경로·표는 꼭 필요할 때만.)'
+export const withHint = (said: string) => `${said.trim()}\n\n${TALK_HINT}`
+/** The hint taken off again where the message is shown. */
+export const withoutHint = (text: string) => (text.endsWith(TALK_HINT) ? text.slice(0, -TALK_HINT.length).trimEnd() : text)
+
 export type Item =
   | { t: 'user'; key: string; seq: number; at: number; id: string; text: string; images: string[]; via?: string; command?: boolean; marks: string[] }
   | { t: 'text'; key: string; seq: number; at: number; text: string; choices?: string[]; quiet?: string }
@@ -95,7 +102,7 @@ export function fold(prev: Folded, events: Ev[]): Folded {
     switch (e.k) {
       case 'user': {
         const id = e.id ?? `u${e.seq}`
-        add({ t: 'user', key: `u:${id}`, ...base, id, text: e.text, images: e.images ?? [], via: e.via, command: e.command, marks: [] })
+        add({ t: 'user', key: `u:${id}`, ...base, id, text: withoutHint(e.text), images: e.images ?? [], via: e.via, command: e.command, marks: [] })
         break
       }
       case 'text':

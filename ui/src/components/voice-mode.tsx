@@ -3,7 +3,7 @@
 // kept). Two buttons: 리셋 forgets everything gathered, 전송 takes it at once (grey words too) and goes on listening;
 // what was taken shows in the conversation at once (grey) and is sent when the Mac's words are in. Turning it off puts
 // what was gathered in the input box.
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError, post } from '../lib/api'
 import { voiceCommand, type VoiceEnd } from '../lib/voice-commands'
 import { addVoiceRecent, getVoiceDevice, joinWords, setVoiceDevice, VOICE_CODE_TITLE, type LiveListen, type LivePreview, type Phrase } from '../lib/voice'
@@ -12,6 +12,9 @@ import { Button, IconButton } from '../kit'
 import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
 import { pairedHosts } from '../lib/trust'
+import { bargeIn, BARGE, fromBase64, isEcho, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
+import { withHint } from '../lib/timeline'
+import { Speaker } from '../lib/speaker'
 
 interface Said {
   id: number
@@ -46,6 +49,7 @@ export function VoiceMode({
   paneNo = 0,
   onRoute,
   carry,
+  talk,
 }: {
   sessionId: string
   listen: LiveListen
@@ -68,6 +72,8 @@ export function VoiceMode({
   onRoute?: (pane: number, text: string, end: VoiceEnd | null) => void
   /** What a phrase that named this pane brought with it (taken once, as the panel comes up). */
   carry?: () => { text: string; end: VoiceEnd | null } | null
+  /** 대화 모드 (REQ-F-907): the session's answers, the new ones read aloud. Without it (분할 화면) it is 음성 모드 only. */
+  talk?: { answers: { key: string; text: string }[] }
 }) {
   const [said, setSaid] = useState<Said[]>([])
   const [live, setLive] = useState('')
@@ -78,6 +84,52 @@ export function VoiceMode({
   const [note, setNote] = useState(preview?.off ?? '')
   const [closing, setClosing] = useState(false)
   const meter = useRef<HTMLSpanElement>(null)
+  // 대화 모드 (REQ-F-907): sent when the person stops, the answer read aloud, and stopped when they speak again.
+  const [auto, setAuto] = useState(() => getVoiceDevice().talk)
+  const talkOn = !!talk && auto
+  const autoNow = useRef(talkOn)
+  autoNow.current = talkOn
+  const [reading, setReading] = useState(false)
+  const [judging, setJudging] = useState(false)
+  const judgingNow = useRef(false)
+  const talkPost = <T,>(body: object) => post<T>(`/api/sessions/${sessionId}/talk`, body)
+  const speaker = useMemo(
+    () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text }).then((r) => fromBase64(r.audio))) : null),
+    [listen, !!talk, sessionId],
+  )
+  const speakerNow = useRef(speaker)
+  speakerNow.current = speaker
+  // What was read lately, and when it ended: a phrase that is only that coming back through the microphone is dropped.
+  const readText = useRef('')
+  const readEnd = useRef(0)
+  useEffect(() => {
+    if (!speaker) return
+    speaker.onState = (on) => (setReading(on), on ? null : (readEnd.current = Date.now()))
+    speaker.onError = (why) => setErr({ title: '목소리를 만들지 못했어요', detail: why })
+    return () => speaker.close()
+  }, [speaker])
+  const queue = useRef<ReadQueue | null>(null)
+  const readChain = useRef<Promise<void>>(Promise.resolve())
+  useEffect(() => {
+    if (!talk) return
+    const q = queue.current
+    // What was there when it began is never read; nor is what comes while 대화 is off.
+    if (!q || !autoNow.current || !speaker) {
+      ;(queue.current ??= new ReadQueue()).skip(talk.answers.map((a) => a.key))
+      return
+    }
+    for (const a of talk.answers) {
+      if (!q.take(a.key)) continue
+      readChain.current = readChain.current.then(async () => {
+        const plain = speakable(a.text)
+        // A plain answer is read as it is; one that is mostly code or English is said in a line by the Mac's model.
+        const said = plain !== 'unsure' ? plain : await talkPost<{ line: string }>({ op: 'brief', text: a.text.slice(0, 6000) }).then((r) => sentences(r.line), () => [])
+        if (!said.length || !autoNow.current) return
+        readText.current = `${readText.current} ${said.join(' ')}`.slice(-800)
+        speaker.say(said)
+      })
+    }
+  }, [talk?.answers, speaker])
   const textBox = useRef<HTMLDivElement>(null)
   // Each phrase goes to the Mac in turn; `gen` drops what comes back for phrases a 리셋 has thrown away.
   const chain = useRef<Promise<void>>(Promise.resolve())
@@ -137,6 +189,8 @@ export function VoiceMode({
     if (!m) return
     // A phrase the Mac could not write keeps what the browser heard for it.
     if (state === 'bad') text = browserText().slice(m.from, m.mark).trim()
+    // The answer itself back through the microphone, heard while it was read (or just after): not the person's words.
+    if (text && (speakerNow.current?.speaking || Date.now() - readEnd.current < 3000) && isEcho(text, readText.current)) text = ''
     // 음성 명령 (REQ-F-789), from this panel's latest render: the phrase is what it says without them.
     const now = commands.current
     const cmd = voiceCommand(text, now.panes)
@@ -159,8 +213,19 @@ export function VoiceMode({
   useEffect(() => {
     let raf = 0
     let was = false
+    let ducked = false
+    let heardAt = -1
     const tick = () => {
       meter.current?.style.setProperty('--lvl', String(listen.level))
+      // The person speaking while the answer is read: quieter at a sound, stopped once it is sure to be speech.
+      const sp = speakerNow.current
+      if (sp?.speaking) {
+        if (heardAt < 0 || !listen.loudMs) heardAt = browserText().length
+        const b = bargeIn(listen.loudMs, browserText().length > heardAt + 1)
+        if (b === 'stop') sp.stop()
+        else if (b === 'duck') (ducked = true, sp.duck(BARGE.duckTo))
+        else if (ducked) (ducked = false, sp.duck(1))
+      } else heardAt = -1
       if (listen.speaking !== was) setSpeaking((was = listen.speaking))
       if (preview?.running && listen.deadMs > DEAD_MS) {
         preview.fail('이 기기에서는 즉시 받아쓰기와 녹음을 같이 못 해요. 즉시 받아쓰기를 껐어요')
@@ -204,6 +269,47 @@ export function VoiceMode({
     if (el) el.scrollTop = el.scrollHeight
   }, [kept, tail])
 
+  // 대화 모드: after a quiet while, the words decide (sent, or wait for more); when they cannot, the Mac's model does.
+  const viewNow = useRef({ kept, tail, waiting })
+  viewNow.current = { kept, tail, waiting }
+  const lastSound = useRef(Date.now())
+  const judged = useRef<string | null>(null)
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (!autoNow.current) return
+      if (listen.speaking || listen.loudMs > 0) return void (lastSound.current = Date.now())
+      const v = viewNow.current
+      const text = joinWords(v.kept, v.tail).trim()
+      if (!text || v.waiting || judgingNow.current) return
+      const quiet = Date.now() - lastSound.current
+      if (quiet < TURN.quietMs) return
+      // The Mac's words when they are in (the browser's are rougher).
+      const end = turnEnd(v.kept || text)
+      if (end === 'done') return sendNow.current()
+      if (end === 'more' && quiet < TURN.quietMs + TURN.moreMs) return
+      // The model said more is coming (or could not say): sent after a long quiet all the same.
+      if (judged.current === text) return void (quiet >= TURN.quietMs + TURN.afterMs && sendNow.current())
+      const at = lastSound.current
+      judgingNow.current = true
+      setJudging(true)
+      void talkPost<{ end: 'done' | 'more' }>({ op: 'turn', text })
+        .then(
+          (r) => r.end,
+          () => 'more' as const,
+        )
+        .then((r) => {
+          judgingNow.current = false
+          setJudging(false)
+          const now = viewNow.current
+          // Spoken again meanwhile: the answer is for words that are not the last ones any more.
+          if (lastSound.current !== at || joinWords(now.kept, now.tail).trim() !== text) return
+          if (r === 'done') sendNow.current()
+          else judged.current = text
+        })
+    }, 150)
+    return () => clearInterval(t)
+  }, [listen])
+
   /**
    * Ends the phrase being spoken and takes every phrase not sent yet out of the panel: their ids, and a promise that
    * holds once the Mac has written them all. The panel starts over from here and goes on listening.
@@ -235,8 +341,12 @@ export function VoiceMode({
     const { ids, written } = takeAll()
     if (!ids.length && !shown) return toast('보낼 말이 아직 없어요')
     const draft = onDraft?.(shown || '…')
+    const hint = autoNow.current
+    judged.current = null
+    speakerNow.current?.stop()
     sending.current = sending.current.then(async () => {
-      const text = ids.length ? await written : shown
+      const said = ids.length ? await written : shown
+      const text = said && hint ? withHint(said) : said
       if (text) {
         // Not taken (the session refused it): back in the panel, to send again or reset.
         if (!(await (draft ? draft.send(text) : onSend(text)).catch(() => false))) {
@@ -297,7 +407,13 @@ export function VoiceMode({
   endRef.current = () => void close()
   if (takeRef) takeRef.current = () => takeAll().written
 
-  const status = closing ? '마무리하는 중…' : speaking ? '말하는 중' : waiting ? '받아쓰는 중…' : '듣는 중'
+  const status = closing ? '마무리하는 중…' : speaking ? '말하는 중' : waiting ? '받아쓰는 중…' : judging ? '말이 끝났는지 보는 중…' : reading ? 'Claude 가 말하는 중' : '듣는 중'
+  const toggleAuto = () => {
+    const on = !auto
+    setAuto(on)
+    setVoiceDevice({ ...getVoiceDevice(), talk: on })
+    if (!on) speakerNow.current?.stop()
+  }
   return (
     <div className="inputbox voice-mode" role="region" aria-label="음성 모드">
       <div className="voice-head">
@@ -306,6 +422,11 @@ export function VoiceMode({
           {status}
         </span>
         {head}
+        {talk ? (
+          <Button size="sm" tone={auto ? 'primary' : undefined} onClick={toggleAuto} aria-pressed={auto} title="말을 멈추면 알아서 보내고, 답을 목소리로 읽어요">
+            {auto ? '대화 켬' : '대화 끔'}
+          </Button>
+        ) : null}
         <IconButton icon="mic" label="음성 모드 끄기" className="glass-btn mic-btn rec" onClick={() => void close()} disabled={closing} />
       </div>
       <div ref={textBox} className="voice-text" aria-live="polite">
@@ -320,7 +441,7 @@ export function VoiceMode({
           <span className="voice-live">…</span>
         ) : (
           <span className="voice-hint">
-            말해 보세요. 말한 내용이 여기에 쌓이고, 전송을 누르면 보내요
+            {talkOn ? '말해 보세요. 말을 멈추면 알아서 보내고, 답은 목소리로 읽어 드려요. 읽는 중에 말하면 멈춰요' : '말해 보세요. 말한 내용이 여기에 쌓이고, 전송을 누르면 보내요'}
             {inHomeApp() ? (
               <>
                 {' '}

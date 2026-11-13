@@ -21,6 +21,7 @@ import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImage
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
+import { Judge, SayVoice, talk as talkRun } from './talk.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
@@ -38,7 +39,7 @@ import { WORKING_RE, COMPACTING_RE, stuckState, inputBoxHas, detectEffort, detec
 
 const VERSION = '0.2.0'
 /** The files that make up the agent. The server hands out the same list (see /install.sh). */
-const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'localfull.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs', 'translate.mjs']
+const AGENT_FILES = ['agent.mjs', 'dialog.mjs', 'preview.mjs', 'screen.mjs', 'plugins.mjs', 'skills.mjs', 'split.mjs', 'guard.mjs', 'accounts.mjs', 'voice.mjs', 'mcp.mjs', 'cache.mjs', 'scrub.mjs', 'store.mjs', 'stats.mjs', 'mux.mjs', 'keys.mjs', 'trust.mjs', 'localui.mjs', 'localbundle.mjs', 'localfull.mjs', 'runners.mjs', 'codex.mjs', 'exposure.mjs', 'adapters.mjs', 'translate.mjs', 'talk.mjs']
 const AGENT_DIR = path.dirname(fileURLToPath(import.meta.url))
 /** Fingerprint of those files, so the server can tell an agent that is behind the one it serves. */
 const BUILD = AGENT_FILES.reduce((h, f) => h.update(fs.readFileSync(path.join(AGENT_DIR, f))), crypto.createHash('sha1')).digest('hex').slice(0, 12)
@@ -5546,6 +5547,16 @@ const commands = {
       emit({ t: 'translate', reqId, ok: false, code: e.code || 'error', error: e.message })
     }
   },
+  async talk({ reqId, op, text }) {
+    try {
+      talkVoice ??= new SayVoice()
+      talkJudge ??= new Judge({ bin: CLAUDE_BIN, env: claudeEnv(), log })
+      emit({ t: 'talk', reqId, ok: true, ...(await talkRun({ op, text }, { voice: talkVoice, judge: talkJudge })) })
+    } catch (e) {
+      if (!e.code) log('error', 'talk', `실패: ${e.stack || e.message}`)
+      emit({ t: 'talk', reqId, ok: false, code: e.code || 'error', error: String(e.message).slice(0, 300) })
+    }
+  },
   async voice({ reqId, audio, opts }) {
     try {
       const dir = whisperDir()
@@ -7935,6 +7946,9 @@ const atRest = () => [...sessions.values()].every((s) => !s.turn && !s.held?.len
 /** whisper.cpp kept up between recordings (voice.mjs); stopped with the agent. */
 let whisper = null
 let translator = null
+/** 대화 모드 (REQ-F-907): the voice and the small model, made at the first use. */
+let talkVoice = null
+let talkJudge = null
 const whisperDir = () => path.join(STATE_DIR, 'whisper')
 process.on('exit', () => whisper?.stop())
 /** A session in the middle of a turn (REQ-F-832 skipBusy): a night update waits for it, or for the next night. */
@@ -8725,7 +8739,7 @@ async function runCommand(cmd, { local = false } = {}) {
     cmd = trustGate(cmd)
     if (!cmd) return
   }
-  const quiet = ['voice', 'welcome', 'rehello', 'groups', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate'].includes(cmd.t)
+  const quiet = ['voice', 'welcome', 'rehello', 'groups', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate', 'talk'].includes(cmd.t)
   if (local && !quiet && trustOn()) trust.audit(`localfull ${cmd.t}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}`)
   if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
   if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)

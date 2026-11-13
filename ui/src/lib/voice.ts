@@ -37,6 +37,8 @@ export interface VoiceDevice {
   mic: string
   key: 'alt-space' | 'ctrl-shift-space' | 'off'
   live: boolean
+  /** 대화 모드 (REQ-F-907): sent by itself when the person stops, and the answer read aloud. Off: the 전송 button. */
+  talk: boolean
 }
 const DEVICE = 'cb2.voice'
 const RECENT = 'cb2.voice.recent'
@@ -54,8 +56,8 @@ const writeLs = (k: string, v: unknown) => {
   } catch {}
 }
 export const getVoiceDevice = (): VoiceDevice => {
-  const { mic = '', key = 'alt-space', live = true } = readLs<Partial<VoiceDevice>>(DEVICE, {})
-  return { mic, key, live }
+  const { mic = '', key = 'alt-space', live = true, talk = true } = readLs<Partial<VoiceDevice>>(DEVICE, {})
+  return { mic, key, live, talk }
 }
 export const setVoiceDevice = (v: VoiceDevice) => writeLs(DEVICE, v)
 export const KEY_LABEL: Record<VoiceDevice['key'], string> = { 'alt-space': '⌥ Space', 'ctrl-shift-space': 'Ctrl ⇧ Space', off: '끔' }
@@ -296,6 +298,14 @@ export class LiveListen {
     this.node.onaudioprocess = (e) => this.take(new Float32Array(e.inputBuffer.getChannelData(0)))
     src.connect(this.node)
     this.node.connect(this.ctx.destination)
+  }
+  /** The sound device opened in the press: 대화 모드 reads the answers aloud through it (REQ-F-907). */
+  get audio() {
+    return this.ctx
+  }
+  /** How long the sound has been over the room's level now (0 when it is quiet): is the person starting to speak? */
+  get loudMs() {
+    return this.speaking ? (this.quiet ? 0 : this.voiced) : this.loud
   }
   /** iOS stops the sound while the page is put away; back on the page it goes on. */
   resume() {
