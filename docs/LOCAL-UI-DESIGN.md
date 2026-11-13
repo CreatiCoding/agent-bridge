@@ -193,7 +193,7 @@ builtin 도 시작할 때 같은 확인을 한다(서명이 안 맞는 builtin =
 
 - 로컬 화면(§0~§7)을 웹 화면만큼 키우면 화면이 두 벌이 되어 갈라진다(1.518 이 해석기를 한 파일로 만든 이유와 같다). 같은 서버를 맥에서 돌리면 화면·API 가 하나다.
 - 서버 코드도 서버가 준 것이면 안 된다(§1). 그래서 빌드는 에이전트 업데이트와 같은 `UPDATE_KEYS` 로 서명된 것만 쓴다. 새 키·새 신뢰 경로는 없다. 접두 `claude-bridge localfull v1\n` 으로 에이전트·로컬 화면 묶음 서명과 섞이지 않는다.
-- 바이너리를 git 에 넣지 않는다. 서명은 맥에서 하고(`scripts/sign-agent.mjs`, 키는 이 맥에만), 사이트 이미지는 같은 소스·같은 Go(1.27.3)·같은 설정(`CGO_ENABLED=0 -trimpath -buildvcs=false -ldflags="-s -w -buildid="`)으로 **같은 바이트를 다시 만들어** 서명된 문서와 맞을 때만 이미지가 만들어진다(`bridge-server localfull-verify`). 서명한 것과 나눠 주는 것이 갈라질 수 없다.
+- 바이너리를 git 에 넣지 않는다. 서명은 맥에서 하고(`scripts/sign-agent.mjs`, 키는 이 맥에만), 사이트 이미지는 같은 소스·같은 Go(1.27.4)·같은 설정(`CGO_ENABLED=0 -trimpath -buildvcs=false -ldflags="-s -w -buildid="`)으로 **같은 바이트를 다시 만들어** 서명된 문서와 맞을 때만 이미지가 만들어진다(`bridge-server localfull-verify`). 서명한 것과 나눠 주는 것이 갈라질 수 없다.
   - 재현성 확인(1.519): 서명 맥은 이미지의 `localfull` 단계(`docker build --target localfull`)를 돌려 그 바이트에 서명한다. 맥 호스트에서 `GOTOOLCHAIN=go1.27.3` 로 직접 만든 것과 docker(linux) 에서 만든 것이 바이트까지 같았고, `ui/dist` 도 운영 사이트의 파일과 sha256 이 같았다.
   - `npm test` 는 `server/localfull.json` 의 `src`(입력 파일 목록·내용의 해시)가 지금 소스와 같은지 본다. server·ui·web·Dockerfile 을 고치면 `node scripts/sign-agent.mjs` 로 다시 서명해야 한다(docker 필요).
 - 연결은 한 단계 스위치다. 에이전트는 여전히 밖으로 연결하지 않는다는 원칙을 지키되, 로컬 서버는 에이전트가 직접 띄운 자식이라 에이전트가 연동한다(사이트 연동 탭 `web/relay.js` 가 하던 일을 `agent/localfull.mjs` 의 `Relay` 가 한다). 동시에 두 곳에 연동하지 않는다: 켜져 있는 동안 사이트 탭은 `busy local`·409 로 거절되고 30 s 마다 다시 묻는다.

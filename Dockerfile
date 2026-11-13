@@ -2,8 +2,8 @@
 # runs has no node: the agent's files (agent/*.mjs) are only served to the Macs, never run here.
 # The three base images, overridable for a registry mirror (docker build --build-arg NODE_IMAGE=…). The defaults are
 # the images this file has always used.
-ARG NODE_IMAGE=node:22.23.4-alpine
-ARG GO_IMAGE=golang:1.27.3-alpine
+ARG NODE_IMAGE=node:22.23.5-alpine
+ARG GO_IMAGE=golang:1.27.4-alpine
 ARG RUN_IMAGE=alpine:3.22
 FROM ${NODE_IMAGE} AS ui
 WORKDIR /ui

@@ -51,14 +51,14 @@ docker build -t claude-bridge .
 
 | 빌드 인자 | 기본값 | 쓰는 단계 |
 |---|---|---|
-| `NODE_IMAGE` | `node:22.23.4-alpine` | 조작 페이지(`ui/`) 빌드 |
-| `GO_IMAGE` | `golang:1.27.3-alpine` | 서버 시험·빌드 |
+| `NODE_IMAGE` | `node:22.23.5-alpine` | 조작 페이지(`ui/`) 빌드 |
+| `GO_IMAGE` | `golang:1.27.4-alpine` | 서버 시험·빌드 |
 | `RUN_IMAGE` | `alpine:3.22` | 실행 이미지 |
 
 ```sh [터미널]
 docker build -t claude-bridge \
-  --build-arg NODE_IMAGE=registry.example.com/library/node:22.23.4-alpine \
-  --build-arg GO_IMAGE=registry.example.com/library/golang:1.27.3-alpine \
+  --build-arg NODE_IMAGE=registry.example.com/library/node:22.23.5-alpine \
+  --build-arg GO_IMAGE=registry.example.com/library/golang:1.27.4-alpine \
   --build-arg RUN_IMAGE=registry.example.com/library/alpine:3.22 \
   .
 ```

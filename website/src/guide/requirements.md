@@ -55,7 +55,7 @@ description: 호스트(맥·Linux), 브라우저, 서버에 필요한 운영체�
 |---|---|---|
 | 실행 방식 | Docker 이미지, 또는 소스에서 빌드한 바이너리 | 이미지는 저장소의 `Dockerfile` 로 만들어요 |
 | 실행 이미지 | `alpine:3.22` 에 Go 정적 바이너리 하나 | 런타임이 따로 들지 않아요 |
-| 빌드 | `golang:1.27.3-alpine`(서버), `node:22.23.4-alpine`(조작 페이지) | 소스에서 빌드하면 Go 1.27(`server/go.mod`)이 필요해요. 세 베이스 이미지는 빌드 인자 `NODE_IMAGE`·`GO_IMAGE`·`RUN_IMAGE` 로 바꿀 수 있어요 |
+| 빌드 | `golang:1.27.4-alpine`(서버), `node:22.23.5-alpine`(조작 페이지) | 소스에서 빌드하면 Go 1.27(`server/go.mod`)이 필요해요. 세 베이스 이미지는 빌드 인자 `NODE_IMAGE`·`GO_IMAGE`·`RUN_IMAGE` 로 바꿀 수 있어요 |
 | 포트 | `PORT`, 기본 4300 | 서버는 평문 HTTP 로 들어요 |
 | HTTPS | 앞단 리버스 프록시 | 서버 프로세스에는 TLS 가 없어요. 운영할 때는 `https://` 주소가 필요해요 |
 | 로그인 | GitHub OAuth App, 또는 앞단 프록시의 헤더 로그인 | GitHub 은 클라이언트 id 와 비밀값을 환경 변수로 넣어요. 헤더 로그인은 `bridge.yaml` 의 `auth.providers` 로 켜요([bridge.yaml 키](/reference/config)) |

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.528',
+    date: '2026-11-13',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['server'],
+        text: '서버와 맥용 서버(local --full)를 Go 1.27.4 로(GO-2026-6859), 조작 페이지·문서 사이트 빌드를 node 22.23.5 로(Node.js 보안 릴리스). 동작은 그대로다.',
+        refs: ['ASM-071'],
+      },
+    ],
+  },
+  {
     version: '1.527',
     date: '2026-11-13',
+    commit: '4b5d9d3',
     changes: [
       {
         kind: 'security',
