@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.534',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '대화 모드의 목소리가 1.5배 빨라졌어요(맥 say, 리눅스 Supertonic 모두). 리눅스 목소리는 더 사람 같은 F2 를 10단계로 다듬어요',
+        refs: ['REQ-F-907', 'REQ-F-908'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화 모드에서 10자 이하의 짧은 말은 주변 소음보다 충분히 크게 들려야 보내요. 설정 → 음성의 최근 결과에 소음의 몇 배였는지와 걸러졌는지가 보여요',
+        refs: ['REQ-F-909'],
+      },
+    ],
+  },
+  {
     version: '1.533',
     date: '2026-11-14',
+    commit: '026725b',
     changes: [
       {
         kind: 'added',

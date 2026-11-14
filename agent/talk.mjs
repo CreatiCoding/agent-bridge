@@ -7,6 +7,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+/** 대화 모드의 읽는 속도: 각 목소리의 보통 속도(say 175 단어/분, Supertonic 1.05)의 1.5배 (사용자 요청). */
+export const TALK_SPEED = 1.5
+
 const err = (code, message) => Object.assign(new Error(message), { code })
 
 // ---------- voice
@@ -45,7 +48,7 @@ export class SayVoice {
     const voice = await this.pick()
     const out = path.join(this.tmp, `cb-talk-${crypto.randomBytes(6).toString('hex')}.wav`)
     try {
-      await this.exec(['-v', voice, '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, text])
+      await this.exec(['-v', voice, '-r', String(Math.round(175 * TALK_SPEED)), '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, text])
       return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `say:${voice}` }
     } finally {
       fs.rmSync(out, { force: true })
@@ -68,7 +71,7 @@ for line in sys.stdin:
     try:
         q = json.loads(line)
         st = styles.get(q["voice"]) or styles.setdefault(q["voice"], tts.get_voice_style(q["voice"]))
-        wav, dur = tts.synthesize(q["text"], voice_style=st, lang="ko", total_steps=int(q["steps"]))
+        wav, dur = tts.synthesize(q["text"], voice_style=st, lang="ko", total_steps=int(q["steps"]), speed=float(q.get("speed", 1.05)))
         pcm = (np.clip(np.asarray(wav, dtype=np.float32).reshape(-1), -1, 1) * 32767).astype("<i2")
         with wave.open(q["out"], "wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(int(tts.sample_rate)); w.writeframes(pcm.tobytes())
@@ -78,8 +81,8 @@ for line in sys.stdin:
 `
 
 export class SupertonicVoice {
-  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F3', steps = 4, log = () => {}, idleMs = 10 * 60_000 } = {}) {
-    Object.assign(this, { run, tmp, voice, steps, log, idleMs })
+  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F2', steps = 10, speed = TALK_SPEED * 1.05, log = () => {}, idleMs = 10 * 60_000 } = {}) {
+    Object.assign(this, { run, tmp, voice, steps, speed, log, idleMs })
     this.py = path.join(dir, 'supertonic', 'bin', 'python')
     this.proc = null
     this.ready = null
@@ -147,7 +150,7 @@ export class SupertonicVoice {
       const r = await new Promise((resolve) => {
         const timer = setTimeout(() => resolve({ error: '목소리가 오래 걸려요' }), 30_000)
         this.waits.set(id, (x) => (clearTimeout(timer), this.waits.delete(id), resolve(x)))
-        p.stdin.write(`${JSON.stringify({ id, text, voice: this.voice, steps: this.steps, out })}\n`)
+        p.stdin.write(`${JSON.stringify({ id, text, voice: this.voice, steps: this.steps, speed: this.speed, out })}\n`)
       })
       if (r.error) throw err('voice', r.error)
       return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `supertonic:${this.voice}` }

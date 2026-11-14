@@ -214,6 +214,8 @@ function Recent() {
           <div className="muted" style={{ fontSize: 'var(--fs-small)' }}>
             {new Date(r.at).toLocaleString()} · {r.sec ? `${r.sec.toFixed(1)}초 녹음` : ''}
             {r.ms?.total ? ` · 맥에서 ${(r.ms.total / 1000).toFixed(1)}초` : ''}
+            {r.snr != null ? ` · 소음의 ${r.snr}배` : ''}
+            {r.room ? ` · 주변 소리로 보고 안 보냄(${r.room === 'far' ? '작음' : '짧음'})` : ''}
           </div>
           <div style={{ fontSize: 'var(--fs-small)' }}>
             <span className="muted">원문</span> {r.raw || '(없음)'}

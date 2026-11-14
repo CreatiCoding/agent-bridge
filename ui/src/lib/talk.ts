@@ -160,7 +160,7 @@ export function fromBase64(b64: string): ArrayBuffer {
  * minSnr / shortSnr: the phrase's loud frames (90th percentile) over the room's level before it. voiceShare: under this
  * share of the person's own level (the median of their last `learn` clear phrases) it is someone further away.
  */
-export const NEAR = { minSnr: 3.2, shortSnr: 5, shortLetters: 6, foreignLetters: 12, voiceShare: 0.45, learn: 5, learnLetters: 6 }
+export const NEAR = { minSnr: 3.2, shortSnr: 5, shortLetters: 10, foreignLetters: 12, voiceShare: 0.45, learn: 5, learnLetters: 6 }
 
 /** How loud a phrase was: its loud frames (90th percentile rms) and that over the room's level before it. */
 export type Loudness = { level: number; snr: number }

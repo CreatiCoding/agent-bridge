@@ -137,6 +137,9 @@ test('AC-1802 가까이서 한 말만: 방 소음보다 충분히 크지 않거�
   assert.equal(nearVoice('배포 상태 확인해 줘', { level: 0.05, snr: 2 }, []), 'far')
   assert.equal(nearVoice('네 감사합니다', { level: 0.1, snr: 4 }, []), 'short')
   assert.equal(nearVoice('네 감사합니다', { level: 0.2, snr: 9 }, []), 'keep')
+  // 10 letters or fewer, only a little over the room: a passer-by's phrase (1.534).
+  assert.equal(nearVoice('시각 세계였습니다', { level: 0.1, snr: 4 }, []), 'short')
+  assert.equal(nearVoice('안녕하십니까 내 말이 들려', { level: 0.1, snr: 4 }, []), 'keep')
   assert.equal(nearVoice('Amen', { level: 0.2, snr: 9 }, []), 'short')
   assert.equal(nearVoice('and the clock', { level: 0.2, snr: 9 }, []), 'short')
   assert.equal(nearVoice('아무 말', undefined, []), 'keep')
