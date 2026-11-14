@@ -9,6 +9,21 @@
 /** One sentence's sound from the Mac: encoded audio (wav, aiff or m4a), as the browser decodes it. */
 export type Voice = (text: string) => Promise<ArrayBuffer>
 
+/**
+ * After the first sentence of an answer, the sentences waiting are made together, up to this many letters: each
+ * request costs a slow voice ~1.5 s whatever its length (소희: 8 letters in 2.6 s, 44 in 5.6 s). The first goes alone
+ * so reading starts soon.
+ */
+export const JOIN_CHARS = 120
+
+/** The next request: the first sentence alone when nothing of the answer is made yet, else as many as fit. */
+export function nextChunk(queue: string[], first: boolean, max = JOIN_CHARS): string {
+  let text = queue.shift() ?? ''
+  if (first) return text
+  while (queue.length && text.length + 1 + queue[0].length <= max) text += ` ${queue.shift()}`
+  return text
+}
+
 /** Seconds of making per letter, before a sentence has been timed: about 소희's on an M1 (6.6 s for 36 letters). */
 export const FIRST_SEC_PER_CHAR = 0.18
 
@@ -35,6 +50,8 @@ export class Speaker {
   private src: AudioBufferSourceNode | null = null
   private running = false
   private playing = false
+  /** Whether any of this answer has been read yet (since the voice last went quiet). */
+  private played = false
   private fetching = false
   private wake: (() => void) | null = null
   /** Seconds of making per letter, learnt from the last sentences (network included). */
@@ -92,7 +109,7 @@ export class Speaker {
     this.fetching = true
     try {
       while (g === this.gen && this.queue.length) {
-        const text = this.queue.shift()!
+        const text = nextChunk(this.queue, !this.made.length && !this.played)
         this.makingChars = text.length
         const t0 = performance.now()
         const buf = await this.voice(text)
@@ -137,6 +154,7 @@ export class Speaker {
         this.onWait(null)
         hold = false
         const m = this.made.shift()!
+        this.played = true
         if (m.buf) await this.play(m.buf, g)
         if (!this.made.length) hold = true
       }
@@ -145,6 +163,7 @@ export class Speaker {
         this.playing = false
         this.onWait(null)
         if (!this.fetching && !this.queue.length) {
+          this.played = false
           this.running = false
           this.onState(false)
         }
@@ -182,6 +201,7 @@ export class Speaker {
     this.makingChars = 0
     this.fetching = false
     this.playing = false
+    this.played = false
     const s = this.src
     this.src = null
     try {

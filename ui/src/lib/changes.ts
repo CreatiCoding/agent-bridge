@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.539',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent', 'ui'],
+        text: '소희 목소리가 1배에도 빠르고 읽기 전에 10초쯤 기다리던 것: 1배를 소희 원래 빠르기로 하고, 첫 문장 뒤의 짧은 문장들은 묶어서 한 번에 만들어요',
+        refs: ['REQ-F-911'],
+      },
+    ],
+  },
+  {
     version: '1.538',
     date: '2026-11-14',
+    commit: 'd9370a7',
     changes: [
       {
         kind: 'added',

@@ -202,7 +202,7 @@ test('AC-1807 읽는 속도와 기록: 속도는 0.5~2 로 묶고, 소리 길이
   assert.equal(logged.raw, '러시아')
 })
 
-test('AC-1809 소희: 맥 미니의 Qwen3-TTS 를 띄워 두고 1.47×속도로 atempo, 화면은 끊기지 않을 만큼 모일 때까지 기다린다', async () => {
+test('AC-1809 소희: 맥 미니의 Qwen3-TTS 를 띄워 두고 1배는 원래 빠르기로 atempo, 화면은 끊기지 않을 만큼 모일 때까지 기다린다', async () => {
   const { QwenVoice, QWEN_PACE, QWEN_PY, hasQwen } = await import('../../agent/talk.mjs')
   const fs = await import('node:fs')
   const os = await import('node:os')
@@ -242,7 +242,8 @@ test('AC-1809 소희: 맥 미니의 Qwen3-TTS 를 띄워 두고 1.47×속도로 
   assert.deepEqual(args[1], ['-I', '-c', QWEN_PY, 'mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'])
   assert.equal(a.engine, 'qwen:Sohee')
   assert.equal(asked[0].voice, 'Sohee')
-  assert.equal(asked[0].tempo, Math.round(QWEN_PACE * 1.25 * 1000) / 1000)
+  assert.equal(QWEN_PACE, 1)
+  assert.equal(asked[0].tempo, 1.25)
   assert.match(QWEN_PY, /atempo/)
   fs.rmSync(dir, { recursive: true, force: true })
 
@@ -254,6 +255,13 @@ test('AC-1809 소희: 맥 미니의 Qwen3-TTS 를 띄워 두고 1.47×속도로 
   assert.equal(holdFor(30, 100, 0.18), 0)
   // Supertonic makes a letter in ~0.04 s: a sentence made is about enough to start.
   assert.equal(holdFor(3, 60, 0.04), 0)
+  // The first request of an answer is one sentence; after it, the waiting ones go together up to 120 letters.
+  const { nextChunk, JOIN_CHARS } = await import('../../ui/src/lib/speaker.ts')
+  const q = ['배포가 끝났어요.', '새로고침해 보세요.', '네.', 'x'.repeat(JOIN_CHARS)]
+  assert.equal(nextChunk(q, true), '배포가 끝났어요.')
+  assert.equal(nextChunk(q, false), '새로고침해 보세요. 네.')
+  assert.equal(nextChunk(q, false), 'x'.repeat(JOIN_CHARS))
+  assert.deepEqual(q, [])
 })
 
 test('AC-1809 Speaker: 다음 문장들을 차례로 만들고, 모인 소리가 남은 만들기 시간만큼 되면 읽는다', async () => {
@@ -278,14 +286,15 @@ test('AC-1809 Speaker: 다음 문장들을 차례로 만들고, 모인 소리가
   sp.onState = (on) => states.push(on)
   sp.say(['하나다', '둘이다요', '셋'])
   await new Promise((r) => setTimeout(r, 100))
-  assert.deepEqual(made, ['하나다', '둘이다요', '셋'])
-  assert.deepEqual(played, [3, 4, 1])
+  // The first alone, the rest together (1.539).
+  assert.deepEqual(made, ['하나다', '둘이다요 셋'])
+  assert.deepEqual(played, [3, 6])
   assert.deepEqual(states, [true, false])
   assert.equal(waits.at(-1), null)
   // stop(): nothing waiting is read, and it says it stopped.
   sp.say(['넷이다'])
   sp.stop()
   await new Promise((r) => setTimeout(r, 30))
-  assert.ok(!played.includes(3) || played.length === 3)
+  assert.deepEqual(played, [3, 6])
   assert.equal(states.at(-1), false)
 })

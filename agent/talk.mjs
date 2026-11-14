@@ -183,12 +183,12 @@ export class SupertonicVoice {
 /**
  * 소희 (REQ-F-911): Qwen3-TTS 0.6B CustomVoice (8-bit, MLX) on an Apple-silicon Mac, its built-in Korean woman's
  * voice "Sohee" (a designed voice, not a real person's). It has no speed of its own (mlx-audio's `speed` is "not
- * directly supported yet"), so ffmpeg's atempo makes it faster without raising its pitch. It speaks slower than
- * Supertonic: the same sentence is 8.0 s against 5.4 s, so QWEN_PACE brings "1배" to Supertonic's normal pace.
- * On an M1 it makes a sentence in about 0.8 of its own length: at 1.25배 reading catches up, and the page waits.
+ * directly supported yet"), so ffmpeg's atempo makes it faster without raising its pitch. "1배" is her own pace
+ * (1.539: 1.47, Supertonic's pace, was too fast even at 1배, and the faster she plays the longer the page waits).
+ * On an M1 she makes a long sentence in about 0.8 of its own length, a short one in more than its length.
  */
 export const QWEN_MODEL = 'mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'
-export const QWEN_PACE = 1.47
+export const QWEN_PACE = 1
 export const QWEN_PY = `
 import sys, json, wave, shutil, subprocess, numpy as np
 from mlx_audio.tts.utils import load_model
@@ -237,7 +237,7 @@ for line in sys.stdin:
 /** The same one-process-kept-up as SupertonicVoice, with Qwen3-TTS: installed into <dir>/qwentts by the person once. */
 export class QwenVoice extends SupertonicVoice {
   constructor({ dir, voice = 'Sohee', model = QWEN_MODEL, ...o } = {}) {
-    super({ dir, voice, ...o })
+    super({ dir, voice, steps: 0, ...o })
     this.py = path.join(dir, 'qwentts', 'bin', 'python')
     this.model = model
     this.startMs = 10 * 60_000
