@@ -21,7 +21,7 @@ import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImage
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
-import { Judge, SayVoice, talk as talkRun } from './talk.mjs'
+import { Judge, SayVoice, SupertonicVoice, talk as talkRun } from './talk.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
@@ -5549,7 +5549,8 @@ const commands = {
   },
   async talk({ reqId, op, text }) {
     try {
-      talkVoice ??= new SayVoice()
+      // macOS reads with its own voice; a Linux machine with Supertonic (REQ-F-908).
+      talkVoice ??= process.platform === 'darwin' ? new SayVoice() : new SupertonicVoice({ dir: STATE_DIR, log })
       talkJudge ??= new Judge({ bin: CLAUDE_BIN, env: claudeEnv(), log })
       emit({ t: 'talk', reqId, ok: true, ...(await talkRun({ op, text }, { voice: talkVoice, judge: talkJudge })) })
     } catch (e) {

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.530',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '리눅스 세션에서도 대화 모드를 써요. 받아쓰기는 켜진 맥이 하고, 답은 리눅스 기계가 직접 Supertonic 목소리로 읽어요. 봉인하거나 이 기기와 짝지은 기계의 녹음은 다른 맥에 맡기지 않아요',
+        refs: ['REQ-F-908', 'IF-214'],
+      },
+    ],
+  },
+  {
     version: '1.529',
     date: '2026-11-14',
+    commit: '150dd55',
     changes: [
       {
         kind: 'added',

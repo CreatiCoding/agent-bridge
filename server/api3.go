@@ -127,7 +127,7 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		if audio == "" || !b64Re.MatchString(audio) {
 			refuse(400, "녹음이 비어 있어요")
 		}
-		hostID := liveHost(meta)
+		hostID := speechHost(uid, meta, b["away"] != false)
 		over := cleanVoiceHost(mget(prefsOf(uid)["voiceHosts"], hostID))
 		model := over["model"]
 		if !truthy(model) {

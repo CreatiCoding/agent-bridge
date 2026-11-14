@@ -11,7 +11,8 @@ import { inHomeApp, safariHref } from '../lib/safari'
 import { Button, IconButton } from '../kit'
 import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
-import { pairedHosts } from '../lib/trust'
+import { pairedHosts, pairedWith } from '../lib/trust'
+import { getStore } from '../lib/store'
 import { bargeIn, BARGE, fromBase64, isEcho, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
 import { withHint } from '../lib/timeline'
 import { Speaker } from '../lib/speaker'
@@ -170,11 +171,16 @@ export function VoiceMode({
     }
   }, [listen, preview])
 
+  // 리눅스 세션의 받아쓰기 (REQ-F-908): another Mac may hear it, but never for a machine paired with this device.
+  const hostPaired = () => {
+    const h = getStore().state?.sessions.find((x) => x.id === sessionId)?.hostId
+    return !!h && pairedWith(h)
+  }
   const transcribe = async (id: number, g: number, p: Phrase) => {
     let state: Said['state'] = 'done'
     let text = ''
     try {
-      const r = await post<{ ok: true; raw: string; text: string; sec: number; ms?: { total?: number } }>(`/api/sessions/${sessionId}/voice`, { audio: p.audio })
+      const r = await post<{ ok: true; raw: string; text: string; sec: number; ms?: { total?: number } }>(`/api/sessions/${sessionId}/voice`, { audio: p.audio, away: !hostPaired() })
       addVoiceRecent({ at: Date.now(), raw: r.raw, text: r.text, ms: r.ms, sec: r.sec })
       text = r.text.trim()
       if (g === gen.current) setErr(null)

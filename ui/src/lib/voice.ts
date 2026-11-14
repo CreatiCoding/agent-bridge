@@ -389,4 +389,7 @@ export const VOICE_CODE_TITLE: Record<string, string> = {
   silent: '말소리가 없어요',
   audio: '녹음을 읽지 못했어요',
   demo: '데모에서는 받아쓰지 않아요',
+  nohost: '받아쓸 맥이 켜져 있지 않아요',
+  sealed: '봉인하는 기계라 다른 맥에 맡기지 않아요',
+  paired: '짝지은 기계라 다른 맥에 맡기지 않아요',
 }

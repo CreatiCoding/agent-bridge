@@ -80,3 +80,53 @@ test('AC-1797 맥: 판정기는 claude 를 한 번 띄워 두고 묻고, 정한 
   j.stop()
   clearTimeout(j.idle)
 })
+
+test('AC-1800 리눅스: 목소리는 Supertonic 하나를 띄워 두고 묻고, 없으면 설치 방법을 알린다', async () => {
+  const { SupertonicVoice } = await import('../../agent/talk.mjs')
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { EventEmitter } = await import('node:events')
+  const { PassThrough } = await import('node:stream')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'st-'))
+  const none = new SupertonicVoice({ dir })
+  await assert.rejects(none.speak('안녕'), (e) => e.code === 'novoice' && /pip install supertonic/.test(e.message))
+
+  fs.mkdirSync(path.join(dir, 'supertonic', 'bin'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'supertonic', 'bin', 'python'), '')
+  let starts = 0
+  const asked = []
+  const run = (bin, args) => {
+    starts++
+    assert.equal(bin, path.join(dir, 'supertonic', 'bin', 'python'))
+    assert.deepEqual(args.slice(0, 2), ['-I', '-c'])
+    const p = new EventEmitter()
+    p.stdout = new PassThrough()
+    p.stdin = new PassThrough()
+    p.kill = () => {}
+    let buf = ''
+    p.stdin.on('data', (d) => {
+      buf += d
+      for (let i = buf.indexOf('\n'); i !== -1; i = buf.indexOf('\n')) {
+        const q = JSON.parse(buf.slice(0, i))
+        buf = buf.slice(i + 1)
+        asked.push(q)
+        fs.writeFileSync(q.out, 'RIFF')
+        p.stdout.write(`${JSON.stringify({ id: q.id, ok: true })}\n`)
+      }
+    })
+    setImmediate(() => p.stdout.write('{"ready":true}\n'))
+    return p
+  }
+  const v = new SupertonicVoice({ dir, run, voice: 'F3', steps: 4 })
+  const a = await v.speak('배포가 끝났어요.')
+  const b = await v.speak('다음으로 넘어갈까요?')
+  v.stop()
+  clearTimeout(v.idle)
+  assert.equal(starts, 1)
+  assert.equal(Buffer.from(a.audio, 'base64').toString(), 'RIFF')
+  assert.equal(b.engine, 'supertonic:F3')
+  assert.deepEqual(asked.map((q) => [q.text, q.voice, q.steps]), [['배포가 끝났어요.', 'F3', 4], ['다음으로 넘어갈까요?', 'F3', 4]])
+  for (const q of asked) assert.equal(fs.existsSync(q.out), false)
+  fs.rmSync(dir, { recursive: true, force: true })
+})

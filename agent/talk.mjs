@@ -53,6 +53,112 @@ export class SayVoice {
   }
 }
 
+/**
+ * A Linux machine's voice (REQ-F-908): Supertonic, an on-device ONNX speech model with Korean women's voices (F1~F5),
+ * run on the CPU by one python kept up (reading the model costs seconds, a sentence well under its own length at
+ * 4 steps). Installed by the person once, into <dir>/supertonic: the model itself comes down on its first use.
+ */
+export const SUPERTONIC_PY = `
+import sys, json, wave, numpy as np
+from supertonic import TTS
+tts = TTS()
+styles = {}
+print(json.dumps({"ready": True}), flush=True)
+for line in sys.stdin:
+    try:
+        q = json.loads(line)
+        st = styles.get(q["voice"]) or styles.setdefault(q["voice"], tts.get_voice_style(q["voice"]))
+        wav, dur = tts.synthesize(q["text"], voice_style=st, lang="ko", total_steps=int(q["steps"]))
+        pcm = (np.clip(np.asarray(wav, dtype=np.float32).reshape(-1), -1, 1) * 32767).astype("<i2")
+        with wave.open(q["out"], "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(int(tts.sample_rate)); w.writeframes(pcm.tobytes())
+        print(json.dumps({"id": q["id"], "ok": True}), flush=True)
+    except Exception as e:
+        print(json.dumps({"id": q.get("id") if isinstance(q, dict) else None, "error": str(e)[:200]}), flush=True)
+`
+
+export class SupertonicVoice {
+  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F3', steps = 4, log = () => {}, idleMs = 10 * 60_000 } = {}) {
+    Object.assign(this, { run, tmp, voice, steps, log, idleMs })
+    this.py = path.join(dir, 'supertonic', 'bin', 'python')
+    this.proc = null
+    this.ready = null
+    this.waits = new Map()
+    this.seq = 0
+    this.idle = null
+  }
+  get installHint() {
+    const d = path.dirname(path.dirname(this.py))
+    return `이 기계에 목소리(Supertonic)가 없어요. 터미널에서: python3 -m venv ${d} && ${d}/bin/pip install supertonic`
+  }
+  start() {
+    if (!fs.existsSync(this.py)) throw err('novoice', this.installHint)
+    const p = this.run(this.py, ['-I', '-c', SUPERTONIC_PY], { stdio: ['pipe', 'pipe', 'ignore'] })
+    this.proc = p
+    let buf = ''
+    this.ready = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(err('voice', '목소리 모델을 띄우지 못했어요 (2분)')), 120_000)
+      p.stdout.setEncoding('utf8')
+      p.stdout.on('data', (d) => {
+        buf += d
+        for (let i = buf.indexOf('\n'); i !== -1; i = buf.indexOf('\n')) {
+          const line = buf.slice(0, i)
+          buf = buf.slice(i + 1)
+          let j
+          try {
+            j = JSON.parse(line)
+          } catch {
+            continue
+          }
+          if (j.ready) clearTimeout(timer), resolve()
+          else this.waits.get(j.id)?.(j)
+        }
+      })
+      const gone = () => {
+        clearTimeout(timer)
+        if (this.proc !== p) return
+        this.proc = null
+        reject(err('voice', '목소리 모델이 멈췄어요'))
+        for (const w of this.waits.values()) w({ error: '목소리 모델이 멈췄어요' })
+      }
+      p.on('exit', gone)
+      p.on('error', gone)
+    })
+    this.ready.catch(() => {})
+    p.stdin.on('error', () => {})
+    this.log('info', 'talk', `Supertonic 띄움 (${this.voice}, ${this.steps}단계)`)
+    return p
+  }
+  stop() {
+    const p = this.proc
+    this.proc = null
+    try {
+      p?.stdin.end()
+      p?.kill('SIGTERM')
+    } catch {}
+  }
+  async speak(text) {
+    clearTimeout(this.idle)
+    const p = this.proc ?? this.start()
+    await this.ready
+    const id = ++this.seq
+    const out = path.join(this.tmp, `cb-talk-${crypto.randomBytes(6).toString('hex')}.wav`)
+    try {
+      const r = await new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({ error: '목소리가 오래 걸려요' }), 30_000)
+        this.waits.set(id, (x) => (clearTimeout(timer), this.waits.delete(id), resolve(x)))
+        p.stdin.write(`${JSON.stringify({ id, text, voice: this.voice, steps: this.steps, out })}\n`)
+      })
+      if (r.error) throw err('voice', r.error)
+      return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `supertonic:${this.voice}` }
+    } finally {
+      fs.rmSync(out, { force: true })
+      this.idle = setTimeout(() => this.stop(), this.idleMs)
+      this.idle.unref?.()
+    }
+  }
+}
+
 // ---------- the small model
 
 export const JUDGE_SYSTEM = [
