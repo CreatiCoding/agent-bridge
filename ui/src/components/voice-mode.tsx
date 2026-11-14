@@ -436,7 +436,7 @@ export function VoiceMode({
     if (!on) speakerNow.current?.stop()
   }
   return (
-    <div className="inputbox voice-mode" role="region" aria-label="음성 모드">
+    <div className={`inputbox voice-mode${talkOn ? ' talk' : ''}`} role="region" aria-label="음성 모드">
       <div className="voice-head">
         <span ref={meter} className={`voice-meter${speaking ? ' on' : ''}`} aria-hidden />
         <span className="voice-state" role="status">
@@ -462,7 +462,7 @@ export function VoiceMode({
           <span className="voice-live">…</span>
         ) : (
           <span className="voice-hint">
-            {talkOn ? '말해 보세요. 말을 멈추면 알아서 보내고, 답은 목소리로 읽어 드려요. 읽는 중에 말하면 멈춰요' : '말해 보세요. 말한 내용이 여기에 쌓이고, 전송을 누르면 보내요'}
+            {talkOn ? '말을 멈추면 보내고, 답은 읽어 드려요' : '말해 보세요. 말한 내용이 여기에 쌓이고, 전송을 누르면 보내요'}
             {inHomeApp() ? (
               <>
                 {' '}
@@ -479,14 +479,27 @@ export function VoiceMode({
         </details>
       ) : null}
       {note ? <div className="voice-note">{note}</div> : null}
-      <div className="voice-actions">
-        <Button size="lg" onClick={reset} disabled={closing || (!said.length && !tail)}>
-          리셋
-        </Button>
-        <Button size="lg" tone="primary" icon="send" onClick={send} disabled={!!disabled || closing || (!said.length && !tail && !speaking)}>
-          전송
-        </Button>
-      </div>
+      {/* 대화 모드 sends by itself when the person stops: the two big buttons only take room there, so they show
+          small, and only while there is something said to clear or send now. */}
+      {!talkOn ? (
+        <div className="voice-actions">
+          <Button size="lg" onClick={reset} disabled={closing || (!said.length && !tail)}>
+            리셋
+          </Button>
+          <Button size="lg" tone="primary" icon="send" onClick={send} disabled={!!disabled || closing || (!said.length && !tail && !speaking)}>
+            전송
+          </Button>
+        </div>
+      ) : said.length || tail ? (
+        <div className="voice-actions small">
+          <Button size="sm" onClick={reset} disabled={closing}>
+            리셋
+          </Button>
+          <Button size="sm" tone="primary" icon="send" onClick={send} disabled={!!disabled || closing}>
+            지금 보내기
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

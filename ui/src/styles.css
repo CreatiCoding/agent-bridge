@@ -5819,6 +5819,10 @@ body.group-sorting * {
 .voice-live {
   color: var(--muted);
 }
+/* 대화 모드: what is said is sent within seconds, so a line is room enough. */
+.voice-mode.talk .voice-text {
+  min-height: 1.6em;
+}
 .voice-hint {
   color: var(--muted);
   font-size: var(--fs-medium);
@@ -5845,6 +5849,14 @@ body.group-sorting * {
 .voice-actions .btn {
   min-height: 52px;
   justify-content: center;
+}
+/* 대화 모드: small, at the end of the row. */
+.voice-actions.small {
+  display: flex;
+  justify-content: flex-end;
+}
+.voice-actions.small .btn {
+  min-height: 0;
 }
 
 /* 분할 화면 (REQ-F-786): a bar, then the panes side by side, each at least PANE_MIN (340 px) wide; more than fit

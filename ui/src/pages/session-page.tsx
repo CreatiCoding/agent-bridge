@@ -11,7 +11,7 @@ import { groupTree, look, modelName, titleOf } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
 import { writingShown } from '../lib/writing'
 import { featureOn } from '../lib/features'
-import type { Item } from '../lib/timeline'
+import { withoutHint, type Item } from '../lib/timeline'
 import type { Session } from '../lib/types'
 import { runnerCan, runnerLabel } from '../lib/runner'
 import { activityLine, lastSeen, NO_UPDATE, toolRunningIn } from '../lib/activity'
@@ -892,7 +892,7 @@ export function SessionPage({ id }: { id: string }) {
               {p.text && todoAskOf(p.text) ? (
                 <TodoAskCard ask={todoAskOf(p.text)!} className="sending" />
               ) : p.text ? (
-                <div className={`bubble sending${p.writing ? ' writing' : ''}`}>{p.text}</div>
+                <div className={`bubble sending${p.writing ? ' writing' : ''}`}>{withoutHint(p.text)}</div>
               ) : null}
               {p.writing ? <div className="bubble-note">받아쓰는 중…</div> : null}
             </div>

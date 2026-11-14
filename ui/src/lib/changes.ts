@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.537',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '대화 모드 패널이 작아졌어요: 받아쓴 글 칸은 한 줄, 안내도 한 줄, 큰 리셋·전송 버튼 대신 말이 있을 때만 작은 "리셋"·"지금 보내기"',
+        refs: ['REQ-F-907'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화 모드에서 보내는 중인 말풍선에 "(음성 대화 중: …)" 꼬리말이 보이던 것',
+        refs: ['REQ-F-907'],
+      },
+    ],
+  },
+  {
     version: '1.536',
     date: '2026-11-14',
+    commit: '18157aa',
     changes: [
       {
         kind: 'fixed',
