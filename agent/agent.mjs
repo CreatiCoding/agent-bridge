@@ -21,7 +21,7 @@ import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImage
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
-import { Judge, QwenVoice, SayVoice, SupertonicVoice, hasQwen, talk as talkRun, wavSeconds } from './talk.mjs'
+import { Judge, QwenVoice, SayVoice, SupertonicVoice, hasQwen, talk as talkRun, talkRate, wavSeconds } from './talk.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
@@ -5577,8 +5577,9 @@ const commands = {
       // The server asks for 소희 only on a Mac that said it has her (caps talkVoice, REQ-F-911).
       const voice = op === 'tts' && engine === 'qwen' && hasQwen(STATE_DIR) ? (qwenVoice ??= new QwenVoice({ dir: STATE_DIR, log })) : talkVoice
       const r = await talkRun({ op, text, rate }, { voice, judge: talkJudge })
-      // How long a sentence took against how long it sounds, to see when reading falls behind (no words logged).
-      if (op === 'tts') log('info', 'talk', `목소리 ${String(text ?? '').length}자 ${r.ms}ms → 소리 ${wavSeconds(r.audio)}초 (${r.engine})`)
+      // How long a sentence took against how long it sounds, and at what reading speed, to see when reading falls behind
+      // or is not as fast as asked (no words logged).
+      if (op === 'tts') log('info', 'talk', `목소리 ${String(text ?? '').length}자 ${r.ms}ms → 소리 ${wavSeconds(r.audio)}초 ${talkRate(rate)}배 (${r.engine})`)
       emit({ t: 'talk', reqId, ok: true, ...r })
     } catch (e) {
       if (!e.code) log('error', 'talk', `실패: ${e.stack || e.message}`)

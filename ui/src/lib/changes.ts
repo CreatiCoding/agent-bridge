@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.542',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '대화 모드에서 읽은 문장의 기록에 읽는 속도(예: 1.25배)도 남겨요',
+        refs: ['REQ-F-911'],
+      },
+    ],
+  },
+  {
     version: '1.541',
     date: '2026-11-14',
+    commit: '33573ab',
     changes: [
       {
         kind: 'fixed',
