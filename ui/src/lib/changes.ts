@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.533',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'agent', 'server'],
+        text: '기기 목록·기기 화면에 Claude 로그인 만료일(claude auth status 의 loginExpiresAt): 7일 안이면 주황, 끝났으면 빨강. 맥은 6시간마다 다시 읽어요',
+        refs: ['REQ-F-910', 'REQ-F-748'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '로그인이 끝나기 3일 전에 폰으로 알림(계정·만료일마다 한 번)',
+        refs: ['REQ-F-910', 'REQ-F-866'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'agent'],
+        text: '기기 화면의 "로그인 갱신": 맥이 claude auth login --claudeai 를 띄우고, 폰에서 주소로 승인한 뒤 코드를 붙여 넣으면 끝. 새 주소를 받으면 앞 주소는 닫혀요. 갱신 전후 계정을 해시로만 비교해 다른 계정이면 크게 알려요',
+        refs: ['REQ-F-910', 'REQ-F-749', 'IF-211'],
+      },
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '로그인 대기 15분 → 30분, 종료 코드 0 과 "Login successful" 을 확인하고, 오류에 코드·주소·이메일·토큰을 남기지 않아요',
+        refs: ['REQ-F-749', 'REQ-F-910'],
+      },
+    ],
+  },
+  {
     version: '1.532',
     date: '2026-11-14',
+    commit: '4a53de3',
     changes: [
       {
         kind: 'fixed',

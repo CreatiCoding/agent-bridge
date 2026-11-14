@@ -126,6 +126,7 @@ func init() {
 			hosts.Val(hostID)["accounts"] = cleanAccounts(msg["accounts"])
 			touchGlobals()
 			broadcastState(uid)
+			warnLoginExpiry(uid, hostID)
 		},
 		"hello":  helloFromAgent,
 		"lines":  linesFromAgent,

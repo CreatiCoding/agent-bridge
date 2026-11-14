@@ -20,13 +20,16 @@ test('서버가 푸시하는 알림 자리가 설명과 같다', () => {
     pushed.sort(),
     ['agentmsg.go', 'agentmsg.go', 'agentmsg.go', 'agentmsg.go', 'api1.go', 'delegate.go', 'delegate.go', 'tidy.go', 'tidy.go'],
   )
+  // Built apart from addNotice: the reboot that did not happen, and the Claude sign-in that ends in 3 days (REQ-F-910).
+  assert.match(read('server/reboot.go'), /"push": "always"/)
+  assert.match(read('server/loginexpiry.go'), /"push": "always"/)
   // A background task that ended leaves no notice at all (1.441, AC-1626).
   assert.ok(!lines.some(([n]) => n === 'eventlog.go'))
 })
 
 test('설정과 가이드가 같은 말을 한다', () => {
   const push = read('ui/src/components/push.tsx')
-  for (const w of ['권한 요청', '질문', '플랜 승인', '관리자 비밀번호', '시스템 허락 창', '세션 정리', '45초'])
+  for (const w of ['권한 요청', '질문', '플랜 승인', '관리자 비밀번호', '시스템 허락 창', '세션 정리', 'Claude 로그인', '45초'])
     assert.ok(push.includes(w), w)
   assert.match(read('ui/src/pages/settings.tsx'), /<PushWhen \/>/)
   const guide = read('ui/src/pages/guide.tsx')

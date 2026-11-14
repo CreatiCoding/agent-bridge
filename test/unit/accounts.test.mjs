@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { sharedConfig, mergedConfig, prepareAccountDir, syncAccountConfig, copySessionState, safeAccountId, newAccountId, accountName, loginUrlOf, safeLoginCode, authOf, SHARED, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes } from '../../agent/accounts.mjs'
+import { sharedConfig, mergedConfig, prepareAccountDir, syncAccountConfig, copySessionState, safeAccountId, newAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, SHARED, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes } from '../../agent/accounts.mjs'
 import crypto from 'node:crypto'
 
 const MAIN = {
@@ -93,9 +93,44 @@ test('ids, names, codes and the sign-in address', () => {
 })
 
 test('authOf keeps what the page shows', () => {
-  assert.deepEqual(authOf('{"loggedIn":true,"authMethod":"claude.ai","email":"a@b.c","subscriptionType":"max","extra":1}'), { loggedIn: true, method: 'claude.ai', email: 'a@b.c', plan: 'max', org: null })
+  assert.deepEqual(authOf('{"loggedIn":true,"authMethod":"claude.ai","email":"a@b.c","subscriptionType":"max","extra":1}'), { loggedIn: true, method: 'claude.ai', email: 'a@b.c', plan: 'max', org: null, expiresAt: null })
   assert.equal(authOf('{"loggedIn":false,"authMethod":"none"}').loggedIn, false)
   assert.deepEqual(authOf('not json'), { loggedIn: null })
+  // REQ-F-910: loginExpiresAt, in ms.
+  assert.equal(authOf('{"loggedIn":true,"loginExpiresAt":"2026-12-12T08:49:15.900Z"}').expiresAt, Date.parse('2026-12-12T08:49:15.900Z'))
+  assert.equal(authOf('{"loggedIn":true,"loginExpiresAt":"soon"}').expiresAt, null)
+})
+
+test('renewal: the same account by hash, the login command, its end, and nothing secret in what is said (REQ-F-910)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-renew-'))
+  const f = path.join(tmp, '.claude.json')
+  fs.writeFileSync(f, JSON.stringify({ oauthAccount: { emailAddress: ' Me@Example.com ' } }))
+  const h1 = accountHashOf(f)
+  assert.match(h1, /^[0-9a-f]{64}$/)
+  assert.ok(!h1.includes('example'))
+  fs.writeFileSync(f, JSON.stringify({ oauthAccount: { emailAddress: 'me@example.com' } }))
+  assert.equal(accountHashOf(f), h1, 'case and spaces do not make another account')
+  fs.writeFileSync(f, JSON.stringify({ oauthAccount: { emailAddress: 'other@example.com' } }))
+  assert.equal(sameAccountOf(h1, accountHashOf(f)), false)
+  assert.equal(sameAccountOf(h1, h1), true)
+  assert.equal(sameAccountOf(null, h1), null)
+  assert.equal(accountHashOf(path.join(tmp, 'none.json')), null)
+  fs.rmSync(tmp, { recursive: true })
+
+  assert.equal(LOGIN_WAIT_S, 1800)
+  const cmd = loginCommand('/x/claude', 'BUN_OPTIONS=1 ', (s) => `'${s}'`)
+  assert.match(cmd, /perl -e 'alarm shift; exec @ARGV or exit 127' 1800 '\/x\/claude' auth login --claudeai;/)
+  assert.match(cmd, /else BUN_OPTIONS=1 '\/x\/claude' auth login --claudeai; fi; echo "\[login exited \$\?\]"/)
+  assert.doesNotMatch(cmd, /settings/)
+
+  assert.deepEqual(loginResult('Paste code here if prompted > \nLogin successful.\n[login exited 0]'), { code: 0, said: true })
+  assert.deepEqual(loginResult('Paste code here >'), { code: null, said: false })
+  assert.deepEqual(loginResult('OAuth error: invalid code\n[login exited 1]'), { code: 1, said: false })
+
+  const code = 'AbCdEfGh12345678_-xyz#st4te-0123456789abcdef'
+  const said = maskLogin(`visit: https://claude.com/cai/oauth/authorize?state=s\nPaste code here if prompted > ${code}\nLogged in as me@example.com\ntoken sk-ant-oat01-abcdefghijklmnopqrstuvwxyz0123`, code)
+  for (const secret of [code, 'https://', 'me@example.com', 'abcdefghijklmnopqrstuvwxyz0123']) assert.ok(!said.includes(secret), secret)
+  assert.match(said, /Paste code here if prompted > \*\*\*/)
 })
 
 test('keychainService is the folder string hashed as it is, so a link or a trailing slash is another sign-in', () => {

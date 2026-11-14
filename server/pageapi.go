@@ -350,6 +350,19 @@ func cleanAccounts(list any) []any {
 			n = 0
 		}
 		row := M{"id": id, "name": name, "main": id == "", "loggedIn": li, "email": text(mget(a, "email"), 200), "plan": text(mget(a, "plan"), 40), "method": text(mget(a, "method"), 40), "sessions": n, "signingIn": mget(a, "signingIn") == true}
+		// When the sign-in ends (claude auth status loginExpiresAt, ms), and how the last renewal on the page went:
+		// sameAccount is only a yes or no, the Mac compares hashes of the address (REQ-F-910).
+		if t := jsNumber(mget(a, "expiresAt")); t == t && t > 0 && t < 1e14 {
+			row["expiresAt"] = t
+		}
+		if t := jsNumber(mget(a, "renewedAt")); t == t && t > 0 && t < 1e14 {
+			row["renewedAt"] = t
+			if b, ok := mget(a, "sameAccount").(bool); ok {
+				row["sameAccount"] = b
+			} else {
+				row["sameAccount"] = nil
+			}
+		}
 		// A linked folder (another tool's config folder): where it is, and whether it is still there.
 		if id != "" && mget(a, "external") == true {
 			row["external"] = true

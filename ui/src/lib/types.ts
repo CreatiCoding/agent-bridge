@@ -191,6 +191,11 @@ export interface Account {
   dir?: string | null
   /** A linked folder that is no longer there. */
   missing?: boolean
+  /** When the sign-in ends (claude auth status loginExpiresAt, ms). Not known for a linked folder. */
+  expiresAt?: number
+  /** The last renewal on the page, and whether it kept the same account (the Mac compares hashes; REQ-F-910). */
+  renewedAt?: number
+  sameAccount?: boolean | null
 }
 
 export interface DiskHelp {

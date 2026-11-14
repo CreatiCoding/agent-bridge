@@ -216,6 +216,7 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 			h["accounts"] = cleanAccounts(list)
 			touchGlobals()
 			broadcastState(uid)
+			warnLoginExpiry(uid, m[1])
 		}
 		if op != "list" {
 			text := "Claude 계정 " + ACCOUNT_OP_NAMES[op]
@@ -243,6 +244,14 @@ func apiHosts(req *Req, res *Res, u *url.URL, uid string) bool {
 		}
 		if safeAccount(r["id"]) {
 			out["id"] = r["id"]
+		}
+		// A renewal: whether the Mac reads the same account signed in as before (hashes compared there, REQ-F-910).
+		if op == "code" {
+			if b, ok := r["same"].(bool); ok {
+				out["same"] = b
+			} else {
+				out["same"] = nil
+			}
 		}
 		jsonRes(res, 200, out)
 		return true

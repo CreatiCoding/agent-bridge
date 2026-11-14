@@ -154,7 +154,9 @@ test('agent (AC-1521): zeropty only through muxProgram with its socket; sessions
   assert.match(uses[1], /run\(ZP\.bin, \['-V'\]\)/)
   assert.equal((src.match(/execFile\(m\.bin/g) ?? []).length, 2, 'muxAt 과 tmuxRaw 만')
   assert.match(src, /const clean = 'unset ZEROPTY_SOCK /)
-  assert.match(src, /`unset CLAUDECODE ZEROPTY_SOCK; \$\{ttyPrefix\(mux\)\}\$\{shq\(CLAUDE_BIN\)\} auth login/)
+  // The sign-in terminal (REQ-F-910): its command is built in accounts.mjs, and drops ZEROPTY_SOCK first too.
+  assert.match(src, /loginCommand\(CLAUDE_BIN, ttyPrefix\(mux\), shq\)/)
+  assert.match(fs.readFileSync(new URL('../../agent/accounts.mjs', import.meta.url), 'utf8'), /`unset CLAUDECODE ZEROPTY_SOCK; if command -v perl/)
   assert.match(src, /s\.mux === 'zeropty' && s\.zsock \? \{ zsock: s\.zsock \}/)
   assert.match(src, /zeroptyNames\.set\(s\.tmux, sockOf\(s, ZP_LEGACY\)\)/)
   assert.match(src, /if \(s\.mux === 'zeropty'\) s\.zsock = ZP_SOCK/)

@@ -18,7 +18,7 @@ import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
 import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, outerMount, outerTrashDir, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
-import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
+import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
 import { Judge, SayVoice, SupertonicVoice, talk as talkRun } from './talk.mjs'
@@ -652,8 +652,13 @@ let accounts = readJson(accountsPath, []).filter((a) => a && a.id && safeAccount
 const saveAccounts = () => writeJson(accountsPath, accounts)
 /** What `claude auth status` last said for each account id ('' is the main one). */
 const accountAuth = new Map()
-/** Account id -> the tmux session where its `claude auth login` waits for the code from the sign-in page. */
+/**
+ * Account id -> the terminal where its `claude auth login` waits for the code from the sign-in page: { name, at,
+ * before (the signed-in account's hash then, accountHashOf), timer (closes it after LOGIN_WAIT_S) }.
+ */
 const logins = new Map()
+/** Account id -> how its last sign-in on this page ended: { at, same } (same: sameAccountOf, never the address). */
+const lastLogins = new Map()
 /** The main account's global config, where its MCP servers and welcome marks are. */
 const MAIN_CONFIG = process.env.CLAUDE_CONFIG_DIR ? path.join(CLAUDE_DIR, '.claude.json') : path.join(HOME, '.claude.json')
 /** The config folder of an account id, or null when this Mac has no such account. */
@@ -5488,13 +5493,14 @@ const commands = {
       }
       if (op === 'code') {
         if (!safeLoginCode(code)) throw new Error('붙여 넣은 코드가 올바르지 않아요. 로그인 화면에 나온 코드를 그대로 붙여 넣어 주세요')
-        await finishLogin(id, code)
-        log('info', 'account', `Claude 계정 로그인 완료: ${id || '기본'}`)
-        return done()
+        const same = await finishLogin(id, code)
+        // The code is never logged; nor the address: only whether the account stayed the same.
+        log(same === false ? 'warn' : 'info', 'account', `Claude 계정 로그인 완료: ${id || '기본'}${same === true ? ' (같은 계정)' : same === false ? ' (다른 계정으로 로그인됨)' : ''}`)
+        return done({ same })
       }
       if (op === 'cancel') {
-        await tmux('kill-session', '-t', `=${loginTmux(id)}`)
-        logins.delete(id)
+        if (logins.get(id)?.finishing) throw new Error('붙여 넣은 코드를 확인하는 중이에요. 끝난 뒤 다시 해 주세요')
+        await endLogin(id)
         return done()
       }
       if (op === 'logout') {
@@ -7090,7 +7096,7 @@ function accountList() {
   const used = (id) => [...sessions.values()].filter((s) => (s.account ?? '') === id).length
   // A linked folder says where it is, except while this Mac seals what it sends (REQ-S-095): no new plain field then.
   const linked = (a) => (a.external ? { external: true, missing: !fs.existsSync(a.dir), ...(trustSealing() ? {} : { dir: tilde(a.dir) }) } : {})
-  return [{ id: '', name: config.mainAccountName || '기본 계정', main: true }, ...accounts.map((a) => ({ id: a.id, name: a.name, main: false, ...linked(a) }))].map((a) => ({ ...a, ...(accountAuth.get(a.id) ?? { loggedIn: null }), sessions: used(a.id), signingIn: logins.has(a.id) }))
+  return [{ id: '', name: config.mainAccountName || '기본 계정', main: true }, ...accounts.map((a) => ({ id: a.id, name: a.name, main: false, ...linked(a) }))].map((a) => ({ ...a, ...(accountAuth.get(a.id) ?? { loggedIn: null }), sessions: used(a.id), signingIn: logins.has(a.id), ...(lastLogins.has(a.id) ? { renewedAt: lastLogins.get(a.id).at, sameAccount: lastLogins.get(a.id).same } : {}) }))
 }
 /** Whether the login keychain has an item of that name. The secret itself is not read, so nothing is asked. */
 const hasKeychainItem = async (service) => process.platform === 'darwin' && (await run('security', ['find-generic-password', '-s', service], { timeout: 10_000 })).ok
@@ -7104,25 +7110,44 @@ async function refreshAccounts(only) {
   }
   emit({ t: 'accounts', accounts: accountList() })
 }
+/** How long before a sign-in ends (loginExpiresAt) the Mac's check warns: 7 days. */
+const LOGIN_WARN_MS = 7 * 86_400_000
+/** Read again every 6 hours, so each sign-in's end date (loginExpiresAt) and the server's warning stay current. */
+const ACCOUNT_REFRESH_MS = 6 * 3600_000
+setInterval(() => {
+  if (!doctorOnly) refreshAccounts().catch((e) => log('warn', 'account', `계정 상태를 읽지 못함: ${e.message}`))
+}, ACCOUNT_REFRESH_MS).unref?.()
 
 const loginTmux = (id) => `cb-login-${config.hostId.slice(0, 4)}-${id || 'main'}`
-/** The last lines of a sign-in screen, without the address (it carries the sign-in's state). */
-const loginTail = (screen) => screen.split('\n').filter((l) => l.trim() && !/https?:\/\//.test(l)).slice(-4).join(' / ') || '출력 없음'
+/** The last lines of a sign-in screen, masked (maskLogin): no address, code, e-mail address or token. */
+const loginTail = (screen, code) => maskLogin(screen, code).split('\n').filter((l) => l.trim() && l.trim() !== '***').slice(-4).join(' / ') || '출력 없음'
+/** The config file that names an account's signed-in address (oauthAccount): the main one's, or the folder's own. */
+const accountConfigOf = (id) => (id ? path.join(accountDir(id), '.claude.json') : MAIN_CONFIG)
+/** Closes a sign-in's terminal and forgets it. */
+async function endLogin(id) {
+  const l = logins.get(id)
+  if (l?.timer) clearTimeout(l.timer)
+  logins.delete(id)
+  await tmux('kill-session', '-t', `=${loginTmux(id)}`)
+}
 
 /**
- * Starts `claude auth login` for an account in a terminal of its own and returns the sign-in address it prints.
- * The person opens it on any device, signs in, and pastes the code they are shown back on the page
- * (finishLogin). BROWSER points at a command that does nothing, so no browser opens on the Mac itself.
+ * Starts `claude auth login --claudeai` for an account in a terminal of its own and returns the sign-in address it
+ * prints. The person opens it on any device, signs in, and pastes the code they are shown back on the page
+ * (finishLogin). BROWSER points at a command that does nothing, so no browser opens on the Mac itself. Starting
+ * again closes the last one first: its address no longer works, and only the new one is shown. It waits
+ * LOGIN_WAIT_S (30 minutes) for the code, then the terminal is closed. Nothing in the settings is changed.
  */
 async function startLogin(id) {
   const name = loginTmux(id)
-  await tmux('kill-session', '-t', `=${name}`)
-  logins.delete(id)
+  // A code being checked in that terminal now (finishLogin): a new one would take its name and be closed with it.
+  if (logins.get(id)?.finishing) throw new Error('붙여 넣은 코드를 확인하는 중이에요. 끝난 뒤 다시 해 주세요')
+  await endLogin(id)
   const mux = newMux()
   placeTerminal(name, mux)
   const env = Object.entries({ ...accountEnvOf(id), BROWSER: '/usr/bin/true' }).flatMap(([k, v]) => ['-e', `${k}=${v}`])
-  // Waits 15 minutes for the code, then the terminal goes away by itself.
-  const r = await tmux('new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...env, `unset CLAUDECODE ZEROPTY_SOCK; ${ttyPrefix(mux)}${shq(CLAUDE_BIN)} auth login; echo "[login exited $?]"; sleep 900`)
+  const before = accountHashOf(accountConfigOf(id))
+  const r = await tmux('new-session', '-d', '-s', name, '-x', '200', '-y', '50', ...env, loginCommand(CLAUDE_BIN, ttyPrefix(mux), shq))
   if (!r.ok) throw new Error(`${mux}: ${r.err}`)
   let screen = ''
   for (let i = 0; i < 40; i++) {
@@ -7131,22 +7156,39 @@ async function startLogin(id) {
     screen = await tmuxRaw('capture-pane', '-p', '-J', '-t', `=${name}:`)
     const url = loginUrlOf(screen)
     if (url) {
-      logins.set(id, { name, at: Date.now() })
+      const at = Date.now()
+      // The agent's own limit as well, for a Mac without perl (loginCommand): the same 30 minutes.
+      const timer = setTimeout(() => {
+        if (logins.get(id)?.at !== at) return
+        log('info', 'account', `Claude 로그인 ${Math.round(LOGIN_WAIT_S / 60)}분 동안 코드가 오지 않아 로그인 창을 닫음: ${id || '기본'}`)
+        endLogin(id).then(() => emit({ t: 'accounts', accounts: accountList() }))
+      }, LOGIN_WAIT_S * 1000)
+      timer.unref?.()
+      logins.set(id, { name, at, before, timer })
       return url
     }
-    if (/\[login exited \d+\]/.test(screen)) break
+    if (loginResult(screen).code !== null) break
   }
   await tmux('kill-session', '-t', `=${name}`)
   throw new Error(`로그인 주소를 받지 못했어요: ${loginTail(screen)}`)
 }
-/** Types the code from the sign-in page into the waiting `claude auth login`, and reads whether it worked. */
+/**
+ * Types the code from the sign-in page (`<code>#<state>`, pasted whole) into the waiting `claude auth login` and
+ * presses Enter, waits for it to end, and reads the sign-in again. It worked when claude ended with 0 and said
+ * "Login successful" (or, said in other words, `auth status` reads signed in). Returns whether the account is the
+ * one signed in before (sameAccountOf), or null when there was none before.
+ */
 async function finishLogin(id, code) {
   const l = logins.get(id)
   if (!l) throw new Error('로그인을 먼저 시작해 주세요')
+  if (l.finishing) throw new Error('붙여 넣은 코드를 확인하는 중이에요')
+  // From here the 30-minute timer no longer closes it: a code sent just before the end is checked to its end.
+  l.finishing = true
+  clearTimeout(l.timer)
   const typed = await tmux('send-keys', '-t', `=${l.name}:`, '-l', code.trim())
   if (!typed.ok) {
-    logins.delete(id)
-    throw new Error('로그인 창이 닫혔어요(15분이 지났을 수 있어요). 로그인을 다시 시작해 주세요')
+    await endLogin(id)
+    throw new Error(`로그인 창이 닫혔어요(${Math.round(LOGIN_WAIT_S / 60)}분이 지났을 수 있어요). 로그인을 다시 시작해 주세요`)
   }
   await sleep(300)
   await tmux('send-keys', '-t', `=${l.name}:`, 'Enter')
@@ -7154,12 +7196,18 @@ async function finishLogin(id, code) {
   for (let i = 0; i < 60; i++) {
     await sleep(500)
     screen = await tmuxRaw('capture-pane', '-p', '-J', '-t', `=${l.name}:`)
-    if (/\[login exited \d+\]/.test(screen)) break
+    if (loginResult(screen).code !== null) break
   }
-  await tmux('kill-session', '-t', `=${l.name}`)
-  logins.delete(id)
+  const end = loginResult(screen)
+  await endLogin(id)
   await refreshAccounts(id)
-  if (accountAuth.get(id)?.loggedIn !== true) throw new Error(`로그인하지 못했어요: ${loginTail(screen)}`)
+  const signedIn = accountAuth.get(id)?.loggedIn === true
+  if (end.code !== 0 || !(end.said || signedIn)) throw new Error(`로그인하지 못했어요${end.code ? ` (종료 코드 ${end.code})` : end.code === null ? ' (30초 안에 끝나지 않음)' : ''}: ${loginTail(screen, code)}`)
+  if (!signedIn) throw new Error('로그인은 끝났지만 claude auth status 가 로그인으로 읽히지 않아요. 잠시 뒤 다시 확인해 주세요')
+  const same = sameAccountOf(l.before, accountHashOf(accountConfigOf(id)))
+  lastLogins.set(id, { at: Date.now(), same })
+  emit({ t: 'accounts', accounts: accountList() })
+  return same
 }
 
 /**
@@ -7212,7 +7260,12 @@ async function runChecks() {
       info = JSON.parse(auth.out)
     } catch {}
     if (info?.projectsDirectory) projectsDir = info.projectsDirectory
-    if (info?.loggedIn === true) add('claude-login', 'ok', 'claude 로그인', `로그인됨 (${info.authMethod ?? '확인됨'})`)
+    // Within 7 days of its end (loginExpiresAt) a sign-in is a warning: sessions and what runs on them stop with it.
+    const exp = authOf(auth.out).expiresAt
+    const left = exp ? exp - Date.now() : null
+    const until = exp ? new Date(exp).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : ''
+    if (info?.loggedIn === true && left !== null && left < LOGIN_WARN_MS) add('claude-login', 'warn', 'claude 로그인', left <= 0 ? `로그인이 끝났습니다 (${until})` : `로그인이 ${until}에 끝납니다 (${Math.ceil(left / 86_400_000)}일 남음)`, '기기 화면의 "로그인 갱신" 으로 다시 로그인')
+    else if (info?.loggedIn === true) add('claude-login', 'ok', 'claude 로그인', `로그인됨 (${info.authMethod ?? '확인됨'})${until ? ` · ${until}까지` : ''}`)
     else if (info?.loggedIn === false) add('claude-login', 'fail', 'claude 로그인', '로그인돼 있지 않습니다. 세션을 열면 로그인 화면에서 멈춥니다', '이 기기의 터미널에서 claude 를 실행하고 /login', true)
     else add('claude-login', 'warn', 'claude 로그인', '로그인 상태를 확인하지 못했습니다 (이 버전은 `claude auth status` 가 없을 수 있음)', '이 기기의 터미널에서 claude 를 한 번 실행해 로그인돼 있는지 확인')
   }

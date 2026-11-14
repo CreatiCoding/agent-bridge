@@ -2150,8 +2150,10 @@ function cleanAccounts(list) {
   return (Array.isArray(list) ? list : [])
     .filter((a) => a && safeAccount(a.id))
     .slice(0, 11)
-    .map((a) => ({ id: a.id, name: text(a.name, 40) || (a.id ? '계정' : '기본 계정'), main: a.id === '', loggedIn: typeof a.loggedIn === 'boolean' ? a.loggedIn : null, email: text(a.email, 200), plan: text(a.plan, 40), method: text(a.method, 40), sessions: Number(a.sessions) || 0, signingIn: a.signingIn === true }))
+    .map((a) => ({ id: a.id, name: text(a.name, 40) || (a.id ? '계정' : '기본 계정'), main: a.id === '', loggedIn: typeof a.loggedIn === 'boolean' ? a.loggedIn : null, email: text(a.email, 200), plan: text(a.plan, 40), method: text(a.method, 40), sessions: Number(a.sessions) || 0, signingIn: a.signingIn === true, ...(ms(a.expiresAt) ? { expiresAt: a.expiresAt } : {}), ...(ms(a.renewedAt) ? { renewedAt: a.renewedAt, sameAccount: typeof a.sameAccount === 'boolean' ? a.sameAccount : null } : {}) }))
 }
+/** A time in ms from the Mac (REQ-F-910), or nothing. */
+const ms = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1e14
 const ACCOUNT_OP_NAMES = { list: '목록', add: '추가', rename: '이름 바꾸기', login: '로그인 시작', code: '로그인 코드 입력', cancel: '로그인 취소', logout: '로그아웃', sync: '공유 설정 다시 맞추기', remove: '빼기' }
 const ACCOUNT_OPS = Object.keys(ACCOUNT_OP_NAMES)
 /** A host's accounts without the e-mail addresses: for the session list and the move dialog. */

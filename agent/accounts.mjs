@@ -192,7 +192,7 @@ export const loginUrlOf = (screen) => /https:\/\/\S+\/oauth\/authorize\?\S+/.exe
 /** What a person pastes back from the sign-in page: the code, often with `#state` after it. Nothing else. */
 export const safeLoginCode = (code) => typeof code === 'string' && /^[A-Za-z0-9_\-#.~]{8,512}$/.test(code.trim())
 
-/** What `claude auth status --json` says, kept to what the page shows. */
+/** What `claude auth status --json` says, kept to what the page shows. `expiresAt`: loginExpiresAt in ms, or null. */
 export function authOf(out) {
   let j = null
   try {
@@ -200,7 +200,55 @@ export function authOf(out) {
   } catch {}
   if (!j || typeof j !== 'object') return { loggedIn: null }
   const text = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null)
-  return { loggedIn: j.loggedIn === true, method: text(j.authMethod, 40), email: text(j.email, 200), plan: text(j.subscriptionType, 40), org: text(j.orgName, 100) }
+  const exp = typeof j.loginExpiresAt === 'string' ? Date.parse(j.loginExpiresAt) : NaN
+  return { loggedIn: j.loggedIn === true, method: text(j.authMethod, 40), email: text(j.email, 200), plan: text(j.subscriptionType, 40), org: text(j.orgName, 100), expiresAt: Number.isFinite(exp) && exp > 0 ? exp : null }
+}
+
+/** How long a renewal's `claude auth login` waits for the code before its terminal is closed (30 minutes). */
+export const LOGIN_WAIT_S = 1800
+
+/**
+ * The account a config file says is signed in, as a hash of its address (oauthAccount.emailAddress, trimmed and
+ * lower-cased), or null. Only compared before and after a sign-in: the address itself is never kept or sent.
+ */
+export function accountHashOf(file) {
+  try {
+    const e = JSON.parse(fs.readFileSync(file, 'utf8'))?.oauthAccount?.emailAddress
+    if (typeof e !== 'string' || !e.trim()) return null
+    return crypto.createHash('sha256').update(e.trim().toLowerCase()).digest('hex')
+  } catch {
+    return null
+  }
+}
+/** Whether a sign-in kept the account: true, false, or null when either side has no account to compare. */
+export const sameAccountOf = (before, after) => (before && after ? before === after : null)
+
+/**
+ * The shell command a sign-in terminal runs: `claude auth login --claudeai` that perl's alarm ends after `secs`
+ * (alarm stays across exec, and perl is on macOS and every Linux), then its exit code on a line of its own.
+ * Without perl the login has no limit of its own and the agent's timer closes the terminal.
+ */
+export const loginCommand = (claude, prefix, q, secs = LOGIN_WAIT_S) =>
+  `unset CLAUDECODE ZEROPTY_SOCK; if command -v perl >/dev/null 2>&1; then ${prefix}perl -e 'alarm shift; exec @ARGV or exit 127' ${secs} ${q(claude)} auth login --claudeai; else ${prefix}${q(claude)} auth login --claudeai; fi; echo "[login exited $?]"; sleep 60`
+
+/** How a sign-in terminal ended: its exit code (null while it runs) and whether claude said it worked. */
+export function loginResult(screen) {
+  const m = /\[login exited (\d+)\]/.exec(String(screen))
+  return { code: m ? Number(m[1]) : null, said: /login successful/i.test(String(screen)) }
+}
+
+/**
+ * A sign-in screen's text safe for a log or an error: no address (it carries the sign-in's state), no pasted code,
+ * no e-mail address, and nothing long enough to be a code or a token. Each is ***.
+ */
+export function maskLogin(screen, code = '') {
+  let s = String(screen)
+  const c = String(code ?? '').trim()
+  if (c) s = s.split(c).join('***')
+  return s
+    .replace(/https?:\/\/\S+/g, '***')
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '***')
+    .replace(/[A-Za-z0-9_\-.~]{24,}(#[A-Za-z0-9_\-.~]+)?/g, '***')
 }
 
 /**

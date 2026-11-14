@@ -3,17 +3,14 @@
 // plugins and MCP servers are the main account's. Signing in happens here: the Mac starts `claude auth login`, this
 // page shows its sign-in address, and the code the sign-in page gives is pasted back.
 import { useEffect, useState } from 'react'
-import { errorText, post } from '../lib/api'
+import { errorText } from '../lib/api'
 import { href } from '../lib/router'
 import { hostIcon } from '../lib/sessions'
 import { NONE, useStore } from '../lib/store'
 import type { Account, Host } from '../lib/types'
-import { Badge, Button, CardHead, Empty, Icon, NO_AUTOFILL, Spinner } from '../kit'
+import { Badge, Button, CardHead, Empty, Icon, Spinner } from '../kit'
 import { confirmDialog, promptDialog, toast } from '../kit/overlay'
-import { copyText, linkClick } from '../lib/builtin-actions'
-
-type Reply = { ok: true; accounts: Account[]; url?: string; id?: string; notes?: string[] }
-const call = (hostId: string, body: Record<string, unknown>) => post<Reply>(`/api/hosts/${hostId}/accounts`, body)
+import { accountCall as call, expiryOf, LoginRenew } from '../components/claude-login'
 
 /** What a row says under the account's name. */
 export function accountLine(a: Account) {
@@ -52,16 +49,23 @@ export function AccountsPanel() {
 function HostAccounts({ host }: { host: Host }) {
   const [list, setList] = useState<Account[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  // The sign-in in progress: which account, and the address the Mac printed.
-  const [login, setLogin] = useState<{ id: string; url: string } | null>(null)
-  const [code, setCode] = useState('')
+  // An account just added: its sign-in starts at once (LoginRenew autoStart).
+  const [fresh, setFresh] = useState<string | null>(null)
   // An agent from before accounts says nothing about them, and would not answer the list either.
   const supported = !!host.accounts
   useEffect(() => {
     if (!host.online || !supported) return
     call(host.id, { op: 'list' }).then((r) => setList(r.accounts), () => {})
   }, [host.id, host.online, supported])
-  const accounts = list ?? host.accounts ?? []
+  // The list answered here has the e-mail addresses; the page's state is newer for what the Mac sends by itself
+  // (a sign-in closed after 30 minutes, an end date read again every 6 hours), so those come from it.
+  const live = new Map((host.accounts ?? []).map((a) => [a.id, a]))
+  const accounts = list
+    ? list.map((a) => {
+        const s = live.get(a.id)
+        return s ? { ...a, loggedIn: s.loggedIn, signingIn: s.signingIn, expiresAt: s.expiresAt, renewedAt: s.renewedAt, sameAccount: s.sameAccount } : a
+      })
+    : (host.accounts ?? [])
 
   const run = async (op: string, id: string, extra: Record<string, unknown> = {}, done?: string) => {
     setBusy(`${op}:${id}`)
@@ -77,15 +81,11 @@ function HostAccounts({ host }: { host: Host }) {
       setBusy(null)
     }
   }
-  const startLogin = async (id: string) => {
-    const r = await run('login', id)
-    if (r?.url) (setLogin({ id, url: r.url }), setCode(''))
-  }
   const add = async () => {
     const name = await promptDialog('Claude 계정 추가', { placeholder: '계정 이름 (예: 회사, 개인)', ok: '추가', text: '이 맥에 새 계정 폴더를 만들고 바로 로그인을 시작해요.' })
     if (!name?.trim()) return
     const r = await run('add', '', { name: name.trim() }, '계정을 더했어요. 이어서 로그인해 주세요')
-    if (r?.id) await startLogin(r.id)
+    if (r?.id) setFresh(r.id)
   }
   const rename = async (a: Account) => {
     const name = await promptDialog('계정 이름 바꾸기', { value: a.name, ok: '바꾸기' })
@@ -116,11 +116,6 @@ function HostAccounts({ host }: { host: Host }) {
     if (await confirmDialog(`${a.name} 연결을 해제할까요?`, { text: '이 맥의 계정 목록에서만 빼요. 그 폴더와 로그인, 대화 기록은 그대로 둬요.', ok: '연결 해제' })) await run('remove', a.id, {}, '연결을 해제했어요')
   }
   const sync = (a: Account) => run('sync', a.id, {}, 'MCP 서버와 폴더 신뢰 설정을 기본 계정에서 다시 가져왔어요')
-  const sendCode = async () => {
-    if (!login) return
-    const r = await run('code', login.id, { code: code.trim() }, '로그인했어요')
-    if (r) (setLogin(null), setCode(''))
-  }
 
   return (
     <section className="card-box">
@@ -159,6 +154,14 @@ function HostAccounts({ host }: { host: Host }) {
                     {accountLine(a)}
                     {a.sessions ? ` · 세션 ${a.sessions}개` : ''}
                   </div>
+                  {(() => {
+                    const e = expiryOf(a)
+                    return e ? (
+                      <div className={e.tone === 'grey' ? 'muted' : undefined} style={{ fontSize: 'var(--fs-small)', ...(e.tone === 'grey' ? {} : { color: e.tone === 'red' ? 'var(--red)' : 'var(--amber)', fontWeight: 600 }) }}>
+                        {e.text}
+                      </div>
+                    ) : null
+                  })()}
                   {a.external && a.dir ? (
                     <div className="muted" style={{ fontSize: 'var(--fs-small)', overflowWrap: 'anywhere' }}>
                       <code>{a.dir}</code>
@@ -186,11 +189,7 @@ function HostAccounts({ host }: { host: Host }) {
                         <Button size="sm" busy={busy === `logout:${a.id}`} onClick={() => logout(a)}>
                           로그아웃
                         </Button>
-                      ) : (
-                        <Button size="sm" tone="primary" icon="key" busy={busy === `login:${a.id}`} onClick={() => startLogin(a.id)}>
-                          로그인
-                        </Button>
-                      )}
+                      ) : null}
                       <Button size="sm" icon="edit" onClick={() => rename(a)}>
                         이름
                       </Button>
@@ -208,35 +207,9 @@ function HostAccounts({ host }: { host: Host }) {
                   )}
                 </div>
               </div>
-              {login?.id === a.id ? (
-                <div className="account-login stack">
-                  <ol className="guide-list" style={{ margin: 0 }}>
-                    <li>
-                      아래 버튼으로 로그인 페이지를 열어 <b>{a.name}</b> 에 쓸 Claude 계정으로 로그인해요. 폰이나 다른 기기에서 열어도 돼요.
-                    </li>
-                    <li>로그인이 끝나면 페이지에 나오는 코드를 복사해 아래 칸에 붙여 넣어요.</li>
-                  </ol>
-                  <div className="hstack" style={{ flexWrap: 'wrap', gap: 6 }}>
-                    <a className="btn btn-primary btn-sm" href={login.url} target="_blank" rel="noreferrer noopener" onClick={linkClick(login.url, 'accounts')}>
-                      <Icon name="link" />
-                      <span>로그인 페이지 열기</span>
-                    </a>
-                    <Button size="sm" onClick={() => copyText(login.url, 'link').then((ok) => ok && toast('로그인 주소를 복사했어요'))}>
-                      주소 복사
-                    </Button>
-                  </div>
-                  <div className="hstack" style={{ gap: 6 }}>
-                    <input className="input grow" {...NO_AUTOFILL} value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && code.trim() && void sendCode()} placeholder="로그인 페이지의 코드" aria-label="로그인 코드" />
-                    <Button size="sm" tone="primary" disabled={!code.trim()} busy={busy === `code:${a.id}`} onClick={sendCode}>
-                      확인
-                    </Button>
-                    <Button size="sm" onClick={() => (void run('cancel', a.id), setLogin(null))}>
-                      취소
-                    </Button>
-                  </div>
-                  <p className="muted" style={{ margin: 0, fontSize: 'var(--fs-small)' }}>
-                    15분 안에 코드를 넣지 않으면 다시 시작해야 해요.
-                  </p>
+              {!a.external ? (
+                <div style={{ marginTop: 6 }}>
+                  <LoginRenew hostId={host.id} account={a} onAccounts={setList} autoStart={fresh === a.id} />
                 </div>
               ) : null}
             </div>

@@ -6247,6 +6247,18 @@ body.group-sorting * {
 .conv-find-error {
   color: var(--red);
 }
+/* 기기 목록 (REQ-F-910): the Claude sign-in's end date on a second line of its own. */
+.host-row .row-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: normal;
+}
+.host-row .row-sub > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .conv-find-hit .row-sub {
   display: flex;
   flex-direction: column;

@@ -15,6 +15,7 @@ import { StateWait, useStateLoaded } from '../components/state-wait'
 import { featureOn, proxyLogin } from '../lib/features'
 import { copyText, openSession } from '../lib/builtin-actions'
 import { updateNow } from '../components/agent-update'
+import { ClaudeLoginBox, hostLoginLine } from '../components/claude-login'
 
 export function Copy({ text }: { text: string }) {
   return (
@@ -157,18 +158,27 @@ export function HostsPage({ me }: { me: Me | null }) {
                 <Row
                   key={h.id}
                   left={<Icon name={hostIcon(h.kind)} />}
+                  className={hostLoginLine(h.accounts) ? 'host-row' : undefined}
                   title={h.name}
                   sub={
                     <>
-                      {`${KINDS[h.kind] ?? '기타'} · ${h.online ? (h.stale ? '응답 없음' : `연결됨${h.rtt ? ` · ${h.rtt}ms` : ''}`) : `끊김 · ${ago(h.lastSeen)}`}${h.problem ? ` · ${h.problem}` : ''}`}
+                      <span>
+                        {`${KINDS[h.kind] ?? '기타'} · ${h.online ? (h.stale ? '응답 없음' : `연결됨${h.rtt ? ` · ${h.rtt}ms` : ''}`) : `끊김 · ${ago(h.lastSeen)}`}${h.problem ? ` · ${h.problem}` : ''}`}
+                        {(() => {
+                          const bat = hostBattery(h)
+                          return bat ? (
+                            <>
+                              {' · '}
+                              <span style={batteryLow(bat.b) && !bat.at ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{`${batteryLine(bat.b)}${bat.at ? ` (${ago(bat.at)})` : ''}`}</span>
+                            </>
+                          ) : null
+                        })()}
+                      </span>
                       {(() => {
-                        const bat = hostBattery(h)
-                        return bat ? (
-                          <>
-                            {' · '}
-                            <span style={batteryLow(bat.b) && !bat.at ? { color: 'var(--red)', fontWeight: 600 } : undefined}>{`${batteryLine(bat.b)}${bat.at ? ` (${ago(bat.at)})` : ''}`}</span>
-                          </>
-                        ) : null
+                        // The Claude sign-in's end date (REQ-F-910) on a line of its own, so a phone never cuts it off:
+                        // amber from 7 days before, red when ended or signed out.
+                        const l = hostLoginLine(h.accounts)
+                        return l ? <span style={l.tone !== 'grey' ? { color: l.tone === 'red' ? 'var(--red)' : 'var(--amber)', fontWeight: 600 } : undefined}>{l.text}</span> : null
                       })()}
                     </>
                   }
@@ -778,6 +788,8 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
   const linux = !!h?.info?.os?.startsWith('Linux')
   // Not one of mine: an operator looking at (and switching) someone else's Mac. Its owner is shown instead of its kind.
   const others = useStore((s) => !!s.state && !s.state.hosts.some((x) => x.id === id))
+  // This Mac's Claude accounts as the page's state has them (sent again after each sign-in step).
+  const accounts = useStore((s) => s.state?.hosts.find((x) => x.id === id)?.accounts)
   return (
     <div className="main">
       <div className="topbar">
@@ -806,6 +818,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   </div>
                 </div>
               ))}
+              {h && !others && accounts?.length ? <ClaudeLoginBox key={`cl-${h.id}`} hostId={h.id} accounts={accounts} online={h.online} /> : null}
               {h && detail.health?.features ? (
                 <StatusBox key={`st-${h.id}`} hostId={h.id} features={detail.health.features} repairs={detail.health.repairs ?? []} online={h.online} background={detail.health.background} awake={detail.health.awake} />
               ) : h ? (
