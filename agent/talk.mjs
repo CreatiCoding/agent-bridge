@@ -91,6 +91,8 @@ export class SupertonicVoice {
   constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F2', steps = 8, speed = SUPERTONIC_SPEED, log = () => {}, idleMs = 10 * 60_000 } = {}) {
     Object.assign(this, { run, tmp, voice, steps, speed, log, idleMs })
     this.py = path.join(dir, 'supertonic', 'bin', 'python')
+    this.startMs = 120_000
+    this.sayMs = 30_000
     this.proc = null
     this.ready = null
     this.waits = new Map()
@@ -103,11 +105,11 @@ export class SupertonicVoice {
   }
   start() {
     if (!fs.existsSync(this.py)) throw err('novoice', this.installHint)
-    const p = this.run(this.py, ['-I', '-c', SUPERTONIC_PY], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const p = this.run(this.py, this.args(), { stdio: ['pipe', 'pipe', 'ignore'] })
     this.proc = p
     let buf = ''
     this.ready = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(err('voice', '목소리 모델을 띄우지 못했어요 (2분)')), 120_000)
+      const timer = setTimeout(() => reject(err('voice', `목소리 모델을 띄우지 못했어요 (${Math.round(this.startMs / 60_000)}분)`)), this.startMs)
       p.stdout.setEncoding('utf8')
       p.stdout.on('data', (d) => {
         buf += d
@@ -136,8 +138,17 @@ export class SupertonicVoice {
     })
     this.ready.catch(() => {})
     p.stdin.on('error', () => {})
-    this.log('info', 'talk', `Supertonic 띄움 (${this.voice}, ${this.steps}단계)`)
+    this.log('info', 'talk', `${this.engine} 띄움${this.steps ? ` (${this.steps}단계)` : ''}`)
     return p
+  }
+  args() {
+    return ['-I', '-c', SUPERTONIC_PY]
+  }
+  request(id, text, rate, out) {
+    return { id, text, voice: this.voice, steps: this.steps, speed: Math.min(this.speed, Math.round(1.05 * rate * 1000) / 1000), out }
+  }
+  get engine() {
+    return `supertonic:${this.voice}`
   }
   stop() {
     const p = this.proc
@@ -155,12 +166,12 @@ export class SupertonicVoice {
     const out = path.join(this.tmp, `cb-talk-${crypto.randomBytes(6).toString('hex')}.wav`)
     try {
       const r = await new Promise((resolve) => {
-        const timer = setTimeout(() => resolve({ error: '목소리가 오래 걸려요' }), 30_000)
+        const timer = setTimeout(() => resolve({ error: '목소리가 오래 걸려요' }), this.sayMs)
         this.waits.set(id, (x) => (clearTimeout(timer), this.waits.delete(id), resolve(x)))
-        p.stdin.write(`${JSON.stringify({ id, text, voice: this.voice, steps: this.steps, speed: Math.min(this.speed, Math.round(1.05 * rate * 1000) / 1000), out })}\n`)
+        p.stdin.write(`${JSON.stringify(this.request(id, text, rate, out))}\n`)
       })
       if (r.error) throw err('voice', r.error)
-      return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `supertonic:${this.voice}` }
+      return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: this.engine }
     } finally {
       fs.rmSync(out, { force: true })
       this.idle = setTimeout(() => this.stop(), this.idleMs)
@@ -168,6 +179,87 @@ export class SupertonicVoice {
     }
   }
 }
+
+/**
+ * 소희 (REQ-F-911): Qwen3-TTS 0.6B CustomVoice (8-bit, MLX) on an Apple-silicon Mac, its built-in Korean woman's
+ * voice "Sohee" (a designed voice, not a real person's). It has no speed of its own (mlx-audio's `speed` is "not
+ * directly supported yet"), so ffmpeg's atempo makes it faster without raising its pitch. It speaks slower than
+ * Supertonic: the same sentence is 8.0 s against 5.4 s, so QWEN_PACE brings "1배" to Supertonic's normal pace.
+ * On an M1 it makes a sentence in about 0.8 of its own length: at 1.25배 reading catches up, and the page waits.
+ */
+export const QWEN_MODEL = 'mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'
+export const QWEN_PACE = 1.47
+export const QWEN_PY = `
+import sys, json, wave, shutil, subprocess, numpy as np
+from mlx_audio.tts.utils import load_model
+import mlx.core as mx
+m = load_model(sys.argv[1])
+# The first generation after loading costs ~5 s more (M1): paid here, before ready, not by the first sentence.
+for r in m.generate("준비", voice="Sohee", lang_code="korean"):
+    mx.eval(r.audio)
+ff = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+def tempo(t):
+    out = []
+    while t > 2.0: out.append("atempo=2.0"); t /= 2.0
+    while t < 0.5: out.append("atempo=0.5"); t /= 0.5
+    out.append("atempo=%.4f" % t)
+    return ",".join(out)
+print(json.dumps({"ready": True}), flush=True)
+for line in sys.stdin:
+    q = None
+    try:
+        q = json.loads(line)
+        parts = []
+        for r in m.generate(q["text"], voice=q["voice"], lang_code="korean"):
+            mx.eval(r.audio)
+            parts.append(np.array(r.audio, dtype=np.float32).reshape(-1))
+        a = np.concatenate(parts) if parts else np.zeros(1, dtype=np.float32)
+        pcm = (np.clip(a, -1, 1) * 32767).astype("<i2")
+        raw = q["out"] + ".raw.wav"
+        with wave.open(raw, "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(24000); w.writeframes(pcm.tobytes())
+        t = float(q.get("tempo", 1))
+        if abs(t - 1) > 0.01:
+            subprocess.run([ff, "-hide_banner", "-loglevel", "error", "-y", "-i", raw, "-filter:a", tempo(t), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", q["out"]], check=True, timeout=30)
+        else:
+            shutil.move(raw, q["out"])
+        print(json.dumps({"id": q["id"], "ok": True}), flush=True)
+    except Exception as e:
+        print(json.dumps({"id": q.get("id") if isinstance(q, dict) else None, "error": str(e)[:200]}), flush=True)
+    finally:
+        if isinstance(q, dict):
+            try:
+                import os; os.remove(q["out"] + ".raw.wav")
+            except Exception:
+                pass
+`
+
+/** The same one-process-kept-up as SupertonicVoice, with Qwen3-TTS: installed into <dir>/qwentts by the person once. */
+export class QwenVoice extends SupertonicVoice {
+  constructor({ dir, voice = 'Sohee', model = QWEN_MODEL, ...o } = {}) {
+    super({ dir, voice, ...o })
+    this.py = path.join(dir, 'qwentts', 'bin', 'python')
+    this.model = model
+    this.startMs = 10 * 60_000
+    this.sayMs = 60_000
+  }
+  get installHint() {
+    const d = path.dirname(path.dirname(this.py))
+    return `이 맥에 소희 목소리(Qwen3-TTS)가 없어요. 터미널에서: uv venv --python 3.12 ${d} && VIRTUAL_ENV=${d} uv pip install mlx-audio (ffmpeg 도 필요: brew install ffmpeg)`
+  }
+  args() {
+    return ['-I', '-c', QWEN_PY, this.model]
+  }
+  request(id, text, rate, out) {
+    return { id, text, voice: this.voice, tempo: Math.round(QWEN_PACE * rate * 1000) / 1000, out }
+  }
+  get engine() {
+    return `qwen:${this.voice}`
+  }
+}
+
+/** Whether this Mac has 소희 installed (told to the server with the agent's hello, REQ-F-911). */
+export const hasQwen = (dir) => process.platform === 'darwin' && fs.existsSync(path.join(dir, 'qwentts', 'bin', 'python'))
 
 // ---------- the small model
 

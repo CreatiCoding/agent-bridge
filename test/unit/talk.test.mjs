@@ -201,3 +201,91 @@ test('AC-1807 읽는 속도와 기록: 속도는 0.5~2 로 묶고, 소리 길이
   assert.deepEqual(logged.heard, { snr: 6.1, level: 0.08 })
   assert.equal(logged.raw, '러시아')
 })
+
+test('AC-1809 소희: 맥 미니의 Qwen3-TTS 를 띄워 두고 1.47×속도로 atempo, 화면은 끊기지 않을 만큼 모일 때까지 기다린다', async () => {
+  const { QwenVoice, QWEN_PACE, QWEN_PY, hasQwen } = await import('../../agent/talk.mjs')
+  const fs = await import('node:fs')
+  const os = await import('node:os')
+  const path = await import('node:path')
+  const { EventEmitter } = await import('node:events')
+  const { PassThrough } = await import('node:stream')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qw-'))
+  await assert.rejects(new QwenVoice({ dir }).speak('안녕'), (e) => e.code === 'novoice' && /uv pip install mlx-audio/.test(e.message))
+  assert.equal(hasQwen(dir), false)
+  fs.mkdirSync(path.join(dir, 'qwentts', 'bin'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'qwentts', 'bin', 'python'), '')
+  assert.equal(hasQwen(dir), process.platform === 'darwin')
+  const asked = []
+  let args
+  const run = (bin, a) => {
+    args = [bin, a]
+    const p = new EventEmitter()
+    p.stdout = new PassThrough()
+    p.stdin = new PassThrough()
+    p.kill = () => {}
+    p.stdin.on('data', (d) => {
+      for (const l of String(d).trim().split('\n')) {
+        const q = JSON.parse(l)
+        asked.push(q)
+        fs.writeFileSync(q.out, 'RIFF')
+        p.stdout.write(`${JSON.stringify({ id: q.id, ok: true })}\n`)
+      }
+    })
+    setImmediate(() => p.stdout.write('{"ready":true}\n'))
+    return p
+  }
+  const v = new QwenVoice({ dir, run })
+  const a = await v.speak('배포가 끝났어요.', 1.25)
+  v.stop()
+  clearTimeout(v.idle)
+  assert.equal(args[0], path.join(dir, 'qwentts', 'bin', 'python'))
+  assert.deepEqual(args[1], ['-I', '-c', QWEN_PY, 'mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit'])
+  assert.equal(a.engine, 'qwen:Sohee')
+  assert.equal(asked[0].voice, 'Sohee')
+  assert.equal(asked[0].tempo, Math.round(QWEN_PACE * 1.25 * 1000) / 1000)
+  assert.match(QWEN_PY, /atempo/)
+  fs.rmSync(dir, { recursive: true, force: true })
+
+  // Hold: what is left to make (letters × seconds a letter) and a little spare, less what is made already.
+  const { holdFor } = await import('../../ui/src/lib/speaker.ts')
+  assert.equal(holdFor(0, 0, 0.18), 0)
+  assert.ok(Math.abs(holdFor(0, 100, 0.18) - 18.5) < 1e-9)
+  assert.ok(Math.abs(holdFor(6, 100, 0.18) - 12.5) < 1e-9)
+  assert.equal(holdFor(30, 100, 0.18), 0)
+  // Supertonic makes a letter in ~0.04 s: a sentence made is about enough to start.
+  assert.equal(holdFor(3, 60, 0.04), 0)
+})
+
+test('AC-1809 Speaker: 다음 문장들을 차례로 만들고, 모인 소리가 남은 만들기 시간만큼 되면 읽는다', async () => {
+  const { Speaker } = await import('../../ui/src/lib/speaker.ts')
+  const played = []
+  const ctx = {
+    currentTime: 0,
+    destination: {},
+    createGain: () => ({ connect() {}, disconnect() {}, gain: { cancelScheduledValues() {}, setTargetAtTime() {} } }),
+    decodeAudioData: async (b) => ({ duration: new Uint8Array(b)[0] }),
+    createBufferSource: () => {
+      const s = { connect() {}, start() { played.push(s.buffer.duration); setTimeout(() => s.onended(), 5) }, stop() {} }
+      return s
+    },
+  }
+  const made = []
+  // Each sentence "lasts" as many seconds as its length, and is made at once.
+  const sp = new Speaker(ctx, async (t) => (made.push(t), Uint8Array.of(t.length).buffer))
+  const waits = []
+  const states = []
+  sp.onWait = (u) => waits.push(u)
+  sp.onState = (on) => states.push(on)
+  sp.say(['하나다', '둘이다요', '셋'])
+  await new Promise((r) => setTimeout(r, 100))
+  assert.deepEqual(made, ['하나다', '둘이다요', '셋'])
+  assert.deepEqual(played, [3, 4, 1])
+  assert.deepEqual(states, [true, false])
+  assert.equal(waits.at(-1), null)
+  // stop(): nothing waiting is read, and it says it stopped.
+  sp.say(['넷이다'])
+  sp.stop()
+  await new Promise((r) => setTimeout(r, 30))
+  assert.ok(!played.includes(3) || played.length === 3)
+  assert.equal(states.at(-1), false)
+})

@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.538',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '대화 모드의 답을 소희 목소리(Qwen3-TTS, 사람 같은 한국어 여성 목소리)로: 소희가 깔린 맥 하나가 맥·리눅스 세션 모두를 같은 목소리로 읽고, 그 맥이 안 되면 원래 목소리로 읽어요',
+        refs: ['REQ-F-911', 'IF-290'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '목소리가 느릴 때 끊기지 않을 만큼 모일 때까지 "목소리 준비 중 · 약 N초"와 주황 막대를 보이며 기다렸다 읽어요',
+        refs: ['REQ-F-911'],
+      },
+    ],
+  },
+  {
     version: '1.537',
     date: '2026-11-14',
+    commit: '7d26038',
     changes: [
       {
         kind: 'changed',

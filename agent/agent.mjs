@@ -21,7 +21,7 @@ import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImage
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
-import { Judge, SayVoice, SupertonicVoice, talk as talkRun, wavSeconds } from './talk.mjs'
+import { Judge, QwenVoice, SayVoice, SupertonicVoice, hasQwen, talk as talkRun, wavSeconds } from './talk.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
@@ -1345,7 +1345,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: evStore().tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(localFullNow().groups ? ['groups'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 
@@ -5569,12 +5569,14 @@ const commands = {
       emit({ t: 'translate', reqId, ok: false, code: e.code || 'error', error: e.message })
     }
   },
-  async talk({ reqId, op, text, rate }) {
+  async talk({ reqId, op, text, rate, engine }) {
     try {
       // macOS reads with its own voice; a Linux machine with Supertonic (REQ-F-908).
       talkVoice ??= process.platform === 'darwin' ? new SayVoice() : new SupertonicVoice({ dir: STATE_DIR, log })
       talkJudge ??= new Judge({ bin: CLAUDE_BIN, env: claudeEnv(), log })
-      const r = await talkRun({ op, text, rate }, { voice: talkVoice, judge: talkJudge })
+      // The server asks for 소희 only on a Mac that said it has her (caps talkVoice, REQ-F-911).
+      const voice = op === 'tts' && engine === 'qwen' && hasQwen(STATE_DIR) ? (qwenVoice ??= new QwenVoice({ dir: STATE_DIR, log })) : talkVoice
+      const r = await talkRun({ op, text, rate }, { voice, judge: talkJudge })
       // How long a sentence took against how long it sounds, to see when reading falls behind (no words logged).
       if (op === 'tts') log('info', 'talk', `목소리 ${String(text ?? '').length}자 ${r.ms}ms → 소리 ${wavSeconds(r.audio)}초 (${r.engine})`)
       emit({ t: 'talk', reqId, ok: true, ...r })
@@ -8032,6 +8034,8 @@ let whisper = null
 let translator = null
 /** 대화 모드 (REQ-F-907): the voice and the small model, made at the first use. */
 let talkVoice = null
+/** 소희 (REQ-F-911): kept up only on the Mac the server asks to read for the person's sessions. */
+let qwenVoice = null
 let talkJudge = null
 const whisperDir = () => path.join(STATE_DIR, 'whisper')
 process.on('exit', () => whisper?.stop())

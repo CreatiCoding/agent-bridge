@@ -68,3 +68,69 @@ func TestTalkAsksTheSessionsMac(t *testing.T) {
 	code, _ = talkPost(t, "s-open", `{"op":"tts","text":"x"}`)
 	eq(t, code, 409)
 }
+
+// AC-1808: 소희 (REQ-F-911): a tts goes, with engine qwen, to the person's Mac that said it has her (caps talkVoice);
+// when that Mac fails, the session's own machine reads; paired with this device (away false), turn and brief stay on
+// the session's machine; a session whose own machine has her stays there.
+func TestTalkVoiceGoesToTheMacWithSohee(t *testing.T) {
+	h2ok := true
+	s1, s2 := withFindMacs(t, func(cmd M) M {
+		if cmd["t"] != "talk" {
+			return nil
+		}
+		return M{"t": "talk", "ok": true, "audio": "UklGRg==", "mime": "audio/wav", "engine": "say:Yuna", "end": "done"}
+	}, func(cmd M) M {
+		if cmd["t"] != "talk" {
+			return nil
+		}
+		if !h2ok {
+			return M{"t": "talk", "ok": false, "code": "voice", "error": "멈췄어요"}
+		}
+		return M{"t": "talk", "ok": true, "audio": "UklGRg==", "mime": "audio/wav", "engine": "qwen:Sohee"}
+	})
+	keep, had := prefsCache["u1"]
+	t.Cleanup(func() {
+		withLock(func() {
+			if had {
+				prefsCache["u1"] = keep
+			} else {
+				delete(prefsCache, "u1")
+			}
+			delete(live("h1"), "caps")
+			delete(live("h2"), "caps")
+		})
+	})
+	withLock(func() {
+		prefsCache["u1"] = M{"groups": []any{}, "loose": []any{}, "voice": M{"on": true}}
+		live("h2")["caps"] = []any{"talkVoice"}
+	})
+
+	code, m := talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","rate":1.25}`)
+	eq(t, code, 200)
+	eq(t, m["engine"], "qwen:Sohee")
+	eq(t, len(s1.sent), 0)
+	eq(t, len(s2.sent), 1)
+	eq(t, s2.sent[0]["engine"], "qwen")
+	eq(t, s2.sent[0]["rate"], 1.25)
+
+	h2ok = false
+	code, m = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요"}`)
+	eq(t, code, 200)
+	eq(t, m["engine"], "say:Yuna")
+	eq(t, len(s2.sent), 2)
+	eq(t, len(s1.sent), 1)
+	eq(t, s1.sent[0]["engine"], nil)
+	h2ok = true
+
+	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","away":false}`)
+	eq(t, len(s2.sent), 2)
+	eq(t, len(s1.sent), 2)
+	_, _ = talkPost(t, "s-open", `{"op":"turn","text":"그거 하니까"}`)
+	eq(t, len(s2.sent), 2)
+	eq(t, len(s1.sent), 3)
+
+	withLock(func() { live("h1")["caps"] = []any{"talkVoice"} })
+	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","away":false}`)
+	eq(t, len(s1.sent), 4)
+	eq(t, s1.sent[3]["engine"], "qwen")
+}

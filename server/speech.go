@@ -12,6 +12,28 @@ func hostSeals(id string) bool {
 	return truthy(mget(mget(hosts.Val(id), "trust"), "seal"))
 }
 
+func hasTalkVoice(id string) bool { return containsAny(asArr(live(id)["caps"]), "talkVoice") }
+
+// voiceHost (REQ-F-911): the Mac that reads this session's answers in 소희's voice: the session's own when it has her,
+// else another online Mac of the same person that has her and does not seal. Not for a machine that seals its own
+// conversations, nor one the page says is paired with it (away false): "" then, and the session's machine reads.
+func voiceHost(uid string, meta *Sess, away bool) string {
+	own := liveHost(meta)
+	if hasTalkVoice(own) {
+		return own
+	}
+	if hostSeals(own) || !away {
+		return ""
+	}
+	for _, id := range hosts.Keys() {
+		h := hosts.Val(id)
+		if id != own && h != nil && mstr(h, "uid") == uid && online(id) && hasTalkVoice(id) && !hostSeals(id) {
+			return id
+		}
+	}
+	return ""
+}
+
 // speechHost: the machine that writes down what is said in this session: its own unless that is Linux.
 func speechHost(uid string, meta *Sess, away bool) string {
 	own := liveHost(meta)

@@ -5823,6 +5823,41 @@ body.group-sorting * {
 .voice-mode.talk .voice-text {
   min-height: 1.6em;
 }
+/* 목소리 준비 중 (REQ-F-911): how far the voice is towards having enough to read without a gap. */
+.voice-prep {
+  display: block;
+  position: relative;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  overflow: hidden;
+}
+.voice-prep > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s linear;
+}
+.voice-prep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, white 35%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: voice-prep-shine 1.4s ease-in-out infinite;
+}
+@keyframes voice-prep-shine {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-prep::after {
+    animation: none;
+  }
+}
 .voice-hint {
   color: var(--muted);
   font-size: var(--fs-medium);

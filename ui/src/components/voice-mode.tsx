@@ -91,11 +91,19 @@ export function VoiceMode({
   const autoNow = useRef(talkOn)
   autoNow.current = talkOn
   const [reading, setReading] = useState(false)
+  // Reading waits for the voice (REQ-F-911): from when, until when it is expected to start; ticks the bar along.
+  const [prep, setPrep] = useState<{ from: number; until: number } | null>(null)
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!prep) return
+    const t = setInterval(() => setTick((n) => n + 1), 250)
+    return () => clearInterval(t)
+  }, [prep])
   const [judging, setJudging] = useState(false)
   const judgingNow = useRef(false)
   const talkPost = <T,>(body: object) => post<T>(`/api/sessions/${sessionId}/talk`, body)
   const speaker = useMemo(
-    () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text, rate: getVoiceDevice().rate }).then((r) => fromBase64(r.audio))) : null),
+    () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text, rate: getVoiceDevice().rate, away: !hostPaired() }).then((r) => fromBase64(r.audio))) : null),
     [listen, !!talk, sessionId],
   )
   const speakerNow = useRef(speaker)
@@ -107,6 +115,7 @@ export function VoiceMode({
     if (!speaker) return
     speaker.onState = (on) => (setReading(on), on ? null : (readEnd.current = Date.now()))
     speaker.onError = (why) => setErr({ title: '목소리를 만들지 못했어요', detail: why })
+    speaker.onWait = (until) => setPrep((p) => (until == null ? null : { from: p?.from ?? Date.now(), until: Math.max(until, Date.now()) }))
     return () => speaker.close()
   }, [speaker])
   const queue = useRef<ReadQueue | null>(null)
@@ -428,7 +437,9 @@ export function VoiceMode({
   endRef.current = () => void close()
   if (takeRef) takeRef.current = () => takeAll().written
 
-  const status = closing ? '마무리하는 중…' : speaking ? '말하는 중' : waiting ? '받아쓰는 중…' : judging ? '말이 끝났는지 보는 중…' : reading ? 'Claude 가 말하는 중' : '듣는 중'
+  const prepLeft = prep ? Math.max(0, Math.ceil((prep.until - Date.now()) / 1000)) : 0
+  const prepDone = prep ? Math.min(1, (Date.now() - prep.from) / Math.max(1, prep.until - prep.from)) : 0
+  const status = closing ? '마무리하는 중…' : speaking ? '말하는 중' : waiting ? '받아쓰는 중…' : judging ? '말이 끝났는지 보는 중…' : reading && prep ? (prepLeft ? `목소리 준비 중 · 약 ${prepLeft}초` : '목소리 준비 중…') : reading ? 'Claude 가 말하는 중' : '듣는 중'
   const toggleAuto = () => {
     const on = !auto
     setAuto(on)
@@ -441,6 +452,11 @@ export function VoiceMode({
         <span ref={meter} className={`voice-meter${speaking ? ' on' : ''}`} aria-hidden />
         <span className="voice-state" role="status">
           {status}
+          {reading && prep && !speaking ? (
+            <span className="voice-prep" aria-hidden>
+              <span style={{ width: `${Math.round(prepDone * 100)}%` }} />
+            </span>
+          ) : null}
         </span>
         {head}
         {talk ? (

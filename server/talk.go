@@ -38,7 +38,22 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 	if rate, ok := b["rate"].(float64); ok && kind == "tts" && rate >= 0.5 && rate <= 2 {
 		cmd["rate"] = math.Round(rate*100) / 100
 	}
-	r := ask(liveHost(meta), cmd, TALK_WAIT_MS)
+	var r M
+	// 소희 (REQ-F-911): the answer read by the person's Mac that has her, the same voice for every session; when
+	// that Mac cannot (off, busy, failed), the session's own machine reads it in its own voice.
+	if kind == "tts" {
+		if v := voiceHost(uid, meta, b["away"] != false); v != "" {
+			cmd["engine"] = "qwen"
+			r = ask(v, cmd, TALK_WAIT_MS)
+			delete(cmd, "engine")
+			if !truthy(r["ok"]) {
+				r = nil
+			}
+		}
+	}
+	if r == nil {
+		r = ask(liveHost(meta), cmd, TALK_WAIT_MS)
+	}
 	if !truthy(r["ok"]) {
 		code := r["code"]
 		if code == nil {
