@@ -546,8 +546,21 @@ export function voiceLog(file, entry, max = 512 * 1024) {
   fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 })
 }
 
+/**
+ * How loud the page heard the phrase (대화 모드, REQ-F-909): its snr over the room and its level, as plain numbers,
+ * kept in voice.log so the thresholds can be set from real phrases. Anything else is left out.
+ */
+export function heardOf(h) {
+  const o = {}
+  for (const k of ['snr', 'level']) {
+    const n = h?.[k]
+    if (typeof n === 'number' && Number.isFinite(n) && n >= 0 && n < 1e4) o[k] = Math.round(n * 1000) / 1000
+  }
+  return Object.keys(o).length ? { heard: o } : {}
+}
+
 /** A recording to words: noise, whisper, tidying, each timed. */
-export async function transcribe(wav, opts, { dir, local, log = () => {} }) {
+export async function transcribe(wav, opts, { dir, local, log = () => {}, heard } = {}) {
   const o = voiceOpts(opts)
   const t0 = Date.now()
   const { rate, samples } = parseWav(wav)
@@ -569,7 +582,7 @@ export async function transcribe(wav, opts, { dir, local, log = () => {} }) {
   const t3 = Date.now()
   const lp = stt.lp == null ? undefined : Math.round(stt.lp * 1000) / 1000
   const out = { raw, text, sec: Math.round((samples.length / rate) * 10) / 10, backend: stt.how, model: o.model, language: o.language, denoise: how, vad: !!stt.vad, lp, ms: { denoise: t1 - t0, stt: t2 - t1, tidy: t3 - t2, total: t3 - t0 } }
-  voiceLog(path.join(path.dirname(dir), 'voice.log'), { at: new Date().toISOString(), ...out, ...(dropped ? { dropped } : {}) })
+  voiceLog(path.join(path.dirname(dir), 'voice.log'), { at: new Date().toISOString(), ...out, ...(dropped ? { dropped } : {}), ...heardOf(heard) })
   if (dropped === 'vad') {
     log('info', 'voice', `${out.sec}초 → 말소리 없음 (말소리 감지)`)
     throw new VoiceError('silent', '말소리가 들리지 않았어요')

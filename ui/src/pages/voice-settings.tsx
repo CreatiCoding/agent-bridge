@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { errorText, get, post } from '../lib/api'
 import { NONE, useStore } from '../lib/store'
 import type { Host, VoiceHost, VoicePrefs } from '../lib/types'
-import { canPreview, clearVoiceRecent, getVoiceDevice, getVoiceRecent, KEY_LABEL, listMics, micError, setVoiceDevice, setVoicePrefs, useVoicePrefs, type VoiceDevice } from '../lib/voice'
+import { canPreview, clearVoiceRecent, getVoiceDevice, getVoiceRecent, KEY_LABEL, TALK_RATES, listMics, micError, setVoiceDevice, setVoicePrefs, useVoicePrefs, type VoiceDevice } from '../lib/voice'
 import { Badge, Button, CardHead, Field, LoadError, NO_AUTOFILL, Segmented, Spinner, Switch } from '../kit'
 import { toast } from '../kit/overlay'
 
@@ -179,6 +179,9 @@ function DeviceVoice() {
     <div className="stack">
       <Row label="즉시 받아쓰기" hint={canPreview() ? '말하는 동안 글을 바로 보여 줘요(흐린 글). 이 미리보기는 브라우저가 Apple·Google 서버로 보내서 만들고, 남는 글은 맥의 whisper 가 다시 써요' : '이 브라우저에는 없어요. 말이 끊길 때마다 맥에서 받아쓴 글만 보여요'}>
         <Switch label="즉시 받아쓰기" checked={d.live && canPreview()} disabled={!canPreview()} onChange={(live) => set({ ...d, live })} />
+      </Row>
+      <Row label="읽는 속도" hint="대화 모드에서 답을 읽는 빠르기예요. 리눅스 기계의 목소리는 단어를 빠뜨리지 않게 1.25배까지만 빨라져요">
+        <Segmented label="읽는 속도" value={String(d.rate)} onChange={(r) => set({ ...d, rate: Number(r) })} options={TALK_RATES.map((r) => ({ value: String(r), label: `${r}배` }))} />
       </Row>
       <Row label="단축키" hint="세션 화면에서 음성 모드를 켜고 꺼요. 음성 모드에서 Enter 는 전송, Esc 는 리셋">
         <Segmented label="단축키" value={d.key} onChange={(key) => set({ ...d, key })} options={(Object.keys(KEY_LABEL) as VoiceDevice['key'][]).map((k) => ({ value: k, label: KEY_LABEL[k] }))} />

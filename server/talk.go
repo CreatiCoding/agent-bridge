@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // 대화 모드 (REQ-F-907): the session's own Mac reads an answer aloud and, only when the page's rules cannot tell,
 // judges whether the person has finished (turn) or says a code-heavy answer in a line (brief). The session's own Mac
@@ -30,7 +33,12 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 	if text == "" || len([]rune(text)) > limit {
 		refuse(400, "읽을 말이 비었거나 너무 길어요")
 	}
-	r := ask(liveHost(meta), M{"t": "talk", "op": kind, "text": text}, TALK_WAIT_MS)
+	cmd := M{"t": "talk", "op": kind, "text": text}
+	// 읽는 속도 (REQ-F-907): the page's choice, 0.5~2 times the voice's normal; anything else, the Mac's default.
+	if rate, ok := b["rate"].(float64); ok && kind == "tts" && rate >= 0.5 && rate <= 2 {
+		cmd["rate"] = math.Round(rate*100) / 100
+	}
+	r := ask(liveHost(meta), cmd, TALK_WAIT_MS)
 	if !truthy(r["ok"]) {
 		code := r["code"]
 		if code == nil {

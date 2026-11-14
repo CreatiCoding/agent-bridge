@@ -46,6 +46,11 @@ func TestTalkAsksTheSessionsMac(t *testing.T) {
 	eq(t, m["audio"], "UklGRg==")
 	eq(t, len(s1.sent), 1)
 	eq(t, len(s2.sent), 0)
+	// 읽는 속도 (AC-1807): a rate in 0.5~2 goes to the Mac, anything else is left for its default.
+	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","rate":1.25}`)
+	eq(t, s1.sent[len(s1.sent)-1]["rate"], 1.25)
+	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","rate":9}`)
+	eq(t, s1.sent[len(s1.sent)-1]["rate"], nil)
 	code, m = talkPost(t, "s-open", `{"op":"turn","text":"그거 하니까"}`)
 	eq(t, code, 200)
 	eq(t, m["end"], "more")

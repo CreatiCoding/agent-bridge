@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.535',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '리눅스 기계의 목소리가 빠르게 읽다가 단어를 빠뜨리던 것: 단어를 다 말하는 속도(보통의 약 1.25배)를 넘지 않아요',
+        refs: ['REQ-F-908'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '설정 → 음성 → 이 기기에 "읽는 속도"(1·1.25·1.5·1.75배)',
+        refs: ['REQ-F-907', 'IF-290'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '대화 모드의 말마다 얼마나 크게 들렸는지를 받아쓰는 맥의 voice.log 에, 문장마다 목소리를 만든 시간을 agent.log 에 남겨요',
+        refs: ['REQ-F-909', 'IF-214'],
+      },
+    ],
+  },
+  {
     version: '1.534',
     date: '2026-11-14',
+    commit: '9f26559',
     changes: [
       {
         kind: 'changed',

@@ -133,7 +133,20 @@ func apiSessions(req *Req, res *Res, u *url.URL, uid string) bool {
 		if !truthy(model) {
 			model = prefs["model"]
 		}
-		r := ask(hostID, M{"t": "voice", "audio": audio, "opts": orderedObj{{"model", model}, {"language", prefs["language"]}, {"denoise", prefs["denoise"]}, {"tidy", prefs["tidy"]}, {"terms", prefs["terms"]}}}, 90_000)
+		cmd := M{"t": "voice", "audio": audio, "opts": orderedObj{{"model", model}, {"language", prefs["language"]}, {"denoise", prefs["denoise"]}, {"tidy", prefs["tidy"]}, {"terms", prefs["terms"]}}}
+		// How loud the page heard it (REQ-F-909), only for the Mac's voice.log: two plain numbers or nothing.
+		if h, ok := b["heard"].(map[string]any); ok {
+			heard := M{}
+			for _, k := range []string{"snr", "level"} {
+				if f, ok := h[k].(float64); ok && f >= 0 && f < 1e4 {
+					heard[k] = math.Round(f*1000) / 1000
+				}
+			}
+			if len(heard) > 0 {
+				cmd["heard"] = heard
+			}
+		}
+		r := ask(hostID, cmd, 90_000)
 		if !truthy(r["ok"]) {
 			status := 502
 			if r["code"] == "silent" || r["code"] == "audio" {

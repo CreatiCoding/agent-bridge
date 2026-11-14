@@ -39,7 +39,10 @@ export interface VoiceDevice {
   live: boolean
   /** 대화 모드 (REQ-F-907): sent by itself when the person stops, and the answer read aloud. Off: the 전송 button. */
   talk: boolean
+  /** 대화 모드's reading speed, times each voice's normal (a Linux machine's voice tops out near 1.25). */
+  rate: number
 }
+export const TALK_RATES = [1, 1.25, 1.5, 1.75] as const
 const DEVICE = 'cb2.voice'
 const RECENT = 'cb2.voice.recent'
 const readLs = <T,>(k: string, fallback: T): T => {
@@ -56,8 +59,8 @@ const writeLs = (k: string, v: unknown) => {
   } catch {}
 }
 export const getVoiceDevice = (): VoiceDevice => {
-  const { mic = '', key = 'alt-space', live = true, talk = true } = readLs<Partial<VoiceDevice>>(DEVICE, {})
-  return { mic, key, live, talk }
+  const { mic = '', key = 'alt-space', live = true, talk = true, rate = 1.5 } = readLs<Partial<VoiceDevice>>(DEVICE, {})
+  return { mic, key, live, talk, rate: (TALK_RATES as readonly number[]).includes(rate) ? rate : 1.5 }
 }
 export const setVoiceDevice = (v: VoiceDevice) => writeLs(DEVICE, v)
 export const KEY_LABEL: Record<VoiceDevice['key'], string> = { 'alt-space': '⌥ Space', 'ctrl-shift-space': 'Ctrl ⇧ Space', off: '끔' }

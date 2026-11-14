@@ -95,7 +95,7 @@ export function VoiceMode({
   const judgingNow = useRef(false)
   const talkPost = <T,>(body: object) => post<T>(`/api/sessions/${sessionId}/talk`, body)
   const speaker = useMemo(
-    () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text }).then((r) => fromBase64(r.audio))) : null),
+    () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text, rate: getVoiceDevice().rate }).then((r) => fromBase64(r.audio))) : null),
     [listen, !!talk, sessionId],
   )
   const speakerNow = useRef(speaker)
@@ -183,7 +183,7 @@ export function VoiceMode({
     let text = ''
     let rec: VoiceResult | null = null
     try {
-      const r = await post<{ ok: true; raw: string; text: string; sec: number; ms?: { total?: number } }>(`/api/sessions/${sessionId}/voice`, { audio: p.audio, away: !hostPaired() })
+      const r = await post<{ ok: true; raw: string; text: string; sec: number; ms?: { total?: number } }>(`/api/sessions/${sessionId}/voice`, { audio: p.audio, away: !hostPaired(), ...(p.snr != null ? { heard: { snr: p.snr, level: p.level ?? 0 } } : {}) })
       rec = { at: Date.now(), raw: r.raw, text: r.text, ms: r.ms, sec: r.sec, ...(p.snr != null ? { snr: Math.round(p.snr * 10) / 10 } : {}) }
       text = r.text.trim()
       if (g === gen.current) setErr(null)

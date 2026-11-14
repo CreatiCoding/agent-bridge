@@ -42,6 +42,15 @@ func TestLinuxSessionAsksAMacToTranscribe(t *testing.T) {
 	eq(t, m["text"], "네")
 	eq(t, len(s1.sent), 0)
 	eq(t, len(s2.sent), 1)
+	// How loud the page heard it goes along as two numbers only (AC-1807).
+	code, _ = post("s-open", `{"audio":"UklGRg==","heard":{"snr":6.12345,"level":0.08,"text":"x"}}`)
+	eq(t, code, 200)
+	h, _ := s2.sent[len(s2.sent)-1]["heard"].(M)
+	eq(t, h["snr"], 6.123)
+	eq(t, h["text"], nil)
+	_, _ = post("s-open", `{"audio":"UklGRg=="}`)
+	eq(t, s2.sent[len(s2.sent)-1]["heard"], nil)
+	s2.sent = s2.sent[:1]
 
 	code, _ = post("s-h2", `{"audio":"UklGRg=="}`)
 	eq(t, code, 200)

@@ -7,8 +7,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-/** 대화 모드의 읽는 속도: 각 목소리의 보통 속도(say 175 단어/분, Supertonic 1.05)의 1.5배 (사용자 요청). */
+/** 대화 모드의 읽는 속도 (REQ-F-907): the page's choice (0.5~2, × each voice's normal), 1.5 when it says none. */
 export const TALK_SPEED = 1.5
+export const talkRate = (r) => (typeof r === 'number' && Number.isFinite(r) ? Math.min(2, Math.max(0.5, r)) : TALK_SPEED)
 
 const err = (code, message) => Object.assign(new Error(message), { code })
 
@@ -44,11 +45,11 @@ export class SayVoice {
     if (!v) throw err('novoice', '이 맥에 한국어 목소리가 없어요. 시스템 설정 → 손쉬운 사용 → 읽기 및 말하기에서 Yuna 를 받아 주세요')
     return (this.voice = v)
   }
-  async speak(text) {
+  async speak(text, rate = TALK_SPEED) {
     const voice = await this.pick()
     const out = path.join(this.tmp, `cb-talk-${crypto.randomBytes(6).toString('hex')}.wav`)
     try {
-      await this.exec(['-v', voice, '-r', String(Math.round(175 * TALK_SPEED)), '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, text])
+      await this.exec(['-v', voice, '-r', String(Math.round(175 * rate)), '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, text])
       return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `say:${voice}` }
     } finally {
       fs.rmSync(out, { force: true })
@@ -61,6 +62,12 @@ export class SayVoice {
  * run on the CPU by one python kept up (reading the model costs seconds, a sentence well under its own length at
  * 4 steps). Installed by the person once, into <dir>/supertonic: the model itself comes down on its first use.
  */
+/**
+ * Supertonic's fastest speed (its own normal is 1.05; the page's rate × 1.05 up to this). Not 1.5 × 1.05 (1.575): at that speed it drops words, as Whisper
+ * heard back ("코드와" gone, an ending changed, F3·4단계 whole phrases), and at 1.3 it said every word.
+ */
+export const SUPERTONIC_SPEED = 1.3
+
 export const SUPERTONIC_PY = `
 import sys, json, wave, numpy as np
 from supertonic import TTS
@@ -81,7 +88,7 @@ for line in sys.stdin:
 `
 
 export class SupertonicVoice {
-  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F2', steps = 10, speed = TALK_SPEED * 1.05, log = () => {}, idleMs = 10 * 60_000 } = {}) {
+  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F2', steps = 10, speed = SUPERTONIC_SPEED, log = () => {}, idleMs = 10 * 60_000 } = {}) {
     Object.assign(this, { run, tmp, voice, steps, speed, log, idleMs })
     this.py = path.join(dir, 'supertonic', 'bin', 'python')
     this.proc = null
@@ -140,7 +147,7 @@ export class SupertonicVoice {
       p?.kill('SIGTERM')
     } catch {}
   }
-  async speak(text) {
+  async speak(text, rate = TALK_SPEED) {
     clearTimeout(this.idle)
     const p = this.proc ?? this.start()
     await this.ready
@@ -150,7 +157,7 @@ export class SupertonicVoice {
       const r = await new Promise((resolve) => {
         const timer = setTimeout(() => resolve({ error: '목소리가 오래 걸려요' }), 30_000)
         this.waits.set(id, (x) => (clearTimeout(timer), this.waits.delete(id), resolve(x)))
-        p.stdin.write(`${JSON.stringify({ id, text, voice: this.voice, steps: this.steps, speed: this.speed, out })}\n`)
+        p.stdin.write(`${JSON.stringify({ id, text, voice: this.voice, steps: this.steps, speed: Math.min(this.speed, Math.round(1.05 * rate * 1000) / 1000), out })}\n`)
       })
       if (r.error) throw err('voice', r.error)
       return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `supertonic:${this.voice}` }
@@ -255,12 +262,23 @@ export class Judge {
   }
 }
 
+/** A WAV's length in seconds from its header (byte rate at offset 28), or 0 when it is not one. */
+export function wavSeconds(b64) {
+  try {
+    const b = Buffer.from(String(b64 ?? ''), 'base64')
+    const rate = b.length > 44 && b.toString('ascii', 0, 4) === 'RIFF' ? b.readUInt32LE(28) : 0
+    return rate ? Math.round(((b.length - 44) / rate) * 10) / 10 : 0
+  } catch {
+    return 0
+  }
+}
+
 /** The agent's `talk` command: { op: tts | turn | brief, text } → what the server hands the page. */
-export async function talk({ op, text }, { voice, judge }) {
+export async function talk({ op, text, rate }, { voice, judge }) {
   const t0 = Date.now()
   const s = String(text ?? '').trim()
   if (!s) throw err('empty', '말이 비었어요')
-  if (op === 'tts') return { ...(await voice.speak(s.slice(0, 600))), ms: Date.now() - t0 }
+  if (op === 'tts') return { ...(await voice.speak(s.slice(0, 600), talkRate(rate))), ms: Date.now() - t0 }
   if (op === 'turn') return { end: parseTurn(await judge.ask(turnPrompt(s.slice(0, 2000)))), ms: Date.now() - t0 }
   if (op === 'brief') return { line: (await judge.ask(sayPrompt(s.slice(0, 6000)))).slice(0, 600), ms: Date.now() - t0 }
   throw err('op', `모르는 op: ${op}`)
