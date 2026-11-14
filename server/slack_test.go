@@ -383,9 +383,18 @@ func TestSlackSessionThread(t *testing.T) {
 	// Someone the plugin has not met: a link, and nothing is done for them.
 	s.push(M{"envelope_id": "e1", "type": "events_api", "payload": M{"event": M{"type": "message", "channel": "C1", "user": "U1", "ts": "100.1", "text": "hello"}}})
 	until(t, "ephemeral", func() bool { return len(s.of("chat.postEphemeral")) > 0 })
-	s.mu.Lock()
-	jeq(t, s.acks[0], `{"envelope_id":"e1"}`)
-	s.mu.Unlock()
+	// The ack arrives on the socket reader's goroutine and may land after the ephemeral post: wait for it, and compare
+	// outside s.mu (a failed check under the lock left close() waiting on it until the 10-minute test timeout).
+	ackOf := func() any {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if len(s.acks) == 0 {
+			return nil
+		}
+		return s.acks[0]
+	}
+	until(t, "ack", func() bool { return ackOf() != nil })
+	jeq(t, ackOf(), `{"envelope_id":"e1"}`)
 	ok(t, regexp.MustCompile(`https://bridge\.test/api/plugins/slack/link\?code=code-1`).MatchString(jsString(s.of("chat.postEphemeral")[0]["text"])))
 	withLock(func() { eq(t, len(b.did), 0) })
 	// R1-M2: looking at the link says who would be linked and links nobody; only link() does.
