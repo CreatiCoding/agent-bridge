@@ -151,3 +151,41 @@ export function fromBase64(b64: string): ArrayBuffer {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
   return out.buffer
 }
+
+/**
+ * 가까이서 한 말만 (REQ-F-909): in a loud place (a subway car) other people's voices and the noise itself come back
+ * from Whisper as words ("네 감사합니다", "Amen"). The person speaks close to the microphone, so their phrases are
+ * well over the room's own level and about as loud as their earlier ones. A phrase that is not, or one that is short
+ * and only a little over the room, or short and not Korean, is taken for the room and not sent.
+ * minSnr / shortSnr: the phrase's loud frames (90th percentile) over the room's level before it. voiceShare: under this
+ * share of the person's own level (the median of their last `learn` clear phrases) it is someone further away.
+ */
+export const NEAR = { minSnr: 3.2, shortSnr: 5, shortLetters: 6, foreignLetters: 12, voiceShare: 0.45, learn: 5, learnLetters: 6 }
+
+/** How loud a phrase was: its loud frames (90th percentile rms) and that over the room's level before it. */
+export type Loudness = { level: number; snr: number }
+
+const lettersOf = (t: string) => t.replace(/[\s\p{P}\p{S}]/gu, '')
+const median = (x: number[]) => {
+  const s = [...x].sort((a, b) => a - b)
+  return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
+}
+
+/** Was this the person, close to the microphone ('keep'), or the room ('far': too quiet; 'short': too little to trust)? */
+export function nearVoice(text: string, heard: Loudness | undefined, voice: number[]): 'keep' | 'far' | 'short' {
+  if (!heard) return 'keep'
+  const l = lettersOf(text)
+  if (!l) return 'keep'
+  const korean = (l.match(/[가-힣]/g)?.length ?? 0) / l.length >= 0.5
+  if (heard.snr < NEAR.minSnr) return 'far'
+  if (voice.length >= 2 && heard.level < median(voice) * NEAR.voiceShare) return 'far'
+  if (l.length <= NEAR.shortLetters && heard.snr < NEAR.shortSnr) return 'short'
+  if (!korean && l.length <= NEAR.foreignLetters) return 'short'
+  return 'keep'
+}
+
+/** The person's own level, learnt from their clear phrases (kept, long enough, well over the room). */
+export function learnVoice(voice: number[], text: string, heard: Loudness | undefined): number[] {
+  if (!heard || lettersOf(text).length < NEAR.learnLetters || heard.snr < NEAR.shortSnr) return voice
+  return [...voice, heard.level].slice(-NEAR.learn)
+}

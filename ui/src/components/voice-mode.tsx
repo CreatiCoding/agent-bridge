@@ -6,14 +6,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError, post } from '../lib/api'
 import { voiceCommand, type VoiceEnd } from '../lib/voice-commands'
-import { addVoiceRecent, getVoiceDevice, joinWords, setVoiceDevice, VOICE_CODE_TITLE, type LiveListen, type LivePreview, type Phrase } from '../lib/voice'
+import { addVoiceRecent, getVoiceDevice, joinWords, setVoiceDevice, VOICE_CODE_TITLE, type LiveListen, type LivePreview, type Phrase, type VoiceResult } from '../lib/voice'
 import { inHomeApp, safariHref } from '../lib/safari'
 import { Button, IconButton } from '../kit'
 import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
 import { pairedHosts, pairedWith } from '../lib/trust'
 import { getStore } from '../lib/store'
-import { bargeIn, BARGE, fromBase64, isEcho, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
+import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearVoice, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
 import { withHint } from '../lib/timeline'
 import { Speaker } from '../lib/speaker'
 
@@ -171,6 +171,8 @@ export function VoiceMode({
     }
   }, [listen, preview])
 
+  // The person's own level in this panel (REQ-F-909), learnt from their clear phrases.
+  const voiceLv = useRef<number[]>([])
   // 리눅스 세션의 받아쓰기 (REQ-F-908): another Mac may hear it, but never for a machine paired with this device.
   const hostPaired = () => {
     const h = getStore().state?.sessions.find((x) => x.id === sessionId)?.hostId
@@ -179,9 +181,10 @@ export function VoiceMode({
   const transcribe = async (id: number, g: number, p: Phrase) => {
     let state: Said['state'] = 'done'
     let text = ''
+    let rec: VoiceResult | null = null
     try {
       const r = await post<{ ok: true; raw: string; text: string; sec: number; ms?: { total?: number } }>(`/api/sessions/${sessionId}/voice`, { audio: p.audio, away: !hostPaired() })
-      addVoiceRecent({ at: Date.now(), raw: r.raw, text: r.text, ms: r.ms, sec: r.sec })
+      rec = { at: Date.now(), raw: r.raw, text: r.text, ms: r.ms, sec: r.sec, ...(p.snr != null ? { snr: Math.round(p.snr * 10) / 10 } : {}) }
       text = r.text.trim()
       if (g === gen.current) setErr(null)
     } catch (e) {
@@ -197,6 +200,18 @@ export function VoiceMode({
     if (state === 'bad') text = browserText().slice(m.from, m.mark).trim()
     // The answer itself back through the microphone, heard while it was read (or just after): not the person's words.
     if (text && (speakerNow.current?.speaking || Date.now() - readEnd.current < 3000) && isEcho(text, readText.current)) text = ''
+    // 가까이서 한 말만 (REQ-F-909): in 대화 모드 a phrase too quiet against the room, or short and barely over it, is
+    // the room (other people, the train), not the person: it is not sent.
+    if (text && autoNow.current) {
+      const heard = p.snr != null ? { level: p.level ?? 0, snr: p.snr } : undefined
+      const v = nearVoice(text, heard, voiceLv.current)
+      if (v === 'keep') voiceLv.current = learnVoice(voiceLv.current, text, heard)
+      else {
+        if (rec) rec.room = v
+        text = ''
+      }
+    }
+    if (rec) addVoiceRecent(rec)
     // 음성 명령 (REQ-F-789), from this panel's latest render: the phrase is what it says without them.
     const now = commands.current
     const cmd = voiceCommand(text, now.panes)

@@ -71,6 +71,9 @@ export interface VoiceResult {
   text: string
   ms?: { total?: number }
   sec?: number
+  /** 대화 모드 (REQ-F-909): how far over the room it was, and 'far' or 'short' when it was taken for the room. */
+  snr?: number
+  room?: 'far' | 'short'
 }
 export const getVoiceRecent = () => readLs<VoiceResult[]>(RECENT, [])
 export const addVoiceRecent = (r: VoiceResult) => writeLs(RECENT, [r, ...getVoiceRecent()].slice(0, 20))
@@ -236,6 +239,9 @@ export class LivePreview {
 export interface Phrase {
   audio: string
   sec: number
+  /** How loud it was against the room (REQ-F-909): its loud frames' 90th percentile rms, and that over the room. */
+  level?: number
+  snr?: number
 }
 
 /**
@@ -260,6 +266,8 @@ export class LiveListen {
   private loud = 0
   private quiet = 0
   private noise = 0.005
+  /** The rms of each loud frame of the phrase being spoken. */
+  private loudRms: number[] = []
   speaking = false
   /** How loud it is now, 0 to 1 (for the meter). */
   level = 0
@@ -325,6 +333,8 @@ export class LiveListen {
       this.pre.push(x)
       while (this.pre.length > 1 && (this.pre.length - 1) * ms > VAD.preMs) this.pre.shift()
       this.loud = over ? this.loud + ms : 0
+      if (over) this.loudRms.push(rms)
+      else this.loudRms = []
       if (this.loud < VAD.startMs) return
       this.speaking = true
       this.cur = this.pre
@@ -339,6 +349,7 @@ export class LiveListen {
     if (over) {
       this.voiced += ms
       this.quiet = 0
+      this.loudRms.push(rms)
     } else this.quiet += ms
     if (this.quiet >= VAD.endMs || this.curLen / this.ctx.sampleRate >= VAD.maxSec) this.flush()
   }
@@ -347,19 +358,23 @@ export class LiveListen {
     if (!this.speaking) return false
     const chunks = this.cur
     const voiced = this.voiced
+    const loud = [...this.loudRms].sort((a, b) => a - b)
+    const level = loud.length ? loud[Math.min(loud.length - 1, Math.floor(loud.length * 0.9))] : 0
+    const room = Math.max(this.noise, 1e-4)
     this.drop()
     if (voiced < VAD.minVoicedMs) return false
     const all = new Float32Array(chunks.reduce((n, c) => n + c.length, 0))
     let o = 0
     for (const c of chunks) all.set(c, (o += c.length) - c.length)
     const rate = this.ctx.sampleRate
-    const p = { audio: wavBase64(downsample(all, rate)), sec: all.length / rate }
+    const p = { audio: wavBase64(downsample(all, rate)), sec: all.length / rate, level, snr: level / room }
     if (this.onPhrase) this.onPhrase(p)
     else this.waiting.push(p)
     return true
   }
   drop() {
     this.speaking = false
+    this.loudRms = []
     this.cur = []
     this.curLen = 0
     this.voiced = 0

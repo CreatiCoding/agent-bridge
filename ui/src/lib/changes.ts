@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.531',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화 모드에서 지하철 같은 시끄러운 곳의 주변 말소리·소음이 내 말로 보내지던 것: 가까이서 크게 한 말만 받아요',
+        refs: ['REQ-F-909'],
+      },
+    ],
+  },
+  {
     version: '1.530',
     date: '2026-11-14',
+    commit: '3d62fce',
     changes: [
       {
         kind: 'added',
