@@ -130,3 +130,25 @@ test('AC-1800 리눅스: 목소리는 Supertonic 하나를 띄워 두고 묻고,
   for (const q of asked) assert.equal(fs.existsSync(q.out), false)
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('AC-1802 가까이서 한 말만: 방 소음보다 충분히 크지 않거나, 짧은데 조금만 크거나, 짧은 외국어면 버린다', async () => {
+  const { nearVoice, learnVoice, NEAR } = await import('../../ui/src/lib/talk.ts')
+  assert.equal(nearVoice('배포 상태 확인해 줘', { level: 0.2, snr: 8 }, []), 'keep')
+  assert.equal(nearVoice('배포 상태 확인해 줘', { level: 0.05, snr: 2 }, []), 'far')
+  assert.equal(nearVoice('네 감사합니다', { level: 0.1, snr: 4 }, []), 'short')
+  assert.equal(nearVoice('네 감사합니다', { level: 0.2, snr: 9 }, []), 'keep')
+  assert.equal(nearVoice('Amen', { level: 0.2, snr: 9 }, []), 'short')
+  assert.equal(nearVoice('and the clock', { level: 0.2, snr: 9 }, []), 'short')
+  assert.equal(nearVoice('아무 말', undefined, []), 'keep')
+  // Once the person's own level is known, a phrase well under it is someone further away.
+  let v = []
+  for (const l of [0.3, 0.32, 0.28]) v = learnVoice(v, '이번 배포 결과 알려 줘', { level: l, snr: 9 })
+  assert.equal(v.length, 3)
+  assert.equal(nearVoice('다음 역은 강남 강남역입니다', { level: 0.1, snr: 6 }, v), 'far')
+  assert.equal(nearVoice('다음으로 넘어가 줘', { level: 0.25, snr: 6 }, v), 'keep')
+  // Only clear phrases teach it, and only the last few.
+  assert.equal(learnVoice(v, '네', { level: 0.01, snr: 9 }), v)
+  assert.equal(learnVoice(v, '이번 배포 결과 알려 줘', { level: 0.01, snr: 3 }), v)
+  for (let i = 0; i < 10; i++) v = learnVoice(v, '이번 배포 결과 알려 줘', { level: 0.3, snr: 9 })
+  assert.equal(v.length, NEAR.learn)
+})
