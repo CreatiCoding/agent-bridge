@@ -46,6 +46,8 @@ struct Web: UIViewRepresentable {
     c.userContentController.add(context.coordinator, name: "clipboard")
     // 영어 답 번역 (REQ-F-896): the page's English lines go to the phone's own Translation.
     c.userContentController.add(context.coordinator, name: "translate")
+    // 다이내믹 아일랜드 (REQ-F-913): 대화 모드 tells its state (start, update, end) for the Live Activity.
+    c.userContentController.add(context.coordinator, name: "talk")
     // The page reads the app's version from here to show it in 설정 → 이 기기 (REQ-F-765). Appended, so the
     // default "Mobile/…" that sites look for stays.
     let info = Bundle.main.infoDictionary
@@ -87,6 +89,7 @@ struct Web: UIViewRepresentable {
         return Push.shared.ask(action, id: id)
       }
       if m.name == "clipboard", let id = body["id"] as? Int { return readClipboard(id) }
+      if m.name == "talk" { return TalkLive.shared.handle(body) }
       if m.name == "translate", let id = body["id"] as? Int {
         let texts = (body["texts"] as? [String] ?? []).prefix(200).map { String($0.prefix(4000)) }
         return ReplyTranslator.shared.ask(id, texts: texts, prepare: body["prepare"] as? Bool ?? false)
@@ -191,8 +194,14 @@ struct Web: UIViewRepresentable {
       present(a, ok: { completionHandler(true) })
     }
 
-    // The page went blank after the system dropped its process (memory): load it again.
-    func webViewWebContentProcessDidTerminate(_ v: WKWebView) { v.reload() }
+    // The page went blank after the system dropped its process (memory): load it again. Its talk went with it.
+    func webViewWebContentProcessDidTerminate(_ v: WKWebView) {
+      TalkLive.shared.reset()
+      v.reload()
+    }
+
+    // A page loaded anew (reload, sign-in, a notification's session) has no talk running: the island goes.
+    func webView(_ v: WKWebView, didCommit n: WKNavigation!) { TalkLive.shared.reset() }
 
     private func present(_ a: UIAlertController, ok: @escaping () -> Void) {
       a.addAction(UIAlertAction(title: "확인", style: .default) { _ in ok() })
@@ -208,8 +217,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     // Set here, before launching ends, so a press that started the app is not missed.
     UNUserNotificationCenter.current().delegate = Push.shared
     Push.shared.refresh()
+    // A talk's island left by a run that was killed (REQ-F-913).
+    TalkLive.endAll()
+    #if DEBUG
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { TalkLive.shared.demo() }
+    #endif
     return true
   }
+
+  // Quitting (swiped away from the app switcher while it ran): the talk ends with the app.
+  func applicationWillTerminate(_ app: UIApplication) { TalkLive.endAll(wait: true) }
 
   // A quick action that started the app comes with the scene; one pressed while it runs goes to SceneDelegate.
   func application(_ app: UIApplication, configurationForConnecting s: UISceneSession, options o: UIScene.ConnectionOptions) -> UISceneConfiguration {

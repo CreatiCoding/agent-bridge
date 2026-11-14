@@ -27,7 +27,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>카메라 번역(시험 기능)에서 비춘 일본어를 읽으려고 카메라를 써요. 화면은 기기 밖으로 나가지 않아요.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>말한 내용을 받아써서 세션에 보내려고 마이크를 써요.</string>
+	<string>말한 내용을 받아써서 세션에 보내려고 마이크를 써요. 대화 모드 중에는 앱을 닫거나 화면을 꺼도 대화를 끝낼 때까지 계속 들어요.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>말하는 동안 글을 바로 보여 주려고 음성 인식을 써요.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -47,6 +49,10 @@
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>camera.viewfinder</string>
 		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

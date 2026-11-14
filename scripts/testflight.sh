@@ -66,12 +66,18 @@ main() {
     auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
   fi
   # An API key without the Admin role cannot use Xcode's cloud signing, so api.env may name an App Store profile
-  # (ASC_PROFILE) made for a distribution certificate in this Mac's keychain, and the export signs with those.
+  # (ASC_PROFILE) made for a distribution certificate in this Mac's keychain, and the export signs with those. The
+  # app embeds the BridgeLive widget extension (REQ-F-913), which needs its own profile for dev.creco.bridge.live
+  # (ASC_PROFILE_LIVE), made the same way for the same certificate.
+  if [ -n "${ASC_PROFILE:-}" ] && [ -z "${ASC_PROFILE_LIVE:-}" ]; then
+    echo "$(date '+%F %T') 실패 ${head:0:7} build $build (api.env 에 ASC_PROFILE_LIVE: dev.creco.bridge.live 의 App Store 프로필 이름이 없어요)" > "$dir/result"
+    return 1
+  fi
   local signing='<key>signingStyle</key><string>automatic</string>'
   if [ -n "${ASC_PROFILE:-}" ]; then
     signing="<key>signingStyle</key><string>manual</string>
   <key>signingCertificate</key><string>Apple Distribution</string>
-  <key>provisioningProfiles</key><dict><key>dev.creco.bridge</key><string>$ASC_PROFILE</string></dict>"
+  <key>provisioningProfiles</key><dict><key>dev.creco.bridge</key><string>$ASC_PROFILE</string><key>dev.creco.bridge.live</key><string>$ASC_PROFILE_LIVE</string></dict>"
   fi
   cat > "$out/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

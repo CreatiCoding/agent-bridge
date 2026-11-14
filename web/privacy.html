@@ -39,7 +39,7 @@ th{white-space:nowrap}
 <main>
 <p class="muted"><a href="/">← Agent Bridge</a> · <a href="/support">지원 · Support</a> · <a href="#en">English summary</a></p>
 <h1>개인정보 처리방침</h1>
-<p class="muted">시행일 2026-10-19 · 적용 대상: <code>bridge.creco.dev</code> 웹 서비스와 iOS 앱 Agent Bridge</p>
+<p class="muted">시행일 2026-11-14 · 적용 대상: <code>bridge.creco.dev</code> 웹 서비스와 iOS 앱 Agent Bridge</p>
 
 <p>Agent Bridge(이하 "서비스")의 운영자(이하 "운영자")는 「개인정보 보호법」 제30조에 따라 정보주체의 개인정보를 보호하고 이와 관련한 고충을 신속하고 원활하게 처리하기 위하여 다음과 같이 개인정보 처리방침을 수립·공개합니다.</p>
 <div class="box">
@@ -153,7 +153,7 @@ th{white-space:nowrap}
 <li><b>즉시 받아쓰기</b>: "즉시 받아쓰기"(말하는 동안 흐리게 보이는 글)는 브라우저의 음성 인식을 사용하므로, 기기에 따라 Apple 또는 Google 의 서버를 거칠 수 있습니다. 설정 → 음성에서 끌 수 있습니다.</li>
 <li><b>아바타 그림</b>: 브라우저가 GitHub 에서 직접 불러옵니다.</li>
 </ol>
-<p>③ <b>음성 받아쓰기</b>의 녹음은 서버를 거쳐 세션이 있는 정보주체의 맥으로만 전달되며, 맥의 whisper.cpp 가 맥 안에서 글로 바꿉니다. 녹음은 맥 밖으로 나가지 않습니다. 외부 AI 서비스로 보내지 않으며, 서버는 녹음을 저장하지 않고 맥에 넘기기만 합니다.</p>
+<p>③ <b>음성 받아쓰기</b>의 녹음은 서버를 거쳐 세션이 있는 정보주체의 맥으로만 전달되며, 맥의 whisper.cpp 가 맥 안에서 글로 바꿉니다. 녹음은 맥 밖으로 나가지 않습니다. 외부 AI 서비스로 보내지 않으며, 서버는 녹음을 저장하지 않고 맥에 넘기기만 합니다. 다만 <b>대화 모드</b>(말을 멈추면 보내고 답을 목소리로 읽는 기능)에서는 녹음이 아니라 <b>받아쓴 글</b>이 세션 메시지로 보내지고, 말이 끝났는지 판단하거나 답을 짧게 줄이기 위해서도 세션의 맥에서 Claude Code 가 정보주체 본인의 계정으로 Anthropic(Claude)에 보냅니다(제7조 ①의 Anthropic 과 같음). 대화 모드를 처음 켤 때 화면에서도 알립니다.</p>
 
 <h2 id="a8">제8조(민감정보 및 가명정보의 처리)</h2>
 <p>① 운영자는 민감정보(「개인정보 보호법」 제23조)를 수집하지 않습니다. 정보주체가 세션에 직접 적은 내용은 서버에 저장하지 않지만 맥의 대화 파일과 Anthropic 으로 전송되므로(제7조 ②), 민감한 내용은 적지 않기를 권합니다.</p>
@@ -186,7 +186,7 @@ th{white-space:nowrap}
 <li><code>__Host-cb_apple</code>: Apple 로그인 중 확인용, 10분</li>
 </ol>
 <p>② 브라우저 저장소에는 목록과 최근 세션 대화의 사본(빠른 표시용), 작성 중인 글, 화면·아이콘·음성 설정, 최근 받아쓰기 결과를 저장합니다. 이 정보는 해당 기기에만 있으며 서버로 보내지 않습니다.</p>
-<p>③ iOS 앱은 웹 화면을 띄우는 앱입니다. 위의 웹 저장소 외에는 따로 정보를 수집하거나 저장하지 않으며, 분석 도구를 사용하지 않습니다. 마이크와 음성 인식 권한은 받아쓰기를 사용할 때에만 사용합니다.</p>
+<p>③ iOS 앱은 웹 화면을 띄우는 앱입니다. 위의 웹 저장소 외에는 따로 정보를 수집하거나 저장하지 않으며, 분석 도구를 사용하지 않습니다. 마이크와 음성 인식 권한은 받아쓰기를 사용할 때에만 사용합니다. 대화 모드를 켠 동안에는 앱을 닫거나 화면을 꺼도 대화를 끝낼 때까지 마이크를 계속 쓰며(백그라운드 오디오), 그동안 다이내믹 아일랜드·잠금 화면에 대화 중임을 표시합니다. 표시에는 세션 제목과 상태만 담기며 기기 밖으로 보내지 않습니다.</p>
 <p>④ 광고·분석·행태정보 수집을 위한 쿠키나 도구는 사용하지 않습니다.</p>
 <p>⑤ <b>거부 방법</b>: 정보주체는 브라우저 설정에서 쿠키 저장을 거부하거나 삭제할 수 있습니다. 다만 쿠키를 거부하면 로그인이 필요한 서비스를 이용할 수 없습니다.</p>
 
@@ -213,10 +213,11 @@ th{white-space:nowrap}
 </ol>
 
 <h2 id="a15">제15조(개인정보 처리방침의 변경)</h2>
-<p>① 이 개인정보 처리방침은 2026년 10월 19일부터 적용됩니다. 내용이 바뀌면 이 페이지의 시행일과 내용을 고칩니다.</p>
+<p>① 이 개인정보 처리방침은 2026년 11월 14일부터 적용됩니다. 내용이 바뀌면 이 페이지의 시행일과 내용을 고칩니다.</p>
 <p>② 변경 이력</p>
 <ul>
-<li>2026-10-19: 개인정보 보호책임자의 성명을 적고, 이전 판에서 저장된 대화를 서버에서 모두 삭제하였음을 적음(현재 판).</li>
+<li>2026-11-14: 대화 모드에서 받아쓴 글이 세션의 맥을 거쳐 Anthropic(Claude)으로 가는 것과, iOS 앱이 대화 모드 중 백그라운드에서 마이크를 쓰고 다이내믹 아일랜드에 표시하는 것을 적음(현재 판).</li>
+<li>2026-10-19: 개인정보 보호책임자의 성명을 적고, 이전 판에서 저장된 대화를 서버에서 모두 삭제하였음을 적음.</li>
 <li>2026-10-18: 서버가 세션의 대화·화면 기록·그림을 저장하지 않고 전달만 하도록 바꾸고(세션 정보는 제목·미리보기 80자·상태·맥·작업 폴더·PR 링크·통계 숫자만, 잠근 세션은 제목·미리보기도 저장하지 않음), 문제 제보가 운영자의 AI 도구로 처리될 수 있음을 적음.</li>
 <li>2026-10-18: 알림은 30일, 문제 제보는 90일(계정 삭제와 무관), 대기·거절된 접근 요청은 90일 뒤 삭제하도록 보관 기간을 정함.</li>
 <li>2026-10-18: 서버 실행 로그에서 IP 주소·로그 내용을 빼고, 맥의 Claude 계정 이메일·요금제를 저장하지 않으며, 보낸 영상은 맥이 받으면 바로, 만료된 로그인 토큰 해시는 1시간 안에 지우도록 바꿈.</li>
@@ -227,7 +228,7 @@ th{white-space:nowrap}
 <hr style="border:0;border-top:1px solid var(--line);margin:40px 0 0">
 <section id="en" lang="en">
 <h2>Privacy Policy (English summary)</h2>
-<p class="muted">Effective 2026-10-19 · Applies to the <code>bridge.creco.dev</code> web service and the Agent Bridge iOS app. The Korean text above is the full policy.</p>
+<p class="muted">Effective 2026-11-14 · Applies to the <code>bridge.creco.dev</code> web service and the Agent Bridge iOS app. The Korean text above is the full policy.</p>
 <p>Agent Bridge lets you watch and drive the Claude Code sessions running on <b>your own Mac</b> from a phone or the web. <b>The server does not store your conversations</b>: it only relays them between your Mac and your devices. It is an independent project, not affiliated with Anthropic. Claude is a trademark of Anthropic.</p>
 <h3>Controller and contact</h3>
 <p>The person who operates this server, Jeong Seokho (정석호), is responsible for the data it stores and is the privacy officer. Questions and access or deletion requests: <a href="mailto:nodejsdeveloper@kakao.com">nodejsdeveloper@kakao.com</a>.</p>
@@ -240,7 +241,7 @@ th{white-space:nowrap}
 <li>Sessions: title, an 80-character preview, status, the Mac, working folder, PR links found in the conversation and usage numbers. A locked session keeps neither title nor preview (unless you named it). The conversation itself (messages, replies, tool calls and results, screen log, pictures) stays on your Mac; the server keeps only the latest part of it in memory to relay it (up to 1,000 entries per session), never on disk, and gone when the server restarts. Conversations stored by earlier versions were moved to your Mac and deleted from the server on 2026-10-19.</li>
 <li>Settings (groups, default prompt, voice settings and term list, plugin settings such as a Slack bot token), notifications, web push subscription endpoints, the iOS app's notification token, videos you send, problem reports, and host logs (which never contain message text).</li>
 <li>IP addresses are kept only in memory for rate limiting (one hour for the public demo, one minute otherwise) and are not stored, not even in the server log. The server log holds login names, Mac names and page error messages, never Mac log text, request queries, folder paths or credentials in git remote addresses.</li>
-<li>On your device: a sign-in cookie (30 days), sign-in state cookies (10 minutes), and a local cache of lists, recent conversations, drafts and settings. The iOS app collects nothing else and has no analytics; it uses the microphone and speech recognition only for dictation.</li>
+<li>On your device: a sign-in cookie (30 days), sign-in state cookies (10 minutes), and a local cache of lists, recent conversations, drafts and settings. The iOS app collects nothing else and has no analytics; it uses the microphone and speech recognition only for dictation. While talk mode is on, it keeps the microphone on in the background (closed app or screen off) until you end the talk, and shows that in the Dynamic Island and on the lock screen with the session's title and state only.</li>
 </ul>
 <h3>Retention and deletion</h3>
 <ul>
@@ -255,7 +256,7 @@ th{white-space:nowrap}
 <li><b>GitHub</b> (USA) for sign-in (login, id, name and avatar only; no GitHub access token is stored).</li>
 <li><b>Apple</b> (USA) for Sign in with Apple in the iOS app (user id, name, e-mail or relay address). Deleting your account asks Apple to revoke the app's token.</li>
 <li><b>Anthropic</b>: sessions are run by Claude Code on your Mac with your own Anthropic account; your prompts reach Anthropic through Claude Code under Anthropic's terms. This server sends no session content to Anthropic. Problem reports may be processed with an AI tool the operator uses to fix the problem.</li>
-<li><b>Voice dictation</b>: the recording goes through this server only to your own Mac running the session, where whisper.cpp turns it into text on the Mac. The recording does not leave your Mac: it is not sent to any outside AI service, and the server passes it on without storing it.</li>
+<li><b>Voice dictation</b>: the recording goes through this server only to your own Mac running the session, where whisper.cpp turns it into text on the Mac. The recording does not leave your Mac: it is not sent to any outside AI service, and the server passes it on without storing it. In talk mode, the <b>transcribed text</b> (not the recording) is sent as your message, and also to judge whether you finished speaking or to shorten an answer, by Claude Code on your Mac with your own account to Anthropic (Claude). Talk mode says so the first time you turn it on.</li>
 <li><b>Apple (and Google)</b> (USA): live dictation uses the browser's speech recognition, which may go through Apple's or Google's servers (can be turned off in Settings → Voice). Web push goes through the browser's push service with no content; the device fetches the notification text from this server. Notifications in the iOS app go through Apple's push service (APNs) and carry the device token, the notice title (the session name, up to 80 characters), one line of text (up to 200 characters) and the session id; a locked session's notice says only that there is something to check.</li>
 <li><b>Slack</b> (USA): only if you turn on the Slack plugin, to your own Slack app.</li>
 <li><b>Hosting</b>: data is stored as files on a server the operator manages; no external database or storage service.</li>

@@ -26,8 +26,33 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.540',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: 'iOS 앱에서 대화 모드가 앱을 닫거나 화면을 꺼도 이어져요: 앱 안에서만 audioSession 을 play-and-record 로 두고, 끼어들기·말 끝 판단을 오디오 콜백(약 85 ms)마다 해요',
+        refs: ['REQ-F-912', 'REQ-F-907'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: 'iOS 앱의 대화 중에는 다이내믹 아일랜드·잠금 화면에 주황색으로 듣는 중·생각 중·말하는 중을 보여요 (앱 1.1)',
+        refs: ['REQ-F-913', 'REQ-F-756'],
+      },
+      {
+        kind: 'security',
+        scope: ['ui'],
+        text: '대화 모드를 처음 켜면 받아쓴 글이 Claude(Anthropic)로 간다고 알려요. 개인정보 처리방침에도 적었어요',
+        refs: ['REQ-F-907'],
+      },
+    ],
+  },
+  {
     version: '1.539',
     date: '2026-11-14',
+    commit: '5cf9681',
     changes: [
       {
         kind: 'fixed',
