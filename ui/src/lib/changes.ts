@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.541',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화 모드에서 내 목소리보다 훨씬 작은 소리(지하철·주변 사람)에는 읽기를 멈추지 않아요. 잠깐 줄였다가 원래 크기로 계속 읽어요',
+        refs: ['REQ-F-914', 'REQ-F-907'],
+      },
+    ],
+  },
+  {
     version: '1.540',
     date: '2026-11-14',
+    commit: '0836d74',
     changes: [
       {
         kind: 'added',

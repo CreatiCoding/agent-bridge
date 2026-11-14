@@ -340,6 +340,12 @@ export class LiveListen {
   get loudMs() {
     return this.speaking ? (this.quiet ? 0 : this.voiced) : this.loud
   }
+  /** How loud the sound going on now is (its loud frames, 90th percentile rms, as a phrase's `level`); 0 when quiet. */
+  get loudLevel() {
+    if (!this.loudMs || !this.loudRms.length) return 0
+    const s = [...this.loudRms].sort((a, b) => a - b)
+    return s[Math.min(s.length - 1, Math.floor(s.length * 0.9))]
+  }
   /** iOS stops the sound while the page is put away; back on the page it goes on. */
   resume() {
     if (this.ctx.state === 'suspended' || (this.ctx.state as string) === 'interrupted') void this.ctx.resume().catch(() => {})

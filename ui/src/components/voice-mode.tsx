@@ -13,7 +13,7 @@ import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
 import { pairedHosts, pairedWith } from '../lib/trust'
 import { getStore } from '../lib/store'
-import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearVoice, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
+import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearLevel, nearVoice, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
 import { withHint } from '../lib/timeline'
 import { Speaker } from '../lib/speaker'
 import { inIosApp, tellTalk, type TalkPhase } from '../lib/native'
@@ -262,11 +262,12 @@ export function VoiceMode({
     let ducked = false
     let heardAt = -1
     return listen.onTick(() => {
-      // The person speaking while the answer is read: quieter at a sound, stopped once it is sure to be speech.
+      // The person speaking while the answer is read: quieter at a sound, stopped once it is sure to be speech (and, once
+      // their voice is known, as loud as it: a train does not stop it, REQ-F-914).
       const sp = speakerNow.current
       if (sp?.speaking) {
         if (heardAt < 0 || !listen.loudMs) heardAt = browserText().length
-        const b = bargeIn(listen.loudMs, browserText().length > heardAt + 1)
+        const b = bargeIn(listen.loudMs, browserText().length > heardAt + 1, nearLevel(listen.loudLevel, voiceLv.current))
         if (b === 'stop') sp.stop()
         else if (b === 'duck') (ducked = true, sp.duck(BARGE.duckTo))
         else if (ducked) (ducked = false, sp.duck(1))

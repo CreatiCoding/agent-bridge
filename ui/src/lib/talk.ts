@@ -117,9 +117,12 @@ export class ReadQueue {
 /**
  * Is a sound heard while the answer is being read the person starting to speak? Sure after `sureMs` of sound;
  * before that only when the browser's recogniser has heard a word in it (a knock or a train is not words).
+ * `near` false (REQ-F-914): the sound is much quieter than the person's own voice (a train, people around), so it
+ * never stops the reading; it is only quieter for a moment, then back to full while that sound goes on.
  */
 export const BARGE = { duckMs: 150, sureMs: 600, duckTo: 0.25 }
-export function bargeIn(loudMs: number, heardWords: boolean): 'none' | 'duck' | 'stop' {
+export function bargeIn(loudMs: number, heardWords: boolean, near?: boolean): 'none' | 'duck' | 'stop' {
+  if (near === false) return loudMs >= BARGE.duckMs && loudMs < BARGE.sureMs ? 'duck' : 'none'
   if (loudMs >= BARGE.sureMs || (loudMs >= BARGE.duckMs && heardWords)) return 'stop'
   if (loudMs >= BARGE.duckMs) return 'duck'
   return 'none'
@@ -169,6 +172,12 @@ const lettersOf = (t: string) => t.replace(/[\s\p{P}\p{S}]/gu, '')
 const median = (x: number[]) => {
   const s = [...x].sort((a, b) => a - b)
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
+}
+
+/** Is a sound going on now as loud as the person's own voice? undefined until their voice has been heard once. */
+export function nearLevel(level: number, voice: number[]): boolean | undefined {
+  if (!voice.length) return undefined
+  return level >= median(voice) * NEAR.voiceShare
 }
 
 /** Was this the person, close to the microphone ('keep'), or the room ('far': too quiet; 'short': too little to trust)? */
