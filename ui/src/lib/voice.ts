@@ -277,6 +277,8 @@ export class LiveListen {
   speaking = false
   /** How loud it is now, 0 to 1 (for the meter). */
   level = 0
+  /** Sound under this rms is not speech, however loud the room is (대화 모드 with the person's voice known, REQ-F-915). */
+  voiceFloor = 0
   /** How long nothing at all has come in: another user of the microphone has taken it. */
   deadMs = 0
   private waiting: Phrase[] = []
@@ -357,7 +359,7 @@ export class LiveListen {
     const rms = Math.sqrt(sum / x.length)
     this.level = Math.min(1, rms * 8)
     this.deadMs = rms === 0 ? this.deadMs + ms : 0
-    const over = rms > Math.max(VAD.floor, this.noise * VAD.over)
+    const over = rms > Math.max(VAD.floor, this.noise * VAD.over, this.voiceFloor)
     if (!this.speaking) {
       // The room's own level: follows a drop at once, a rise only slowly (so speech does not become the room).
       this.noise = rms < this.noise ? this.noise * 0.7 + rms * 0.3 : this.noise * 0.995 + rms * 0.005

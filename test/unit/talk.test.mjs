@@ -1,7 +1,7 @@
 // 대화 모드 (REQ-F-907): the rules that need no model answer the plain cases and say 'unsure' for the rest.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { bargeIn, nearLevel, speakable, turnEnd } from '../../ui/src/lib/talk.ts'
+import { bargeIn, nearLevel, speakable, turnEnd, voiceFloor } from '../../ui/src/lib/talk.ts'
 import { withHint, withoutHint } from '../../ui/src/lib/timeline.ts'
 
 test('AC-1791 말 끝: 끝맺는 말은 보내고, 잇는 말은 기다리고, 애매하면 모델에게 묻는다', () => {
@@ -35,6 +35,11 @@ test('AC-1814 끼어들기: 내 목소리보다 훨씬 작은 소리(지하철)�
   assert.equal(bargeIn(5000, true, false), 'none')
   assert.equal(bargeIn(700, false, true), 'stop')
   assert.equal(bargeIn(700, false, undefined), 'stop')
+})
+
+test('AC-1815 말 끝: 내 목소리를 배운 뒤엔 그 0.35배 아래 소리는 말이 아니다', () => {
+  assert.equal(voiceFloor([]), 0)
+  assert.ok(Math.abs(voiceFloor([0.08, 0.1, 0.16]) - 0.035) < 1e-9)
 })
 
 test('AC-1794 대화 모드로 보낸 말의 안내는 화면에서 다시 뗀다', () => {

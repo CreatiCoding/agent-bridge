@@ -13,7 +13,7 @@ import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
 import { pairedHosts, pairedWith } from '../lib/trust'
 import { getStore } from '../lib/store'
-import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearLevel, nearVoice, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
+import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearLevel, nearVoice, voiceFloor, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
 import { withHint } from '../lib/timeline'
 import { Speaker } from '../lib/speaker'
 import { inIosApp, tellTalk, type TalkPhase } from '../lib/native'
@@ -261,7 +261,10 @@ export function VoiceMode({
     let was = false
     let ducked = false
     let heardAt = -1
-    return listen.onTick(() => {
+    const off = listen.onTick(() => {
+      // 대화 모드 with the person's voice known: sound well under it (a train, an announcement) is not speech, so a
+      // phrase ends when they stop even in the noise, and noise alone does not start one (REQ-F-915).
+      listen.voiceFloor = autoNow.current ? voiceFloor(voiceLv.current) : 0
       // The person speaking while the answer is read: quieter at a sound, stopped once it is sure to be speech (and, once
       // their voice is known, as loud as it: a train does not stop it, REQ-F-914).
       const sp = speakerNow.current
@@ -278,6 +281,10 @@ export function VoiceMode({
         setVoiceDevice({ ...getVoiceDevice(), live: false })
       }
     })
+    return () => {
+      off()
+      listen.voiceFloor = 0
+    }
   }, [listen, preview])
 
   // The screen stays on while listening (a phone that sleeps stops the microphone); back on the page it goes on.

@@ -174,6 +174,16 @@ const median = (x: number[]) => {
   return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
 }
 
+/**
+ * The loudness under which a piece of sound is not the person speaking, for cutting phrases (REQ-F-915): this share
+ * of their voice (the median of their clear phrases' level), 0 until it is known. Lower than `voiceShare`, which
+ * judges a whole phrase's loudest part, because single pieces of speech are quieter than that.
+ */
+export const FLOOR_SHARE = 0.35
+export function voiceFloor(voice: number[]): number {
+  return voice.length ? median(voice) * FLOOR_SHARE : 0
+}
+
 /** Is a sound going on now as loud as the person's own voice? undefined until their voice has been heard once. */
 export function nearLevel(level: number, voice: number[]): boolean | undefined {
   if (!voice.length) return undefined

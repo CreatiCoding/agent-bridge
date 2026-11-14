@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.543',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화 모드에서 지하철처럼 시끄러운 곳에서도 말을 멈추면 보내져요: 내 목소리보다 훨씬 작은 소리는 말로 치지 않아요',
+        refs: ['REQ-F-915', 'REQ-F-907'],
+      },
+    ],
+  },
+  {
     version: '1.542',
     date: '2026-11-14',
+    commit: '76384ff',
     changes: [
       {
         kind: 'changed',
