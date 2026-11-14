@@ -88,7 +88,7 @@ for line in sys.stdin:
 `
 
 export class SupertonicVoice {
-  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F2', steps = 10, speed = SUPERTONIC_SPEED, log = () => {}, idleMs = 10 * 60_000 } = {}) {
+  constructor({ dir, run = spawn, tmp = os.tmpdir(), voice = 'F2', steps = 8, speed = SUPERTONIC_SPEED, log = () => {}, idleMs = 10 * 60_000 } = {}) {
     Object.assign(this, { run, tmp, voice, steps, speed, log, idleMs })
     this.py = path.join(dir, 'supertonic', 'bin', 'python')
     this.proc = null

@@ -178,7 +178,7 @@ export function nearVoice(text: string, heard: Loudness | undefined, voice: numb
   if (!l) return 'keep'
   const korean = (l.match(/[가-힣]/g)?.length ?? 0) / l.length >= 0.5
   if (heard.snr < NEAR.minSnr) return 'far'
-  if (voice.length >= 2 && heard.level < median(voice) * NEAR.voiceShare) return 'far'
+  if (voice.length >= 1 && heard.level < median(voice) * NEAR.voiceShare) return 'far'
   if (l.length <= NEAR.shortLetters && heard.snr < NEAR.shortSnr) return 'short'
   if (!korean && l.length <= NEAR.foreignLetters) return 'short'
   return 'keep'

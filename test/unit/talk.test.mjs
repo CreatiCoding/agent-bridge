@@ -150,6 +150,10 @@ test('AC-1802 가까이서 한 말만: 방 소음보다 충분히 크지 않거�
   let v = []
   for (const l of [0.3, 0.32, 0.28]) v = learnVoice(v, '이번 배포 결과 알려 줘', { level: l, snr: 9 })
   assert.equal(v.length, 3)
+  // One clear phrase is enough to know them: voice.log, a quiet room (snr 63~134), "마이크 테스트" 0.141 then a
+  // "감사합니다" at 0.04 the person did not say (1.536).
+  assert.equal(nearVoice('감사합니다.', { level: 0.04, snr: 80.669 }, [0.141]), 'far')
+  assert.equal(nearVoice('방금 감사합니다. 내가 말한 게 아닌', { level: 0.135, snr: 134.332 }, [0.141]), 'keep')
   assert.equal(nearVoice('다음 역은 강남 강남역입니다', { level: 0.1, snr: 6 }, v), 'far')
   assert.equal(nearVoice('다음으로 넘어가 줘', { level: 0.25, snr: 6 }, v), 'keep')
   // Only clear phrases teach it, and only the last few.

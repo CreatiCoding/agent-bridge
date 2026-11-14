@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.536',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '리눅스 기계의 목소리가 문장 사이에서 끊기던 것: 다듬는 단계를 10에서 8로 낮춰 한 문장을 두 배 빨리 만들어요',
+        refs: ['REQ-F-908'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '대화 모드에서 또렷한 말 한 번만 들어도 그 사람 목소리 크기를 알고, 그보다 훨씬 작게 들린 말(잡음이 받아써진 "감사합니다" 같은)은 보내지 않아요',
+        refs: ['REQ-F-909'],
+      },
+    ],
+  },
+  {
     version: '1.535',
     date: '2026-11-14',
+    commit: 'f44f8cc',
     changes: [
       {
         kind: 'fixed',
