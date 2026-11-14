@@ -6,7 +6,36 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B1000000000000000000B00C /* BridgeLive.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B1000000000000000000B001 /* BridgeLive.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B1000000000000000000B00E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B1000000000000000000A009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B1000000000000000000B004;
+			remoteInfo = BridgeLive;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B1000000000000000000B00D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B1000000000000000000B00C /* BridgeLive.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		B1000000000000000000B001 /* BridgeLive.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BridgeLive.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000000000000000000A001 /* Bridge.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Bridge.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -19,6 +48,13 @@
 			);
 			target = B1000000000000000000A005 /* Bridge */;
 		};
+		B1000000000000000000B00B /* Exceptions for "BridgeLive" folder in "BridgeLive" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = B1000000000000000000B004 /* BridgeLive */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -30,10 +66,30 @@
 			path = Bridge;
 			sourceTree = "<group>";
 		};
+		B1000000000000000000B002 /* BridgeLive */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B1000000000000000000B00B /* Exceptions for "BridgeLive" folder in "BridgeLive" target */,
+			);
+			path = BridgeLive;
+			sourceTree = "<group>";
+		};
+		B1000000000000000000B003 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B1000000000000000000A006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1000000000000000000B006 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -47,6 +103,8 @@
 			isa = PBXGroup;
 			children = (
 				B1000000000000000000A002 /* Bridge */,
+				B1000000000000000000B002 /* BridgeLive */,
+				B1000000000000000000B003 /* Shared */,
 				B1000000000000000000A004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -55,6 +113,7 @@
 			isa = PBXGroup;
 			children = (
 				B1000000000000000000A001 /* Bridge.app */,
+				B1000000000000000000B001 /* BridgeLive.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -69,18 +128,42 @@
 				B1000000000000000000A007 /* Sources */,
 				B1000000000000000000A006 /* Frameworks */,
 				B1000000000000000000A008 /* Resources */,
+				B1000000000000000000B00D /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B1000000000000000000B00F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B1000000000000000000A002 /* Bridge */,
+				B1000000000000000000B003 /* Shared */,
+			);
+			name = Bridge;
+			productName = Bridge;
+			productReference = B1000000000000000000A001 /* Bridge.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B1000000000000000000B004 /* BridgeLive */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1000000000000000000B008 /* Build configuration list for PBXNativeTarget "BridgeLive" */;
+			buildPhases = (
+				B1000000000000000000B005 /* Sources */,
+				B1000000000000000000B006 /* Frameworks */,
+				B1000000000000000000B007 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				B1000000000000000000A002 /* Bridge */,
+				B1000000000000000000B002 /* BridgeLive */,
+				B1000000000000000000B003 /* Shared */,
 			);
-			name = Bridge;
-			productName = Bridge;
-			productReference = B1000000000000000000A001 /* Bridge.app */;
-			productType = "com.apple.product-type.application";
+			name = BridgeLive;
+			productName = BridgeLive;
+			productReference = B1000000000000000000B001 /* BridgeLive.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -94,6 +177,9 @@
 				TargetAttributes = {
 					B1000000000000000000A005 = {
 						CreatedOnToolsVersion = 16.3;
+					};
+					B1000000000000000000B004 = {
+						CreatedOnToolsVersion = 26.3;
 					};
 				};
 			};
@@ -112,12 +198,20 @@
 			projectRoot = "";
 			targets = (
 				B1000000000000000000A005 /* Bridge */,
+				B1000000000000000000B004 /* BridgeLive */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		B1000000000000000000A008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1000000000000000000B007 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -134,7 +228,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B1000000000000000000B005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B1000000000000000000B00F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B1000000000000000000B004 /* BridgeLive */;
+			targetProxy = B1000000000000000000B00E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B1000000000000000000A00E /* Debug */ = {
@@ -187,7 +296,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.creco.bridge;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -210,9 +319,57 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.creco.bridge;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		B1000000000000000000B009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 26THSK9ZBX;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BridgeLive/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.creco.bridge.live;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B1000000000000000000B00A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 26THSK9ZBX;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BridgeLive/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.creco.bridge.live;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -236,6 +393,15 @@
 			buildConfigurations = (
 				B1000000000000000000A010 /* Debug */,
 				B1000000000000000000A011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B1000000000000000000B008 /* Build configuration list for PBXNativeTarget "BridgeLive" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1000000000000000000B009 /* Debug */,
+				B1000000000000000000B00A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

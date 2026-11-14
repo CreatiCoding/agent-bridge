@@ -16,6 +16,7 @@ import { getStore } from '../lib/store'
 import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearVoice, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
 import { withHint } from '../lib/timeline'
 import { Speaker } from '../lib/speaker'
+import { inIosApp, tellTalk, type TalkPhase } from '../lib/native'
 
 interface Said {
   id: number
@@ -101,6 +102,8 @@ export function VoiceMode({
   }, [prep])
   const [judging, setJudging] = useState(false)
   const judgingNow = useRef(false)
+  // Sent in 대화 모드 and no answer read yet: 생각 중 on the Dynamic Island (REQ-F-913).
+  const [awaiting, setAwaiting] = useState(false)
   const talkPost = <T,>(body: object) => post<T>(`/api/sessions/${sessionId}/talk`, body)
   const speaker = useMemo(
     () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text, rate: getVoiceDevice().rate, away: !hostPaired() }).then((r) => fromBase64(r.audio))) : null),
@@ -130,6 +133,7 @@ export function VoiceMode({
     }
     for (const a of talk.answers) {
       if (!q.take(a.key)) continue
+      setAwaiting(false)
       readChain.current = readChain.current.then(async () => {
         const plain = speakable(a.text)
         // A plain answer is read as it is; one that is mostly code or English is said in a line by the Mac's model.
@@ -239,14 +243,25 @@ export function VoiceMode({
     else if (cmd.end === 'reset') resetNow.current()
   }
 
-  // The meter and "말하는 중" follow the sound without drawing the panel again each frame.
+  // The meter follows the sound without drawing the panel again each frame; rAF stops while the page is hidden,
+  // and nothing else hangs on it.
   useEffect(() => {
     let raf = 0
+    const draw = () => {
+      meter.current?.style.setProperty('--lvl', String(listen.level))
+      raf = requestAnimationFrame(draw)
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [listen])
+
+  // "말하는 중" and stopping the answer when the person speaks over it, after each piece of sound (about 85 ms):
+  // the sound goes on while the iOS app is in the background (REQ-F-912), and so does this.
+  useEffect(() => {
     let was = false
     let ducked = false
     let heardAt = -1
-    const tick = () => {
-      meter.current?.style.setProperty('--lvl', String(listen.level))
+    return listen.onTick(() => {
       // The person speaking while the answer is read: quieter at a sound, stopped once it is sure to be speech.
       const sp = speakerNow.current
       if (sp?.speaking) {
@@ -261,10 +276,7 @@ export function VoiceMode({
         preview.fail('이 기기에서는 즉시 받아쓰기와 녹음을 같이 못 해요. 즉시 받아쓰기를 껐어요')
         setVoiceDevice({ ...getVoiceDevice(), live: false })
       }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    })
   }, [listen, preview])
 
   // The screen stays on while listening (a phone that sleeps stops the microphone); back on the page it goes on.
@@ -305,7 +317,10 @@ export function VoiceMode({
   const lastSound = useRef(Date.now())
   const judged = useRef<string | null>(null)
   useEffect(() => {
-    const t = setInterval(() => {
+    // Checked after each piece of sound, so it goes on in the background (REQ-F-912); a timer only stands in when
+    // no sound has come for a while (the sound device stopped), as before.
+    let tickAt = 0
+    const check = () => {
       if (!autoNow.current) return
       if (listen.speaking || listen.loudMs > 0) return void (lastSound.current = Date.now())
       const v = viewNow.current
@@ -336,8 +351,10 @@ export function VoiceMode({
           if (r === 'done') sendNow.current()
           else judged.current = text
         })
-    }, 150)
-    return () => clearInterval(t)
+    }
+    const off = listen.onTick(() => ((tickAt = Date.now()), check()))
+    const t = setInterval(() => Date.now() - tickAt > 400 && check(), 150)
+    return () => (off(), clearInterval(t))
   }, [listen])
 
   /**
@@ -373,6 +390,9 @@ export function VoiceMode({
     const draft = onDraft?.(shown || '…')
     const hint = autoNow.current
     judged.current = null
+    // Until the next render: a check after the next piece of sound must not see these words again.
+    viewNow.current = { kept: '', tail: '', waiting: 0 }
+    if (hint) setAwaiting(true)
     speakerNow.current?.stop()
     sending.current = sending.current.then(async () => {
       const said = ids.length ? await written : shown
@@ -437,6 +457,29 @@ export function VoiceMode({
   endRef.current = () => void close()
   if (takeRef) takeRef.current = () => takeAll().written
 
+  // 다이내믹 아일랜드 (REQ-F-913): the app is told what 대화 모드 does now; it ends when 대화 goes off or the panel does.
+  const phase: TalkPhase = reading && !prep ? 'speaking' : (reading || judging || awaiting) && !speaking ? 'thinking' : 'listening'
+  const told = useRef(false)
+  // An answer that never comes (the session failed) does not leave it 생각 중 for good.
+  useEffect(() => {
+    if (!awaiting) return
+    const t = setTimeout(() => setAwaiting(false), 180_000)
+    return () => clearTimeout(t)
+  }, [awaiting])
+  useEffect(() => {
+    if (!talkOn) {
+      if (told.current) (tellTalk({ op: 'end' }), (told.current = false))
+      return
+    }
+    const title = getStore().state?.sessions.find((x) => x.id === sessionId)?.title ?? ''
+    tellTalk({ op: told.current ? 'update' : 'start', phase, title })
+    told.current = true
+  }, [talkOn, phase, sessionId])
+  useEffect(() => () => void (told.current && tellTalk({ op: 'end' })), [])
+  // Said once, the first time 대화 모드 is on (가이드라인 5.1.2): where the words go, and that the app listens on.
+  const [notice, setNotice] = useState(() => !getVoiceDevice().noticed)
+  const seen = () => (setNotice(false), setVoiceDevice({ ...getVoiceDevice(), noticed: true }))
+
   const prepLeft = prep ? Math.max(0, Math.ceil((prep.until - Date.now()) / 1000)) : 0
   const prepDone = prep ? Math.min(1, (Date.now() - prep.from) / Math.max(1, prep.until - prep.from)) : 0
   const status = closing ? '마무리하는 중…' : speaking ? '말하는 중' : waiting ? '받아쓰는 중…' : judging ? '말이 끝났는지 보는 중…' : reading && prep ? (prepLeft ? `목소리 준비 중 · 약 ${prepLeft}초` : '목소리 준비 중…') : reading ? 'Claude 가 말하는 중' : '듣는 중'
@@ -495,6 +538,15 @@ export function VoiceMode({
         </details>
       ) : null}
       {note ? <div className="voice-note">{note}</div> : null}
+      {talkOn && notice ? (
+        <div className="voice-note" role="note">
+          대화 모드에서는 녹음을 내 맥이 받아쓰고, 받아쓴 글은 답과 말 끝 판단을 위해 Claude(Anthropic)로 가요.
+          {inIosApp() ? ' 대화 중에는 앱을 닫거나 화면을 꺼도 계속 들어요(다이내믹 아일랜드에 주황색으로 보여요).' : ''}{' '}
+          <Button size="sm" onClick={seen}>
+            알겠어요
+          </Button>
+        </div>
+      ) : null}
       {/* 대화 모드 sends by itself when the person stops: the two big buttons only take room there, so they show
           small, and only while there is something said to clear or send now. */}
       {!talkOn ? (

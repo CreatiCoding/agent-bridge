@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import { get } from './api'
 import type { VoicePrefs } from './types'
+import { holdAudioSession } from './native'
 
 export const VOICE_RATE = 16000
 
@@ -41,6 +42,8 @@ export interface VoiceDevice {
   talk: boolean
   /** 대화 모드's reading speed, times each voice's normal (a Linux machine's voice tops out near 1.25). */
   rate: number
+  /** 대화 모드's notice (where the words go, REQ-F-912) was read on this device. */
+  noticed?: boolean
 }
 export const TALK_RATES = [1, 1.25, 1.5, 1.75] as const
 const DEVICE = 'cb2.voice'
@@ -59,8 +62,8 @@ const writeLs = (k: string, v: unknown) => {
   } catch {}
 }
 export const getVoiceDevice = (): VoiceDevice => {
-  const { mic = '', key = 'alt-space', live = true, talk = true, rate = 1.5 } = readLs<Partial<VoiceDevice>>(DEVICE, {})
-  return { mic, key, live, talk, rate: (TALK_RATES as readonly number[]).includes(rate) ? rate : 1.5 }
+  const { mic = '', key = 'alt-space', live = true, talk = true, rate = 1.5, noticed = false } = readLs<Partial<VoiceDevice>>(DEVICE, {})
+  return { mic, key, live, talk, rate: (TALK_RATES as readonly number[]).includes(rate) ? rate : 1.5, noticed }
 }
 export const setVoiceDevice = (v: VoiceDevice) => writeLs(DEVICE, v)
 export const KEY_LABEL: Record<VoiceDevice['key'], string> = { 'alt-space': '⌥ Space', 'ctrl-shift-space': 'Ctrl ⇧ Space', off: '끔' }
@@ -277,6 +280,10 @@ export class LiveListen {
   /** How long nothing at all has come in: another user of the microphone has taken it. */
   deadMs = 0
   private waiting: Phrase[] = []
+  /** Put back the audio session the page had (REQ-F-912). */
+  private release = () => {}
+  /** Called after each piece of sound (about 85 ms): runs while the page is hidden too, which rAF and timers do not (REQ-F-912). */
+  private ticks = new Set<() => void>()
   private onPhrase: ((p: Phrase) => void) | null = null
   /** Who takes the phrases: the panel, set once it is up (phrases cut before then wait for it). */
   listen(fn: ((p: Phrase) => void) | null) {
@@ -287,6 +294,11 @@ export class LiveListen {
   get taker() {
     return this.onPhrase
   }
+  /** fn after each piece of sound; returns how to stop. */
+  onTick(fn: () => void) {
+    this.ticks.add(fn)
+    return () => void this.ticks.delete(fn)
+  }
   constructor() {
     // Made inside the press, before anything is awaited: Safari only lets sound start from the person's own touch.
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
@@ -294,6 +306,8 @@ export class LiveListen {
   }
   async start(mic: string) {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('insecure'), { name: 'SecurityError' })
+    // Before the microphone opens, so the session it opens in is already the one that goes on in the background.
+    this.release = holdAudioSession()
     const audio: MediaTrackConstraints = { channelCount: 1, noiseSuppression: true, echoCancellation: true, autoGainControl: true }
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: mic ? { ...audio, deviceId: { exact: mic } } : audio })
@@ -306,7 +320,15 @@ export class LiveListen {
     const src = this.ctx.createMediaStreamSource(this.stream)
     // ScriptProcessor is old but everywhere (an AudioWorklet would need a file of its own); 4096 at 48 kHz is 85 ms.
     this.node = this.ctx.createScriptProcessor(4096, 1, 1)
-    this.node.onaudioprocess = (e) => this.take(new Float32Array(e.inputBuffer.getChannelData(0)))
+    this.node.onaudioprocess = (e) => {
+      this.take(new Float32Array(e.inputBuffer.getChannelData(0)))
+      for (const fn of this.ticks)
+        try {
+          fn()
+        } catch (err) {
+          console.error(err)
+        }
+    }
     src.connect(this.node)
     this.node.connect(this.ctx.destination)
   }
@@ -388,7 +410,10 @@ export class LiveListen {
     this.drop()
     this.node?.disconnect()
     this.stream?.getTracks().forEach((t) => t.stop())
+    this.ticks.clear()
     void this.ctx.close().catch(() => {})
+    this.release()
+    this.release = () => {}
   }
 }
 
