@@ -1054,6 +1054,33 @@ export function guardedDirs(home, platform) {
   return ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Movies', 'Music', '.Trash', 'Library/Mail', 'Library/Messages', 'Library/Safari', 'Library/Containers', 'Library/Group Containers', 'Library/Calendars', 'Library/Reminders', 'Library/Photos', 'Library/Mobile Documents', 'Library/Application Support/AddressBook', 'Library/Application Support/CallHistoryDB', 'Library/Application Support/com.apple.TCC', 'Library/Cookies', 'Library/HomeKit', 'Library/IdentityServices', 'Library/Metadata', 'Library/Suggestions', 'Library/Accounts'].map(c)
 }
 
+/**
+ * The top of the external or network disk `real` sits on (/Volumes/<name> on macOS, under /mnt, /media or
+ * /run/media on Linux), or null when it is on the home folder's disk or on some other system disk. The top is the
+ * highest folder on the way up that is still on the same device. `stat` is fs.statSync, swappable for tests.
+ */
+export function outerMount(real, { home, platform, stat = fs.statSync }) {
+  const dev = stat(real).dev
+  if (dev === stat(home).dev) return null
+  let top = real
+  for (;;) {
+    const up = path.dirname(top)
+    if (up === top || stat(up).dev !== dev) break
+    top = up
+  }
+  const ok = platform === 'darwin' ? path.dirname(top) === '/Volumes' : /^\/(mnt|media|run\/media)\/./.test(top)
+  return ok ? top : null
+}
+
+/**
+ * Where a folder on an outer disk goes when thrown away: that disk's own Trash, so it is a rename and not a copy
+ * across disks. macOS: <top>/.Trashes/<uid> (Finder empties it with the Trash). Linux: the freedesktop top-directory
+ * Trash <top>/.Trash-<uid>/files, with its notes in …/info.
+ */
+export function outerTrashDir(top, platform, uid) {
+  return platform === 'darwin' ? path.join(top, '.Trashes', String(uid)) : path.join(top, `.Trash-${uid}`, 'files')
+}
+
 /** Names under the home folder whose insides are secrets or the system's own: never moved by the disk page. */
 const KEEP_UNDER_HOME = ['.ssh', '.gnupg', '.aws', '.kube', '.docker', '.config', '.local', '.password-store', 'Library']
 

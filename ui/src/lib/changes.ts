@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.531',
+    date: '2026-11-14',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['agent'],
+        text: '외장·공유 디스크(/Volumes/…, /mnt/…)에서 연 세션도 폴더째 버리고 끝낼 수 있어요. 그 디스크의 휴지통(.Trashes/<uid>, .Trash-<uid>)으로 옮기고, 디스크 맨 위 두 단계 폴더와 다른 세션의 폴더를 담은 폴더는 버리지 않아요',
+        refs: ['REQ-F-042', 'ERR-301', 'ERR-372', 'ERR-373'],
+      },
+    ],
+  },
+  {
     version: '1.530',
     date: '2026-11-14',
+    commit: '3d62fce',
     changes: [
       {
         kind: 'added',

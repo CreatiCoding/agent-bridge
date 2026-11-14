@@ -2,7 +2,7 @@
 // owner reaches it. The agent decides; the page only names a cache id or a path inside the home folder.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { diskCaches, diskTrashable, diskScanWhy, guardedDirs, trashDir, duBytes } from '../../agent/guard.mjs'
+import { diskCaches, diskTrashable, diskScanWhy, guardedDirs, trashDir, duBytes, outerMount, outerTrashDir } from '../../agent/guard.mjs'
 import { startServer } from './server-harness.mjs'
 import { mac } from './fake-mac.mjs'
 
@@ -47,6 +47,21 @@ test('diskTrashable: inside the home folder, two levels down, never secrets, gua
   assert.deepEqual(guardedDirs(H, 'linux'), [])
   assert.equal(duBytes('12\t/x\n'), 12 * 1024)
   assert.equal(duBytes(''), null)
+})
+
+test('outerMount: a folder on an external or network disk, found by device; its own Trash (AC-1801)', () => {
+  // A fake stat: everything under one of these tops is on that device, the rest on the system disk.
+  const tops = { '/Volumes/M3': 7, '/mnt/m3': 8, '/opt/disk': 9 }
+  const stat = (p) => ({ dev: Object.entries(tops).find(([t]) => p === t || p.startsWith(`${t}/`))?.[1] ?? 1 })
+  const home = '/Users/u'
+  assert.equal(outerMount('/Users/u/projects/p', { home, platform: 'darwin', stat }), null, '홈과 같은 장치')
+  assert.equal(outerMount('/Volumes/M3/bridge/works/기타/p', { home, platform: 'darwin', stat }), '/Volumes/M3')
+  assert.equal(outerMount('/Volumes/M3', { home, platform: 'darwin', stat }), '/Volumes/M3')
+  assert.equal(outerMount('/opt/disk/a/b/c', { home, platform: 'darwin', stat }), null, '/Volumes 아래가 아님')
+  assert.equal(outerMount('/mnt/m3/bridge/works/g/p', { home: '/home/u', platform: 'linux', stat }), '/mnt/m3')
+  assert.equal(outerMount('/opt/disk/a/b/c', { home: '/home/u', platform: 'linux', stat }), null)
+  assert.equal(outerTrashDir('/Volumes/M3', 'darwin', 501), '/Volumes/M3/.Trashes/501')
+  assert.equal(outerTrashDir('/mnt/m3', 'linux', 1000), '/mnt/m3/.Trash-1000/files')
 })
 
 test('서버: 기기 주인만, 정해진 동작만, 답에서 reqId 를 빼고 돌려줌', async () => {

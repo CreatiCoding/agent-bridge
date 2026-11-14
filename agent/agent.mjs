@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, outerMount, outerTrashDir, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -4845,13 +4845,29 @@ const commands = {
     const s = sessions.get(sid)
     try {
       if (!s) throw new Error('이 맥에 그 세션이 없습니다')
-      trashable(s.cwd, sid)
+      const { real, bin } = trashable(s.cwd, sid)
+      // An outer disk's Trash may not be there yet. macOS keeps <disk>/.Trashes write-only for all (1333), as Finder does.
+      if (!fs.existsSync(bin)) {
+        const outer = !real.startsWith(`${fs.realpathSync(HOME)}/`)
+        if (outer && process.platform === 'darwin' && !fs.existsSync(path.dirname(bin))) {
+          fs.mkdirSync(path.dirname(bin))
+          fs.chmodSync(path.dirname(bin), 0o1333)
+        }
+        fs.mkdirSync(bin, { recursive: true, mode: 0o700 })
+      }
       await tmux('kill-session', '-t', `=${s.tmux}`)
       await sleep(500)
-      const bin = path.join(HOME, '.Trash')
       let to = path.join(bin, path.basename(s.cwd))
       if (fs.existsSync(to)) to = `${to} ${new Date().toISOString().replace(/[:.]/g, '-')}`
       fs.renameSync(s.cwd, to)
+      // The freedesktop top-directory Trash notes where each item came from, relative to the disk's top.
+      if (process.platform !== 'darwin' && path.basename(bin) === 'files' && path.basename(path.dirname(bin)).startsWith('.Trash-')) {
+        try {
+          const info = path.join(path.dirname(bin), 'info')
+          fs.mkdirSync(info, { recursive: true })
+          fs.writeFileSync(path.join(info, `${path.basename(to)}.trashinfo`), `[Trash Info]\nPath=${encodeURI(path.relative(path.dirname(path.dirname(bin)), real))}\nDeletionDate=${new Date().toISOString().slice(0, 19)}\n`)
+        } catch {}
+      }
       resetRuntime(s)
       sessions.delete(sid)
       saveSessions()
@@ -6850,24 +6866,35 @@ async function tidyOnce(run, reply) {
   }
 }
 
-/** Folders that are never thrown away: the home folder, anything above it, and where Claude and this agent keep their own files. */
+/**
+ * Folders that are never thrown away: the home folder, anything above it, and where Claude and this agent keep their
+ * own files. A folder on an external or network disk (outerMount) goes to that disk's own Trash, never the disk's top
+ * two levels (the disk itself and, say, the shared folder's parent). Returns the real path and the Trash it goes to.
+ */
 function trashable(dir, sid) {
   const f = path.resolve(dir)
   const real = fs.existsSync(f) && fs.statSync(f).isDirectory() ? fs.realpathSync(f) : null
   const home = fs.realpathSync(HOME)
   if (!real) throw new Error('폴더가 없어요')
-  if (!real.startsWith(`${home}/`)) throw new Error('홈 폴더 밖이거나 홈 폴더 자체라서 버릴 수 없어요')
-  if (path.dirname(real) === home) throw new Error('홈 바로 아래 폴더는 버릴 수 없어요')
-  const trash = path.join(home, '.Trash')
-  if (real === trash || real.startsWith(`${trash}/`)) throw new Error('이미 휴지통 안에 있어요')
+  let bin = path.join(home, '.Trash')
+  if (!real.startsWith(`${home}/`)) {
+    const top = real === home ? null : outerMount(real, { home, platform: process.platform })
+    if (!top) throw new Error('홈 폴더나 외장 디스크 밖이라서 버릴 수 없어요')
+    if (path.relative(top, real).split(path.sep).length < 3) throw new Error('외장 디스크 맨 위 두 단계 폴더는 버릴 수 없어요')
+    bin = outerTrashDir(top, process.platform, process.getuid?.() ?? 0)
+    const binTop = path.dirname(bin)
+    if (real === binTop || real.startsWith(`${binTop}/`)) throw new Error('이미 휴지통 안에 있어요')
+  } else if (path.dirname(real) === home) throw new Error('홈 바로 아래 폴더는 버릴 수 없어요')
+  if (real === bin || real.startsWith(`${bin}/`)) throw new Error('이미 휴지통 안에 있어요')
   // What the agent and Claude Code themselves live in, wherever that is.
   for (const keep of [CLAUDE_DIR, STATE_DIR, AGENT_DIR].map((d) => (fs.existsSync(d) ? fs.realpathSync(d) : d))) {
     if (real === keep || keep.startsWith(`${real}/`)) throw new Error('기본 세션 폴더는 버릴 수 없어요')
   }
   for (const [id, o] of sessions) {
     if (id !== sid && o.cwd && !o.closed && path.resolve(o.cwd) === f) throw new Error('다른 살아 있는 세션이 쓰는 폴더라 버릴 수 없어요')
+    if (id !== sid && o.cwd && !o.closed && path.resolve(o.cwd).startsWith(`${f}/`)) throw new Error('다른 살아 있는 세션의 작업 폴더가 들어 있어 버릴 수 없어요')
   }
-  return real
+  return { real, bin }
 }
 
 // ---------- health ----------
