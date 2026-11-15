@@ -181,7 +181,13 @@ func TestTalkOperatorVoiceServer(t *testing.T) {
 	withCfg(t, "features:\n  voice: true\n")
 	var got []M
 	fail := false
+	lockFree := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The server waits for the voice server outside its lock (1.547): a long answer must not stop it.
+		if mu.TryLock() {
+			lockFree++
+			mu.Unlock()
+		}
 		var b M
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		b["path"], b["auth"] = r.URL.Path, r.Header.Get("Authorization")
@@ -259,4 +265,5 @@ func TestTalkOperatorVoiceServer(t *testing.T) {
 	n := len(got)
 	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","away":false}`)
 	eq(t, len(got), n, "짝지은 기계의 세션은 목소리 서버로 보내지 않음")
+	eq(t, lockFree, len(got), "목소리 서버를 기다리는 동안 잠금을 놓음")
 }

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.547',
+    date: '2026-11-16',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '운영자 목소리 서버가 긴 답을 만드는 동안 서버 전체가 멈췄다가 다시 떠서, 그 사이 대화 모드가 "목소리를 만들지 못했어요 (502)" 를 보이던 것을 고쳤어요',
+        refs: ['REQ-F-917'],
+      },
+    ],
+  },
+  {
     version: '1.546',
     date: '2026-11-16',
+    commit: '86ccb33',
     changes: [
       {
         kind: 'added',
