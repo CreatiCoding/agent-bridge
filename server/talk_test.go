@@ -134,3 +134,38 @@ func TestTalkVoiceGoesToTheMacWithSohee(t *testing.T) {
 	eq(t, len(s1.sent), 4)
 	eq(t, s1.sent[3]["engine"], "qwen")
 }
+
+// AC-1816: 말하기 시작하면 소희가 있는 맥만 깨우고, 없으면 아무에게도 묻지 않는다.
+func TestTalkWarmWakesOnlySohee(t *testing.T) {
+	s1, s2 := withFindMacs(t, func(cmd M) M {
+		return M{"t": "talk", "ok": true}
+	}, func(cmd M) M {
+		return M{"t": "talk", "ok": true}
+	})
+	keep, had := prefsCache["u1"]
+	t.Cleanup(func() {
+		withLock(func() {
+			if had {
+				prefsCache["u1"] = keep
+			} else {
+				delete(prefsCache, "u1")
+			}
+			delete(live("h2"), "caps")
+		})
+	})
+	withLock(func() { prefsCache["u1"] = M{"groups": []any{}, "loose": []any{}, "voice": M{"on": true}} })
+
+	code, m := talkPost(t, "s-open", `{"op":"warm"}`)
+	eq(t, code, 200)
+	eq(t, m["warm"], false)
+	eq(t, len(s1.sent)+len(s2.sent), 0)
+
+	withLock(func() { live("h2")["caps"] = []any{"talkVoice"} })
+	code, m = talkPost(t, "s-open", `{"op":"warm"}`)
+	eq(t, code, 200)
+	eq(t, m["warm"], true)
+	eq(t, len(s1.sent), 0)
+	eq(t, len(s2.sent), 1)
+	eq(t, s2.sent[0]["op"], "warm")
+	eq(t, s2.sent[0]["engine"], "qwen")
+}

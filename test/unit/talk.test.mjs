@@ -67,6 +67,10 @@ test('AC-1796 맥: 한국어 목소리는 프리미엄·여성 순으로 고르�
   assert.equal((await talk({ op: 'turn', text: '그거 하니까' }, { voice, judge })).end, 'done')
   assert.equal((await talk({ op: 'brief', text: '```\nx\n```' }, { voice, judge })).line, '배포가 끝났어요.')
   await assert.rejects(talk({ op: 'tts', text: '  ' }, { voice, judge }), /비었/)
+  // AC-1816: warm 은 읽을 말 없이 목소리를 띄우기만 한다.
+  let warmed = 0
+  assert.ok('ms' in (await talk({ op: 'warm' }, { voice: { warm: async () => void warmed++ }, judge })))
+  assert.equal(warmed, 1)
 })
 
 test('AC-1797 맥: 판정기는 claude 를 한 번 띄워 두고 묻고, 정한 횟수가 차면 새로 띄운다', async () => {

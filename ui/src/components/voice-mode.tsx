@@ -35,6 +35,8 @@ export interface VoiceDraft {
 
 /** The microphone stops giving sound when the browser's recogniser takes it (some phones): the instant words go. */
 const DEAD_MS = 3000
+/** How often the person starting to speak wakes 소희 again (she is let go after 10 idle minutes, REQ-F-916). */
+const WARM_EVERY_MS = 60_000
 
 export function VoiceMode({
   sessionId,
@@ -261,7 +263,13 @@ export function VoiceMode({
     let was = false
     let ducked = false
     let heardAt = -1
+    let warmed = 0
     const off = listen.onTick(() => {
+      // 소희 깨우기 (REQ-F-916): the person starting to speak in 대화 모드 wakes the voice, at most once a minute.
+      if (listen.speaking && !was && autoNow.current && Date.now() - warmed > WARM_EVERY_MS) {
+        warmed = Date.now()
+        void talkPost({ op: 'warm', away: !hostPaired() }).catch(() => {})
+      }
       // 대화 모드 with the person's voice known: sound well under it (a train, an announcement) is not speech, so a
       // phrase ends when they stop even in the noise, and noise alone does not start one (REQ-F-915).
       listen.voiceFloor = autoNow.current ? voiceFloor(voiceLv.current) : 0
@@ -285,7 +293,7 @@ export function VoiceMode({
       off()
       listen.voiceFloor = 0
     }
-  }, [listen, preview])
+  }, [listen, preview, sessionId])
 
   // The screen stays on while listening (a phone that sleeps stops the microphone); back on the page it goes on.
   useEffect(() => {

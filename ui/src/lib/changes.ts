@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.544',
+    date: '2026-11-15',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'server', 'agent'],
+        text: '대화 모드에서 말을 시작하면 소희 목소리를 미리 깨워 둬요. 쉬다가 다시 말할 때 첫 소리가 덜 늦어요',
+        refs: ['REQ-F-916', 'REQ-F-911'],
+      },
+    ],
+  },
+  {
     version: '1.543',
     date: '2026-11-14',
+    commit: '1544119',
     changes: [
       {
         kind: 'fixed',

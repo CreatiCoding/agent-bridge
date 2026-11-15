@@ -5575,7 +5575,7 @@ const commands = {
       talkVoice ??= process.platform === 'darwin' ? new SayVoice() : new SupertonicVoice({ dir: STATE_DIR, log })
       talkJudge ??= new Judge({ bin: CLAUDE_BIN, env: claudeEnv(), log })
       // The server asks for 소희 only on a Mac that said it has her (caps talkVoice, REQ-F-911).
-      const voice = op === 'tts' && engine === 'qwen' && hasQwen(STATE_DIR) ? (qwenVoice ??= new QwenVoice({ dir: STATE_DIR, log })) : talkVoice
+      const voice = (op === 'tts' || op === 'warm') && engine === 'qwen' && hasQwen(STATE_DIR) ? (qwenVoice ??= new QwenVoice({ dir: STATE_DIR, log })) : talkVoice
       const r = await talkRun({ op, text, rate }, { voice, judge: talkJudge })
       // How long a sentence took against how long it sounds, and at what reading speed, to see when reading falls behind
       // or is not as fast as asked (no words logged).

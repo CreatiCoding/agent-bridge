@@ -25,9 +25,22 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 		refuse(409, "음성 입력이 꺼져 있어요. 설정 → 음성에서 켜 주세요")
 	}
 	kind := strField(b, "op")
+	// 소희 깨우기 (REQ-F-916): the person has started to speak, so the Mac with her loads her now (she is let go after
+	// 10 idle minutes, and loading takes ~12 s) while the phrase is written and answered. Nothing to read, nothing
+	// back; no such Mac, nothing asked.
+	if kind == "warm" {
+		v := voiceHost(uid, meta, b["away"] != false)
+		if v == "" {
+			jsonRes(res, 200, M{"ok": true, "warm": false})
+			return
+		}
+		r := ask(v, M{"t": "talk", "op": "warm", "engine": "qwen"}, TALK_WAIT_MS)
+		jsonRes(res, 200, M{"ok": truthy(r["ok"]), "warm": truthy(r["ok"])})
+		return
+	}
 	limit, ok := talkMax[kind]
 	if !ok {
-		refuse(400, "op 는 tts, turn, brief 중 하나예요")
+		refuse(400, "op 는 tts, turn, brief, warm 중 하나예요")
 	}
 	text := strings.TrimSpace(strField(b, "text"))
 	if text == "" || len([]rune(text)) > limit {

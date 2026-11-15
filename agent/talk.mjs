@@ -158,6 +158,17 @@ export class SupertonicVoice {
       p?.kill('SIGTERM')
     } catch {}
   }
+  /** Loads the model now if it is not up (REQ-F-916), and keeps it another `idleMs`. */
+  async warm() {
+    clearTimeout(this.idle)
+    try {
+      if (!this.proc) this.start()
+      await this.ready
+    } finally {
+      this.idle = setTimeout(() => this.stop(), this.idleMs)
+      this.idle.unref?.()
+    }
+  }
   async speak(text, rate = TALK_SPEED) {
     clearTimeout(this.idle)
     const p = this.proc ?? this.start()
@@ -368,6 +379,7 @@ export function wavSeconds(b64) {
 /** The agent's `talk` command: { op: tts | turn | brief, text } → what the server hands the page. */
 export async function talk({ op, text, rate }, { voice, judge }) {
   const t0 = Date.now()
+  if (op === 'warm') return (await voice.warm?.(), { ms: Date.now() - t0 })
   const s = String(text ?? '').trim()
   if (!s) throw err('empty', '말이 비었어요')
   if (op === 'tts') return { ...(await voice.speak(s.slice(0, 600), talkRate(rate))), ms: Date.now() - t0 }
