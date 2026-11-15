@@ -36,7 +36,11 @@
 }
 
 html { background: var(--sk-bg); }
-body.sk { margin: 0; min-height: 100vh; background: var(--sk-bg); color: var(--sk-text); font: var(--fs-large) / 1.6 var(--sk-sans); -webkit-font-smoothing: antialiased; }
+/* The page frame is fixed (scrolling inside) and painted, so an iOS home screen app paints its status bar with it
+   instead of blurring it (AGENTS.md). The root does not scroll, or the body's overflow would pass to the viewport and
+   the body would not scroll either. */
+html:has(> body.sk) { overflow: hidden; }
+body.sk { margin: 0; position: fixed; inset: 0; overflow-y: auto; background: var(--sk-bg); color: var(--sk-text); font: var(--fs-large) / 1.6 var(--sk-sans); -webkit-font-smoothing: antialiased; }
 .sk a { color: inherit; }
 .sk :focus-visible { outline: 2px solid var(--sk-coding); outline-offset: 2px; border-radius: 4px; }
 .sk-quiet { color: var(--sk-quiet); }

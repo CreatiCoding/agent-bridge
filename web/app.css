@@ -613,6 +613,11 @@ body > .crash { position: fixed; font: var(--fs-large)/1.5 -apple-system, system
 
 /* login, and the bridge page (web/bridge.html) */
 .login, body.bridge { display: grid; place-items: start center; min-height: 100dvh; background: var(--bg); }
+/* The page frame is fixed (scrolling inside) and painted, so an iOS home screen app paints its status bar with it
+   instead of blurring it (AGENTS.md). The root does not scroll, or the body's overflow would pass to the viewport and
+   the body would not scroll either. */
+html:has(> body.bridge) { overflow: hidden; }
+body.bridge { position: fixed; inset: 0; overflow-y: auto; }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; margin: 12vh 16px 0; max-width: 560px; width: calc(100% - 32px); }
 .panel h1 { font-size: var(--fs-xlarge); margin: 0 0 8px; }
 .panel h2 { font-size: var(--fs-m); margin: 20px 0 6px; }

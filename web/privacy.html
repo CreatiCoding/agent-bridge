@@ -3,6 +3,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#262624" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>개인정보 처리방침 · Agent Bridge</title>
 <meta name="description" content="Agent Bridge 개인정보 처리방침: 처리 목적, 항목, 보유 기간, 파기, 국외 이전, 정보주체의 권리, 안전성 확보 조치, 보호책임자. Privacy Policy of Agent Bridge.">
@@ -12,7 +14,10 @@
 <style>
 :root{--fs-small:13px;--fs-large:16px;--fs-xlarge:22px;--bg:#faf9f5;--text:#1f1e1d;--muted:#6b6a65;--line:rgba(127,127,127,.28);--card:rgba(127,127,127,.08)}
 @media (prefers-color-scheme:dark){:root{--bg:#262624;--text:#ecebe6;--muted:#a3a19a}}
-body{margin:0;background:var(--bg);color:var(--text);font:var(--fs-large)/1.7 -apple-system,system-ui,sans-serif}
+/* The page frame is fixed and painted so an iOS home screen app paints its status bar with it (AGENTS.md). The root
+   does not scroll, or the body's overflow would pass to the viewport and the body would not scroll either. */
+html{background:var(--bg);overflow:hidden}
+body{margin:0;position:fixed;inset:0;overflow-y:auto;background:var(--bg);color:var(--text);font:var(--fs-large)/1.7 -apple-system,system-ui,sans-serif}
 main{max-width:720px;margin:0 auto;padding:24px 16px 64px}
 h1{font-size:var(--fs-xlarge);margin:8px 0 4px}
 h2{font-size:var(--fs-large);margin:32px 0 8px;scroll-margin-top:16px}
