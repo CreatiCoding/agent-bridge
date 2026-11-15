@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -17,6 +19,7 @@ func talkPost(t *testing.T, sid, body string) (int, M) {
 // AC-1798: 대화 모드 asks only the session's own Mac, with the op and the text, and hands back what it said;
 // a turn is only ever done or more, and the voice setting off, an unknown op or too long a text is refused.
 func TestTalkAsksTheSessionsMac(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
 	s1, s2 := withFindMacs(t, func(cmd M) M {
 		if cmd["t"] != "talk" {
 			return nil
@@ -73,6 +76,7 @@ func TestTalkAsksTheSessionsMac(t *testing.T) {
 // when that Mac fails, the session's own machine reads; paired with this device (away false), turn and brief stay on
 // the session's machine; a session whose own machine has her stays there.
 func TestTalkVoiceGoesToTheMacWithSohee(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
 	h2ok := true
 	s1, s2 := withFindMacs(t, func(cmd M) M {
 		if cmd["t"] != "talk" {
@@ -137,6 +141,7 @@ func TestTalkVoiceGoesToTheMacWithSohee(t *testing.T) {
 
 // AC-1816: 말하기 시작하면 소희가 있는 맥만 깨우고, 없으면 아무에게도 묻지 않는다.
 func TestTalkWarmWakesOnlySohee(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
 	s1, s2 := withFindMacs(t, func(cmd M) M {
 		return M{"t": "talk", "ok": true}
 	}, func(cmd M) M {
@@ -168,4 +173,90 @@ func TestTalkWarmWakesOnlySohee(t *testing.T) {
 	eq(t, len(s2.sent), 1)
 	eq(t, s2.sent[0]["op"], "warm")
 	eq(t, s2.sent[0]["engine"], "qwen")
+}
+
+// AC-1818: with CLAY_TTS_URL and CLAY_TTS_KEY the operator's voice server reads first (rate passed, key sent, the
+// text not logged); when it fails the Mac with 소희 reads; a paired session never goes to it; warm wakes it first.
+func TestTalkOperatorVoiceServer(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
+	var got []M
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b M
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		b["path"], b["auth"] = r.URL.Path, r.Header.Get("Authorization")
+		got = append(got, b)
+		if fail {
+			w.WriteHeader(503)
+			return
+		}
+		if r.URL.Path == "/v1/warm" {
+			_, _ = w.Write([]byte(`{"loaded":true,"load_ms":0}`))
+			return
+		}
+		w.Header().Set("X-Clay-Gen-Ms", "1234")
+		w.Header().Set("X-Clay-Audio-Sec", "1.5")
+		_, _ = w.Write(append([]byte("RIFF"), make([]byte, 60)...))
+	}))
+	defer srv.Close()
+	keepEnv := env
+	t.Cleanup(func() { env = keepEnv })
+	env = func(k string) string {
+		switch k {
+		case "CLAY_TTS_URL":
+			return srv.URL + "/"
+		case "CLAY_TTS_KEY":
+			return "k-123"
+		}
+		return keepEnv(k)
+	}
+	s1, s2 := withFindMacs(t, func(cmd M) M {
+		return M{"t": "talk", "ok": true, "audio": "UklGRg==", "mime": "audio/wav", "engine": "say:Yuna"}
+	}, func(cmd M) M {
+		return M{"t": "talk", "ok": true, "audio": "UklGRg==", "mime": "audio/wav", "engine": "qwen:Sohee"}
+	})
+	keep, had := prefsCache["u1"]
+	t.Cleanup(func() {
+		withLock(func() {
+			if had {
+				prefsCache["u1"] = keep
+			} else {
+				delete(prefsCache, "u1")
+			}
+			delete(live("h2"), "caps")
+		})
+	})
+	withLock(func() {
+		prefsCache["u1"] = M{"groups": []any{}, "loose": []any{}, "voice": M{"on": true}}
+		live("h2")["caps"] = []any{"talkVoice"}
+	})
+
+	code, m := talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","rate":1.25}`)
+	eq(t, code, 200)
+	eq(t, m["engine"], "clay")
+	eq(t, m["ms"], 1234.0)
+	ok(t, strings.HasPrefix(m["audio"].(string), "UklGRg"), "wav base64")
+	eq(t, len(got), 1)
+	eq(t, got[0]["path"], "/v1/tts")
+	eq(t, got[0]["auth"], "Bearer k-123")
+	eq(t, got[0]["rate"], 1.25)
+	eq(t, got[0]["format"], "wav")
+	eq(t, len(s1.sent)+len(s2.sent), 0)
+
+	code, m = talkPost(t, "s-open", `{"op":"warm"}`)
+	eq(t, code, 200)
+	eq(t, m["warm"], true)
+	eq(t, got[1]["path"], "/v1/warm")
+	eq(t, len(s2.sent), 0)
+
+	fail = true
+	code, m = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요"}`)
+	eq(t, code, 200)
+	eq(t, m["engine"], "qwen:Sohee")
+	eq(t, len(s2.sent), 1)
+	fail = false
+
+	n := len(got)
+	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","away":false}`)
+	eq(t, len(got), n, "짝지은 기계의 세션은 목소리 서버로 보내지 않음")
 }

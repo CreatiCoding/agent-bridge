@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.545',
+    date: '2026-11-15',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['server', 'ui'],
+        text: '음성 기능(음성 탭·입력창 마이크·음성 단축키·대화 모드)은 이제 서버 운영자가 bridge.yaml 에 features.voice: true 로 켜야 보여요. 키가 없는 서버는 꺼져 있어요',
+        refs: ['REQ-F-812'],
+      },
+      {
+        kind: 'added',
+        scope: ['server'],
+        text: '운영자가 정한 목소리 서버가 있으면 대화 모드의 답을 그 서버가 먼저 읽고, 안 되면 예전처럼 맥이 읽어요. 봉인하거나 이 기기와 짝지은 기계의 대화는 보내지 않아요',
+        refs: ['REQ-F-917'],
+      },
+    ],
+  },
+  {
     version: '1.544',
     date: '2026-11-15',
+    commit: 'dcb5001',
     changes: [
       {
         kind: 'changed',

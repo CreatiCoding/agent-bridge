@@ -34,7 +34,7 @@ var CFG_KEYS = []cfgKey{
 	{"retention.previews", "", "bool", true},
 	{"features.sessionMove", "", "bool", true},
 	{"features.webpush", "", "bool", true},
-	{"features.voice", "", "bool", true},
+	{"features.voice", "", "bool", false}, // 1.545: off unless the operator turns it on (REQ-F-812)
 	{"features.preview", "", "bool", true},
 	{"features.skills", "", "bool", true},
 	{"features.slack", "", "bool", true},

@@ -8,6 +8,7 @@ import (
 // AC-1799: a Linux machine's session has its recording written by another online Mac of the same person; a macOS
 // session stays on its own Mac; a sealing machine, one the page says is paired with it, or no Mac to ask is refused.
 func TestLinuxSessionAsksAMacToTranscribe(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
 	answer := func(cmd M) M {
 		if cmd["t"] != "voice" {
 			return nil

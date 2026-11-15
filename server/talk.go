@@ -29,6 +29,11 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 	// 10 idle minutes, and loading takes ~12 s) while the phrase is written and answered. Nothing to read, nothing
 	// back; no such Mac, nothing asked.
 	if kind == "warm" {
+		// The operator's voice server (REQ-F-917) reads first, so it is the one to wake; if it cannot, the Mac.
+		if clayFor(meta, b["away"] != false) && clayWarm() {
+			jsonRes(res, 200, M{"ok": true, "warm": true})
+			return
+		}
 		v := voiceHost(uid, meta, b["away"] != false)
 		if v == "" {
 			jsonRes(res, 200, M{"ok": true, "warm": false})
@@ -53,8 +58,16 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 	}
 	var r M
 	// 소희 (REQ-F-911): the answer read by the person's Mac that has her, the same voice for every session; when
-	// that Mac cannot (off, busy, failed), the session's own machine reads it in its own voice.
-	if kind == "tts" {
+	// that Mac cannot (off, busy, failed), the session's own machine reads it in its own voice. Before both, the
+	// operator's voice server when it is set (REQ-F-917).
+	if kind == "tts" && clayFor(meta, b["away"] != false) {
+		rate, _ := cmd["rate"].(float64)
+		if rate == 0 {
+			rate = 1
+		}
+		r = clayTTS(text, rate)
+	}
+	if kind == "tts" && r == nil {
 		if v := voiceHost(uid, meta, b["away"] != false); v != "" {
 			cmd["engine"] = "qwen"
 			r = ask(v, cmd, TALK_WAIT_MS)

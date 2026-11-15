@@ -21,12 +21,15 @@ func withCfg(t *testing.T, src string) {
 	CONFIG = c
 }
 
-// AC-1477: without the keys every feature is on, as today; the keys read with their kinds.
+// AC-1477: without the keys every feature is on but voice (off from 1.545, AC-1817); the keys read with their kinds.
 func TestFeatureKeysDefaultsAndValues(t *testing.T) {
 	withCfg(t, "")
-	for _, f := range []string{"sessionMove", "webpush", "voice", "preview", "skills", "slack", "remoteKeys", "reports"} {
+	for _, f := range []string{"sessionMove", "webpush", "preview", "skills", "slack", "remoteKeys", "reports"} {
 		ok(t, cfgOn("features."+f), f+" 기본은 켜짐")
 	}
+	ok(t, !cfgOn("features.voice"), "voice 기본은 꺼짐(1.545)")
+	withCfg(t, "features:\n  voice: true\n")
+	ok(t, cfgOn("features.voice") && cfgOn("features.webpush"), "voice 만 켠 파일: 나머지는 기본값")
 	ok(t, reflect.DeepEqual(cfgGet("features.permissionModes"), LAUNCH_MODES), "모드 기본은 여섯 전부")
 	eq(t, cfgGet("retention.uploadsHours").(int), 24)
 	ok(t, cfgOn("retention.previews"))

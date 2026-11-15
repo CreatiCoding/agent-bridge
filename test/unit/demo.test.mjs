@@ -87,7 +87,7 @@ describe('demo on', () => {
   let jar
   let seed
   before(async () => {
-    srv = await startServer({ env: DEMO })
+    srv = await startServer({ env: DEMO, seed: { 'bridge.yaml': 'features:\n  voice: true\n' } }) // the demo shows voice where the operator turns it on (1.545)
     // A real person with a real Mac and a session on it: what the demo account must never reach.
     await srv.login('alice')
     const m = await mac(srv, 'alice', 'host-alice-0001', 'alice-mac')

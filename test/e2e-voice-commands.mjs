@@ -1,6 +1,7 @@
 // End-to-end check of 음성 명령 (REQ-F-789) in 분할 화면 on the public demo: the Mac's transcription is answered here
 // with set words, and each phrase is handed to the panel as the microphone would after a pause. Chrome's fake
 // microphone. Against a local server (no Mac or agent). Needs playwright (not a dependency):
+//   (voice is off without the key from 1.545: first  mkdir -p /tmp/cb-vc && printf 'features:\n  voice: true\n' > /tmp/cb-vc/bridge.yaml)
 //   BRIDGE_DEMO=1 BRIDGE_ORIGIN=http://localhost:4399 PORT=4399 BRIDGE_DATA=/tmp/cb-vc node server/server.mjs
 //   PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs node test/e2e-voice-commands.mjs
 const { chromium } = await import(process.env.PLAYWRIGHT)

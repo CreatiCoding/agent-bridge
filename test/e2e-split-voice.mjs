@@ -1,5 +1,6 @@
 // End-to-end check of 음성 모드 across 분할 화면's panes (REQ-F-788) on the public demo, with Chrome's fake microphone.
 // Against a local server (no Mac or agent). Needs playwright (not a dependency):
+//   (voice is off without the key from 1.545: first  mkdir -p /tmp/cb-voice && printf 'features:\n  voice: true\n' > /tmp/cb-voice/bridge.yaml)
 //   BRIDGE_DEMO=1 BRIDGE_ORIGIN=http://localhost:4399 PORT=4399 BRIDGE_DATA=/tmp/cb-voice node server/server.mjs
 //   PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs node test/e2e-split-voice.mjs
 const { chromium } = await import(process.env.PLAYWRIGHT)

@@ -259,7 +259,7 @@ test('맥의 음성 준비 상태: 받아 둔 모델, 감지 모델, 서버의 V
 
 test('서버: 음성 설정은 계정에 저장하고 목록 밖 값은 400, /api/me 에도 실린다', async () => {
   const { startServer } = await import('./server-harness.mjs')
-  const s = await startServer()
+  const s = await startServer({ seed: { 'bridge.yaml': 'features:\n  voice: true\n' } }) // voice is off without the key (1.545)
   try {
     await s.login('alice')
     const first = await s.api('alice', '/api/prefs/voice')
@@ -282,7 +282,7 @@ test('서버: 음성 설정은 계정에 저장하고 목록 밖 값은 400, /ap
 
 test('서버: 맥마다 모델은 자기 맥에만, 목록 밖 값은 400, 비우면 계정 값을 따른다 (1.193, 1.231)', async () => {
   const { startServer } = await import('./server-harness.mjs')
-  const s = await startServer({ seed: { 'hosts.json': { 'h-alice-mac': { uid: 'dev-alice', name: 'alice-mac', home: '/Users/alice', lastSeen: Date.now() }, 'h-bob-mac1': { uid: 'dev-bob', name: 'bob-mac', home: '/Users/bob', lastSeen: Date.now() } } } })
+  const s = await startServer({ seed: { 'bridge.yaml': 'features:\n  voice: true\n', 'hosts.json': { 'h-alice-mac': { uid: 'dev-alice', name: 'alice-mac', home: '/Users/alice', lastSeen: Date.now() }, 'h-bob-mac1': { uid: 'dev-bob', name: 'bob-mac', home: '/Users/bob', lastSeen: Date.now() } } } })
   try {
     await s.login('alice')
     assert.deepEqual((await s.api('alice', '/api/prefs/voice/hosts')).json, { hosts: {} })
@@ -307,7 +307,7 @@ test('서버: 예전에 저장한 backend openai 는 오류 없이 맥(로컬)�
   const { startServer } = await import('./server-harness.mjs')
   const old = { voice: { on: true, backend: 'openai', model: 'small', language: 'ko', denoise: true, tidy: true, terms: '' }, voiceHosts: { 'h-alice-mac': { backend: 'openai', model: '' }, 'h-alice-mac2': { backend: 'openai', model: 'base' } } }
   const hostsSeed = { 'h-alice-mac': { uid: 'dev-alice', name: 'alice-mac', home: '/Users/alice', lastSeen: Date.now() }, 'h-alice-mac2': { uid: 'dev-alice', name: 'alice-mac2', home: '/Users/alice', lastSeen: Date.now() } }
-  const s = await startServer({ seed: { 'hosts.json': hostsSeed, 'u/dev-alice/prefs.json': old } })
+  const s = await startServer({ seed: { 'bridge.yaml': 'features:\n  voice: true\n', 'hosts.json': hostsSeed, 'u/dev-alice/prefs.json': old } })
   try {
     await s.login('alice')
     const v = await s.api('alice', '/api/prefs/voice')

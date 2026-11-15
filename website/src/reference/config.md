@@ -48,13 +48,13 @@ description: 서버 설정 파일 bridge.yaml 이 받는 모든 키를 형식, �
 
 ## features
 
-모두 `true`·`false` 이고 기본은 `true` 예요. 같은 뜻의 환경 변수는 없어요. 끄면 그 API 가 403 `이 서버에서 꺼진 기능이에요` 로 거절하고, 화면은 그 입구를 숨겨요.
+모두 `true`·`false` 이고 기본은 `true` 예요. `features.voice` 만 기본이 `false` 예요(1.545 부터): 음성 기능을 쓰려면 `voice: true` 로 켜요. 같은 뜻의 환경 변수는 없어요. 끄면 그 API 가 403 `이 서버에서 꺼진 기능이에요` 로 거절하고, 화면은 그 입구를 숨겨요.
 
 | 키 | 끄면 닫히는 것 |
 |---|---|
 | `features.sessionMove` | 다른 맥으로 옮기기, 이어서 열기의 다른 맥, 일 받기 스위치, 다른 맥에 일 맡기기 |
 | `features.webpush` | 웹 푸시 키·구독·발송. iOS 앱 알림은 그대로예요 |
-| `features.voice` | 음성 탭, 입력창 마이크, 음성 단축키 |
+| `features.voice` | 음성 탭, 입력창 마이크, 음성 단축키, 대화 모드 (기본 꺼짐) |
 | `features.preview` | 세션 화면의 서버 미리보기와 미리보기 출처의 모든 요청 |
 | `features.skills` | 스킬 링크, `/skills`, 스킬 저장소 설정 |
 | `features.slack` | 플러그인 탭, Slack 으로 옮기기, 시작 가이드의 Slack 단계. 저장된 연결은 남아요 |

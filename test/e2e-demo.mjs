@@ -1,5 +1,6 @@
 // End-to-end check of 공개 데모 (REQ-F-766, REQ-S-068) in a browser, against a local server (the demo is on with
 // BRIDGE_DEMO=1). No Mac or agent is needed: the server plays the demo Mac itself. Needs playwright (not a dependency):
+//   (voice is off without the key from 1.545: first  mkdir -p /tmp/cb-demo && printf 'features:\n  voice: true\n' > /tmp/cb-demo/bridge.yaml)
 //   BRIDGE_DEMO=1 BRIDGE_ORIGIN=http://localhost:4399 PORT=4399 BRIDGE_DATA=/tmp/cb-demo node server/server.mjs
 //   PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs SHOTS=<folder> node test/e2e-demo.mjs
 const { chromium } = await import(process.env.PLAYWRIGHT)
