@@ -42,6 +42,8 @@ export interface VoiceDevice {
   talk: boolean
   /** 대화 모드's reading speed, times each voice's normal (a Linux machine's voice tops out near 1.25). */
   rate: number
+  /** 대화 모드: the person speaking does not stop the reading, it is only quieter meanwhile (REQ-F-918). */
+  keepReading: boolean
   /** 대화 모드's notice (where the words go, REQ-F-912) was read on this device. */
   noticed?: boolean
 }
@@ -62,8 +64,8 @@ const writeLs = (k: string, v: unknown) => {
   } catch {}
 }
 export const getVoiceDevice = (): VoiceDevice => {
-  const { mic = '', key = 'alt-space', live = true, talk = true, rate = 1.5, noticed = false } = readLs<Partial<VoiceDevice>>(DEVICE, {})
-  return { mic, key, live, talk, rate: (TALK_RATES as readonly number[]).includes(rate) ? rate : 1.5, noticed }
+  const { mic = '', key = 'alt-space', live = true, talk = true, rate = 1.5, keepReading = false, noticed = false } = readLs<Partial<VoiceDevice>>(DEVICE, {})
+  return { mic, key, live, talk, rate: (TALK_RATES as readonly number[]).includes(rate) ? rate : 1.5, keepReading: keepReading === true, noticed }
 }
 export const setVoiceDevice = (v: VoiceDevice) => writeLs(DEVICE, v)
 export const KEY_LABEL: Record<VoiceDevice['key'], string> = { 'alt-space': '⌥ Space', 'ctrl-shift-space': 'Ctrl ⇧ Space', off: '끔' }

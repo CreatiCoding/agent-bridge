@@ -37,6 +37,14 @@ test('AC-1814 끼어들기: 내 목소리보다 훨씬 작은 소리(지하철)�
   assert.equal(bargeIn(700, false, undefined), 'stop')
 })
 
+test('AC-1819 말해도 계속 읽기: 내 목소리엔 줄이기만 하고 멈추지 않는다', () => {
+  assert.equal(bargeIn(100, false, true, true), 'none')
+  assert.equal(bargeIn(300, true, true, true), 'duck')
+  assert.equal(bargeIn(5000, true, undefined, true), 'duck')
+  assert.equal(bargeIn(700, false, false, true), 'none')
+  assert.equal(bargeIn(700, false, true, false), 'stop')
+})
+
 test('AC-1815 말 끝: 내 목소리를 배운 뒤엔 그 0.35배 아래 소리는 말이 아니다', () => {
   assert.equal(voiceFloor([]), 0)
   assert.ok(Math.abs(voiceFloor([0.08, 0.1, 0.16]) - 0.035) < 1e-9)

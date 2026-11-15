@@ -278,7 +278,7 @@ export function VoiceMode({
       const sp = speakerNow.current
       if (sp?.speaking) {
         if (heardAt < 0 || !listen.loudMs) heardAt = browserText().length
-        const b = bargeIn(listen.loudMs, browserText().length > heardAt + 1, nearLevel(listen.loudLevel, voiceLv.current))
+        const b = bargeIn(listen.loudMs, browserText().length > heardAt + 1, nearLevel(listen.loudLevel, voiceLv.current), getVoiceDevice().keepReading)
         if (b === 'stop') sp.stop()
         else if (b === 'duck') (ducked = true, sp.duck(BARGE.duckTo))
         else if (ducked) (ducked = false, sp.duck(1))

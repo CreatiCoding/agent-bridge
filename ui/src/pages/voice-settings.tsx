@@ -183,6 +183,9 @@ function DeviceVoice() {
       <Row label="읽는 속도" hint="대화 모드에서 답을 읽는 빠르기예요. 리눅스 기계의 목소리는 단어를 빠뜨리지 않게 1.25배까지만 빨라져요">
         <Segmented label="읽는 속도" value={String(d.rate)} onChange={(r) => set({ ...d, rate: Number(r) })} options={TALK_RATES.map((r) => ({ value: String(r), label: `${r}배` }))} />
       </Row>
+      <Row label="말해도 계속 읽기" hint="대화 모드에서 답을 읽는 중에 말하면, 끄면 읽기를 멈추고 켜면 소리만 줄인 채 계속 읽어요. 말한 건 그대로 받아서 보내요. 스피커로 들으면 제 목소리가 다시 들어갈 수 있어 이어폰을 권해요">
+        <Switch label="말해도 계속 읽기" checked={d.keepReading} onChange={(keepReading) => set({ ...d, keepReading })} />
+      </Row>
       <Row label="단축키" hint="세션 화면에서 음성 모드를 켜고 꺼요. 음성 모드에서 Enter 는 전송, Esc 는 리셋">
         <Segmented label="단축키" value={d.key} onChange={(key) => set({ ...d, key })} options={(Object.keys(KEY_LABEL) as VoiceDevice['key'][]).map((k) => ({ value: k, label: KEY_LABEL[k] }))} />
       </Row>

@@ -121,7 +121,9 @@ export class ReadQueue {
  * never stops the reading; it is only quieter for a moment, then back to full while that sound goes on.
  */
 export const BARGE = { duckMs: 150, sureMs: 600, duckTo: 0.25 }
-export function bargeIn(loudMs: number, heardWords: boolean, near?: boolean): 'none' | 'duck' | 'stop' {
+export function bargeIn(loudMs: number, heardWords: boolean, near?: boolean, keep = false): 'none' | 'duck' | 'stop' {
+  // 말해도 계속 읽기 (REQ-F-918): the person's own voice only makes it quieter while it lasts, never stops it.
+  if (keep && near !== false) return loudMs >= BARGE.duckMs ? 'duck' : 'none'
   if (near === false) return loudMs >= BARGE.duckMs && loudMs < BARGE.sureMs ? 'duck' : 'none'
   if (loudMs >= BARGE.sureMs || (loudMs >= BARGE.duckMs && heardWords)) return 'stop'
   if (loudMs >= BARGE.duckMs) return 'duck'

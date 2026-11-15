@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.546',
+    date: '2026-11-16',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '설정 → 음성 → 이 기기에 "말해도 계속 읽기"가 생겼어요. 켜면 대화 모드에서 답을 읽는 중에 말해도 멈추지 않고 소리만 줄여요',
+        refs: ['REQ-F-918', 'REQ-F-907'],
+      },
+    ],
+  },
+  {
     version: '1.545',
     date: '2026-11-15',
+    commit: 'ee3840f',
     changes: [
       {
         kind: 'changed',
