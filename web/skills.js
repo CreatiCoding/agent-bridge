@@ -220,7 +220,7 @@ document.addEventListener('click', (e) => {
   if (nav && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
     e.preventDefault()
     history.pushState(null, '', nav.getAttribute('href'))
-    render().then(() => window.scrollTo(0, 0))
+    render().then(() => document.body.scrollTo(0, 0))
   }
 })
 window.addEventListener('popstate', render)

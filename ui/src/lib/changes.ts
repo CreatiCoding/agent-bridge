@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.549',
+    date: '2026-11-16',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server'],
+        text: '아이폰 홈 화면 앱에서 연동·가이드·스킬·처리방침·로그인 화면과 문서 사이트의 맨 위 상태 표시줄이 흐려지던 것. 이제 페이지 바탕색으로 칠해져요',
+        refs: ['REQ-F-919'],
+      },
+    ],
+  },
+  {
     version: '1.548',
     date: '2026-11-16',
+    commit: '45d1cf9',
     changes: [
       {
         kind: 'security',

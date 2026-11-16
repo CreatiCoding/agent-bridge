@@ -1,5 +1,9 @@
 /* The guide pages (/guide for people not signed in, /guide/mcp): plain reading pages on the app's colours. */
-body.guide { overflow: auto; height: auto; background: var(--bg); color: var(--text); }
+/* The page frame is fixed (scrolling inside) and painted, so an iOS home screen app paints its status bar with it
+   instead of blurring it (AGENTS.md). The root does not scroll, or the body's overflow would pass to the viewport and
+   the body would not scroll either. */
+html:has(> body.guide) { overflow: hidden; }
+body.guide { position: fixed; inset: 0; overflow-y: auto; height: auto; background: var(--bg); color: var(--text); }
 .guide main { max-width: 760px; margin: 0 auto; padding: 24px 20px 80px; line-height: 1.65; font-size: var(--fs-large); }
 .guide h1 { font-size: var(--fs-xlarge); margin: 8px 0 6px; }
 .guide h2 { font-size: var(--fs-xlarge); margin: 44px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
