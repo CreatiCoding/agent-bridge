@@ -14,6 +14,11 @@ export class ApiError extends Error {
 }
 
 async function call<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, raw = false): Promise<T> {
+  const { res, sid, token } = await send(method, path, body, signal)
+  return read<T>(res, sid, token, raw)
+}
+
+async function send(method: string, path: string, body?: unknown, signal?: AbortSignal) {
   let res: Response
   const sid = sessionOfPath(path)
   const token = sid ? tokenOf(sid) : null
@@ -37,6 +42,10 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
     location.reload()
     throw new ApiError(401, '로그인이 필요해요')
   }
+  return { res, sid, token }
+}
+
+async function read<T>(res: Response, sid: string | null, token: string | null, raw: boolean): Promise<T> {
   const type = res.headers.get('content-type') ?? ''
   // A JSON answer that cannot be read (cut off on a weak link) is a failure, not an empty answer:
   // an empty object here reached callers as missing fields (REQ-F-859).
@@ -63,6 +72,16 @@ export const post = <T = { ok: true; note?: string }>(path: string, body: unknow
 /** A POST whose sealed pieces are left as they came (the caller checks what each is bound to, then opens it). */
 export const postSealed = <T>(path: string, body: unknown = {}) => call<T>('POST', path, body, undefined, true)
 export const del = <T = { ok: true }>(path: string) => call<T>('DELETE', path)
+
+/**
+ * A POST that may be answered with sound as it is made (흘려 읽기, REQ-F-920): an `audio/*` answer gives its body to
+ * read as it comes; any other is read as `postSealed` reads it.
+ */
+export async function postAudio<T>(path: string, body: unknown, signal?: AbortSignal): Promise<{ stream: ReadableStream<Uint8Array> } | T> {
+  const { res, sid, token } = await send('POST', path, body, signal)
+  if (res.ok && res.body && (res.headers.get('content-type') ?? '').startsWith('audio/')) return { stream: res.body }
+  return read<T>(res, sid, token, true)
+}
 
 /**
  * A picture (or any file) from a route, as a Blob, through the same door as every other request: this origin's

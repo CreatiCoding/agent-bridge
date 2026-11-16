@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -327,4 +328,88 @@ func TestTalkSignedAndSealed(t *testing.T) {
 	withLock(func() { answer = M{"t": "talk", "ok": true, "sealed": "⟦bt1:zz⟧"} })
 	code, _ = talkPost(t, "s-open", `{"op":"tts","text":"x","away":false}`)
 	eq(t, code, 502)
+}
+
+// AC-1826: 흘려 읽기. With stream true the voice server's WAV stream is passed on as it comes (audio/wav, its bytes
+// unchanged, engine clay), the request asked of it carries stream true, and the lock is free while it is waited on and
+// while the body goes out (Res.pipe, after the handler). A voice server that cannot stream: the answer comes as before.
+func TestTalkStreamsFromVoiceServer(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
+	wavHead := append([]byte("RIFF"), make([]byte, 40)...)
+	pieces := [][]byte{wavHead, bytes.Repeat([]byte{1, 0}, 2400), bytes.Repeat([]byte{2, 0}, 2400)}
+	var asked []M
+	lockFree, streamOK := 0, true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mu.TryLock() {
+			lockFree++
+			mu.Unlock()
+		}
+		var b M
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		asked = append(asked, b)
+		if b["stream"] == true && !streamOK {
+			w.WriteHeader(503)
+			return
+		}
+		w.Header().Set("Content-Type", "audio/wav")
+		if b["stream"] != true {
+			w.Header().Set("X-Clay-Gen-Ms", "10")
+		}
+		for _, p := range pieces {
+			_, _ = w.Write(p)
+			w.(http.Flusher).Flush()
+		}
+	}))
+	defer srv.Close()
+	keepEnv := env
+	t.Cleanup(func() { env = keepEnv })
+	env = func(k string) string {
+		switch k {
+		case "CLAY_TTS_URL":
+			return srv.URL
+		case "CLAY_TTS_KEY":
+			return "k-123"
+		}
+		return keepEnv(k)
+	}
+	s1, s2 := withFindMacs(t, func(cmd M) M { return nil }, func(cmd M) M { return nil })
+	keep, had := prefsCache["u1"]
+	t.Cleanup(func() {
+		withLock(func() {
+			if had {
+				prefsCache["u1"] = keep
+			} else {
+				delete(prefsCache, "u1")
+			}
+		})
+	})
+	withLock(func() { prefsCache["u1"] = M{"groups": []any{}, "loose": []any{}, "voice": M{"on": true}} })
+	call := func(body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/sessions/s-open/talk", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", "http://localhost")
+		req := newReq(r)
+		res := newRes(req)
+		withLock(func() { api(req, res, r.URL, "u1") })
+		w := httptest.NewRecorder()
+		res.flush(w, r) // without the lock, as the server does
+		return w
+	}
+
+	w := call(`{"op":"tts","text":"안녕하세요","rate":1.25,"stream":true}`)
+	eq(t, w.Code, 200)
+	eq(t, w.Header().Get("Content-Type"), "audio/wav")
+	eq(t, w.Header().Get("X-Talk-Engine"), "clay")
+	ok(t, bytes.Equal(w.Body.Bytes(), bytes.Join(pieces, nil)), "목소리 서버의 바이트 그대로")
+	eq(t, asked[0]["stream"], true)
+	eq(t, asked[0]["rate"], 1.25)
+	eq(t, lockFree, 1, "기다리는 동안 잠금을 놓음")
+	eq(t, len(s1.sent)+len(s2.sent), 0)
+
+	streamOK = false
+	w = call(`{"op":"tts","text":"안녕하세요","stream":true}`)
+	eq(t, w.Code, 200)
+	ok(t, strings.HasPrefix(w.Header().Get("Content-Type"), "application/json"), "흘려 읽기를 못 하면 예전처럼 JSON")
+	eq(t, len(asked), 3)
+	eq(t, asked[2]["stream"], nil)
 }

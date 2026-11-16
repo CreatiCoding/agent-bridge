@@ -3,11 +3,16 @@
 // fetched in turn as soon as it is known, so the voice keeps making while one plays. A slow voice (소희 on an M1,
 // REQ-F-911, makes a sentence in about the time it takes to hear it at 1.25배) would leave gaps, so reading starts,
 // and starts again after a gap, only once what is made already lasts as long as what is left to make is expected to
-// take (`holdFor`). duck() lowers it while a sound might be the person starting to speak; stop() ends it at once and
-// forgets what was waiting.
+// take (`holdFor`). A voice that streams (흘려 읽기, REQ-F-920) gives its sound in pieces while it makes it: those
+// are played as they come, one right after another, and since they keep coming while it plays, much less is waited
+// for. duck() lowers it while a sound might be the person starting to speak; stop() ends it at once and forgets what
+// was waiting.
 
-/** One sentence's sound from the Mac: encoded audio (wav, aiff or m4a), as the browser decodes it. */
-export type Voice = (text: string) => Promise<ArrayBuffer>
+/**
+ * One sentence's sound: encoded audio (wav, aiff or m4a) as the browser decodes it, or a WAV stream (16-bit PCM)
+ * that grows as the voice makes it.
+ */
+export type Voice = (text: string) => Promise<ArrayBuffer | ReadableStream<Uint8Array>>
 
 /**
  * After the first sentence of an answer, the sentences waiting are made together, up to this many letters: each
@@ -28,12 +33,72 @@ export function nextChunk(queue: string[], first: boolean, max = JOIN_CHARS): st
 export const FIRST_SEC_PER_CHAR = 0.18
 
 /**
- * How long to wait before reading, in seconds: the time the rest is expected to take to make, less what is made
- * already (it plays meanwhile), with a little to spare. 0 when nothing is left to make.
+ * Seconds of sound a streaming voice gives per second of making, before one has been timed: 소희 through the voice
+ * server gave 6.27 s of sound in 6.6 s at 1.25배 (0.95); a little less, so the first answer does not run dry.
  */
-export function holdFor(madeSec: number, leftChars: number, secPerChar: number, spare = 0.5): number {
+export const FIRST_FLOW = 0.8
+
+/**
+ * How long to wait before reading, in seconds: the time the rest is expected to take to make, less what is made
+ * already (it plays meanwhile), with a little to spare. 0 when nothing is left to make. `flow`: the share of that
+ * making time that gives sound as it goes (a streaming voice); 0 for one that gives a sentence only when done.
+ */
+export function holdFor(madeSec: number, leftChars: number, secPerChar: number, spare = 0.5, flow = 0): number {
   if (leftChars <= 0) return 0
-  return Math.max(0, leftChars * secPerChar + spare - madeSec)
+  return Math.max(0, leftChars * secPerChar * (1 - Math.min(Math.max(flow, 0), 1)) + spare - madeSec)
+}
+
+/** Pieces shorter than this are held back until more comes (each piece is a node and a scheduling step). */
+export const MIN_PIECE_SEC = 0.25
+
+/**
+ * Turns a WAV stream (16-bit little-endian PCM, mono, header first) into pieces of samples, whatever the network cuts
+ * it into: the header is read for the rate and skipped, an odd byte is kept for the next chunk, and samples are held
+ * until a piece is at least MIN_PIECE_SEC long. end() gives what is left.
+ */
+export class PcmPieces {
+  rate = 24000
+  private head = new Uint8Array(0)
+  private headDone = false
+  private carry: number | null = null
+  private held: number[] = []
+
+  push(chunk: Uint8Array): Float32Array[] {
+    let b = chunk
+    if (!this.headDone) {
+      const all = new Uint8Array(this.head.length + b.length)
+      all.set(this.head)
+      all.set(b, this.head.length)
+      if (all.length < 44) {
+        this.head = all
+        return []
+      }
+      const v = new DataView(all.buffer, all.byteOffset, all.byteLength)
+      if (String.fromCharCode(all[0], all[1], all[2], all[3]) !== 'RIFF') throw new Error('소리 형식이 아니에요')
+      this.rate = v.getUint32(24, true) || 24000
+      this.headDone = true
+      b = all.subarray(44)
+    }
+    let i = 0
+    if (this.carry !== null && b.length) {
+      this.held.push(((b[0] << 8) | this.carry) << 16 >> 16)
+      this.carry = null
+      i = 1
+    }
+    for (; i + 1 < b.length; i += 2) this.held.push(((b[i + 1] << 8) | b[i]) << 16 >> 16)
+    if (i < b.length) this.carry = b[i]
+    return this.held.length >= this.rate * MIN_PIECE_SEC ? [this.take()] : []
+  }
+
+  end(): Float32Array | null {
+    return this.held.length ? this.take() : null
+  }
+
+  private take(): Float32Array {
+    const f = Float32Array.from(this.held, (s) => s / 32768)
+    this.held = []
+    return f
+  }
 }
 
 type Made = { text: string; buf: AudioBuffer | null }
@@ -42,12 +107,16 @@ export class Speaker {
   private gain: GainNode
   /** Sentences not yet asked for. */
   private queue: string[] = []
-  /** Sentences made, not yet played. */
+  /** Sound made, not yet given to the speaker: whole sentences, or a streaming sentence's pieces. */
   private made: Made[] = []
-  /** Letters of the sentence being made now (0: none). */
+  /** Letters of the sentence being made now (0: none), and when its making started (performance.now). */
   private makingChars = 0
+  private makingAt = 0
   private gen = 0
-  private src: AudioBufferSourceNode | null = null
+  /** What is given to the speaker, and when (AudioContext time) the last of it ends. */
+  private sources = new Set<AudioBufferSourceNode>()
+  private endAt = 0
+  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null
   private running = false
   private playing = false
   /** Whether any of this answer has been read yet (since the voice last went quiet). */
@@ -57,6 +126,9 @@ export class Speaker {
   /** Seconds of making per letter, learnt from the last sentences (network included). */
   private secPerChar = FIRST_SEC_PER_CHAR
   private timed = false
+  /** Seconds of sound per second of making while a voice streams (0: the last voice did not stream). */
+  private flow = 0
+  private flowTimed = false
   /** Told when it starts and stops speaking (preparing included). */
   onState = (_speaking: boolean) => {}
   /** Told when a sentence could not be made (the reason, once per answer). */
@@ -101,30 +173,61 @@ export class Speaker {
     return this.made.reduce((s, m) => s + (m.buf?.duration ?? 0), 0)
   }
 
+  /** Seconds given to the speaker and not yet heard: none once every piece has ended (a clock that stood still while
+   * the page was hidden must not keep it waiting). */
+  private aheadSec() {
+    return this.sources.size ? Math.max(0, this.endAt - this.ctx.currentTime) : 0
+  }
+
+  /** Letters still to make, the sentence being made counted by the share of its expected time not yet spent. */
   private leftChars() {
-    return this.makingChars + this.queue.reduce((s, t) => s + t.length, 0)
+    const queued = this.queue.reduce((s, t) => s + t.length, 0)
+    if (!this.makingChars) return queued
+    const spent = (performance.now() - this.makingAt) / 1000 / this.secPerChar
+    return queued + Math.max(0, this.makingChars - spent)
   }
 
   private async fetchLoop(g: number) {
     this.fetching = true
     try {
       while (g === this.gen && this.queue.length) {
-        const text = nextChunk(this.queue, !this.made.length && !this.played)
+        const text = nextChunk(this.queue, !this.made.length && !this.played && !this.aheadSec())
         this.makingChars = text.length
-        const t0 = performance.now()
-        const buf = await this.voice(text)
-          .then((b) => this.ctx.decodeAudioData(b))
-          .catch((e) => (g === this.gen ? this.onError((e as Error)?.message ?? String(e)) : null, null))
-        if (g !== this.gen) return
-        const s = (performance.now() - t0) / 1000 / text.length
+        this.makingAt = performance.now()
+        const fail = (e: unknown) => (g === this.gen ? this.onError((e as Error)?.message ?? String(e)) : null, null)
+        const got = await this.voice(text).catch(fail)
+        if (g !== this.gen) {
+          if (got && !(got instanceof ArrayBuffer)) void got.cancel().catch(() => {})
+          return
+        }
+        let ok = false
+        let soundSec = 0
+        if (got instanceof ArrayBuffer) {
+          const buf = await this.ctx.decodeAudioData(got).catch(fail)
+          if (g !== this.gen) return
+          this.made.push({ text, buf })
+          ok = !!buf
+          this.flow = 0
+        } else if (got) {
+          ok = await this.stream(got, text, g, (s) => (soundSec += s)).catch((e) => (fail(e), false))
+          if (g !== this.gen) return
+        } else {
+          this.made.push({ text, buf: null })
+        }
+        const took = (performance.now() - this.makingAt) / 1000
+        const s = took / text.length
         // A sentence that waited for the voice to start (its model loading, tens of seconds) says nothing of how
         // fast it makes: more than 3 times the guess is not learnt.
-        if (buf && text.length >= 4 && s <= this.secPerChar * 3) {
+        if (ok && text.length >= 4 && s <= this.secPerChar * 3) {
           this.secPerChar = this.timed ? this.secPerChar * 0.5 + s * 0.5 : s
           this.timed = true
+          if (soundSec > 0) {
+            const f = Math.min(1.5, soundSec / took)
+            this.flow = this.flowTimed ? this.flow * 0.5 + f * 0.5 : f
+            this.flowTimed = true
+          }
         }
         this.makingChars = 0
-        this.made.push({ text, buf })
         this.nudge()
       }
     } finally {
@@ -132,31 +235,77 @@ export class Speaker {
     }
   }
 
+  /** Reads a WAV stream into pieces of sound as they come. True when it ended well. */
+  private async stream(body: ReadableStream<Uint8Array>, text: string, g: number, heard: (sec: number) => void): Promise<boolean> {
+    if (!this.flowTimed) this.flow = FIRST_FLOW
+    const reader = body.getReader()
+    this.reader = reader
+    const pcm = new PcmPieces()
+    const add = (f: Float32Array | null) => {
+      if (!f || !f.length) return
+      const buf = this.ctx.createBuffer(1, f.length, pcm.rate)
+      buf.getChannelData(0).set(f)
+      heard(buf.duration)
+      this.made.push({ text, buf })
+      this.nudge()
+    }
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (g !== this.gen) return false
+        if (done) break
+        for (const f of pcm.push(value)) add(f)
+      }
+      add(pcm.end())
+      return true
+    } finally {
+      if (this.reader === reader) this.reader = null
+    }
+  }
+
+  private sleep(ms: number | null) {
+    return new Promise<void>((r) => {
+      this.wake = r
+      if (ms != null) setTimeout(r, Math.max(0, ms))
+    })
+  }
+
   private async playLoop(g: number) {
     this.playing = true
     try {
-      // Hold before the first sentence, and again whenever reading has caught up with making.
+      // Hold before the first sound, and again whenever reading has caught up with making.
       let hold = true
       while (g === this.gen) {
-        if (!this.made.length && !this.queue.length && !this.makingChars) break
-        const wait = hold ? holdFor(this.madeSec(), this.leftChars(), this.secPerChar) : 0
-        if (!this.made.length || wait > 0) {
-          this.onWait(Date.now() + Math.max(wait, this.makingChars * this.secPerChar) * 1000)
-          await new Promise<void>((r) => {
-            this.wake = r
-            // Looked at again as time passes too: what is made does not change, but what is left gets shorter.
-            if (this.made.length) setTimeout(r, Math.min(1000, wait * 1000))
-          })
-          if (g !== this.gen) return
-          if (!this.made.length) hold = true
+        const pending = this.made.length > 0 || this.queue.length > 0 || this.makingChars > 0
+        const ahead = this.aheadSec()
+        if (!pending) {
+          if (ahead <= 0) break
+          await this.sleep(ahead * 1000 + 20)
           continue
         }
-        this.onWait(null)
-        hold = false
-        const m = this.made.shift()!
-        this.played = true
-        if (m.buf) await this.play(m.buf, g)
-        if (!this.made.length) hold = true
+        if (hold) {
+          const left = this.leftChars()
+          const wait = holdFor(this.madeSec() + ahead, left, this.secPerChar, 0.5, this.flow)
+          if (!this.made.length || wait > 0) {
+            if (ahead <= 0) this.onWait(Date.now() + Math.max(wait, left * this.secPerChar * (1 - this.flow)) * 1000)
+            // Looked at again as time passes too: what is made does not change, but what is left gets shorter.
+            await this.sleep(this.made.length || ahead > 0 ? Math.min(1000, Math.max(wait, 0.05) * 1000) : null)
+            continue
+          }
+          hold = false
+          this.onWait(null)
+        }
+        if (this.made.length) {
+          while (this.made.length) {
+            const m = this.made.shift()!
+            this.played = true
+            if (m.buf) this.schedule(m.buf)
+          }
+          continue
+        }
+        // Nothing new: wait for more, or until what is given is nearly heard. Run dry while still making: hold again.
+        if (ahead > 0.08) await this.sleep((ahead - 0.08) * 1000)
+        else hold = true
       }
     } finally {
       if (g === this.gen) {
@@ -171,19 +320,19 @@ export class Speaker {
     }
   }
 
-  private play(buf: AudioBuffer, g: number) {
-    return new Promise<void>((done) => {
-      if (g !== this.gen) return done()
-      const s = this.ctx.createBufferSource()
-      s.buffer = buf
-      s.connect(this.gain)
-      s.onended = () => {
-        if (this.src === s) this.src = null
-        done()
-      }
-      this.src = s
-      s.start()
-    })
+  /** Gives a piece to the speaker right where the last one ends, so the pieces of a sentence join without a gap. */
+  private schedule(buf: AudioBuffer) {
+    const s = this.ctx.createBufferSource()
+    s.buffer = buf
+    s.connect(this.gain)
+    const at = Math.max(this.ctx.currentTime + 0.03, this.sources.size ? this.endAt : 0)
+    s.onended = () => {
+      this.sources.delete(s)
+      this.nudge()
+    }
+    this.sources.add(s)
+    s.start(at)
+    this.endAt = at + buf.duration
   }
 
   /** Quieter (to) or back to full (1), smoothly so it does not click. */
@@ -193,7 +342,7 @@ export class Speaker {
     this.gain.gain.setTargetAtTime(to, t, 0.05)
   }
 
-  /** Stops at once, and nothing waiting is read. */
+  /** Stops at once, and nothing waiting is read. A sound still being made is let go (the voice stops making it). */
   stop() {
     this.gen++
     this.queue = []
@@ -202,11 +351,16 @@ export class Speaker {
     this.fetching = false
     this.playing = false
     this.played = false
-    const s = this.src
-    this.src = null
-    try {
-      s?.stop()
-    } catch {}
+    const r = this.reader
+    this.reader = null
+    void r?.cancel().catch(() => {})
+    for (const s of this.sources) {
+      try {
+        s.stop()
+      } catch {}
+    }
+    this.sources.clear()
+    this.endAt = 0
     this.nudge()
     this.duck(1)
     this.onWait(null)

@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.550',
+    date: '2026-11-16',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui', 'server'],
+        text: '대화 모드가 운영자 목소리 서버의 소리를 만드는 대로 받아 바로 틀어요. 문장이 다 만들어지길 기다리지 않아 첫 소리가 훨씬 빨라요',
+        refs: ['REQ-F-920', 'IF-290'],
+      },
+    ],
+  },
+  {
     version: '1.549',
     date: '2026-11-16',
+    commit: 'e14ca8b',
     changes: [
       {
         kind: 'fixed',

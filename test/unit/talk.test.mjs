@@ -331,3 +331,132 @@ test('AC-1809 Speaker: 다음 문장들을 차례로 만들고, 모인 소리가
   assert.deepEqual(played, [3, 6])
   assert.equal(states.at(-1), false)
 })
+
+// 흘려 읽기 (REQ-F-920, AC-1827): a WAV stream cut anywhere becomes pieces of sound; reading starts while it still
+// comes, the pieces join end to end, and stop() lets the stream go.
+const wavHeader = (rate = 24000) => {
+  const h = new Uint8Array(44)
+  const v = new DataView(h.buffer)
+  h.set([82, 73, 70, 70], 0)
+  v.setUint32(24, rate, true)
+  return h
+}
+const pcmBytes = (n, value) => {
+  const b = new Uint8Array(n * 2)
+  const v = new DataView(b.buffer)
+  for (let i = 0; i < n; i++) v.setInt16(i * 2, value, true)
+  return b
+}
+
+test('흘려 읽기: PcmPieces reads the header, keeps an odd byte, and gives pieces of at least a quarter second', async () => {
+  const { PcmPieces } = await import('../../ui/src/lib/speaker.ts')
+  const p = new PcmPieces()
+  const h = wavHeader(16000)
+  assert.deepEqual(p.push(h.subarray(0, 20)), [])
+  assert.deepEqual(p.push(h.subarray(20)), [])
+  assert.equal(p.rate, 16000)
+  const body = pcmBytes(4000, -16384) // a quarter second at 16 kHz
+  assert.deepEqual(p.push(body.subarray(0, 3)), [])
+  const out = p.push(body.subarray(3))
+  assert.equal(out.length, 1)
+  assert.equal(out[0].length, 4000)
+  assert.ok(out[0].every((x) => x === -0.5))
+  assert.equal(p.push(pcmBytes(10, 16384)).length, 0)
+  const last = p.end()
+  assert.equal(last.length, 10)
+  assert.equal(p.end(), null)
+  assert.throws(() => new PcmPieces().push(new Uint8Array(44)), /소리 형식/)
+})
+
+test('흘려 읽기: holdFor waits less for a voice whose sound comes while it makes', async () => {
+  const { holdFor } = await import('../../ui/src/lib/speaker.ts')
+  assert.ok(Math.abs(holdFor(0, 100, 0.18, 0.5, 0) - 18.5) < 1e-9)
+  assert.ok(Math.abs(holdFor(0, 100, 0.18, 0.5, 0.8) - 4.1) < 1e-9)
+  assert.equal(holdFor(1, 39, 0.17, 0.5, 0.95), 0)
+  assert.ok(Math.abs(holdFor(0, 100, 0.18, 0.5, 3) - 0.5) < 1e-9, 'flow is at most 1')
+})
+
+function fakeAudio() {
+  const ctx = {
+    t0: performance.now(),
+    get currentTime() {
+      return (performance.now() - this.t0) / 1000
+    },
+    destination: {},
+    started: [],
+    stopped: 0,
+    createGain: () => ({ gain: { cancelScheduledValues() {}, setTargetAtTime() {} }, connect() {}, disconnect() {} }),
+    createBuffer: (_ch, len, rate) => {
+      const data = new Float32Array(len)
+      return { duration: len / rate, getChannelData: () => data }
+    },
+    createBufferSource() {
+      const s = {
+        connect() {},
+        start: (at) => {
+          ctx.started.push({ at, dur: s.buffer.duration })
+          setTimeout(() => s.onended?.(), Math.max(0, (at + s.buffer.duration - ctx.currentTime) * 1000))
+        },
+        stop: () => ctx.stopped++,
+      }
+      return s
+    },
+    decodeAudioData: async () => ({ duration: 0.3 }),
+  }
+  return ctx
+}
+
+test('흘려 읽기: Speaker plays a stream while it still comes, its pieces joined end to end', async () => {
+  const { Speaker } = await import('../../ui/src/lib/speaker.ts')
+  const ctx = fakeAudio()
+  let closed = false
+  let more
+  const stream = new ReadableStream({
+    start(c) {
+      c.enqueue(wavHeader(24000))
+      c.enqueue(pcmBytes(12000, 100)) // 0.5 s
+      more = () => {
+        c.enqueue(pcmBytes(12000, 100))
+        c.close()
+        closed = true
+      }
+    },
+  })
+  const sp = new Speaker(ctx, async () => stream)
+  const states = []
+  sp.onState = (on) => states.push(on)
+  sp.say(['안녕'])
+  for (let i = 0; i < 100 && !ctx.started.length; i++) await new Promise((r) => setTimeout(r, 10))
+  assert.equal(ctx.started.length, 1, '스트림이 끝나기 전에 읽기 시작')
+  assert.equal(closed, false)
+  more()
+  for (let i = 0; i < 100 && ctx.started.length < 2; i++) await new Promise((r) => setTimeout(r, 10))
+  assert.equal(ctx.started.length, 2)
+  assert.ok(Math.abs(ctx.started[1].at - (ctx.started[0].at + ctx.started[0].dur)) < 1e-9, '이어 붙임')
+  for (let i = 0; i < 200 && sp.speaking; i++) await new Promise((r) => setTimeout(r, 10))
+  assert.deepEqual(states, [true, false])
+})
+
+test('흘려 읽기: stop() lets the stream go and stops what was given to the speaker', async () => {
+  const { Speaker } = await import('../../ui/src/lib/speaker.ts')
+  const ctx = fakeAudio()
+  let cancelled = false
+  const stream = new ReadableStream({
+    start(c) {
+      c.enqueue(wavHeader(24000))
+      c.enqueue(pcmBytes(24000, 100)) // 1 s, then nothing more for now
+    },
+    cancel() {
+      cancelled = true
+    },
+  })
+  const sp = new Speaker(ctx, async () => stream)
+  sp.say(['조금 긴 문장'])
+  for (let i = 0; i < 100 && !ctx.started.length; i++) await new Promise((r) => setTimeout(r, 10))
+  assert.equal(ctx.started.length, 1)
+  sp.stop()
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(cancelled, true)
+  assert.equal(ctx.stopped, 1)
+  assert.equal(sp.speaking, false)
+})

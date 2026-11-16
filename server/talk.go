@@ -68,6 +68,11 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 		if rate == 0 {
 			rate = 1
 		}
+		// 흘려 읽기 (REQ-F-920): the page that can play the sound as it comes asks for it so, and hears the first
+		// words about a second in instead of after the whole sentence is made. If that cannot start, as before.
+		if b["stream"] == true && clayStream(res, text, rate) {
+			return
+		}
 		r = clayTTS(text, rate)
 	}
 	if kind == "tts" && r == nil {

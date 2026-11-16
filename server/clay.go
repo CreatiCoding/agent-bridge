@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -85,6 +86,81 @@ func clayTTS(text string, rate float64) M {
 	}
 	logLine("talk", "목소리 서버 "+strconv.Itoa(len([]rune(text)))+"자 "+strconv.FormatInt(ms, 10)+"ms → 소리 "+r.header.Get("X-Clay-Audio-Sec")+"초")
 	return M{"ok": true, "audio": base64.StdEncoding.EncodeToString(b), "mime": "audio/wav", "engine": "clay", "ms": float64(ms)}
+}
+
+// The streaming request has no overall deadline of its own (a 600-letter answer takes ~100 s to say, and it is made
+// about as fast): the voice server's own limits end it (60 s in its line, 30 s without a piece), and so does the page
+// leaving.
+var clayStreamHTTP = &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: TALK_WAIT_MS * time.Millisecond}}
+
+const CLAY_STREAM_MAX = 10 * time.Minute
+
+// clayStream (REQ-F-920): the answer as a WAV stream that grows while the voice server makes it (24 kHz 16-bit mono;
+// the header's sizes are the largest, since the length is not known yet). Waits outside the lock for the voice server
+// to take the request, then hands the body over to the network as it comes, without the lock (Res.pipe). False when
+// it could not start: nothing was sent and the caller reads as before.
+func clayStream(res *Res, text string, rate float64) bool {
+	u, key, b := clayBase()+"/v1/tts", strings.TrimSpace(env("CLAY_TTS_KEY")), jsonBytes(M{"text": text, "rate": rate, "format": "wav", "stream": true})
+	chars := len([]rune(text))
+	ctx, cancel := context.WithTimeout(context.Background(), CLAY_STREAM_MAX)
+	var r *http.Response
+	var err error
+	t0 := time.Now()
+	await(func() {
+		req, e := http.NewRequestWithContext(ctx, "POST", u, bytes.NewReader(b))
+		if e != nil {
+			err = e
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("Content-Type", "application/json")
+		r, err = clayStreamHTTP.Do(req)
+	})
+	if err != nil || r.StatusCode != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "audio/wav") {
+		status := 0
+		if r != nil {
+			status = r.StatusCode
+			r.Body.Close()
+		}
+		cancel()
+		logLine("talk", "목소리 서버 흘려 읽기 못 함 "+strconv.Itoa(status))
+		return false
+	}
+	res.WriteHead(200, M{"Content-Type": "audio/wav", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "X-Talk-Engine": "clay"})
+	res.ended = true
+	res.pipe = func(w http.ResponseWriter, hr *http.Request) {
+		defer cancel()
+		defer r.Body.Close()
+		// The page left: the voice server is told at once (it stops making), not when the next write fails.
+		stop := context.AfterFunc(hr.Context(), cancel)
+		defer stop()
+		for k, v := range res.header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(200)
+		rc := http.NewResponseController(w)
+		buf := make([]byte, 32*1024)
+		n, firstMs := 0, int64(-1)
+		for {
+			k, e := r.Body.Read(buf)
+			if k > 0 {
+				if firstMs < 0 {
+					firstMs = time.Since(t0).Milliseconds()
+				}
+				if _, we := w.Write(buf[:k]); we != nil {
+					break
+				}
+				_ = rc.Flush()
+				n += k
+			}
+			if e != nil {
+				break
+			}
+		}
+		sec := float64(max(n-44, 0)) / 48000
+		logLine("talk", "목소리 서버 흘려 읽기 "+strconv.Itoa(chars)+"자 첫 조각 "+strconv.FormatInt(firstMs, 10)+"ms 전체 "+strconv.FormatInt(time.Since(t0).Milliseconds(), 10)+"ms → 소리 "+strconv.FormatFloat(sec, 'f', 2, 64)+"초")
+	}
+	return true
 }
 
 // clayWarm: asks the voice server to load 소희 now and keep her another idle period.

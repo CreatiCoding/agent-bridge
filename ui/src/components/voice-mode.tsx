@@ -4,7 +4,7 @@
 // what was taken shows in the conversation at once (grey) and is sent when the Mac's words are in. Turning it off puts
 // what was gathered in the input box.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ApiError, post, postSealed } from '../lib/api'
+import { ApiError, post, postAudio, postSealed } from '../lib/api'
 import { voiceCommand, type VoiceEnd } from '../lib/voice-commands'
 import { addVoiceRecent, getVoiceDevice, joinWords, setVoiceDevice, VOICE_CODE_TITLE, type LiveListen, type LivePreview, type Phrase, type VoiceResult } from '../lib/voice'
 import { inHomeApp, safariHref } from '../lib/safari'
@@ -117,10 +117,22 @@ export function VoiceMode({
       throw e
     }
   }
-  const speaker = useMemo(
-    () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text, rate: getVoiceDevice().rate, away: !hostPaired() }).then((r) => fromBase64(r.audio))) : null),
-    [listen, !!talk, sessionId],
-  )
+  // 흘려 읽기 (REQ-F-920): the sound may come as it is made (the operator's voice server); a paired Mac's request is
+  // signed as it always was and answered whole.
+  const talkVoice = async (text: string): Promise<ArrayBuffer | ReadableStream<Uint8Array>> => {
+    const body = { op: 'tts', text, rate: getVoiceDevice().rate, away: !hostPaired() }
+    if (!body.away) return talkPost<{ audio: string }>(body).then((r) => fromBase64(r.audio))
+    const hostId = getStore().state?.sessions.find((x) => x.id === sessionId)?.hostId
+    try {
+      const r = await postAudio<Record<string, unknown>>(`/api/sessions/${sessionId}/talk`, { ...body, stream: true })
+      if (r.stream instanceof ReadableStream) return r.stream
+      return fromBase64((await openTalk<{ audio: string }>(hostId, r as Record<string, unknown>, 'tts')).audio)
+    } catch (e) {
+      if (e instanceof ApiError && e.message.includes('⟦bt')) throw new ApiError(e.status, await openText(e.message), e.data)
+      throw e
+    }
+  }
+  const speaker = useMemo(() => (talk ? new Speaker(listen.audio, talkVoice) : null), [listen, !!talk, sessionId])
   const speakerNow = useRef(speaker)
   speakerNow.current = speaker
   // What was read lately, and when it ended: a phrase that is only that coming back through the microphone is dropped.
