@@ -262,7 +262,12 @@ test('AC-1809 소희: 맥 미니의 Qwen3-TTS 를 띄워 두고 1배는 원래 �
     setImmediate(() => p.stdout.write('{"ready":true}\n'))
     return p
   }
-  const v = new QwenVoice({ dir, run })
+  // The model in a cache of this test's own (1.548: never fetched by a command); not the machine's real cache.
+  const hub = path.join(dir, 'hub')
+  const snap = path.join(hub, 'models--mlx-community--Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit', 'snapshots', 'x')
+  fs.mkdirSync(snap, { recursive: true })
+  fs.writeFileSync(path.join(snap, 'config.json'), '{}')
+  const v = new QwenVoice({ dir, run, hub })
   const a = await v.speak('배포가 끝났어요.', 1.25)
   v.stop()
   clearTimeout(v.idle)
