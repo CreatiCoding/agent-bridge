@@ -48,7 +48,10 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 		refuse(400, "op 는 tts, turn, brief, warm 중 하나예요")
 	}
 	text := strings.TrimSpace(strField(b, "text"))
-	if text == "" || len([]rune(text)) > limit {
+	// A sealing Mac's paired device sends the words as one sealed piece (1.548): the Mac checks the length once it
+	// opens them; here only that it is one piece of a size the words could make (base64 of UTF-8, and its wrapping).
+	sealed := adapterSealRe.MatchString(text)
+	if text == "" || (!sealed && len([]rune(text)) > limit) || (sealed && len(text) > limit*6+512) {
 		refuse(400, "읽을 말이 비었거나 너무 길어요")
 	}
 	cmd := M{"t": "talk", "op": kind, "text": text}
@@ -86,6 +89,15 @@ func apiTalk(res *Res, req *Req, uid string, meta *Sess) {
 			code = "error"
 		}
 		refuseX(502, orStr(r["error"], "맥이 답하지 못했어요"), M{"code": code})
+	}
+	// A sealing Mac's answer is one piece bound to its op (agent trust.mjs sealOut talk): passed on as it is, the page
+	// opens it.
+	if piece := strField(r, "sealed"); piece != "" {
+		if !adapterSealRe.MatchString(piece) {
+			refuse(502, "맥의 봉인된 답이 올바르지 않아요")
+		}
+		jsonRes(res, 200, orderedObj{{"ok", true}, {"sealed", piece}, {"ms", r["ms"]}}.dropNil())
+		return
 	}
 	switch kind {
 	case "tts":

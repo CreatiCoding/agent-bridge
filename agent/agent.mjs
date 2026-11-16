@@ -21,7 +21,7 @@ import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImage
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
-import { Judge, QwenVoice, SayVoice, SupertonicVoice, hasQwen, talk as talkRun, talkRate, wavSeconds } from './talk.mjs'
+import { Judge, QwenVoice, SayVoice, SupertonicVoice, TalkGate, hasQwen, talk as talkRun, talkRate, wavSeconds } from './talk.mjs'
 import { TOOLS as BRIDGE_TOOLS, ATTACH_MAX, ATTACH_RATE, ATTACH_KEEP_MS, READ_TAIL, attachWhy, attachType, attachName, attachRoots, readConv, convText, fromElsewhere, switchDigest, switchHead, FIND_Q_MIN, FIND_Q_MAX, FIND_AI_SESSIONS, FIND_AI_HEAD, FIND_AI_TAIL, FIND_AI_TIMEOUT_MS, findSessions, findDigest, findAiPrompt, findAiArgs, findAiResult, parseFindPicks, findAiMissing, findAiMissingText, findAiFailText } from './mcp.mjs'
 import { stripCreds, hideRemotes, hideKeys } from './scrub.mjs'
 import { EventStore, saveLineImages, saveImage, imageIdOk, IMAGE_TYPES } from './store.mjs'
@@ -5576,14 +5576,16 @@ const commands = {
       talkJudge ??= new Judge({ bin: CLAUDE_BIN, env: claudeEnv(), log })
       // The server asks for 소희 only on a Mac that said it has her (caps talkVoice, REQ-F-911).
       const voice = (op === 'tts' || op === 'warm') && engine === 'qwen' && hasQwen(STATE_DIR) ? (qwenVoice ??= new QwenVoice({ dir: STATE_DIR, log })) : talkVoice
-      const r = await talkRun({ op, text, rate }, { voice, judge: talkJudge })
+      // A sealing Mac's paired device sends the words sealed (1.548): opened here, never seen by the server.
+      if (typeof text === 'string') text = trustText(text)
+      const r = await talkRun({ op, text, rate }, { voice, judge: talkJudge, gate: talkGate })
       // How long a sentence took against how long it sounds, and at what reading speed, to see when reading falls behind
       // or is not as fast as asked (no words logged).
       if (op === 'tts') log('info', 'talk', `목소리 ${String(text ?? '').length}자 ${r.ms}ms → 소리 ${wavSeconds(r.audio)}초 ${talkRate(rate)}배 (${r.engine})`)
-      emit({ t: 'talk', reqId, ok: true, ...r })
+      emit({ t: 'talk', reqId, op, ok: true, ...r })
     } catch (e) {
       if (!e.code) log('error', 'talk', `실패: ${e.stack || e.message}`)
-      emit({ t: 'talk', reqId, ok: false, code: e.code || 'error', error: String(e.message).slice(0, 300) })
+      emit({ t: 'talk', reqId, op, ok: false, code: e.code || 'error', error: String(e.message).slice(0, 300) })
     }
   },
   async voice({ reqId, audio, opts, heard }) {
@@ -8038,6 +8040,8 @@ let talkVoice = null
 /** 소희 (REQ-F-911): kept up only on the Mac the server asks to read for the person's sessions. */
 let qwenVoice = null
 let talkJudge = null
+/** How much 대화 모드 this Mac takes at once and in a minute (1.548). */
+const talkGate = new TalkGate()
 const whisperDir = () => path.join(STATE_DIR, 'whisper')
 process.on('exit', () => whisper?.stop())
 /** A session in the middle of a turn (REQ-F-832 skipBusy): a night update waits for it, or for the next night. */

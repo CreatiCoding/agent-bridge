@@ -7,7 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /** Raised by any change to what this file checks. An update that brings a lower one (or none) is refused (§5.7). */
-export const TRUST_VERSION = 11
+export const TRUST_VERSION = 12
 /** The last signed agent before this file existed (agent/agent.sig seq): no build at or below it is taken while trust is on. */
 export const TRUST_MIN_SEQ = 1793550529
 export const MODES = ['off', 'warn', 'enforce']
@@ -121,7 +121,11 @@ export const TRUST_CLASS = {
   // the local screen's bundle: checked by the maintainer's signature and a seq that only grows, like update (REQ-F-844)
   localui: 'free',
   // reads: what comes back is sealed
-  events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free', translate: 'free', talk: 'free',
+  events: 'free', export: 'free', img: 'free', screen: 'free', flush: 'free', readfile: 'free', readimage: 'free', trashinfo: 'free', prsearch: 'free', prstates: 'free', skills: 'free', dirs: 'free', recent: 'free', voice: 'free', translate: 'free',
+  // 대화 모드 (REQ-F-907, 1.548): reading aloud and the judge run programs on this Mac (say, a model's python,
+  // `claude -p` on its own account), so every op is a paired device's: the words by their hash as sent (textH: sealed
+  // when this Mac seals), warm by itself. rate and engine only pick a speed (clamped) and a voice of this Mac.
+  talk: { ops: { tts: { i: ['op', 'textH'], keep: ['text', 'rate', 'engine'] }, turn: { i: ['op', 'textH'], keep: ['text'] }, brief: { i: ['op', 'textH'], keep: ['text'] }, warm: { i: ['op'], keep: ['engine'] } }, other: 'off' },
   // the bridge MCP's attach (by the id the session made) and another Mac's read_session (refused while sealing)
   attachment: 'free', convread: 'free',
   // 세션 찾기 (REQ-F-895): the words searched are signed (qH, the hash of the sealed words as sent: a paired device
@@ -456,7 +460,7 @@ export function rebuild(cmd, rule, i) {
 }
 
 /** The hashes a signature binds, against what came: {field: hashField}. */
-export const HASHED = { send: { text: 'textH' }, btw: { text: 'textH' }, new: { prompt: 'promptH' }, adapter: { inputJ: 'inputH' }, convfind: { q: 'qH' } }
+export const HASHED = { send: { text: 'textH' }, btw: { text: 'textH' }, talk: { text: 'textH' }, new: { prompt: 'promptH' }, adapter: { inputJ: 'inputH' }, convfind: { q: 'qH' } }
 export function hashesHold(cmd, i) {
   for (const [f, h] of Object.entries(HASHED[cmd.t] ?? {})) {
     const v = cmd[f] ?? ''
@@ -700,6 +704,15 @@ export function sealOut(msg, seal) {
       break
     case 'voice':
       m.text = S(m.text)
+      break
+    case 'talk':
+      // 대화 모드 (1.548): what was made (the sound, the line, done or more) in one piece bound to the op, so a server
+      // can neither hear nor read it, nor pass one op's answer off as another's. ok, ms and code stay plain.
+      if (m.ok) {
+        m.sealed = S(JSON.stringify({ kind: 'talk', op: m.op ?? '', audio: m.audio, mime: m.mime, engine: m.engine, end: m.end, line: m.line }))
+        for (const k of ['audio', 'mime', 'engine', 'end', 'line']) delete m[k]
+      }
+      if (m.error !== undefined) m.error = S(m.error)
       break
     case 'convfind':
       // 세션 찾기 (REQ-F-895): only the session ids (and the file times, counts of files) stay plain, for the server

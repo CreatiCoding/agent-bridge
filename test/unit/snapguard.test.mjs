@@ -15,13 +15,20 @@ import { privateHost, sneakyLink, linkKind } from '../../ui/src/lib/snapshot-pag
 
 const on = { on: true, allow: [] }
 // A resolver of this test: public names that answer this Mac's own addresses, as a DNS of an attacker would.
-const names = { 'evil.test': '10.0.0.5', 'rebind.test': '127.0.0.1', 'pub.test': '127.0.0.1', 'wiki.corp.test': '10.1.1.1', 'ok.test': '93.184.216.34', 'six.test': '::1' }
+// example.com and the like are answered here too: no test of this file asks a real DNS (1.548).
+const names = { 'evil.test': '10.0.0.5', 'rebind.test': '127.0.0.1', 'pub.test': '127.0.0.1', 'wiki.corp.test': '10.1.1.1', 'ok.test': '93.184.216.34', 'six.test': '::1', 'example.com': '93.184.216.34', 'cgnat.test': '100.80.1.2', 'cgnat-mapped.test': '::ffff:100.80.1.3', 'cgnat-mixed.test': ['100.80.1.2', '10.0.0.9'], 'cgnat-loop.test': ['100.80.1.2', '127.0.0.1'] }
+const listOf = (host) => [names[host]].flat().filter(Boolean).map((a) => ({ address: a, family: net.isIP(a) }))
 const lookup = (host, opts, cb) => {
   if (typeof opts === 'function') cb = opts
-  const a = names[host]
-  if (!a) return cb(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }))
-  const list = [{ address: a, family: net.isIP(a) }]
-  return opts?.all ? cb(null, list) : cb(null, a, net.isIP(a))
+  const list = listOf(host)
+  if (!list.length) return cb(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }))
+  return opts?.all ? cb(null, list) : cb(null, list[0].address, list[0].family)
+}
+/** The same resolver for the ego script (it takes CB_LOOKUP_ALL in place of node:dns). */
+const lookupAll = async (host) => {
+  const list = listOf(host)
+  if (!list.length) throw Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' })
+  return list
 }
 
 test('AC-1786: this Mac and its networks by address: loopback, private, link-local, CGNAT, 198.18/15, ULA, fec0::/10, IPv4 in IPv6', () => {
@@ -45,10 +52,10 @@ test('AC-1786: urlRefusal: by name, by what it resolves to, this site always; ag
   assert.equal(await r('https://bridge.example/api/me'), '이 사이트 주소는 스냅샷으로 열지 않아요')
   assert.equal(await r('javascript:alert(1)'), 'http(s) 주소만 스냅샷으로 열 수 있어요')
   // Off, or a name allowed: a company's own pages, drawn on purpose. This site stays refused.
-  assert.deepEqual(snapGuardOf({}), { on: true, allow: [] })
-  assert.deepEqual(snapGuardOf({ snapshotGuard: false }), { on: false, allow: [] })
+  assert.deepEqual(snapGuardOf({}), { on: true, allow: [], nets: [] })
+  assert.deepEqual(snapGuardOf({ snapshotGuard: false }), { on: false, allow: [], nets: [] })
   const g = snapGuardOf({ snapshotGuard: { allow: ['wiki.corp.test', '*.lan', 'bad name', 42] } })
-  assert.deepEqual(g, { on: true, allow: ['wiki.corp.test', '*.lan'] })
+  assert.deepEqual(g, { on: true, allow: ['wiki.corp.test', '*.lan'], nets: [] })
   assert.equal(await r('https://wiki.corp.test/', g), '')
   assert.equal(await r('http://nas.lan/', g), '')
   assert.equal(await r('http://lan/', g), PRIVATE_WHY, '*.lan is the names under it')
@@ -191,14 +198,14 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
   assert.ok(!s.includes('page.goto('), 'not page.goto: ego answers page.events() only after a goto ends')
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
   assert.doesNotThrow(() => new AsyncFunction('taskSpace', s))
-  const judge = await new AsyncFunction(`${egoGuardScript({ on: true, allow: ['wiki.corp.test'] }, ['https://bridge.example'])}; return judge`)()
+  const judge = await new AsyncFunction('CB_LOOKUP_ALL', `${egoGuardScript({ on: true, allow: ['wiki.corp.test'] }, ['https://bridge.example'])}; return judge`)(lookupAll)
   for (const u of ['http://127.0.0.1:8080/', 'https://127.0.0.1.nip.io/', 'http://[::1]/', 'http://[64:ff9b::a00:1]/', 'http://foo.internal/', 'http://localhost/']) assert.equal(await judge(u), PRIVATE_WHY, u)
   assert.equal(await judge('https://bridge.example/x'), '이 사이트 주소는 스냅샷으로 열지 않아요')
   assert.equal(await judge('https://wiki.corp.test/'), '')
   assert.equal(await judge('https://example.com/'), '')
   // A fake ego: requests paused come from page.events(), and each is let go or failed.
-  const run = new AsyncFunction(`${egoGuardScript(on, [])}; return { guardPages, refused }`)
-  const { guardPages, refused } = await run()
+  const run = new AsyncFunction('CB_LOOKUP_ALL', `${egoGuardScript(on, [])}; return { guardPages, refused }`)
+  const { guardPages, refused } = await run(lookupAll)
   // What was buffered before is dropped at start.
   const queue = [{ method: 'Fetch.requestPaused', params: { requestId: 'old', request: { url: 'https://example.com/' } } }]
   const calls = []
@@ -261,7 +268,7 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
     }
     return page
   }
-  const env = async () => new AsyncFunction(`${egoGuardScript(on, [])}; return { guardPages, refused }`)()
+  const env = async () => new AsyncFunction('CB_LOOKUP_ALL', `${egoGuardScript(on, [])}; return { guardPages, refused }`)(lookupAll)
   {
     const { guardPages, refused } = await env()
     const p = serialEgo('https://example.com/')
@@ -289,7 +296,7 @@ test('AC-1786: ego lite holds every document request (redirects too) and fails w
   }
   {
     // An address that does not load: Chrome's error page, not the page.
-    const { guardPages } = await new AsyncFunction(`${egoGuardScript({ on: false, allow: [] }, [])}; return { guardPages, refused }`)()
+    const { guardPages } = await new AsyncFunction('CB_LOOKUP_ALL', `${egoGuardScript({ on: false, allow: [] }, [])}; return { guardPages, refused }`)(lookupAll)
     const p = serialEgo('https://nowhere.example/')
     const page = { ...p, cdp: async (m, x) => (m === 'Fetch.continueRequest' ? p.cdp('Fetch.failRequest', x) : p.cdp(m, x)) }
     const held = await guardPages(page)
@@ -386,4 +393,39 @@ test('AC-1790: snapshot log lines carry no address', () => {
   const agent = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
   const fn = agent.slice(agent.indexOf('  async snapshot({ reqId, sid, url, parts, rid })'), agent.indexOf('  async killserver('))
   for (const m of fn.matchAll(/log\('(?:warn|info|error)', 'snapshot', ([^\n]+)/g)) assert.ok(m[1].startsWith('snapLogText(') || !/\$\{(?:e\.message|egoWhy|page|asked|url)/.test(m[1]), m[0])
+})
+
+test('AC-1824: snapshotGuard.allowNets 는 그 IPv4 대역으로 풀리는 이름만 열고, 다른 내부 대역·이 맥·링크 로컬은 그대로 막는다(DNS 없이)', async () => {
+  const own = ['https://bridge.example']
+  const g = snapGuardOf({ snapshotGuard: { allowNets: ['100.64.0.0/10', ' 100.64.0.1/10 ', '127.0.0.0/8', '10.0.0.0/7', '169.254.0.0/16', '0.0.0.0/0', '100.64.0.0/7', '8.8.8.8/33', 'x/10', 42] } })
+  // 100.64.0.1/10 is the same range written from inside it; ranges touching 127/8, 0/8 or 169.254/16 and wider than /8 are dropped.
+  assert.deepEqual(g, { on: true, allow: [], nets: [['100.64.0.0', 10], ['100.64.0.0', 10]] })
+  assert.deepEqual(snapGuardOf({ snapshotGuard: { allowNets: ['100.64.0.0/10'] } }).nets, [['100.64.0.0', 10]])
+  const r = (u, guard) => urlRefusal(u, { guard, own, lookup })
+  // Without it, a public name a network's DNS answers in 100.64/10 is refused, as before.
+  assert.equal(await r('https://cgnat.test/', on), PRIVATE_WHY)
+  // With it: that name opens (also as an IPv4-mapped IPv6 answer, or as the address itself).
+  assert.equal(await r('https://cgnat.test/', g), '')
+  assert.equal(await r('https://cgnat-mapped.test/', g), '')
+  assert.equal(await r('http://100.80.1.2/', g), '')
+  // Every other blocked range stays blocked: a name with one address outside the allowed range, 10/8, 127/8, ::1.
+  for (const u of ['https://cgnat-mixed.test/', 'https://cgnat-loop.test/', 'https://evil.test/', 'http://rebind.test/', 'https://six.test/', 'http://127.0.0.1/', 'http://10.0.0.1/', 'http://169.254.169.254/', 'http://192.168.0.1/', 'http://localhost/'])
+    assert.equal(await r(u, g), PRIVATE_WHY, u)
+  assert.equal(await r('https://bridge.example/', g), '이 사이트 주소는 스냅샷으로 열지 않아요')
+  // Where it connects (the sheets and pictures, the headless Chrome's proxy): the same.
+  const look = (h) => new Promise((done) => guardLookup(g, lookup)(h, {}, (e, a) => done(e ? e.code : a)))
+  assert.equal(await look('cgnat.test'), '100.80.1.2')
+  assert.equal(await look('cgnat-loop.test'), 'CB_PRIVATE')
+  assert.equal(await look('rebind.test'), 'CB_PRIVATE')
+  // And in the ego script, with the resolver handed in.
+  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
+  const judge = await new AsyncFunction('CB_LOOKUP_ALL', `${egoGuardScript(g, own)}; return judge`)(lookupAll)
+  assert.equal(await judge('https://cgnat.test/'), '')
+  assert.equal(await judge('http://100.80.1.2/'), '')
+  for (const u of ['https://cgnat-loop.test/', 'http://127.0.0.1/', 'https://evil.test/']) assert.equal(await judge(u), PRIVATE_WHY, u)
+  const judgeOn = await new AsyncFunction('CB_LOOKUP_ALL', `${egoGuardScript(on, own)}; return judge`)(lookupAll)
+  assert.equal(await judgeOn('https://cgnat.test/'), PRIVATE_WHY)
+  // The agent reads it from agent.json each time (snapshotGuard).
+  const agent = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(agent, /const snapshotGuard = \(\) => snapGuardOf\(readJson\(configPath, \{\}\)\)/)
 })

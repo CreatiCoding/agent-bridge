@@ -4,14 +4,14 @@
 // what was taken shows in the conversation at once (grey) and is sent when the Mac's words are in. Turning it off puts
 // what was gathered in the input box.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ApiError, post } from '../lib/api'
+import { ApiError, post, postSealed } from '../lib/api'
 import { voiceCommand, type VoiceEnd } from '../lib/voice-commands'
 import { addVoiceRecent, getVoiceDevice, joinWords, setVoiceDevice, VOICE_CODE_TITLE, type LiveListen, type LivePreview, type Phrase, type VoiceResult } from '../lib/voice'
 import { inHomeApp, safariHref } from '../lib/safari'
 import { Button, IconButton } from '../kit'
 import { toast } from '../kit/overlay'
 import { linkClick } from '../lib/builtin-actions'
-import { pairedHosts, pairedWith } from '../lib/trust'
+import { openTalk, openText, pairedHosts, pairedWith } from '../lib/trust'
 import { getStore } from '../lib/store'
 import { bargeIn, BARGE, fromBase64, isEcho, learnVoice, nearLevel, nearVoice, voiceFloor, ReadQueue, sentences, speakable, TURN, turnEnd } from '../lib/talk'
 import { withHint } from '../lib/timeline'
@@ -106,7 +106,17 @@ export function VoiceMode({
   const judgingNow = useRef(false)
   // Sent in 대화 모드 and no answer read yet: 생각 중 on the Dynamic Island (REQ-F-913).
   const [awaiting, setAwaiting] = useState(false)
-  const talkPost = <T,>(body: object) => post<T>(`/api/sessions/${sessionId}/talk`, body)
+  // 대화 모드 (1.548): signed for a paired Mac (lib/trust talkIntents); a sealing Mac's answer is opened by openTalk, once.
+  const talkPost = async <T,>(body: { op: string } & Record<string, unknown>): Promise<T> => {
+    const hostId = getStore().state?.sessions.find((x) => x.id === sessionId)?.hostId
+    try {
+      return await openTalk<T>(hostId, await postSealed<Record<string, unknown>>(`/api/sessions/${sessionId}/talk`, body), body.op)
+    } catch (e) {
+      // A sealing Mac's refusal is sealed too: its words are small, opened as usual.
+      if (e instanceof ApiError && e.message.includes('⟦bt')) throw new ApiError(e.status, await openText(e.message), e.data)
+      throw e
+    }
+  }
   const speaker = useMemo(
     () => (talk ? new Speaker(listen.audio, (text) => talkPost<{ audio: string }>({ op: 'tts', text, rate: getVoiceDevice().rate, away: !hostPaired() }).then((r) => fromBase64(r.audio))) : null),
     [listen, !!talk, sessionId],

@@ -344,7 +344,30 @@ async function sayIntents(s: Session, h: string, text: string, images?: unknown)
 type Body = Record<string, unknown>
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
+/**
+ * 대화 모드 (REQ-F-907, 1.548): a talk op on a paired Mac is signed with the hash of its words as sent (sealed when
+ * that Mac seals). The Macs it may reach (server apiTalk): the session's own; while away, another Mac with 소희 too.
+ * A read gets a spare signature for the session's own Mac (the second try there when 소희 could not read it); the
+ * server gives a talk signature only to the command carrying those very words, so a spare never reaches another.
+ */
+async function talkIntents(sid: string, body: Body): Promise<Intent[]> {
+  const op = str(body.op)
+  if (!['tts', 'turn', 'brief', 'warm'].includes(op)) return []
+  const own = sessionOf(sid)?.hostId
+  const mine = own && pairedWith(own) ? [own] : []
+  const hosts = op === 'tts' || op === 'warm' ? [...new Set([...mine, ...(body.away !== false ? pairedHosts() : [])])] : mine
+  const i = op === 'warm' ? { op } : { op, textH: await sha256Hex(str(body.text).trim()) }
+  const xs: Intent[] = []
+  for (const h of hosts) {
+    xs.push({ h, t: 'talk', i })
+    if (op === 'tts' && h === own) xs.push({ h, t: 'talk', i })
+  }
+  return xs.slice(0, 8)
+}
+
 async function intentsFor(method: string, path: string, body: Body): Promise<Intent[]> {
+  const tm = /^\/api\/sessions\/([\w-]+)\/talk$/.exec(path)
+  if (tm) return method === 'POST' ? talkIntents(tm[1], body) : []
   const sm = /^\/api\/sessions\/([\w-]+)(?:\/([\w-]+))?$/.exec(path)
   if (sm) {
     const s = sessionOf(sm[1])
@@ -587,7 +610,44 @@ export async function sealBody(method: string, path: string, body: unknown): Pro
     if (s && sealsTo(s.hostId)) return { ...b, text: await sealFor(s.hostId, s.id, b.text) }
   }
   if (p === '/api/sessions' && typeof b.prompt === 'string' && typeof b.hostId === 'string' && sealsTo(b.hostId)) return { ...b, prompt: await sealFor(b.hostId, '', b.prompt) }
+  // 대화 모드 (1.548): the words to read or judge go to a sealing Mac as one piece (the server never hears them).
+  const tm = /^\/api\/sessions\/([\w-]+)\/talk$/.exec(p)
+  if (tm && typeof b.text === 'string' && b.text.trim() && !b.text.includes('⟦bt1:')) {
+    const s = sessionOf(tm[1])
+    if (s && sealsTo(s.hostId)) return { ...b, text: await sealPiece(s.hostId, '', b.text.trim()) }
+  }
   return body
+}
+
+/**
+ * 대화 모드 (1.548): a talk answer. A sealing Mac's comes as one piece bound to its op: opened here once with that
+ * Mac's key (not kept like other pieces: a sound is large), and only for this op. From a Mac this page seals to, an
+ * answer that is not sealed is refused (a server could make one up). Anything else is the plain answer.
+ */
+export async function openTalk<T>(hostId: string | undefined, r: Record<string, unknown>, op: string): Promise<T> {
+  await loadTrust()
+  const bad = () => new Error('맥의 봉인된 답을 열지 못했어요. 페이지를 새로 고쳐 주세요')
+  if (typeof r.sealed === 'string') {
+    const m = /^⟦bt1:([0-9a-f]{8}):([A-Za-z0-9_-]{38,})⟧$/.exec(r.sealed)
+    const h = hostId ? hostRecs.get(hostId) : undefined
+    const k = m && h ? h.keys[m[1]] : undefined
+    if (!m || !h || !k) throw bad()
+    let inner: Record<string, unknown>
+    try {
+      const b = unb64u(m[2])
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: enc.encode(`bt1|${h.hostId}|${m[1]}`) }, k.aes, b.slice(12))
+      const o = JSON.parse(new TextDecoder().decode(plain)) as { d?: unknown; v?: unknown }
+      if (o.d !== 'm' || typeof o.v !== 'string') throw bad()
+      inner = JSON.parse(o.v) as Record<string, unknown>
+    } catch {
+      throw bad()
+    }
+    if (inner?.kind !== 'talk' || inner.op !== op) throw bad()
+    const { sealed: _, ...rest } = r
+    return { ...rest, ...inner } as T
+  }
+  if (op !== 'warm' && hostId && sealsTo(hostId)) throw new Error('대화를 봉인하는 맥인데 봉인되지 않은 답이 왔어요')
+  return r as T
 }
 
 // ---------- 세션 찾기 (REQ-F-895, REQ-S-102) ----------

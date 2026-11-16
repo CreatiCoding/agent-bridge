@@ -45,14 +45,25 @@ export class SayVoice {
     if (!v) throw err('novoice', '이 맥에 한국어 목소리가 없어요. 시스템 설정 → 손쉬운 사용 → 읽기 및 말하기에서 Yuna 를 받아 주세요')
     return (this.voice = v)
   }
+  /**
+   * The words go in a file of their own (-f), never on the command line: `say` reads an argument that starts with '-'
+   * as an option, so "-o<path>" wrote a file there and "-f<path>" read one aloud (1.548). Both files sit in a folder
+   * made for this one sentence (0700).
+   */
+  speakArgs(voice, rate, txt, out) {
+    return ['-v', voice, '-r', String(Math.round(175 * rate)), '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, '-f', txt]
+  }
   async speak(text, rate = TALK_SPEED) {
     const voice = await this.pick()
-    const out = path.join(this.tmp, `cb-talk-${crypto.randomBytes(6).toString('hex')}.wav`)
+    const dir = fs.mkdtempSync(path.join(this.tmp, 'cb-talk-'))
+    const out = path.join(dir, 'out.wav')
+    const txt = path.join(dir, 'text.txt')
     try {
-      await this.exec(['-v', voice, '-r', String(Math.round(175 * rate)), '--file-format=WAVE', '--data-format=LEI16@24000', '-o', out, text])
+      fs.writeFileSync(txt, String(text), { mode: 0o600 })
+      await this.exec(this.speakArgs(voice, rate, txt, out))
       return { audio: fs.readFileSync(out).toString('base64'), mime: 'audio/wav', engine: `say:${voice}` }
     } finally {
-      fs.rmSync(out, { force: true })
+      fs.rmSync(dir, { recursive: true, force: true })
     }
   }
 }
@@ -103,9 +114,17 @@ export class SupertonicVoice {
     const d = path.dirname(path.dirname(this.py))
     return `이 기계에 목소리(Supertonic)가 없어요. 터미널에서: python3 -m venv ${d} && ${d}/bin/pip install supertonic`
   }
+  /** The environment the model's python runs in (undefined: the agent's own). */
+  spawnEnv() {
+    return undefined
+  }
+  /** Whether the model may be loaded now; throws when it must first be fetched by the person (QwenVoice). */
+  check() {}
   start() {
     if (!fs.existsSync(this.py)) throw err('novoice', this.installHint)
-    const p = this.run(this.py, this.args(), { stdio: ['pipe', 'pipe', 'ignore'] })
+    this.check()
+    const env = this.spawnEnv()
+    const p = this.run(this.py, this.args(), { stdio: ['pipe', 'pipe', 'ignore'], ...(env ? { env } : {}) })
     this.proc = p
     let buf = ''
     this.ready = new Promise((resolve, reject) => {
@@ -245,18 +264,49 @@ for line in sys.stdin:
                 pass
 `
 
-/** The same one-process-kept-up as SupertonicVoice, with Qwen3-TTS: installed into <dir>/qwentts by the person once. */
+/** Hugging Face's model cache folder (its own rules: HF_HUB_CACHE, else HF_HOME/hub, else ~/.cache/huggingface/hub). */
+export function hfHubDir(env = process.env) {
+  if (env.HF_HUB_CACHE) return env.HF_HUB_CACHE
+  if (env.HF_HOME) return path.join(env.HF_HOME, 'hub')
+  return path.join(env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'), 'huggingface', 'hub')
+}
+/** Whether a model ("org/name") is in that cache: a snapshot folder with something in it. */
+export function hfCached(hub, model) {
+  try {
+    const snaps = path.join(hub, `models--${String(model).replace(/\//g, '--')}`, 'snapshots')
+    return fs.readdirSync(snaps).some((s) => fs.readdirSync(path.join(snaps, s)).length > 0)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The same one-process-kept-up as SupertonicVoice, with Qwen3-TTS: installed into <dir>/qwentts by the person once.
+ * The model (~1 GB) is never fetched because of a command (1.548): a server's warm or tts could otherwise start a
+ * download on any Mac that has mlx-audio. It loads only from the cache (HF_HUB_OFFLINE=1), which the person fills
+ * at the Mac with the command in fetchHint.
+ */
 export class QwenVoice extends SupertonicVoice {
-  constructor({ dir, voice = 'Sohee', model = QWEN_MODEL, ...o } = {}) {
+  constructor({ dir, voice = 'Sohee', model = QWEN_MODEL, hub = hfHubDir(), ...o } = {}) {
     super({ dir, voice, steps: 0, ...o })
     this.py = path.join(dir, 'qwentts', 'bin', 'python')
     this.model = model
+    this.hub = hub
     this.startMs = 10 * 60_000
     this.sayMs = 60_000
   }
   get installHint() {
     const d = path.dirname(path.dirname(this.py))
     return `이 맥에 소희 목소리(Qwen3-TTS)가 없어요. 터미널에서: uv venv --python 3.12 ${d} && VIRTUAL_ENV=${d} uv pip install mlx-audio (ffmpeg 도 필요: brew install ffmpeg)`
+  }
+  get fetchHint() {
+    return `소희 목소리 모델을 아직 받지 않았어요(약 1GB). 이 맥의 터미널에서 한 번 받아 주세요: ${this.py} -c "from huggingface_hub import snapshot_download as s; s('${this.model}')"`
+  }
+  check() {
+    if (!hfCached(this.hub, this.model)) throw err('nomodel', this.fetchHint)
+  }
+  spawnEnv() {
+    return { ...process.env, HF_HUB_OFFLINE: '1', HF_HUB_CACHE: this.hub }
   }
   args() {
     return ['-I', '-c', QWEN_PY, this.model]
@@ -299,9 +349,18 @@ export class Judge {
     this.chain = Promise.resolve()
     this.idle = null
   }
+  /**
+   * The judge reads nothing of the person's: no settings files (so no hooks, plugins or permissions of theirs:
+   * --setting-sources ''), no CLAUDE.md (none is read without a source, seen with claude 2.1.325), no MCP servers, no
+   * tools, and it starts in an empty folder of its own (1.548).
+   */
+  args() {
+    return ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--model', this.model, '--system-prompt', JUDGE_SYSTEM, '--tools', '', '--setting-sources', '', '--strict-mcp-config', '--no-session-persistence', '--disable-slash-commands']
+  }
   start() {
-    const p = this.run(this.bin, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--model', this.model, '--system-prompt', JUDGE_SYSTEM, '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--disable-slash-commands'], {
-      cwd: os.homedir(),
+    this.cwd ??= fs.mkdtempSync(path.join(os.tmpdir(), 'cb-judge-'))
+    const p = this.run(this.bin, this.args(), {
+      cwd: this.cwd,
       env: this.env,
       stdio: ['pipe', 'pipe', 'ignore'],
     })
@@ -376,14 +435,51 @@ export function wavSeconds(b64) {
   }
 }
 
-/** The agent's `talk` command: { op: tts | turn | brief, text } → what the server hands the page. */
-export async function talk({ op, text, rate }, { voice, judge }) {
+/**
+ * How much 대화 모드 one Mac takes (1.548): at most `at` at once (waiting included) and `perMin` in a minute, per kind.
+ * turn and brief share the judge (a `claude -p` on the Mac's own account), so they share one budget. A page reads one
+ * sentence at a time and asks the judge a few times a minute; well past that is not a person talking.
+ */
+export const TALK_LIMITS = { tts: { at: 3, perMin: 90 }, judge: { at: 2, perMin: 20 }, warm: { at: 1, perMin: 6 } }
+const kindOf = (op) => (op === 'turn' || op === 'brief' ? 'judge' : op)
+
+export class TalkGate {
+  constructor({ limits = TALK_LIMITS, now = () => Date.now() } = {}) {
+    Object.assign(this, { limits, now })
+    this.busy = {}
+    this.times = {}
+  }
+  /** A place for one op, or a 'busy' error. Returns the function that gives it back. */
+  take(op) {
+    const k = kindOf(op)
+    const l = this.limits[k]
+    if (!l) return () => {}
+    const t = this.now()
+    const times = (this.times[k] = (this.times[k] ?? []).filter((x) => t - x < 60_000))
+    if ((this.busy[k] ?? 0) >= l.at) throw err('busy', '대화 모드 요청이 한꺼번에 너무 많아요. 잠시 뒤에 다시 해 주세요')
+    if (times.length >= l.perMin) throw err('busy', '대화 모드 요청이 1분에 너무 많아요. 잠시 뒤에 다시 해 주세요')
+    times.push(t)
+    this.busy[k] = (this.busy[k] ?? 0) + 1
+    let done = false
+    return () => {
+      if (!done) (done = true), (this.busy[k] -= 1)
+    }
+  }
+}
+
+/** The agent's `talk` command: { op: tts | turn | brief | warm, text } → what the server hands the page. */
+export async function talk({ op, text, rate }, { voice, judge, gate }) {
   const t0 = Date.now()
-  if (op === 'warm') return (await voice.warm?.(), { ms: Date.now() - t0 })
+  if (!['tts', 'turn', 'brief', 'warm'].includes(op)) throw err('op', `모르는 op: ${op}`)
   const s = String(text ?? '').trim()
-  if (!s) throw err('empty', '말이 비었어요')
-  if (op === 'tts') return { ...(await voice.speak(s.slice(0, 600), talkRate(rate))), ms: Date.now() - t0 }
-  if (op === 'turn') return { end: parseTurn(await judge.ask(turnPrompt(s.slice(0, 2000)))), ms: Date.now() - t0 }
-  if (op === 'brief') return { line: (await judge.ask(sayPrompt(s.slice(0, 6000)))).slice(0, 600), ms: Date.now() - t0 }
-  throw err('op', `모르는 op: ${op}`)
+  if (op !== 'warm' && !s) throw err('empty', '말이 비었어요')
+  const give = gate ? gate.take(op) : () => {}
+  try {
+    if (op === 'warm') return (await voice.warm?.(), { ms: Date.now() - t0 })
+    if (op === 'tts') return { ...(await voice.speak(s.slice(0, 600), talkRate(rate))), ms: Date.now() - t0 }
+    if (op === 'turn') return { end: parseTurn(await judge.ask(turnPrompt(s.slice(0, 2000)))), ms: Date.now() - t0 }
+    return { line: (await judge.ask(sayPrompt(s.slice(0, 6000)))).slice(0, 600), ms: Date.now() - t0 }
+  } finally {
+    give()
+  }
 }

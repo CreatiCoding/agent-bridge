@@ -2230,19 +2230,64 @@ export function blockedName(host) {
 }
 
 /**
- * agent.json's `snapshotGuard` (1.527): {on, allow}. false turns the check off; {allow: ["wiki.corp.example",
- * "*.corp.example"]} lets those names through (a company's own pages, drawn on purpose). Anything else: on, none allowed.
+ * IPv4 ranges allowNets never opens, whatever is written: this Mac itself (0/8, 127/8) and link-local (169.254/16, where
+ * a cloud's metadata answers). A range touching one of them is dropped whole.
+ */
+const NETS_NEVER = [
+  ['0.0.0.0', 8],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+]
+const netOf = (base, bits) => Math.floor(v4Num(base) / 2 ** (32 - bits))
+const netsMeet = ([a, ab], [b, bb]) => {
+  const bits = Math.min(ab, bb)
+  return Math.floor(v4Num(a) / 2 ** (32 - bits)) === Math.floor(v4Num(b) / 2 ** (32 - bits))
+}
+
+/**
+ * agent.json's `snapshotGuard` (1.527): {on, allow, nets}. false turns the check off; {allow: ["wiki.corp.example",
+ * "*.corp.example"]} lets those names through (a company's own pages, drawn on purpose). {allowNets: ["100.64.0.0/10"]}
+ * (1.548) lets a name through when every address it resolves to is blocked only by being in one of those IPv4 ranges:
+ * for a network whose DNS answers public sites with such addresses. /8 or narrower, at most 20, never NETS_NEVER;
+ * an address written in the page's address (not a name) is judged the same way. Anything else: on, none allowed.
  */
 export function snapGuardOf(config) {
   const v = config?.snapshotGuard
-  if (v === false) return { on: false, allow: [] }
+  if (v === false) return { on: false, allow: [], nets: [] }
   const list = v && typeof v === 'object' && Array.isArray(v.allow) ? v.allow : []
   const allow = list
     .filter((x) => typeof x === 'string')
     .map((x) => x.trim().toLowerCase().replace(/\.$/, ''))
     .filter((x) => /^(\*\.)?[a-z0-9.-]+$/.test(x) && x.length <= 253)
     .slice(0, 100)
-  return { on: true, allow }
+  const nets = (v && typeof v === 'object' && Array.isArray(v.allowNets) ? v.allowNets : [])
+    .map((x) => (typeof x === 'string' ? /^\s*(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})\s*$/.exec(x) : null))
+    .filter((m) => m && v4Num(m[1]) !== null && Number(m[2]) >= 8 && Number(m[2]) <= 32)
+    .map((m) => {
+      const bits = Number(m[2])
+      const n = netOf(m[1], bits) * 2 ** (32 - bits)
+      return [[Math.floor(n / 16777216), Math.floor(n / 65536) % 256, Math.floor(n / 256) % 256, n % 256].join('.'), bits]
+    })
+    .filter((net) => !NETS_NEVER.some((never) => netsMeet(net, never)))
+    .slice(0, 20)
+  return { on: true, allow, nets }
+}
+
+/**
+ * blockedIp, less what the guard's allowNets opens: an IPv4 address (or one mapped into IPv6) inside one of them.
+ * The ego script carries this too (egoGuardScript), so keep it to v4Num, v6Groups and blockedIp.
+ */
+export function guardBlocks(ip, guard) {
+  if (!blockedIp(ip)) return false
+  const nets = guard?.nets ?? []
+  if (!nets.length) return true
+  let n = v4Num(String(ip ?? ''))
+  if (n === null) {
+    const g = v6Groups(String(ip ?? ''))
+    if (g && g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) n = g[6] * 65536 + g[7]
+  }
+  if (n === null) return true
+  return !nets.some(([base, bits]) => Math.floor(n / 2 ** (32 - bits)) === Math.floor(v4Num(base) / 2 ** (32 - bits)))
 }
 const allowedHost = (host, allow) => {
   const h = String(host).toLowerCase().replace(/\.$/, '')
@@ -2262,7 +2307,7 @@ export function guardLookup(guard, lookup = dns.lookup) {
     const opts = typeof options === 'number' ? { family: options } : (options ?? {})
     lookup(host, { ...opts, all: true }, (err, list) => {
       if (err) return cb(err)
-      if (guard.on && !allowedHost(host, guard.allow) && (!list.length || list.some((a) => blockedIp(a.address)))) return cb(privateError())
+      if (guard.on && !allowedHost(host, guard.allow) && (!list.length || list.some((a) => guardBlocks(a.address, guard)))) return cb(privateError())
       if (opts.all) return cb(null, list)
       cb(null, list[0].address, list[0].family)
     })
@@ -2285,7 +2330,7 @@ export async function urlRefusal(url, { guard, own = [], lookup = dns.lookup }) 
   if (own.includes(u.origin)) return '이 사이트 주소는 스냅샷으로 열지 않아요'
   if (!guard.on || allowedHost(u.hostname, guard.allow)) return ''
   const host = u.hostname.replace(/^\[|\]$/g, '')
-  if (net.isIP(host)) return blockedIp(host) ? PRIVATE_WHY : ''
+  if (net.isIP(host)) return guardBlocks(host, guard) ? PRIVATE_WHY : ''
   if (blockedName(host)) return PRIVATE_WHY
   try {
     await new Promise((ok, no) => guardLookup(guard, lookup)(host, {}, (e) => (e ? no(e) : ok())))
@@ -2459,15 +2504,18 @@ const v4Num = ${v4Num.toString()}
 const v4Blocked = ${v4Blocked.toString()}
 ${v6Groups.toString()}
 ${blockedIp.toString()}
+${guardBlocks.toString()}
 const PRIVATE_SUFFIX = ${PRIVATE_SUFFIX.toString()}
 ${blockedName.toString()}
 const allowedHost = ${allowedHost.toString()}
 const PRIVATE_WHY = ${JSON.stringify(PRIVATE_WHY)}
-const guard = ${JSON.stringify({ on: !!guard.on, allow: guard.allow ?? [] })}
+const guard = ${JSON.stringify({ on: !!guard.on, allow: guard.allow ?? [], nets: guard.nets ?? [] })}
 const own = ${JSON.stringify(own)}
 const refused = { why: "", n: 0 }
 let lookupAll = null
-try { const d = await import("node:dns"); lookupAll = (h) => d.promises.lookup(h, { all: true }) } catch {}
+// A test hands its own resolver (CB_LOOKUP_ALL, a parameter of the function it builds); ego has none and uses node:dns.
+if (typeof CB_LOOKUP_ALL === "function") lookupAll = CB_LOOKUP_ALL
+else try { const d = await import("node:dns"); lookupAll = (h) => d.promises.lookup(h, { all: true }) } catch {}
 const judge = async (href) => {
   let u
   try { u = new URL(href) } catch { return "" }
@@ -2475,10 +2523,10 @@ const judge = async (href) => {
   if (own.includes(u.origin)) return "이 사이트 주소는 스냅샷으로 열지 않아요"
   if (!guard.on || allowedHost(u.hostname, guard.allow)) return ""
   const host = u.hostname.replace(/^\\[|\\]$/g, "")
-  if (/^[0-9.]+$/.test(host) || host.includes(":")) return blockedIp(host) ? PRIVATE_WHY : ""
+  if (/^[0-9.]+$/.test(host) || host.includes(":")) return guardBlocks(host, guard) ? PRIVATE_WHY : ""
   if (blockedName(host)) return PRIVATE_WHY
   if (lookupAll) {
-    try { const list = await lookupAll(host); if (!list.length || list.some((a) => blockedIp(a.address))) return PRIVATE_WHY } catch {}
+    try { const list = await lookupAll(host); if (!list.length || list.some((a) => guardBlocks(a.address, guard))) return PRIVATE_WHY } catch {}
   }
   return ""
 }

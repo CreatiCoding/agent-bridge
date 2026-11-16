@@ -22,6 +22,7 @@ type authTok struct {
 	t     string
 	sid   string
 	op    string
+	textH string
 	until int64
 }
 
@@ -68,13 +69,19 @@ func queueTrustAuth(uid, header string) {
 		i, _ := pm["i"].(map[string]any)
 		sid, _ := i["sid"].(string)
 		op, _ := i["op"].(string)
+		// 대화 모드 (1.548): a talk token names its words; it goes only with the command that carries them (a page
+		// signs a spare for the second try on the same Mac, and that spare must not reach the next sentence).
+		textH := ""
+		if t == "talk" {
+			textH, _ = i["textH"].(string)
+		}
 		q := authQ[h][:0:0]
 		for _, a := range authQ[h] {
 			if a.until > now {
 				q = append(q, a)
 			}
 		}
-		authQ[h] = append(q, authTok{tok: M{"p": p, "s": s}, t: t, sid: sid, op: op, until: now + AUTH_KEEP_MS})
+		authQ[h] = append(q, authTok{tok: M{"p": p, "s": s}, t: t, sid: sid, op: op, textH: textH, until: now + AUTH_KEEP_MS})
 		if len(authQ[h]) > 32 {
 			authQ[h] = authQ[h][len(authQ[h])-32:]
 		}
@@ -89,12 +96,20 @@ func attachTrustAuth(hostID string, cmd M) {
 	t, _ := cmd["t"].(string)
 	sid, _ := cmd["sid"].(string)
 	op, _ := cmd["op"].(string)
+	textH := ""
+	if t == "talk" {
+		text, _ := cmd["text"].(string)
+		textH = sha256hex(text)
+	}
 	now := nowMs()
 	authMu.Lock()
 	defer authMu.Unlock()
 	q := authQ[hostID]
 	for k, a := range q {
 		if a.until <= now || a.t != t || (a.sid != "" && a.sid != sid) || (a.op != "" && a.op != op) {
+			continue
+		}
+		if t == "talk" && a.textH != "" && a.textH != textH {
 			continue
 		}
 		cmd["auth"] = a.tok

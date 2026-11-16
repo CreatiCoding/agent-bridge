@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.548',
+    date: '2026-11-16',
+    changes: [
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '대화 모드가 읽을 글을 맥의 say 에 옵션으로 넘길 수 있던 것(-o 로 파일 덮어쓰기, -f 로 파일 읽기)을 막았어요. 글은 이제 파일로만 넘겨요',
+        refs: ['REQ-S-112', 'REQ-F-907'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent', 'server', 'ui'],
+        text: '서명 필수 맥은 대화 모드(읽기·말 끝 판단·요약·소희 깨우기)도 짝지은 기기가 서명한 것만 받아요. 봉인하는 맥에는 읽을 글이 봉인돼 가고, 소리·요약·판단 답도 봉인돼 와요',
+        refs: ['REQ-S-112', 'REQ-F-907'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '맥 한 대가 받는 대화 모드에 한도(읽기 동시 3·분당 90, 판단 동시 2·분당 20)를 두고, 판단용 claude 는 내 설정·훅·CLAUDE.md 를 읽지 않게, 소희 모델은 명령으로 내려받지 않게 했어요',
+        refs: ['REQ-S-112'],
+      },
+      {
+        kind: 'added',
+        scope: ['agent'],
+        text: '스냅샷 내부 주소 막기에 허용 대역(agent.json snapshotGuard.allowNets, 예: 100.64.0.0/10)을 둘 수 있어요. 그 대역으로 풀리는 이름만 열리고 다른 내부 대역은 그대로 막혀요',
+        refs: ['REQ-S-111'],
+      },
+    ],
+  },
+  {
     version: '1.547',
     date: '2026-11-16',
+    commit: '3c17099',
     changes: [
       {
         kind: 'fixed',

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -266,4 +268,63 @@ func TestTalkOperatorVoiceServer(t *testing.T) {
 	_, _ = talkPost(t, "s-open", `{"op":"tts","text":"안녕하세요","away":false}`)
 	eq(t, len(got), n, "짝지은 기계의 세션은 목소리 서버로 보내지 않음")
 	eq(t, lockFree, len(got), "목소리 서버를 기다리는 동안 잠금을 놓음")
+}
+
+// AC-1821 (1.548): a talk token goes only with the command carrying the words it names (a spare signed for the second
+// try on the same Mac never reaches the next sentence), a sealed text is taken at the size the words could make, and
+// a sealing Mac's answer is passed on as the one piece it is, nothing plain beside it.
+func TestTalkSignedAndSealed(t *testing.T) {
+	withCfg(t, "features:\n  voice: true\n")
+	piece := "⟦bt1:0a1b2c3d:" + strings.Repeat("A", 60) + "⟧"
+	answer := M{"t": "talk", "ok": true, "audio": "UklGRg==", "mime": "audio/wav"}
+	s1, _ := withFindMacs(t, func(cmd M) M {
+		if cmd["t"] != "talk" {
+			return nil
+		}
+		return answer
+	}, func(M) M { return nil })
+	keep, had := prefsCache["u1"]
+	t.Cleanup(func() {
+		withLock(func() {
+			if had {
+				prefsCache["u1"] = keep
+			} else {
+				delete(prefsCache, "u1")
+			}
+			authQ = map[string][]authTok{}
+		})
+	})
+	withLock(func() { prefsCache["u1"] = M{"groups": []any{}, "loose": []any{}, "voice": M{"on": true}} })
+
+	tokFor := func(n int, text string) string {
+		return `{"v":1,"h":"h1","d":"dev","ts":1,"n":` + strconv.Itoa(n) + `,"t":"talk","i":{"op":"tts","textH":"` + sha256hex(text) + `"}}`
+	}
+	spare := tokFor(1, "첫 문장")
+	next := tokFor(2, "둘째 문장")
+	hdr, _ := json.Marshal([]M{{"p": spare, "s": "sig"}, {"p": next, "s": "sig"}})
+	withLock(func() { queueTrustAuth("u1", base64.RawURLEncoding.EncodeToString(hdr)) })
+	code, _ := talkPost(t, "s-open", `{"op":"tts","text":"둘째 문장","away":false}`)
+	eq(t, code, 200)
+	eq(t, mstr(asM(s1.sent[len(s1.sent)-1]["auth"]), "p"), next, "그 글의 서명만 붙음(먼저 온 다른 글의 서명이 아니라)")
+	code, _ = talkPost(t, "s-open", `{"op":"tts","text":"셋째 문장","away":false}`)
+	eq(t, code, 200)
+	ok(t, s1.sent[len(s1.sent)-1]["auth"] == nil, "다른 글의 남은 서명은 붙지 않음")
+
+	// A sealed text: one piece, longer than the plain limit allows, is taken; plain words beside a piece are not.
+	long := "⟦bt1:0a1b2c3d:" + strings.Repeat("A", TALK_TTS_MAX*4) + "⟧"
+	code, _ = talkPost(t, "s-open", `{"op":"tts","text":"`+long+`","away":false}`)
+	eq(t, code, 200)
+	eq(t, mstr(s1.sent[len(s1.sent)-1], "text"), long)
+	code, _ = talkPost(t, "s-open", `{"op":"tts","text":"x`+long+`","away":false}`)
+	eq(t, code, 400)
+
+	// A sealing Mac's answer: the piece alone.
+	withLock(func() { answer = M{"t": "talk", "ok": true, "sealed": piece, "ms": float64(5)} })
+	code, m := talkPost(t, "s-open", `{"op":"brief","text":"x","away":false}`)
+	eq(t, code, 200)
+	eq(t, mstr(m, "sealed"), piece)
+	ok(t, m["line"] == nil && m["audio"] == nil, "평문 값은 없음")
+	withLock(func() { answer = M{"t": "talk", "ok": true, "sealed": "⟦bt1:zz⟧"} })
+	code, _ = talkPost(t, "s-open", `{"op":"tts","text":"x","away":false}`)
+	eq(t, code, 502)
 }
