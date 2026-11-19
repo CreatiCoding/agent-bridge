@@ -183,6 +183,8 @@ export const TRUST_CLASS = {
   tidyRun: 'free',
   // 세션 그룹 넘겨주기 (REQ-F-905): only kept as the list's arrangement and handed to the next server; runs nothing.
   groups: 'free',
+  // 즐겨찾기·제목 넘겨주기 (REQ-F-923): kept as each session's marks and handed to the next server; runs nothing.
+  marks: 'free',
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
   // 로컬 어댑터 (REQ-F-893, 서명 REQ-S-101): a call is signed with its extension, session, action, read or write,

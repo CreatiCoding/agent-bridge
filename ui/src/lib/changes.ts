@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.558',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'agent'],
+        text: '풀로컬을 켜고 꺼도 세션의 즐겨찾기와 직접 붙인 제목이 그대로예요. 맥이 들고 있다가 나중에 바뀐 쪽으로 맞춰요',
+        refs: ['REQ-F-923', 'REQ-F-905'],
+      },
+    ],
+  },
+  {
     version: '1.557',
     date: '2026-11-20',
+    commit: '92c37ff',
     changes: [
       {
         kind: 'added',

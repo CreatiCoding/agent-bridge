@@ -1026,6 +1026,13 @@ func sessionPost(req *Req, res *Res, uid string, meta *Sess, op string, b M) boo
 			meta.set("title", jsSliceTo(jsTrim(s), 80))
 			meta.set("manualTitle", jsTrim(s) != "")
 		}
+		// 즐겨찾기·제목 넘겨주기 (REQ-F-923): its Mac keeps them for the other server.
+		_, fav := b["favorite"].(bool)
+		_, named := b["title"].(string)
+		if fav || named {
+			marksStamp(meta)
+			marksToHost(meta)
+		}
 		touch(meta)
 		changed := orderedObj{}
 		for _, k := range []string{"autoAllow", "allowAll", "autoPush", "resting", "favorite", "title"} {

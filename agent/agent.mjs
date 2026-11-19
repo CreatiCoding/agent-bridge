@@ -29,7 +29,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
-import { LocalFull, localFullOf, localFullCli, groupsStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk } from './localfull.mjs'
+import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -1345,7 +1345,7 @@ async function hello() {
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
   for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: evStore().tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups', 'marks'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 
@@ -4305,6 +4305,21 @@ const commands = {
     } else if (step.do === 'send') {
       log('info', 'groups', `연동한 서버보다 나중에 바뀐 세션 그룹을 올림(그룹 ${step.msg.groups.length}개)`)
       emit(step.msg)
+    }
+  },
+  // 즐겨찾기·제목 넘겨주기 (REQ-F-923): the linked server's favourites and given names of this Mac's sessions, with
+  // when each changed. Newer than the ones kept here: kept. Older: the kept ones go up.
+  marks(cmd) {
+    if (!localFullNow().groups) return
+    // Only this Mac's own sessions: a server cannot fill the record with others and push the real ones out.
+    const list = (Array.isArray(cmd.list) ? cmd.list : []).filter((e) => typeof e?.sid === 'string' && sessions.has(e.sid))
+    const late = list.filter((e) => Number(e.at) > Date.now() + 5 * 60_000).length
+    if (late) log('warn', 'groups', `연동한 서버의 즐겨찾기·제목 시각이 맥 시계보다 5분 넘게 앞서 받지 않음(${late}개, 시계를 맞춰 주세요)`)
+    const step = marksStep(localFull.marks(), list)
+    if (step.keep) localFull.saveMarks(step.keep)
+    if (step.send.length) {
+      log('info', 'groups', `연동한 서버보다 나중에 바뀐 즐겨찾기·제목을 올림(세션 ${step.send.length}개)`)
+      emit({ t: 'marks', list: step.send })
     }
   },
   async new({ routing, autoAllow, allowAll, signed, ...cmd }) {
@@ -8854,7 +8869,7 @@ async function runCommand(cmd, { local = false } = {}) {
     cmd = trustGate(cmd)
     if (!cmd) return
   }
-  const quiet = ['voice', 'welcome', 'rehello', 'groups', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate', 'talk'].includes(cmd.t)
+  const quiet = ['voice', 'welcome', 'rehello', 'groups', 'marks', 'screen', 'resync', 'ping', 'check', 'report', 'dirs', 'trashinfo', 'disk', 'skills', 'readfile', 'http', 'ws', 'log', 'putimg', 'events', 'img', 'forget', 'export', 'adapter', 'translate', 'talk'].includes(cmd.t)
   if (local && !quiet && trustOn()) trust.audit(`localfull ${cmd.t}${cmd.sid ? ` ${String(cmd.sid).slice(0, 8)}` : ''}`)
   if (cmd.t !== 'ping') ((stats.commands++), (stats.lastCommand = { t: cmd.t, sid: cmd.sid, ts: Date.now() }))
   if (!quiet) log('info', cmd.t, cmd.t === 'send' ? `글 ${String(cmd.text).length}자${cmd.files?.length ? ` + 그림 ${cmd.files.length}장` : ''}` : cmd.t === 'key' ? cmd.keys.join(' ') : cmd.t === 'answer' ? `${cmd.n}번` : cmd.cwd ? `폴더 ${String(cmd.cwd).length}자` : '요청 받음', cmd.sid)

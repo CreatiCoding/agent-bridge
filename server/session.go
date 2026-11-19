@@ -514,6 +514,8 @@ func moveSession(meta *Sess, target string, toAccount any, newCwd any) M {
 		delete(moveCopies, meta.id())
 		meta.set("moving", nil)
 		touch(meta)
+		// Its favourite and given name go with it to the Mac it is on now (REQ-F-923 rule 2).
+		marksToHost(meta)
 	}()
 	var folder any
 	if !relocate {

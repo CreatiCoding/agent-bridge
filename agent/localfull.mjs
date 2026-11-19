@@ -108,6 +108,41 @@ export function groupsStep(mine, got, now = Date.now()) {
   return { do: 'none' }
 }
 
+/** 즐겨찾기·제목 넘겨주기 (REQ-F-923): at most this many sessions' marks are kept, each title this long. */
+export const MARKS_MAX = 2000
+const MARKS_TITLE_MAX = 80
+
+/**
+ * The linked server's marks for this Mac's sessions ({sid, at, favorite, title}, title only one a person gave) against
+ * the ones kept here ({sid: {at, favorite, title}}): a session's newer marks are kept, older ones go up so the one
+ * changed last wins. `keep` is the whole new record (null: nothing changed), `send` what goes up.
+ */
+export function marksStep(mine, list, now = Date.now()) {
+  const late = now + GROUPS_SKEW
+  const held = mine && typeof mine === 'object' && !Array.isArray(mine) ? mine : {}
+  const next = { ...held }
+  const send = []
+  let changed = false
+  for (const e of Array.isArray(list) ? list.slice(0, MARKS_MAX) : []) {
+    const sid = typeof e?.sid === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(e.sid) ? e.sid : null
+    const at = Number(e?.at)
+    if (!sid || !Number.isFinite(at) || at < 0 || at > late) continue
+    const h = held[sid]
+    const hAt = h && Number.isFinite(h.at) && h.at <= late ? h.at : -1
+    if (at > hAt) {
+      next[sid] = { at, favorite: e.favorite === true, title: typeof e.title === 'string' ? e.title.slice(0, MARKS_TITLE_MAX) : '' }
+      changed = true
+    } else if (hAt > at) send.push({ sid, at: hAt, favorite: h.favorite === true, title: typeof h.title === 'string' ? h.title : '' })
+  }
+  // The newest kept when there are too many.
+  const ids = Object.keys(next)
+  if (ids.length > MARKS_MAX) {
+    for (const id of ids.sort((a, b) => next[a].at - next[b].at).slice(0, ids.length - MARKS_MAX)) delete next[id]
+    changed = true
+  }
+  return { keep: changed ? next : null, send }
+}
+
 const readJson = (p, fallback) => {
   try {
     return JSON.parse(fs.readFileSync(p, 'utf8'))
@@ -135,6 +170,7 @@ export class LocalFull {
     this.statePath = path.join(dir, 'state.json')
     this.dataDir = path.join(dir, 'data')
     this.groupsPath = path.join(dir, 'groups.json')
+    this.marksPath = path.join(dir, 'marks.json')
   }
   ensure() {
     for (const d of [this.dir, this.binDir]) {
@@ -205,6 +241,15 @@ export class LocalFull {
     fs.writeFileSync(`${this.groupsPath}.tmp`, text, { mode: 0o600 })
     fs.renameSync(`${this.groupsPath}.tmp`, this.groupsPath)
     return true
+  }
+  /** Each session's favourite and given name this Mac carries (REQ-F-923): {sid: {at, favorite, title}}. */
+  marks() {
+    const m = readJson(this.marksPath, {})
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : {}
+  }
+  saveMarks(rec) {
+    this.ensure()
+    writeJson(this.marksPath, rec)
   }
   /** What the running agent says about the switch, for the terminal: {on, active, port, version, error, at}. */
   state() {
