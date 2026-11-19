@@ -2,7 +2,7 @@
 // Claude Code draws shows up here as a failing example rather than as a session that sits unanswered.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, detectKnown, cursorKeys, DialogDriver, autoAllowStep, HOOK_ALLOW_GRACE_MS } from '../../agent/dialog.mjs'
+import { parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, detectKnown, cursorKeys, DialogDriver, autoAllowStep, HOOK_ALLOW_GRACE_MS, escExits } from '../../agent/dialog.mjs'
 import { writingPreview, visualWidth } from '../../agent/preview.mjs'
 import { mainColumn, splitColumn } from '../../agent/split.mjs'
 import { stuckState, inputBoxHas, detectPermissionMode, detectEffort, detectContext, normalizeMessage, transcriptHasPrompt, WORKING_RE, mdMaxOf } from '../../agent/screen.mjs'
@@ -415,6 +415,39 @@ ${RULE}
 ❯ 1. 이렇게
   2. 저렇게
 `), null)
+})
+
+test('the startup "Adding a new directory" question: only "Yes, add it" is answered, Esc is never taken for a stop (2026-11-19)', async () => {
+  // As Claude Code 2.1.328 drew it on a Mac for `--add-dir ~/.claude-bridge/images`, with "No, exit" chosen.
+  const screen = `${RULE}
+ Adding a new directory:
+
+ /Users/me/.claude-bridge/images
+
+ This session hasn't worked here before. Is this a directory you created or one you trust?
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, add it
+
+ Enter to confirm · Esc to cancel
+`
+  assert.deepEqual(detectKnown(screen), { name: 'add-dir-trust', moves: 1 })
+  // Esc there ends claude: "send now" must not press it.
+  assert.equal(escExits(screen), true)
+  // The variant that also applies the folder's permission rules is the person's call: a card, not an answer.
+  assert.equal(detectKnown(screen.replace('Yes, add it', 'Yes, trust it and apply them').replace('No, exit', 'No, keep them off')), null)
+  // The ordinary prompt, and a tool's permission dialog (Esc only declines it): "send now" may press Esc there.
+  assert.equal(escExits(`${RULE}\n❯ \n${RULE}\n  ⏵⏵ auto mode on (shift+tab to cycle)\n`), false)
+  assert.equal(escExits(`${RULE}\n Bash command\n\n   rm -rf build\n\n Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently (esc)\n`), false)
+  // The pictures folder goes through settings, which does not ask; the launch line has no --add-dir.
+  const fs = await import('node:fs')
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  assert.match(src, /additionalDirectories: \[IMAGES_DIR\]/)
+  assert.doesNotMatch(src, /--add-dir \$\{/)
 })
 
 test('a turn the transcript leaves open is closed after a quiet minute on an idle screen (2026-10-25)', async () => {

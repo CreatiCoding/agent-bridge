@@ -33,7 +33,21 @@ const KNOWN = [
   // reads the ordinary screen, so it is always declined. Found 2026-10-25: a delegated session on Linux showed it
   // as a card, and the session's turn stopped there.
   { name: 'fullscreen-upsell', present: /Try the new fullscreen renderer\?/i, choose: /^Not now/i },
+  // Startup, for a folder added with --add-dir that no trusted folder covers (Claude Code 2.1.328). The agent adds
+  // its pictures folder through settings now, which does not ask; this is for a launch that still asks. Only the
+  // plain "Yes, add it": the variants that also apply the folder's permission rules stay a card.
+  { name: 'add-dir-trust', present: /Adding a new directory:/i, choose: /^Yes, add it$/i },
 ]
+
+/**
+ * Whether the dialog drawn now is one whose Esc ends claude: a startup question with "No, exit" among its choices
+ * (folder trust, an added folder). Esc on a tool's permission dialog only declines it, and stays allowed.
+ */
+export function escExits(screen) {
+  const numbered = parseDialog(screen)
+  const labels = numbered ? numbered.options.map((o) => o.label) : (parseKeyedDialog(screen)?.options ?? [])
+  return labels.some((l) => /^(\d+\.\s*)?No, exit\b/i.test(l))
+}
 /** The known dialogs answered whenever they are drawn, not only while a session starts: declining loses nothing. */
 export const ANYTIME_KNOWN = ['fullscreen-upsell']
 

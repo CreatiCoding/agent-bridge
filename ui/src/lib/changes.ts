@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.552',
+    date: '2026-11-19',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '새 세션이 켜지다 말던 것: 그림 폴더를 --add-dir 대신 설정(permissions.additionalDirectories)으로 더해, Claude Code 가 시작할 때 "Adding a new directory" 확인 창을 띄우지 않음. 그래도 뜨면 "Yes, add it" 만 자동으로 넘기고, 지금 보내기는 확인 창 위에서 Esc 를 누르지 않음',
+        refs: ['REQ-F-039'],
+      },
+    ],
+  },
+  {
     version: '1.551',
     date: '2026-11-19',
+    commit: '862c1d0',
     changes: [
       {
         kind: 'fixed',

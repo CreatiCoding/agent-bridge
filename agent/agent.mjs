@@ -11,7 +11,7 @@ import crypto from 'node:crypto'
 import readline from 'node:readline/promises'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN, autoAllowStep } from './dialog.mjs'
+import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN, autoAllowStep, escExits } from './dialog.mjs'
 import { writingPreview } from './preview.mjs'
 import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
@@ -1419,6 +1419,10 @@ async function alive(s) {
  * always exits 0: a hook must never hold up or fail the session.
  */
 const hookSettingsPath = path.join(STATE_DIR, 'hooks.json')
+// IMAGES_DIR is added to every session through permissions.additionalDirectories here, not `--add-dir`: Claude Code
+// 2.1.328 asks "Adding a new directory:" at startup for an --add-dir folder no trusted folder covers (on a Mac, ~ is
+// usually not trusted), with "No, exit" chosen, so the session sat there and Esc or Enter ended it (2026-11-19).
+// Through settings the folder is added with no question.
 /** The header the hooks send, as a file curl reads (`-H @file`): the key never reaches a command line. */
 const hookHeaderPath = path.join(STATE_DIR, 'hook.header')
 const sudoBinDir = path.join(STATE_DIR, 'bin')
@@ -1454,7 +1458,7 @@ function writeHookSettings() {
   }
   const compact = compactWindowOf(config.compactWindow)
   // The to-do list (REQ-F-778) only draws on the page: asking the person each time it changes would be noise.
-  writeJson(hookSettingsPath, { hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [{ type: 'command', command: e === 'PreToolUse' || e === 'PermissionRequest' ? pre : command, timeout: 5 }] }]])), statusLine: { type: 'command', command: statusLine }, permissions: { allow: ['mcp__bridge__todos'] }, ...(compact ? { autoCompactWindow: compact } : {}) })
+  writeJson(hookSettingsPath, { hooks: Object.fromEntries(HOOK_EVENTS.map((e) => [e, [{ hooks: [{ type: 'command', command: e === 'PreToolUse' || e === 'PermissionRequest' ? pre : command, timeout: 5 }] }]])), statusLine: { type: 'command', command: statusLine }, permissions: { allow: ['mcp__bridge__todos'], additionalDirectories: [IMAGES_DIR] }, ...(compact ? { autoCompactWindow: compact } : {}) })
 }
 
 /**
@@ -1820,9 +1824,8 @@ async function launchNow(sid, s, claudeArgs) {
   // settings (a config dir, a cloud provider) must reach claude as they set them.
   const clean = 'unset ZEROPTY_SOCK CLAUDECODE CLAUDE_PID CLAUDE_EFFORT CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_EXECPATH CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_SESSION_ATTENDED CLAUDE_CODE_SESSION_ID CLAUDE_CODE_SSE_PORT'
   // The trailer keeps the pane for a few seconds after claude exits, so a failed start can be read off the screen.
-  // Pictures sent from the page are saved outside the working folder. Without this, reading each one would ask.
-  const imagesDir = path.join(STATE_DIR, 'images')
-  fs.mkdirSync(imagesDir, { recursive: true, mode: 0o700 })
+  // Pictures sent from the page are saved outside the working folder; hooks.json adds that folder (IMAGES_DIR).
+  fs.mkdirSync(IMAGES_DIR, { recursive: true, mode: 0o700 })
   // The system prompt is read from a file by the shell when claude starts: on the tmux command line it would
   // count against tmux's limit (about 16 KB), and a default prompt of 8,000 Korean characters is about 24 KB.
   const promptsDir = path.join(STATE_DIR, 'prompts')
@@ -1852,7 +1855,7 @@ async function launchNow(sid, s, claudeArgs) {
   if (agents) fs.writeFileSync(agentsFile, JSON.stringify(agents), { mode: 0o600 })
   else fs.rmSync(agentsFile, { force: true })
   const routing = routingShell(s.routing, agentsFile)
-  const cmd = `${clean}; export PATH=${shq(sudoBinDir)}:"$PATH"; ${routing.prefix}${ttyPrefix(s.mux)}${CLAUDE_BIN} --settings ${shq(hookSettingsPath)} --mcp-config ${shq(mcpFile)} --add-dir ${shq(imagesDir)} --append-system-prompt "$(cat ${shq(promptFile)})"${routing.args} ${claudeArgs.map(shq).join(' ')}; echo "[claude exited $?]"; sleep 6`
+  const cmd = `${clean}; export PATH=${shq(sudoBinDir)}:"$PATH"; ${routing.prefix}${ttyPrefix(s.mux)}${CLAUDE_BIN} --settings ${shq(hookSettingsPath)} --mcp-config ${shq(mcpFile)} --append-system-prompt "$(cat ${shq(promptFile)})"${routing.args} ${claudeArgs.map(shq).join(' ')}; echo "[claude exited $?]"; sleep 6`
   // Tall, so Claude Code draws more of the answer it is writing (the preview is read off the screen).
   const r = await tmux('new-session', '-d', '-s', s.tmux, '-x', '220', '-y', '80', '-c', s.cwd, '-e', `CB_HOOK=http://127.0.0.1:${config.port}/hook?sid=${sid}`,
     // The suggested next prompt is drawn in the input box like typed text: an idle prompt would not read as empty.
@@ -3324,7 +3327,7 @@ function delegate(sid, op, args) {
 // ---------- attach and read_session, the bridge MCP's own tools (REQ-F-846, REQ-F-847) ----------
 
 /**
- * Attached files: copies under random ids in a folder of their own, not the pictures folder (a session's --add-dir,
+ * Attached files: copies under random ids in a folder of their own, not the pictures folder (a session's added folder,
  * and where readimage reads by path), and the index of what each id is. Only what the index names is handed out.
  */
 const ATTACH_DIR = path.join(STATE_DIR, 'attach')
@@ -4456,6 +4459,10 @@ const commands = {
     const s = sessions.get(sid)
     if (!s) return
     if (!s.held.length) return toast(sid, '붙잡아 둔 메시지가 없습니다. 이미 전달된 메시지의 안내라서 지웠습니다.')
+    // Esc on a dialog is not "stop the turn": on a startup question ("No, exit" first) it ends claude (2026-11-19).
+    if (s.turn && isClaude(s) && escExits(await term.capture(pane(s)).catch(() => ''))) {
+      return toast(sid, '터미널이 확인 창의 답을 기다리고 있어요. 그 창에 먼저 답하면 붙잡아 둔 메시지가 전달돼요.')
+    }
     if (s.turn) {
       await term.sendKeys(pane(s), ['Escape'])
       s.escAt = Date.now()
