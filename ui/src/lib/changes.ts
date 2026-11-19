@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.553',
+    date: '2026-11-19',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '브릿지가 헤드리스 Chrome 을 다시 띄우거나 끌 때마다 Chrome 앱 복제본(약 2 GB)이 디스크에 남던 것: 끄는 신호를 SIGTERM(세션 종료로 보아 정리 없이 끝남) 대신 SIGINT(정상 종료, 쿠키 저장·복제본 삭제)로. 스냅샷 Chrome 도 한도를 넘으면 SIGINT 먼저, 3초 뒤에만 강제 종료',
+        refs: ['REQ-F-095', 'REQ-P-150', 'AC-1830'],
+      },
+    ],
+  },
+  {
     version: '1.552',
     date: '2026-11-19',
+    commit: '56508a5',
     changes: [
       {
         kind: 'fixed',

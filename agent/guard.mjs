@@ -1422,6 +1422,16 @@ export const updateDue = (policy, hour, now = false, busy = false) => !!now || p
 // only when it quits normally; a Chrome that is killed (automation) leaves it, and only the OS clears that folder, at
 // boot. One Mac had 111 of them (about 29 GB) after 49 days up. These decide when and what; agent.mjs does it.
 
+/**
+ * The signal the agent quits a Chrome it started with (1.553). Not SIGTERM: Chrome takes SIGTERM as the session
+ * ending (chrome_browser_main_posix.cc: chrome::SessionEnding()), saves its state and exits without the normal
+ * teardown, so the clone-cleanup helper (code_sign_clone_manager.mm, started from that teardown) never runs and
+ * every quit left a clone of about 2 GB in X. SIGINT is Exit(): the same graceful quit as closing the last window,
+ * cookies written and the clone removed (seen on a Mac mini with Chrome 157: SIGTERM and SIGKILL left it, SIGINT and
+ * SIGHUP did not).
+ */
+export const CHROME_QUIT_SIGNAL = 'SIGINT'
+
 export const REBOOT_DEFAULT = Object.freeze({ on: false, day: 0, from: 4, to: 6, minClones: 40, minFreeGB: 30, failMin: 10 })
 const dayOk = (d) => Number.isInteger(d) && d >= 0 && d <= 6
 const countOk = (n) => Number.isInteger(n) && n >= 0

@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, outerMount, outerTrashDir, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, outerMount, outerTrashDir, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, CHROME_QUIT_SIGNAL, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -7514,7 +7514,7 @@ const EGO_BIN = [...String(process.env.PATH ?? '').split(':').filter(Boolean), p
  * A child's stdout (and stderr too with both) up to max bytes within ms; rejects with why. stdin is written once and
  * closed. ego-browser prints a script's console.log on stderr (seen with 0.6.2.9), so its result is read from both.
  */
-function runCapture(bin, args, { input, max, ms, slow, big, gone, both }) {
+function runCapture(bin, args, { input, max, ms, slow, big, gone, both, quit }) {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', both ? 'pipe' : 'ignore'] })
     // Kept apart, joined at the end: chunks of the two streams would cut into each other's lines.
@@ -7523,10 +7523,18 @@ function runCapture(bin, args, { input, max, ms, slow, big, gone, both }) {
     let size = 0
     let done = false
     const end = (f) => (done ? undefined : ((done = true), clearTimeout(timer), f()))
-    const timer = setTimeout(() => end(() => (child.kill('SIGKILL'), reject(new Error(slow)))), ms)
+    // quit: a signal the child is asked to stop with first (Chrome: SIGINT, so it removes its app clone, 1.553);
+    // SIGKILL only if it is still there 3 s later.
+    const stop = () => {
+      if (!quit) return void child.kill('SIGKILL')
+      child.kill(quit)
+      const force = setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill('SIGKILL'), 3000)
+      force.unref()
+    }
+    const timer = setTimeout(() => end(() => (stop(), reject(new Error(slow)))), ms)
     const take = (parts) => (d) => {
       size += d.length
-      if (size > max) return end(() => (child.kill('SIGKILL'), reject(new Error(big))))
+      if (size > max) return end(() => (stop(), reject(new Error(big))))
       parts.push(d)
     }
     child.stdout.on('data', take(out))
@@ -7579,7 +7587,7 @@ async function chromeSnapshot(page, guard) {
   try {
     const ua = snapshotUserAgent(await chromeVersionOnce(), IS_MAC)
     const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
-    const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요' })
+    const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요', quit: CHROME_QUIT_SIGNAL })
     if (proxy.state.refused && chromeErrorPage(html)) throw Object.assign(new Error(PRIVATE_WHY), { code: 'CB_PRIVATE' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
     return { url: page.href, html, images: {}, css: {}, width: SNAPSHOT_VIEW_W, ...(proxy.state.refused ? { refusedCount: proxy.state.refused } : {}) }
@@ -7832,9 +7840,10 @@ function stopBackground() {
   return quitChrome(child)
 }
 /**
- * Chrome itself is asked to quit (SIGTERM to its main process): it then writes its cookies, the sign-in among them,
- * before it goes. Only if it is still there 5 s later does its whole process group go. Resolves once it is gone
- * (at most 8 s), so the profile is free for the next Chrome.
+ * Chrome itself is asked to quit (CHROME_QUIT_SIGNAL, SIGINT, to its main process): it then writes its cookies, the
+ * sign-in among them, and removes its app clone before it goes (SIGTERM left the clone, 1.553). Only if it is still
+ * there 5 s later does its whole process group go. Resolves once it is gone (at most 8 s), so the profile is free for
+ * the next Chrome.
  */
 function quitChrome(child) {
   return new Promise((resolve) => {
@@ -7842,7 +7851,7 @@ function quitChrome(child) {
     done.unref()
     child.once('exit', () => (clearTimeout(force), clearTimeout(done), resolve()))
     try {
-      child.kill('SIGTERM')
+      child.kill(CHROME_QUIT_SIGNAL)
     } catch {}
     const force = setTimeout(() => {
       try {
@@ -7880,7 +7889,7 @@ async function startVisibleLogin() {
   const prev = profileChrome()
   if (prev) {
     try {
-      process.kill(prev, 'SIGTERM')
+      process.kill(prev, CHROME_QUIT_SIGNAL)
     } catch {}
     await new Promise((r) => setTimeout(r, 3000))
   }

@@ -137,3 +137,19 @@ test('CB_BOOTTIME stands in for sysctl: ms or the same text', () => {
   assert.equal(bootTimeFrom('{ sec = 10, usec = 0 }', text), 10000)
   assert.equal(bootTimeFrom('', 'nonsense'), null)
 })
+
+test('the agent quits its Chromes with SIGINT, which removes their app clone (AC-1830)', async () => {
+  const { CHROME_QUIT_SIGNAL } = await import('../../agent/guard.mjs')
+  const fs = await import('node:fs')
+  assert.equal(CHROME_QUIT_SIGNAL, 'SIGINT')
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const body = (name) => src.slice(src.indexOf(`function ${name}(`), src.indexOf('\n}\n', src.indexOf(`function ${name}(`)))
+  // SIGTERM is Chrome's "session ending": it exits without the teardown that starts the clone-cleanup helper.
+  assert.match(body('quitChrome'), /child\.kill\(CHROME_QUIT_SIGNAL\)/)
+  assert.doesNotMatch(body('quitChrome'), /SIGTERM/)
+  assert.match(body('startVisibleLogin'), /process\.kill\(prev, CHROME_QUIT_SIGNAL\)/)
+  assert.doesNotMatch(body('startVisibleLogin'), /SIGTERM/)
+  // A snapshot Chrome that runs too long is asked to quit first, killed only 3 s later.
+  assert.match(body('chromeSnapshot'), /quit: CHROME_QUIT_SIGNAL/)
+  assert.match(body('runCapture'), /child\.kill\(quit\)/)
+})
