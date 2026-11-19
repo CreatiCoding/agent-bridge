@@ -232,6 +232,9 @@ export function cssImageUrls(texts) {
  */
 export const SNAPSHOT_VIEW_W = 412
 export const SNAPSHOT_VIEW_H = 915
+/** 데스크톱으로 보기 (REQ-F-922): a snapshot asked for wide is drawn in a laptop's window instead. */
+export const SNAPSHOT_WIDE_W = 1280
+export const SNAPSHOT_WIDE_H = 900
 
 /** The marker in front of the one line an ego-browser snapshot script prints its result on. */
 export const EGO_MARK = 'CB-SNAPSHOT '
@@ -291,7 +294,9 @@ export const EGO_MARK_JS_CLICKS = `async (page) => {
  * own-origin pictures fetched with its cookies (credentials: include) as data: addresses. The task space is always
  * finished with nothing kept. Values go into the script as JSON: the script gets no environment from here.
  */
-export function egoSnapshotScript({ name, url, budgetMs, gotoMs, guard = { on: false, allow: [] }, own = [] }) {
+export function egoSnapshotScript({ name, url, budgetMs, gotoMs, guard = { on: false, allow: [] }, own = [], view = { w: SNAPSHOT_VIEW_W, h: SNAPSHOT_VIEW_H } }) {
+  const vw = Number.isInteger(view?.w) && view.w > 0 && view.w <= 4000 ? view.w : SNAPSHOT_VIEW_W
+  const vh = Number.isInteger(view?.h) && view.h > 0 && view.h <= 4000 ? view.h : SNAPSHOT_VIEW_H
   const opts = { count: SNAPSHOT_IMG_COUNT, one: SNAPSHOT_IMG_ONE_MAX, big: SNAPSHOT_IMG_BIG, bigCount: SNAPSHOT_BIG_COUNT, all: SNAPSHOT_IMG_ALL_MAX, types: SNAPSHOT_IMG_TYPES, cssAll: SNAPSHOT_CSS_ALL_MAX }
   const inPage = `async (o) => {
   const pick = (img) => {
@@ -349,7 +354,7 @@ let viewError = ""
 let stop = null
 try {
   const page = task.page("p1")
-  try { await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${SNAPSHOT_VIEW_W}, height: ${SNAPSHOT_VIEW_H}, deviceScaleFactor: 0, mobile: false }) } catch (e) { viewError = String(e?.message ?? e).slice(0, 200) }
+  try { await page.cdp("Emulation.setDeviceMetricsOverride", { width: ${vw}, height: ${vh}, deviceScaleFactor: 0, mobile: false }) } catch (e) { viewError = String(e?.message ?? e).slice(0, 200) }
   const held = await guardPages(page)
   stop = held.stop
   try {

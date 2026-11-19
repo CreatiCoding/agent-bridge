@@ -73,7 +73,7 @@ func (st *snapStream) cut(why string) {
 }
 
 // snapshotStream starts a request in pieces: the Mac gets the command, the page gets the request's id at once.
-func snapshotStream(meta *Sess, hostID, target, rid string) M {
+func snapshotStream(meta *Sess, hostID, target, rid string, wide bool) M {
 	uid := meta.uid()
 	n := 0
 	for _, st := range snapStreams {
@@ -108,7 +108,12 @@ func snapshotStream(meta *Sess, hostID, target, rid string) M {
 	})
 	entry.timer = setTimeout(SNAP_STREAM_MS*time.Millisecond, func() { give("맥이 스냅샷을 제때 다 보내지 않았어요") })
 	pending[reqID] = entry
-	if !toHost(hostID, M{"t": "snapshot", "sid": meta.id(), "url": target, "parts": 1, "rid": rid, "reqId": reqID}) {
+	cmd := M{"t": "snapshot", "sid": meta.id(), "url": target, "parts": 1, "rid": rid, "reqId": reqID}
+	// 데스크톱으로 보기 (REQ-F-922): the Mac draws it 1280 wide.
+	if wide {
+		cmd["wide"] = true
+	}
+	if !toHost(hostID, cmd) {
 		clearTimeout(entry.gotTimer)
 		clearTimeout(entry.timer)
 		delete(pending, reqID)

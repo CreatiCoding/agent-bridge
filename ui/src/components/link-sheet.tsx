@@ -15,6 +15,7 @@ import { mountSnapshot, snapshotAnchor, snapshotMore, snapshotPage, type Snapsho
 import { snapshotStream, type SnapDraw } from '../lib/snap-stream'
 import { getStore } from '../lib/store'
 import { ZOOMS, zoomIn, zoomLabel, zoomOut } from '../lib/zoom'
+import { fitMedia } from '../lib/snap-media'
 import { noteSnapshot, type SnapNote } from '../lib/debug'
 
 /**
@@ -34,7 +35,7 @@ import { Sheet } from '../kit/overlay'
  * around the one shown keep their drawing (the address stays: it is drawn again, quickly from the Mac's disk).
  * The phone's back gesture goes back here first (history.state.linkStep), and closes the sheet from the first page.
  */
-type Entry = { url: string; view: View | null; status: string; scroll: number }
+type Entry = { url: string; view: View | null; status: string; scroll: number; wide?: boolean }
 type Cur = { key: number; stack: Entry[]; at: number }
 const VIEWS_KEPT = 4
 let current: Cur | null = null
@@ -129,7 +130,7 @@ type Page = { ok: true; url: string; title: string; site?: string; blocks: Block
 /** A drawing (or a step of one) to show now, with a line about it (저장된 화면 · n분 전, 새로 받지 못했어요). */
 type Show = (v: View, status: string) => void
 
-async function load(url: string, show: Show, signal: AbortSignal): Promise<View> {
+async function load(url: string, show: Show, signal: AbortSignal, wide = false): Promise<View> {
   // 링크 열기 규칙 (REQ-F-881): the host's rule; with none, a snapshot on a session's page (1.470), elsewhere
   // localhost through the preview and the rest to read.
   const sid = sessionHere()
@@ -142,13 +143,13 @@ async function load(url: string, show: Show, signal: AbortSignal): Promise<View>
   if (mode === 'snapshot') {
     // Drawn by the session's Mac: only from a session's page.
     if (!sid) throw new Error('스냅샷은 세션 화면에서만 열 수 있어요. 그 세션의 맥이 페이지를 그려요')
-    if (fromRule) return snapshotView(sid, abs, show, signal)
+    if (fromRule) return snapshotView(sid, abs, show, signal, wide)
     // A paired Mac's address never goes to the server plain (REQ-S-110): no reading by the server in its place.
     const hostId = getStore().state?.sessions.find((x) => x.id === sid)?.hostId
-    if (hostId && (await loadTrust().then(() => pairedWith(hostId), () => false))) return snapshotView(sid, abs, show, signal)
+    if (hostId && (await loadTrust().then(() => pairedWith(hostId), () => false))) return snapshotView(sid, abs, show, signal, wide)
     // A snapshot by default (no rule) goes back to the old way when the Mac cannot take it.
     try {
-      return await snapshotView(sid, abs, show, signal)
+      return await snapshotView(sid, abs, show, signal, wide)
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e
       const why = errorText(e)
@@ -204,7 +205,7 @@ function pageView(s: Snap, sealed: boolean): Extract<View, { kind: 'page' }> {
  * drawing anew fails after a kept one showed, the kept one stays (새로 받지 못했어요). A server or Mac before 1.526
  * answers whole, read as before.
  */
-async function snapshotView(sid: string, abs: string, show: Show, signal: AbortSignal): Promise<View> {
+async function snapshotView(sid: string, abs: string, show: Show, signal: AbortSignal, wide = false): Promise<View> {
   const hostId = getStore().state?.sessions.find((x) => x.id === sid)?.hostId ?? null
   let shown: { view: View; gen: number; complete: boolean; at: number } | null = null
   const onDraw = (d: SnapDraw) => {
@@ -216,7 +217,7 @@ async function snapshotView(sid: string, abs: string, show: Show, signal: AbortS
   }
   let end: Awaited<ReturnType<typeof snapshotStream>>
   try {
-    end = await snapshotStream(sid, hostId, abs, onDraw, signal)
+    end = await snapshotStream(sid, hostId, abs, onDraw, signal, wide)
   } catch (e) {
     // Drawing anew failed (a broken piece, the server gone) after the kept one showed whole: that one stays.
     const kept = shown as { view: View; gen: number; complete: boolean; at: number } | null
@@ -276,6 +277,12 @@ function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind
   const restoring = useRef(false)
   // The page's scale in the box, for the effect that adds pieces as the box is scrolled (1.525).
   const scale = useRef(1)
+  // The size the page is laid out at, which its @media rules are answered for (REQ-F-922).
+  const laid = useRef({ w: 0, h: 0 })
+  const media = () => {
+    const sh = page.current?.shadowRoot
+    if (sh) fitMedia(sh, laid.current.w, laid.current.h)
+  }
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [height, setHeight] = useState(0)
   // Whether the page went into its shadow root (1.523): an error there is said over the box instead of a white sheet.
@@ -295,6 +302,8 @@ function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind
     const el = box.current
     // The page's height in the box now (not when React next draws): scrolling to a place needs the room there.
     const sizeFit = () => {
+      // More of the page came in, maybe with <style>s of its own: their @media answered too.
+      media()
       setHeight(host.offsetHeight)
       if (fit.current) fit.current.style.height = `${Math.ceil(host.offsetHeight * scale.current)}px`
     }
@@ -322,6 +331,7 @@ function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind
       setFailed(why)
       return
     }
+    media()
     v.note.frame = 'drawn'
     v.note.error = null
     v.note.ms = Math.round(performance.now() - started)
@@ -371,6 +381,12 @@ function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind
   // instead of a small phone page beside white.
   const k = (size.w && fitW ? size.w / fitW : 1) * zoom
   const pw = zoom < 1 && size.w ? Math.max(fitW, Math.floor(size.w / k)) : fitW
+  const vh = Math.round(size.h / k)
+  laid.current = { w: pw, h: vh }
+  useLayoutEffect(() => {
+    media()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pw, vh])
   // Zooming keeps the same place of the page at the box's top-left.
   const prevK = useRef(k)
   useLayoutEffect(() => {
@@ -389,7 +405,7 @@ function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind
           {/* The box is the wrapper, not the shadow host: page CSS can style its host (:host{…!important} and an
               @scope with no start, whose :scope is the host, win; snapshot-page drops both where the browser parses the
               sheet) but never the wrapper, so whatever the host becomes stays inside it. */}
-          <div className="snapshot-page" style={{ width: pw, transform: `scale(${k})`, '--cb-vh': `${Math.round(size.h / k)}px` } as CSSProperties}>
+          <div className="snapshot-page" style={{ width: pw, transform: `scale(${k})`, '--cb-vh': `${vh}px` } as CSSProperties}>
             <div ref={page} className="snapshot-host" role="document" aria-label={title} />
           </div>
         </div>
@@ -480,22 +496,26 @@ function LinkSheet() {
   const [plain, setPlain] = useState(false)
   // 확대·축소 (REQ-F-921): kept while the sheet moves between pages, back to 100% when it closes.
   const [zoom, setZoom] = useState(1)
+  // 데스크톱으로 보기 (REQ-F-922): snapshots drawn 1280 wide by the Mac, kept while the sheet moves between pages.
+  const [wide, setWide] = useState(false)
   const open = !!cur
   useEffect(() => {
-    if (!open) setZoom(1)
+    if (!open) (setZoom(1), setWide(false))
   }, [open])
   useEffect(() => {
     if (!entry) return
     setPlain(false)
     setError(null)
-    // Back to a page the sheet still holds: shown as it was, the Mac not asked again.
-    if (entry.view) {
+    // Back to a page the sheet still holds: shown as it was, the Mac not asked again (drawn as wide as asked now).
+    if (entry.view && !!entry.wide === wide) {
       setView(entry.view)
       setStatus(entry.status)
       return
     }
     setView(null)
     setStatus('')
+    entry.view = null
+    entry.wide = wide
     let gone = false
     const ctl = new AbortController()
     const show: Show = (v, st) => {
@@ -505,7 +525,7 @@ function LinkSheet() {
       setView(v)
       setStatus(st)
     }
-    load(entry.url, show, ctl.signal).then(
+    load(entry.url, show, ctl.signal, wide).then(
       (v) => {
         if (gone || entry.view === v) return
         entry.view = v
@@ -525,7 +545,7 @@ function LinkSheet() {
       // Left before the new drawing came: the kept one stays, without saying it is still coming.
       entry.status = entry.status.replace(' · 새로 받는 중…', '')
     }
-  }, [cur, entry, n])
+  }, [cur, entry, n, wide])
   let title = ''
   try {
     title = entry ? new URL(entry.url, location.href).host : ''
@@ -567,6 +587,11 @@ function LinkSheet() {
           {view?.kind === 'page' ? (
             <Button size="sm" onClick={() => setPlain((p) => !p)}>
               {plain ? '원본 모양' : '읽기 모양'}
+            </Button>
+          ) : null}
+          {view?.kind === 'page' || (wide && !error) ? (
+            <Button size="sm" aria-pressed={wide} onClick={() => (setWide((w) => !w), setZoom(1), setPlain(false))}>
+              {wide ? '모바일로 보기' : '데스크톱으로 보기'}
             </Button>
           ) : null}
           {view && !error && (view.kind === 'page' || view.kind === 'read') ? (

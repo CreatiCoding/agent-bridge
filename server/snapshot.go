@@ -127,11 +127,15 @@ func sessionSnapshot(req *Req, res *Res, meta *Sess) {
 		refuseX(409, "그 맥의 에이전트가 봉인된 주소를 아직 열지 못해요(업데이트 전)", M{"code": "snap-old"})
 	}
 	if inParts && canParts {
-		jsonRes(res, 200, snapshotStream(meta, hostID, target, rid))
+		jsonRes(res, 200, snapshotStream(meta, hostID, target, rid, b["wide"] == true))
 		return
 	}
 	// The address as the device sent it: it is what the device signed.
-	r := ask(hostID, M{"t": "snapshot", "sid": meta.id(), "url": target}, SNAPSHOT_MS)
+	whole := M{"t": "snapshot", "sid": meta.id(), "url": target}
+	if b["wide"] == true {
+		whole["wide"] = true
+	}
+	r := ask(hostID, whole, SNAPSHOT_MS)
 	if !truthy(r["ok"]) {
 		refuse(502, orStr(r["error"], "맥에서 페이지를 그리지 못했어요"))
 	}

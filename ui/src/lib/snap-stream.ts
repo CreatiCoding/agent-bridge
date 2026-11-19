@@ -18,11 +18,12 @@ const SEALED_URL_MAX = 3600
  * Asks the session's Mac for a snapshot of url in pieces and hands each drawing to onDraw as it comes. A server or an
  * agent before 1.526 answers whole: that answer comes back as `whole` for the caller to read as before.
  */
-export async function snapshotStream(sid: string, hostId: string | null, url: string, onDraw: (d: SnapDraw) => void, signal?: AbortSignal): Promise<SnapEnd> {
+export async function snapshotStream(sid: string, hostId: string | null, url: string, onDraw: (d: SnapDraw) => void, signal?: AbortSignal, wide = false): Promise<SnapEnd> {
   await loadTrust().catch(() => {})
   const paired = !!hostId && pairedWith(hostId)
   const rid = b64u(crypto.getRandomValues(new Uint8Array(16)))
-  const ask = (u: string) => post<Record<string, unknown>>(`/api/sessions/${sid}/snapshot`, { url: u, parts: true, rid })
+  // 데스크톱으로 보기 (REQ-F-922): the Mac draws it 1280 wide.
+  const ask = (u: string) => post<Record<string, unknown>>(`/api/sessions/${sid}/snapshot`, { url: u, parts: true, rid, ...(wide ? { wide: true } : {}) })
   let p: Record<string, unknown>
   // A paired Mac gets the address sealed, and never plain: a server could say anything (a 409, a broken piece) to get
   // it plain, so nothing here falls back to sending it plain (REQ-S-110).

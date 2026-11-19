@@ -17,7 +17,7 @@ import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
 import { sessionPlugins, SkillLineReader, githubAccounts } from './plugins.mjs'
 import { availableSkills, skillMenu, SkillUsage } from './skills.mjs'
-import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, outerMount, outerTrashDir, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, CHROME_QUIT_SIGNAL, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
+import { bridgeSelfCall, siteLogin, chromeArgs, snapshotUserAgent, snapshotImageUrls, snapshotSheetUrls, cssReady, cssImports, cssImageUrls, SNAPSHOT_CSS_ONE_MAX, SNAPSHOT_CSS_ALL_MAX, SNAPSHOT_IMG_ALL_MAX, SNAPSHOT_IMG_TYPES, SNAPSHOT_IMG_BIG, SNAPSHOT_BIG_COUNT, imageSize, bigSizes, egoSnapshotScript, egoSnapshotResult, SNAPSHOT_VIEW_W, SNAPSHOT_VIEW_H, SNAPSHOT_WIDE_W, SNAPSHOT_WIDE_H, SnapCache, snapCacheOf, snapPayload, snapPieces, snapGuardOf, urlRefusal, guardedGet, snapProxy, chromeErrorPage, PRIVATE_WHY, clearSnapCache, snapLogText, safeDirName, safeConvId, insideAny, readPlain, writePlain, GIT_SAFE, manifestSigned, keyPrint, retireKey, browserApp, keyRotateDue, KEY_ROTATE_MS, noteRekey, noteTook, rekeyResult, cpuBusy, hookList, runHook, macMemUsed, linuxMemUsed, macBattery, linuxBattery, diskUse, diskCaches, trashDir, guardedDirs, diskTrashable, outerMount, outerTrashDir, diskScanWhy, duBytes, parseWorktrees, worktreeWhy, worktreeSessions, CLONE_DIR_RE, userXDir, cloneWhy, cloneEntries, removeClone, openClones, dockerLeftovers, SHARED_PROBE_SCRIPT, SHARED_PROBE_MS, fsTypeKind, macMountKind, sharedDiskOf, sharedOnly, ignoredDirs, personalDir, personalDirs, duItems, apfsVolumes, snapshotCount, lastCwd, riskyCall, SUDO_WHY, SUDO_WINDOW_MS, sudoWrapper, askpassScript, tailOf, sessionPrompt, systemdUnit, updatePolicyOf, updatePolicyError, updateDue, cleanRouting, routingAgents, routingShell, DAY_MS, TIDY_MS, TIDY_FIRST_MS, tidyPolicyOf, idleStopWhy, restAct, folderTidyWhy, transcriptTidyWhy, lastHumanLine, lastTurnLine, lastAnyLine, tidyNoticeText, tidyStoppedText, madeDirWhy, restStoppedText, folderHeld, sharedRootCheck, sharedInside, sharedMake, rebootPolicyOf, rebootPolicyError, rebootWhy, rebootBlockers, rebootPreflight, chromeCloneDir, CHROME_QUIT_SIGNAL, rebootPhase, rebootWatchOf, launchctlList, rebootSummary, bootTimeFrom } from './guard.mjs'
 import { prepareAccountDir, syncAccountConfig, newAccountId, safeAccountId, accountName, loginUrlOf, safeLoginCode, authOf, accountHashOf, sameAccountOf, loginCommand, loginResult, maskLogin, LOGIN_WAIT_S, copySessionState, keychainService, linkPath, linkDirWhy, linkCandidates, linkedAuth, linkedSettingsNotes, realNative } from './accounts.mjs'
 import { transcribe as voiceTranscribe, LocalWhisper, voiceStatus } from './voice.mjs'
 import { MacTranslator, canTranslate } from './translate.mjs'
@@ -5059,7 +5059,7 @@ const commands = {
    * sealing is on (sealOut): the screen opens it and reads it itself, the server only passes it on. The address is
    * the one the person's device signed (TRUST_CLASS snapshot), so a server cannot make this Mac open another.
    */
-  async snapshot({ reqId, sid, url, parts, rid }) {
+  async snapshot({ reqId, sid, url, parts, rid, wide }) {
     // Since 1.526 (REQ-F-906, REQ-S-110): a Mac with a paired device always seals a snapshot (trust seal on or not),
     // and never sends one plain when it cannot; in pieces of about SNAP_PIECE (`parts`, a server that relays them),
     // the drawing kept on this disk first when there is one, then the one drawn now. The address may come sealed by
@@ -5087,6 +5087,9 @@ const commands = {
     const refusal = await urlRefusal(page.href, { guard, own: [SITE_ORIGIN] })
     if (refusal) return fail(refusal)
     const cache = snapshotCache()
+    // 데스크톱으로 보기 (REQ-F-922): drawn in a laptop's window, kept apart from the phone-wide drawing.
+    const view = wide === true ? { w: SNAPSHOT_WIDE_W, h: SNAPSHOT_WIDE_H } : { w: SNAPSHOT_VIEW_W, h: SNAPSHOT_VIEW_H }
+    const keyOf = (href) => (wide === true ? `wide ${href}` : href)
     let sent = 0
     const send = (gen, s) => {
       const list = snapPieces({ sid, rid: id, gen, payload: snapPayload(s) })
@@ -5094,7 +5097,7 @@ const commands = {
       sent += list.length
     }
     if (inPieces && cache) {
-      const kept = cache.get(page.href)
+      const kept = cache.get(keyOf(page.href))
       try {
         if (kept) send(0, { ...kept, asked: page.href })
       } catch (e) {
@@ -5110,7 +5113,7 @@ const commands = {
       let egoWhy = ''
       if (EGO_BIN) {
         try {
-          r = await egoSnapshot(page, reqId, guard)
+          r = await egoSnapshot(page, reqId, guard, view)
         } catch (e) {
           // Turned away on purpose (the page led to this Mac's network): Chrome is not asked to try.
           if (e.code === 'CB_PRIVATE') return fail(e.message)
@@ -5122,7 +5125,7 @@ const commands = {
       if (!r) {
         if (!CHROME_BIN) return fail(`ego lite 로 페이지를 그리지 못했어요 (${egoWhy})`)
         via = 'chrome'
-        r = await chromeSnapshot(page, guard)
+        r = await chromeSnapshot(page, guard, view)
       }
       if (r.refusedCount) log('info', 'snapshot', `페이지가 부른 내부 주소 ${r.refusedCount}개를 막았어요`, sid)
       if (r.html.length > SNAPSHOT_HTML_MAX) return fail('페이지가 너무 커서 스냅샷으로 못 열어요')
@@ -5131,7 +5134,7 @@ const commands = {
       const s = { url: r.url, asked: page.href, html: r.html, images, big, css, width: r.width || 0, via, at: Date.now() }
       if (cache)
         try {
-          cache.put(page.href, s)
+          cache.put(keyOf(page.href), s)
         } catch (e) {
           log('warn', 'snapshot', snapLogText(`저장하지 못함 (${e.message})`), sid)
         }
@@ -7552,15 +7555,15 @@ function runCapture(bin, args, { input, max, ms, slow, big, gone, both, quit }) 
 }
 
 /** The page through ego lite, drawn SNAPSHOT_VIEW_W wide: {url, html, images, css, width} (its own-origin pictures read with its cookies). */
-async function egoSnapshot(page, reqId, guard) {
+async function egoSnapshot(page, reqId, guard, view = { w: SNAPSHOT_VIEW_W, h: SNAPSHOT_VIEW_H }) {
   const name = `cb-snapshot-${String(reqId ?? crypto.randomUUID()).replace(/[^A-Za-z0-9-]/g, '').slice(0, 12)}`
-  const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS, guard, own: [SITE_ORIGIN] })
+  const script = egoSnapshotScript({ name, url: page.href, budgetMs: SNAPSHOT_BUDGET_MS, gotoMs: SNAPSHOT_EGO_GOTO_MS, guard, own: [SITE_ORIGIN], view })
   const out = await runCapture(EGO_BIN, ['nodejs'], { input: script, max: 16 * 1024 * 1024, ms: SNAPSHOT_EGO_TIMEOUT_MS, slow: 'ego lite 가 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'ego-browser 를 띄우지 못했어요', both: true })
   const r = egoSnapshotResult(out)
   if (!r) throw new Error(`ego lite 가 결과를 주지 않았어요: ${out.trim().split('\n').pop()?.slice(0, 200) ?? ''}`)
   if (r.refused) throw Object.assign(new Error(r.refused), { code: 'CB_PRIVATE' })
   // The page still came, drawn in ego's own window width: say so, the width sent shows it.
-  if (r.viewError) log('warn', 'snapshot', `ego lite 에 폰 폭(${SNAPSHOT_VIEW_W}×${SNAPSHOT_VIEW_H})을 정하지 못해 창 폭 ${r.width} 로 그렸어요 (${r.viewError})`)
+  if (r.viewError) log('warn', 'snapshot', `ego lite 에 폭(${view.w}×${view.h})을 정하지 못해 창 폭 ${r.width} 로 그렸어요 (${r.viewError})`)
   return r
 }
 
@@ -7582,18 +7585,18 @@ function chromeVersionOnce() {
 }
 
 /** The page through a headless Chrome of a throwaway profile: {url, html, images: {}, css: {}, width} (its window is SNAPSHOT_VIEW_W wide). */
-async function chromeSnapshot(page, guard) {
+async function chromeSnapshot(page, guard, view = { w: SNAPSHOT_VIEW_W, h: SNAPSHOT_VIEW_H }) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-snapshot-'))
   // Every request of this Chrome goes through a proxy here that turns away this Mac's network (REQ-S-111): the page,
   // its redirects, its frames and everything it loads. <-loopback> stops Chrome going to localhost by itself.
   const proxy = await snapProxy({ guard, own: [SITE_ORIGIN] })
   try {
     const ua = snapshotUserAgent(await chromeVersionOnce(), IS_MAC)
-    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${SNAPSHOT_VIEW_W},${SNAPSHOT_VIEW_H}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
+    const args = [...chromeArgs(profile, { mac: IS_MAC, headless: true }), ...(ua ? [`--user-agent=${ua}`] : []), `--proxy-server=http://127.0.0.1:${proxy.port}`, '--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', '--disable-gpu', '--disable-extensions', '--disable-sync', '--hide-scrollbars', `--window-size=${view.w},${view.h}`, `--virtual-time-budget=${SNAPSHOT_BUDGET_MS}`, '--dump-dom', page.href]
     const html = await runCapture(CHROME_BIN, args, { max: SNAPSHOT_HTML_MAX, ms: SNAPSHOT_TIMEOUT_MS, slow: '페이지를 그리는 데 너무 오래 걸려요', big: '페이지가 너무 커서 스냅샷으로 못 열어요', gone: 'Chrome 을 띄우지 못했어요', quit: CHROME_QUIT_SIGNAL })
     if (proxy.state.refused && chromeErrorPage(html)) throw Object.assign(new Error(PRIVATE_WHY), { code: 'CB_PRIVATE' })
     if (!html.trim()) throw new Error('페이지를 그리지 못했어요. 주소가 열리는지 확인해 주세요')
-    return { url: page.href, html, images: {}, css: {}, width: SNAPSHOT_VIEW_W, ...(proxy.state.refused ? { refusedCount: proxy.state.refused } : {}) }
+    return { url: page.href, html, images: {}, css: {}, width: view.w, ...(proxy.state.refused ? { refusedCount: proxy.state.refused } : {}) }
   } finally {
     await proxy.close()
     fs.rm(profile, { recursive: true, force: true }, () => {})

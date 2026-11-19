@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.557',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '스냅샷에 "데스크톱으로 보기"가 생겼어요. 맥이 페이지를 1280 폭으로 그리고, 페이지의 화면 크기 규칙도 그 폭에 맞춰서 데스크톱 배치로 보여요',
+        refs: ['REQ-F-922', 'REQ-F-881'],
+      },
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '스냅샷을 축소해 넓게 펼치면 페이지의 화면 크기 규칙도 그 폭으로 계산해요',
+        refs: ['REQ-F-922', 'REQ-F-921'],
+      },
+    ],
+  },
+  {
     version: '1.556',
     date: '2026-11-20',
+    commit: '43658db',
     changes: [
       {
         kind: 'changed',

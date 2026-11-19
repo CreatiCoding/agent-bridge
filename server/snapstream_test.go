@@ -115,6 +115,11 @@ func TestSnapshotStreamRelay(t *testing.T) {
 	eq(t, code, 404)
 	code, _ = callAPI(t, "POST", "/api/sessions/sa/snapshot/"+id, "{}")
 	eq(t, code, 405)
+	// AC-1833: 데스크톱으로 보기 asks the Mac for it wide; only a true wide does.
+	withLock(func() { _, has := s.sent[0]["wide"]; ok(t, !has, jsonStr(s.sent[0])) })
+	code, body = callAPI(t, "POST", "/api/sessions/sa/snapshot", `{"url":"https://example.com/a","parts":true,"rid":"rid-0123456780","wide":true}`)
+	eq(t, code, 200, body)
+	withLock(func() { eq(t, len(s.sent), 2); ok(t, s.sent[1]["wide"] == true, jsonStr(s.sent[1])) })
 }
 
 // AC-1775: the server holds no plain page of a sealing Mac: a "sealed" piece that is not one, a piece too big or one too

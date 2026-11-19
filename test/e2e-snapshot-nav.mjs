@@ -61,6 +61,8 @@ const PAGES = {
     ${tall(20)}<a data-t="trap" href="https://example.com/b" style="position:fixed;inset:0;opacity:0;z-index:9">trap</a></body></html>`,
   // A visible little link whose child covers the screen (its own box does not): the point under a click is it.
   'https://example.com/trap2': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">TRAP2 ${gen}</h1>${tall(20)}<a data-t="trap2" href="https://example.com/b">small<span style="position:fixed;inset:0;z-index:9"></span></a></body></html>`,
+  // 1.557: a side column only a wide screen shows, by @media.
+  'https://example.com/wide': (gen) => `<!DOCTYPE html><html><head><style>.side{display:none}@media (min-width: 1000px){.side{display:block}}</style></head><body><h1 data-t="first">WIDE ${gen}</h1><div class="side" data-t="side">side</div>${tall(10)}</body></html>`,
   'https://example.com/bad': (gen) => `<!DOCTYPE html><html><body><h1 data-t="first">BAD ${gen}</h1>${tall(30)}</body></html>`,
 }
 
@@ -74,8 +76,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && u.pathname === '/api/sessions/sa/snapshot') {
     let b = ''
     for await (const c of req) b += c
-    const { url, parts, rid } = JSON.parse(b)
-    asked.push({ url, rid })
+    const { url, parts, rid, wide } = JSON.parse(b)
+    asked.push({ url, rid, wide })
     const page = PAGES[url]
     if (!parts || !page) return json(502, { ok: false, error: '없는 페이지' })
     const id = crypto.randomUUID()
@@ -83,7 +85,7 @@ const server = http.createServer(async (req, res) => {
     streams.set(id, st)
     const push = (list) => (st.parts.push(...list.map((p) => ({ plain: p }))), st.wake.splice(0).forEach((f) => f()))
     const finish = () => ((st.done = true), (st.end = { ok: true }), st.wake.splice(0).forEach((f) => f()))
-    const draw = (gen) => ({ url, asked: url, html: page(gen), images: {}, css: {}, big: {}, width: 412, via: 'ego', at: Date.now() - 5 * 60_000 })
+    const draw = (gen) => ({ url, asked: url, html: page(gen), images: {}, css: {}, big: {}, width: wide === true ? 1280 : 412, via: 'ego', at: Date.now() - 5 * 60_000 })
     const size = url.endsWith('/slow') ? 64 * 1024 : 256 * 1024
     // The kept drawing first, at once; the one drawn now a little later (slow: its first piece, then the rest late).
     if (kept.has(url)) push(snapPieces({ sid: 'sa', rid, gen: 0, payload: snapPayload(draw('kept')), size }))
@@ -287,6 +289,22 @@ for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '축소' }).c
 await wait(200)
 ok((await page.locator('.link-zoom').innerText()).includes('50%') && (await fills()), 'at 50% too, no white beside the page')
 await page.getByRole('button', { name: /누르면 100%/ }).click()
+
+// ---- AC-1833 (1.557): 데스크톱으로 보기 asks the Mac for it 1280 wide, and the page's @media follow that width ----
+await page.keyboard.press('Escape')
+await wait(300)
+await page.evaluate(() => window.openInApp('https://example.com/wide'))
+ok(await shows('WIDE fresh'), 'the wide page is drawn')
+const sideShown = () => inPage('[data-t=side]').evaluate((e) => getComputedStyle(e).display !== 'none')
+ok(!(await sideShown()), 'phone-wide: its wide-screen column is hidden')
+await page.getByRole('button', { name: '데스크톱으로 보기' }).click()
+await page.waitForFunction(() => document.querySelector('.snapshot-page')?.style.width === '1280px', null, { timeout: 5000 }).catch(() => {})
+ok(asked[asked.length - 1].url === 'https://example.com/wide' && asked[asked.length - 1].wide === true, 'the Mac is asked for it wide')
+ok(await sideShown(), 'drawn 1280 wide, the wide-screen column shows (its @media answered for 1280)')
+ok(await page.locator('.snapshot-page').evaluate((e) => Math.abs(e.getBoundingClientRect().width - document.querySelector('.snapshot-box').clientWidth) <= 2), 'and it fits the sheet')
+await page.getByRole('button', { name: '모바일로 보기' }).click()
+await page.waitForFunction(() => document.querySelector('.snapshot-page') && document.querySelector('.snapshot-page').style.width !== '1280px', null, { timeout: 5000 }).catch(() => {})
+ok(asked[asked.length - 1].wide !== true && !(await sideShown()), 'back to the phone: asked plain, the column hidden again')
 
 ok(tabs === tabsAtStart || true, `new tabs opened by the plain links: ${tabs - tabsAtStart}`)
 ok(errors.length === 0, `no page errors (${errors.join(' | ')})`)
