@@ -277,6 +277,16 @@ ok(Math.abs((await scaleNow()) - k1) < 1e-6 && (await box().evaluate((e) => e.sc
 await page.getByRole('button', { name: '축소' }).click()
 await wait(200)
 ok(Math.abs((await scaleNow()) / k1 - 0.9) < 0.01, 'one step down: ×0.9')
+const fills = () => page.evaluate(() => {
+  const b = document.querySelector('.snapshot-box').clientWidth
+  const p = document.querySelector('.snapshot-page')
+  return Math.abs(p.getBoundingClientRect().width - b) <= 2
+})
+ok(await fills(), 'zoomed out, the page is laid out wider and still fills the sheet')
+for (let i = 0; i < 3; i++) await page.getByRole('button', { name: '축소' }).click()
+await wait(200)
+ok((await page.locator('.link-zoom').innerText()).includes('50%') && (await fills()), 'at 50% too, no white beside the page')
+await page.getByRole('button', { name: /누르면 100%/ }).click()
 
 ok(tabs === tabsAtStart || true, `new tabs opened by the plain links: ${tabs - tabsAtStart}`)
 ok(errors.length === 0, `no page errors (${errors.join(' | ')})`)

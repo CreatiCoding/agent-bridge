@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.556',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'changed',
+        scope: ['ui'],
+        text: '링크 시트에서 축소하면 페이지를 더 넓게 펼쳐 시트를 채워요. 50%에서 오른쪽이 비던 것을 고쳤어요',
+        refs: ['REQ-F-921'],
+      },
+    ],
+  },
+  {
     version: '1.555',
     date: '2026-11-20',
+    commit: '1c17061',
     changes: [
       {
         kind: 'added',

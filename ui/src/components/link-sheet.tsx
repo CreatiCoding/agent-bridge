@@ -365,9 +365,12 @@ function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind
       host.shadowRoot?.replaceChildren()
     }
   }, [shown, v, entry])
-  const pw = Math.max(v.width, size.w)
-  // Fitted to the sheet's width, times the person's zoom (REQ-F-921): wider than the sheet scrolls sideways.
-  const k = (size.w && pw ? size.w / pw : 1) * zoom
+  const fitW = Math.max(v.width, size.w)
+  // Fitted to the sheet's width, times the person's zoom (REQ-F-921): wider than the sheet scrolls sideways. Zoomed
+  // out, the page is laid out as wide as the sheet holds at that scale, so it fills the sheet like a wider screen
+  // instead of a small phone page beside white.
+  const k = (size.w && fitW ? size.w / fitW : 1) * zoom
+  const pw = zoom < 1 && size.w ? Math.max(fitW, Math.floor(size.w / k)) : fitW
   // Zooming keeps the same place of the page at the box's top-left.
   const prevK = useRef(k)
   useLayoutEffect(() => {
