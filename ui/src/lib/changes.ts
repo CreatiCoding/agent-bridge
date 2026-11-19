@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.555',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '링크 시트(스냅샷·읽기 모양)에서 − / + 로 페이지를 50%부터 300%까지 축소·확대해요. 가운데 배율을 누르면 100%로 돌아가요',
+        refs: ['REQ-F-921', 'REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.554',
     date: '2026-11-20',
+    commit: '4525d55',
     changes: [
       {
         kind: 'fixed',

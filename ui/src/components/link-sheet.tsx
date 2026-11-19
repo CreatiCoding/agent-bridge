@@ -5,7 +5,7 @@
 // 스냅샷 (REQ-F-881) is the page the session's Mac rendered, read here by lib/reader-dom.
 // http://localhost:<port> is a Mac's own app, made of scripts: when the session on screen started that server, it
 // shows through the site's preview origin in a frame (the same address 로컬 서버 열기 uses, REQ-F-727).
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { createRoot } from 'react-dom/client'
 import { errorText, get, post } from '../lib/api'
 import { openLink } from '../lib/builtin-actions'
@@ -14,6 +14,7 @@ import { readSnapshot } from '../lib/reader-dom'
 import { mountSnapshot, snapshotAnchor, snapshotMore, snapshotPage, type SnapshotDoc } from '../lib/snapshot-page'
 import { snapshotStream, type SnapDraw } from '../lib/snap-stream'
 import { getStore } from '../lib/store'
+import { ZOOMS, zoomIn, zoomLabel, zoomOut } from '../lib/zoom'
 import { noteSnapshot, type SnapNote } from '../lib/debug'
 
 /**
@@ -267,7 +268,7 @@ function wholeView(p: Snap & { sealed?: unknown }, sid: string): View {
  * The sheet scrolls; the page's own box is as tall as its content times the scale. What runs, loads or acts was taken
  * out by lib/snapshot-page; the box keeps the page's fixed and stacked elements inside it (contain, isolation).
  */
-function PageFrame({ v, title, onPlain, entry }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void; entry: Entry }) {
+function PageFrame({ v, title, onPlain, entry, zoom }: { v: Extract<View, { kind: 'page' }>; title: string; onPlain: () => void; entry: Entry; zoom: number }) {
   const box = useRef<HTMLDivElement>(null)
   const page = useRef<HTMLDivElement>(null)
   const fit = useRef<HTMLDivElement>(null)
@@ -365,12 +366,23 @@ function PageFrame({ v, title, onPlain, entry }: { v: Extract<View, { kind: 'pag
     }
   }, [shown, v, entry])
   const pw = Math.max(v.width, size.w)
-  const k = size.w && pw ? size.w / pw : 1
+  // Fitted to the sheet's width, times the person's zoom (REQ-F-921): wider than the sheet scrolls sideways.
+  const k = (size.w && pw ? size.w / pw : 1) * zoom
+  // Zooming keeps the same place of the page at the box's top-left.
+  const prevK = useRef(k)
+  useLayoutEffect(() => {
+    const el = box.current
+    const was = prevK.current
+    prevK.current = k
+    if (!el || !was || was === k) return
+    el.scrollTop = el.scrollTop * (k / was)
+    el.scrollLeft = el.scrollLeft * (k / was)
+  }, [k])
   scale.current = k
   return (
     <div ref={box} className="snapshot-box">
       {shown ? (
-        <div ref={fit} className="snapshot-fit" style={{ height: Math.ceil(height * k) }}>
+        <div ref={fit} className="snapshot-fit" style={{ height: Math.ceil(height * k), width: zoom > 1 ? Math.ceil(pw * k) : undefined }}>
           {/* The box is the wrapper, not the shadow host: page CSS can style its host (:host{…!important} and an
               @scope with no start, whose :scope is the host, win; snapshot-page drops both where the browser parses the
               sheet) but never the wrapper, so whatever the host becomes stays inside it. */}
@@ -393,13 +405,13 @@ function PageFrame({ v, title, onPlain, entry }: { v: Extract<View, { kind: 'pag
   )
 }
 
-function Reading({ v }: { v: Extract<View, { kind: 'read' }> }) {
+function Reading({ v, zoom = 1 }: { v: Extract<View, { kind: 'read' }>; zoom?: number }) {
   let host = ''
   try {
     host = new URL(v.url).host
   } catch {}
   return (
-    <article className="reader">
+    <article className="reader" style={zoom === 1 ? undefined : { fontSize: `${zoom}em` }}>
       <div className="reader-site">
         {v.snapshot ? '스냅샷 · ' : ''}
         {v.site || host}
@@ -463,6 +475,12 @@ function LinkSheet() {
   const [n, setN] = useState(0)
   // 읽기 모양: a snapshot shown in reading mode instead of as the page looked (1.488).
   const [plain, setPlain] = useState(false)
+  // 확대·축소 (REQ-F-921): kept while the sheet moves between pages, back to 100% when it closes.
+  const [zoom, setZoom] = useState(1)
+  const open = !!cur
+  useEffect(() => {
+    if (!open) setZoom(1)
+  }, [open])
   useEffect(() => {
     if (!entry) return
     setPlain(false)
@@ -548,6 +566,19 @@ function LinkSheet() {
               {plain ? '원본 모양' : '읽기 모양'}
             </Button>
           ) : null}
+          {view && !error && (view.kind === 'page' || view.kind === 'read') ? (
+            <span className="link-zoom" role="group" aria-label="확대·축소">
+              <Button size="sm" disabled={zoom <= ZOOMS[0]} onClick={() => setZoom(zoomOut)} aria-label="축소">
+                −
+              </Button>
+              <Button size="sm" disabled={zoom === 1} onClick={() => setZoom(1)} aria-label={`지금 ${zoomLabel(zoom)}, 누르면 100%`}>
+                {zoomLabel(zoom)}
+              </Button>
+              <Button size="sm" disabled={zoom >= ZOOMS[ZOOMS.length - 1]} onClick={() => setZoom(zoomIn)} aria-label="확대">
+                +
+              </Button>
+            </span>
+          ) : null}
           <span className="grow" />
           <Button size="sm" tone="primary" icon="link" disabled={!outside} onClick={() => outside && openLink(outside, 'inapp')}>
             브라우저로 열기
@@ -576,16 +607,16 @@ function LinkSheet() {
         <iframe key={n} className="preview-frame" src={view.src} title={title} allow="clipboard-write; fullscreen" />
       ) : view.kind === 'page' ? (
         plain ? (
-          <Reading v={view.read} />
+          <Reading v={view.read} zoom={zoom} />
         ) : (
-          <PageFrame key={n} v={view} title={title} onPlain={() => setPlain(true)} entry={entry} />
+          <PageFrame key={n} v={view} title={title} onPlain={() => setPlain(true)} entry={entry} zoom={zoom} />
         )
       ) : view.kind === 'image' ? (
         <div className="reader-image">
           <img src={view.src} alt="" referrerPolicy="no-referrer" />
         </div>
       ) : (
-        <Reading v={view} />
+        <Reading v={view} zoom={zoom} />
       )}
     </Sheet>
   )

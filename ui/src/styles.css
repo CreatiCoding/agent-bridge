@@ -5343,7 +5343,8 @@ body.group-sorting * {
   min-width: 0;
   min-height: 0;
   position: relative;
-  overflow-x: hidden;
+  /* Sideways only when zoomed in past the sheet's width (REQ-F-921). */
+  overflow-x: auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -5372,6 +5373,15 @@ body.group-sorting * {
   overflow: hidden;
   color-scheme: light;
   background: #fff;
+}
+/* 확대·축소 (REQ-F-921): − 100% + in the link sheet's footer. */
+.link-zoom {
+  display: inline-flex;
+  gap: 2px;
+}
+.link-zoom > button {
+  min-width: 36px;
+  font-variant-numeric: tabular-nums;
 }
 /* 시트 안 이동 (1.526): back and forward in the sheet's head, and a line over a kept drawing. */
 .link-nav {
