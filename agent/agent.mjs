@@ -11,7 +11,7 @@ import crypto from 'node:crypto'
 import readline from 'node:readline/promises'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN, autoAllowStep, escExits } from './dialog.mjs'
+import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN, autoAllowStep, escExits, trustAsksFor } from './dialog.mjs'
 import { writingPreview } from './preview.mjs'
 import { mainColumn } from './split.mjs'
 import { cacheStatus, countLine, emptyCache, trimTranscript } from './cache.mjs'
@@ -2998,7 +2998,10 @@ async function watch(sid, s) {
     // server is not accepted here: its dialog becomes a card (R1-M1).
     // Only when such a dialog is expected: while the session starts (folder trust, the Chrome and channel notices),
     // and for a model switch the person just asked for. At any other time a dialog-shaped answer is not one (R1-H2).
-    const expected = s.starting ? null : [...ANYTIME_KNOWN, ...(Date.now() - (s.modelAskAt ?? 0) < 30_000 ? ['model-switch'] : [])]
+    // Folder trust for this session's own folder, whenever it is drawn (REQ-F-039): a slow start drew it after the
+    // session counted as started, and it sat there as a card.
+    const ownTrust = !s.starting && (trustAsksFor(screen, s.cwd) || trustAsksFor(screen, s.here))
+    const expected = s.starting ? null : [...ANYTIME_KNOWN, ...(Date.now() - (s.modelAskAt ?? 0) < 30_000 ? ['model-switch'] : []), ...(ownTrust ? ['folder-trust'] : [])]
     const known = await driver.confirmKnown(pane(s), screen, expected)
     if (known) {
       log('info', 'dialog', `auto-confirmed ${known}`, sid)

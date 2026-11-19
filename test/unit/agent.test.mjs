@@ -2,7 +2,7 @@
 // Claude Code draws shows up here as a failing example rather than as a session that sits unanswered.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, detectKnown, cursorKeys, DialogDriver, autoAllowStep, HOOK_ALLOW_GRACE_MS, escExits } from '../../agent/dialog.mjs'
+import { parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, detectKnown, cursorKeys, DialogDriver, autoAllowStep, HOOK_ALLOW_GRACE_MS, escExits, trustAsksFor } from '../../agent/dialog.mjs'
 import { writingPreview, visualWidth } from '../../agent/preview.mjs'
 import { mainColumn, splitColumn } from '../../agent/split.mjs'
 import { stuckState, inputBoxHas, detectPermissionMode, detectEffort, detectContext, normalizeMessage, transcriptHasPrompt, WORKING_RE, mdMaxOf } from '../../agent/screen.mjs'
@@ -243,6 +243,35 @@ test('a known dialog is answered only when it is expected now', async () => {
   // While the session starts (allow null) it is answered as before.
   assert.equal(await driver.confirmKnown('p', screen, null), 'folder-trust')
   assert.deepEqual(sent, [['Enter']])
+})
+
+// AC-1820: Claude Code 2.1.328 의 폴더 신뢰 창(번호 없음, 경로가 줄을 넘김)은 그 세션 폴더면 시작 뒤에도 넘긴다.
+test('folder trust for the session folder is answered after start, another folder or a quote is not', () => {
+  const dir = '/Users/someone/bridge/works/요청/1120-7a44b1'
+  const screen = `────────────────────────────────────────
+ Accessing workspace:
+ /Users/someone/bridge/works/요청/1120-7
+ a44b1
+ Quick safety check: Is this a project you created or one you trust?
+ Claude Code'll be able to read, edit, and execute files here.
+ Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel
+`
+  assert.equal(trustAsksFor(screen, dir), true)
+  assert.deepEqual(detectKnown(screen), { name: 'folder-trust', moves: 1 })
+  assert.equal(trustAsksFor(screen, '/Users/someone/bridge/works/요청/other'), false)
+  assert.equal(trustAsksFor(screen, ''), false)
+  const quoted = `
+⏺ Here is what the prompt looks like:
+
+ Quick safety check: Is this a project you created or one you trust?
+ ❯ 1. Yes, I trust this folder
+   2. No, exit
+ Enter to confirm · Esc to cancel
+`
+  assert.equal(trustAsksFor(quoted, dir), false)
 })
 
 // R1-M1 (리포트 #1): a project's MCP server is the person's call, shown as a card, not accepted by the agent.

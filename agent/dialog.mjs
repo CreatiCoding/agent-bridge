@@ -48,6 +48,21 @@ export function escExits(screen) {
   const labels = numbered ? numbered.options.map((o) => o.label) : (parseKeyedDialog(screen)?.options ?? [])
   return labels.some((l) => /^(\d+\.\s*)?No, exit\b/i.test(l))
 }
+/**
+ * Whether the dialog drawn now is Claude Code's folder trust for this very folder (REQ-F-039): its own words name
+ * the folder (wrapped over lines, so compared without spaces) and it offers "No, exit". Answered even after the
+ * session counts as started: a slow start can draw it after the bridge stopped waiting for start-up dialogs, and
+ * the session then sat on it. Words in Claude's answer that merely quote such a dialog are not drawn as one with
+ * this folder in its body and the cursor on a choice.
+ */
+export function trustAsksFor(screen, dir) {
+  if (!dir || !escExits(screen)) return false
+  const d = parseDialog(screen) ?? parseKeyedDialog(screen)
+  if (!d) return false
+  const flat = (t) => String(t ?? '').replace(/\s+/g, '')
+  const words = flat([d.context, d.question, d.description, d.body].filter(Boolean).join(''))
+  return detectKnown(screen)?.name === 'folder-trust' && words.includes(flat(dir))
+}
 /** The known dialogs answered whenever they are drawn, not only while a session starts: declining loses nothing. */
 export const ANYTIME_KNOWN = ['fullscreen-upsell']
 

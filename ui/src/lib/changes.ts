@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.554',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '새 세션이 "이 폴더를 믿을까요" 창에서 멈추던 것: 그 세션의 폴더를 묻는 창이면 시작 뒤에 그려져도 자동으로 넘겨요',
+        refs: ['REQ-F-039'],
+      },
+    ],
+  },
+  {
     version: '1.553',
     date: '2026-11-19',
+    commit: 'f038545',
     changes: [
       {
         kind: 'fixed',
