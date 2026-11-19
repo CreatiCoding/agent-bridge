@@ -240,6 +240,49 @@ await page.waitForTimeout(1000)
 ok(bare.kept && bare.inside, `without CSSOM the :host rule stays but the host stays in its box (host ${bare.host}, box ${bare.box})`)
 ok(hits.length === 0, `without CSSOM it fetched nothing either (${hits.join(', ') || 'none'})`)
 
+// 1.551 (AC-1828): the theme a page names on <html>/<body> (GitHub's data-color-mode and the like) goes with them, so
+// Primer's `[data-color-mode=auto][data-light-theme=light]` colours apply; a data-* value with "(" or "\" stays
+// behind, and nothing is fetched.
+const theme = (mode) => `<html data-color-mode="${mode}" data-light-theme="light" data-dark-theme="dark" data-bg="url(${cap('dataattr')})" data-esc="a\\b"><head><style>
+[data-color-mode=light][data-light-theme=light],[data-color-mode=auto][data-light-theme=light]{--add:rgb(218, 251, 225);--fg:rgb(31, 35, 40)}
+[data-color-mode=dark][data-dark-theme=dark]{--add:rgb(18, 38, 30);--fg:rgb(230, 237, 243)}
+.add{background-color:var(--add);color:var(--fg)}
+html[data-color-mode=dark] .h{color:rgb(1, 1, 1)} :root[data-light-theme="light"] body .r{color:rgb(2, 2, 2)}
+html[data-color-mode] body[data-turbo-body] .b{color:rgb(3, 3, 3)} [data-bg] .x{color:rgb(9, 9, 9)}
+</style></head><body data-turbo-body="" data-cb-nav="nav"><p class="add" id="add">+ added</p><p class="h" id="h">h</p><p class="r" id="r">r</p><p class="b" id="b">b</p><p class="x" id="x">x</p></body></html>`
+const themed = {}
+for (const mode of ['auto', 'dark']) {
+  themed[mode] = await page.evaluate((a) => {
+    document.body.insertAdjacentHTML('beforeend', `<div class="snapshot-page" style="width:412px"><div class="snapshot-host" id="host-${a.mode}"></div></div>`)
+    const d = window.snapshotPage(a)
+    const sh = window.mountSnapshot(document.getElementById(`host-${a.mode}`), d)
+    const names = d.names
+    const $ = (s) => sh.querySelector(names ? renameSelector(s, names.classes, names.ids) : s)
+    const cs = (s) => getComputedStyle($(s))
+    const root = sh.querySelector('cb-html')
+    return {
+      add: cs('#add').backgroundColor,
+      fg: cs('#add').color,
+      h: cs('#h').color,
+      r: cs('#r').color,
+      b: cs('#b').color,
+      x: cs('#x').color,
+      attrs: Array.from(root.attributes, (t) => t.name).join(' '),
+      body: Array.from(sh.querySelector('cb-body').attributes, (t) => t.name).join(' '),
+    }
+  }, { url: `${O}/page`, html: theme(mode), images: {}, css: {}, mode })
+}
+await page.waitForTimeout(1000)
+const lt = themed.auto
+const dk = themed.dark
+ok(lt.add === 'rgb(218, 251, 225)' && lt.fg === 'rgb(31, 35, 40)', `data-color-mode=auto, data-light-theme=light: Primer's light colours apply (${lt.add}, ${lt.fg})`)
+ok(dk.add === 'rgb(18, 38, 30)' && dk.fg === 'rgb(230, 237, 243)', `data-color-mode=dark: the dark theme's colours apply (${dk.add}, ${dk.fg})`)
+ok(dk.h === 'rgb(1, 1, 1)' && lt.h !== 'rgb(1, 1, 1)', `"html[data-color-mode=dark] .h" matches only the dark one (${dk.h}, ${lt.h})`)
+ok(lt.r === 'rgb(2, 2, 2)' && lt.b === 'rgb(3, 3, 3)', `":root[data-…] body" and "html[data-…] body[data-…]" match (${lt.r}, ${lt.b})`)
+ok(lt.attrs === 'data-color-mode data-light-theme data-dark-theme' && lt.x !== 'rgb(9, 9, 9)', `a data-* value with "(" or "\\" stays behind (${lt.attrs})`)
+ok(lt.body === 'data-turbo-body', `body's data-* go to <cb-body>, this file's own data-cb-* do not (${lt.body})`)
+ok(hits.length === 0, `the themed snapshots fetched nothing (${hits.join(', ') || 'none'})`)
+
 // The control: the raw page in a frame does fetch, so the harness sees a request when there is one.
 await page.evaluate(
   (srcdoc) =>

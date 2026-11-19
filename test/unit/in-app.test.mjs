@@ -331,6 +331,24 @@ test('AC-1763: a snapshot in a shadow root sends no form, keeps no address, and 
   assert.match(styles, /\.snapshot-page \{[^}]*transform-origin: 0 0;\n  contain: layout paint;\n  isolation: isolate;\n  overflow: hidden;/)
 })
 
+test('AC-1828: html and body keep their data-* (a theme such as data-color-mode), never one that could name an address', async () => {
+  const { hostSelector, rootDataAttr } = await import('../../ui/src/lib/snapshot-page.ts')
+  // Plain data-* names whose value has no "(" or "\" go with <html>/<body> to <cb-html>/<cb-body>.
+  for (const [n, v] of [['data-color-mode', 'auto'], ['data-light-theme', 'light'], ['data-dark-theme', 'dark_dimmed'], ['DATA-Theme', 'x'], ['data-turbo-body', ''], ['data-a.b_c-1', 'url without paren']]) assert.equal(rootDataAttr(n, v), true, `${n}=${v}`)
+  // A value that could become an address or an escape, a name of this file's own markers or of DROP_ATTRS, a
+  // non-ASCII or empty data- name, or anything not data-*: left behind.
+  for (const [n, v] of [['data-bg', 'url(http://e/x.png)'], ['data-bg', 'URL (x)'], ['data-esc', 'a\\62 c'], ['data-x', 'attr(y)'], ['data-cb-nav', 'nav'], ['data-cb-js-click', ''], ['data-src', 'x.png'], ['data-é', 'x'], ['data-', 'x'], ['data--x', 'x'], ['onload', 'x'], ['style', 'x'], ['xdata-x', 'x']]) assert.equal(rootDataAttr(n, v), false, `${n}=${v}`)
+  const sp = readFileSync(new URL('../../ui/src/lib/snapshot-page.ts', import.meta.url), 'utf8')
+  assert.match(sp, /for \(const a of Array\.from\(from\.attributes\)\) if \(rootDataAttr\(a\.name, a\.value\)\) to\.setAttribute\(a\.name\.toLowerCase\(\), a\.value\)/)
+  // html, body and :root with attribute tests become the snapshot's roots with the same tests; the tests stay as written.
+  assert.equal(hostSelector('html[data-color-mode=dark] .x'), 'cb-html[data-color-mode=dark] .x')
+  assert.equal(hostSelector(':root[data-color-mode="dark"]'), ':is(cb-html)[data-color-mode="dark"]')
+  assert.equal(hostSelector('html[data-x] body[data-y] .b'), 'cb-html[data-x] cb-body[data-y] .b')
+  assert.equal(hostSelector('[data-color-mode=auto][data-light-theme=light]'), '[data-color-mode=auto][data-light-theme=light]')
+  assert.equal(hostSelector(':where(html[data-a="body"]) body'), ':where(cb-html[data-a="body"]) cb-body')
+  assert.equal(hostSelector('HTML:not([data-color-mode=light])>BODY'), 'cb-html:not([data-color-mode=light])>cb-body')
+})
+
 test('AC-1764: a snapshot keeps no custom function, and a picture function holds nothing that brings a value in', async () => {
   const { dropFunctions, scrubCss } = await import('../../ui/src/lib/snapshot-page.ts')
   const pic = (raw) => (raw === 'ok.png' ? 'var(--cb-i0)' : 'url("data:,")')

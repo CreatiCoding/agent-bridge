@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.551',
+    date: '2026-11-19',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['ui'],
+        text: '원본 모양 스냅샷이 GitHub 처럼 <html> 의 data-* 로 테마를 정하는 페이지에서 색을 전부 잃던 것. html·body 의 data-* 도 옮겨요(값에 ( 나 \\ 가 든 것과 data-cb-* 는 빼고)',
+        refs: ['REQ-F-881'],
+      },
+    ],
+  },
+  {
     version: '1.550',
     date: '2026-11-16',
+    commit: '492c633',
     changes: [
       {
         kind: 'changed',

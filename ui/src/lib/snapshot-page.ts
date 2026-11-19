@@ -245,6 +245,18 @@ const DROP_ATTRS = ['srcset', 'imagesrcset', 'sizes', 'data-src', 'loading', 'ba
 /** Attributes whose text is never a style (left alone even when it holds "url("). */
 const TEXT_ATTRS = /^(alt|title|value|placeholder|label|content|class|id|name|lang|dir|aria-.*|data-.*)$/i
 
+/**
+ * Whether a data-* attribute of the page's <html> or <body> goes with it to <cb-html>/<cb-body> (1.551). A theme is
+ * often named there and its colours picked by it (GitHub's `[data-color-mode=auto][data-light-theme=light]`):
+ * without it every such rule matched nothing and the snapshot lost its colours. Only a plain ASCII data-* name, none
+ * of this file's own markers (data-cb-…) or of DROP_ATTRS, and a value with no "(" or "\" (no url(), attr() or
+ * escape a style could make an address of); anything else stays behind.
+ */
+export function rootDataAttr(name: string, value: string): boolean {
+  const n = name.toLowerCase()
+  return /^data-[a-z0-9][a-z0-9._-]*$/.test(n) && !n.startsWith('data-cb-') && !DROP_ATTRS.includes(n) && !/[(\\]/.test(value)
+}
+
 /** The base of every snapshot's shadow root: none of this page's styles come in, a white page as a browser's. */
 export const SHADOW_BASE =
   ':host{all:initial;display:block;color-scheme:light;background:#fff;color:#000}cb-body,cb-form{display:block}cb-html{display:flow-root;min-height:var(--cb-vh,0px)}cb-body{margin:8px}[data-cb-big]{aspect-ratio:var(--cb-ar)}'
@@ -820,7 +832,7 @@ export function snapshotPage(s: SnapshotParts): SnapshotDoc {
     }
   })
 
-  // The page's html and body as this snapshot's own roots, with their class, style and the like.
+  // The page's html and body as this snapshot's own roots, with their class, style, data-* and the like.
   const root = doc.createElement('cb-html')
   const body = doc.createElement('cb-body')
   const keep = ['class', 'id', 'style', 'dir', 'lang']
@@ -833,6 +845,7 @@ export function snapshotPage(s: SnapshotParts): SnapshotDoc {
       const v = from.getAttribute(a)
       if (v != null) to.setAttribute(a, v)
     }
+    for (const a of Array.from(from.attributes)) if (rootDataAttr(a.name, a.value)) to.setAttribute(a.name.toLowerCase(), a.value)
   }
   if (doc.body) body.append(...Array.from(doc.body.childNodes))
   root.append(body)
