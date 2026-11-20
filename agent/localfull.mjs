@@ -582,8 +582,8 @@ export async function releaseBuild(base, arch, fetchImpl = fetch) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * `local --full on | off | open | status` at this Mac's terminal (REQ-F-902). agent.json's `localFull` is written
- * here (never by a server command) and read again by the running agent every 2 s, which makes the switch.
+ * `local --full on | both | off | open | status` at this Mac's terminal (REQ-F-902). agent.json's `localFull` is
+ * written here (never by the site; the local server's own screen may only turn it off, REQ-F-925) and read again by the running agent every 2 s, which makes the switch.
  * Returns the exit code.
  */
 export async function localFullCli(words, { configPath, lf, site, agentPort, open, running, fetchImpl = fetch, waitMs = 30_000, checkPort = portFree }) {

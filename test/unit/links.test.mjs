@@ -348,3 +348,43 @@ test('AC-1841: an exposure result goes once to each linked server, also one that
   send()
   assert.deepEqual(sent, ['local', 'site', 'local', 'site'])
 })
+
+test('AC-1843: 사이트로 돌아가기 turns local --full off only from the local server, keeping the rest of agent.json', () => {
+  const a = SRC.indexOf('  localoff() {')
+  const body = SRC.slice(a, SRC.indexOf('\n  },\n', a) + 4).replace(/^ {2}localoff\(\) \{/, 'function localoff() {').replace(/\n {2}\},\n$/, '\n}\n')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-lfoff-'))
+  try {
+    const configPath = path.join(dir, 'agent.json')
+    fs.writeFileSync(configPath, JSON.stringify({ key: 'k', localFull: { on: true, both: true, port: 4327 }, trust: 'warn' }))
+    const site = newLink('site')
+    const local = newLink('local')
+    let from = site
+    const logs = []
+    let dropped = 0
+    const lfSeen = { at: 5 }
+    const read = (p, d) => {
+      try {
+        return JSON.parse(fs.readFileSync(p, 'utf8'))
+      } catch {
+        return d
+      }
+    }
+    const off = new Function('origin', 'localLink', 'readJson', 'configPath', 'fs', 'localFull', 'lfSeen', 'log', `${body}\nreturn localoff`)(() => from, local, read, configPath, fs, { dropTickets: () => dropped++ }, lfSeen, (lv, area, t) => logs.push(t))
+    off()
+    assert.equal(read(configPath).localFull.on, true, '사이트에서 온 것은 버림')
+    assert.ok(logs.some((t) => /로컬 서버 화면에서만/.test(t)))
+    from = local
+    off()
+    assert.deepEqual(read(configPath), { key: 'k', localFull: { on: false, both: true, port: 4327 }, trust: 'warn' }, 'on 만 false, 나머지 그대로')
+    assert.equal(dropped, 1)
+    assert.equal(lfSeen.at, 0, '바로 다시 읽게')
+    assert.equal((fs.statSync(configPath).mode & 0o777).toString(8), '600')
+    // Already off: nothing is written and the tickets stay.
+    const before = fs.statSync(configPath).mtimeMs
+    off()
+    assert.equal(dropped, 1, '이미 꺼졌으면 입장권도 그대로')
+    assert.equal(fs.statSync(configPath).mtimeMs, before, '이미 꺼졌으면 쓰지 않음')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

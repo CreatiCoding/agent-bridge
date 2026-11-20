@@ -185,6 +185,8 @@ export const TRUST_CLASS = {
   groups: 'free',
   // 즐겨찾기·제목 넘겨주기 (REQ-F-923): kept as each session's marks and handed to the next server; runs nothing.
   marks: 'free',
+  // 사이트로 돌아가기 (REQ-F-925): only the local server's own link may (commands.localoff); from the site, nothing.
+  localoff: 'off',
   tidyStop: { i: ['sids'], keep: ['holds', 'rest'] },
   tidyTrash: { i: ['items'] },
   // 로컬 어댑터 (REQ-F-893, 서명 REQ-S-101): a call is signed with its extension, session, action, read or write,

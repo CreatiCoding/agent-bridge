@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.560',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'server', 'agent'],
+        text: '기기 화면에 로컬 전체 화면 칸이 생겼어요. 사이트에서는 그 맥의 터미널에 붙여 넣을 명령을 복사하고, 맥의 로컬 화면에서는 버튼 하나로 사이트로 돌아가요',
+        refs: ['REQ-F-925'],
+      },
+    ],
+  },
+  {
     version: '1.559',
     date: '2026-11-20',
+    commit: 'd91e353',
     changes: [
       {
         kind: 'added',

@@ -205,6 +205,9 @@ func TestLocalServerEntry(t *testing.T) {
 	// The cookie of the same name made by a server on another port of 127.0.0.1 is not this one's.
 	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": "__Host-cb=" + strings.SplitN(cookie, "=", 2)[1], "X-Local-Key": lj.Key}, "").Code == 401, "다른 이름의 쿠키는 아님")
 	ok(t, localDo(t, "POST", "/api/auth/logout", host, map[string]string{"Cookie": cookie}, "").Code == 401, "쿠키만으로는 로그아웃도 못 함")
+	// AC-1844: 사이트로 돌아가기 is the owner's alone too: not with the cookie only, not from another origin.
+	ok(t, localDo(t, "POST", "/api/local/back", host, map[string]string{"Cookie": cookie, "Content-Type": "application/json"}, "{}").Code == 401, "쿠키만으로는 사이트로 돌아가기도 못 함")
+	ok(t, localDo(t, "POST", "/api/local/back", host, map[string]string{"Cookie": cookie, "X-Local-Key": lj.Key, "Content-Type": "application/json", "Origin": "https://evil.example"}, "{}").Code == 403, "다른 Origin 은 403")
 	ok(t, localDo(t, "GET", "/api/me", host, map[string]string{"Cookie": cookie, "X-Local-Key": lj.Key}, "").Code == 200, "로그인은 그대로")
 	sw := localDo(t, "GET", "/sw.js", host, nil, "")
 	ok(t, sw.Code == 200 && strings.Contains(sw.Body.String(), "X-Local-Key") && !strings.Contains(sw.Body.String(), "push"), "로컬 서버의 sw.js 는 키를 붙이는 것")

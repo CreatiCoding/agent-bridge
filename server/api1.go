@@ -144,6 +144,25 @@ func apiMisc(req *Req, res *Res, u *url.URL, uid string) bool {
 		jsonRes(res, 200, out)
 		return true
 	}
+	// 사이트로 돌아가기 (REQ-F-925): on this Mac's local server only, its owner asks the Mac to go back to the site. The
+	// Mac takes it only from its local server's link (agent commands.localoff).
+	if post && p == "/api/local/back" {
+		if !LOCAL {
+			refuse(404, "로컬 서버에서만 쓸 수 있어요")
+		}
+		n := 0
+		for _, id := range hosts.Keys() {
+			if h, ok := hosts.Get(id); ok && h["uid"] == uid && online(id) {
+				toHost(id, M{"t": "localoff"})
+				n++
+			}
+		}
+		if n == 0 {
+			refuse(409, "연결된 맥이 없어요")
+		}
+		jsonRes(res, 200, M{"ok": true})
+		return true
+	}
 	// ----- skills -----
 	if sk := apiSkillsRe.FindStringSubmatch(p); get && sk != nil {
 		needFeature("skills")

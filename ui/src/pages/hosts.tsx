@@ -12,7 +12,7 @@ import { Button, CardHead, Empty, Help, Icon, IconButton, PhoneFold, Row, Segmen
 import { confirmDialog, toast } from '../kit/overlay'
 import { qrSvg } from '../../../web/qr.js'
 import { StateWait, useStateLoaded } from '../components/state-wait'
-import { featureOn, proxyLogin } from '../lib/features'
+import { featureOn, localServer, proxyLogin } from '../lib/features'
 import { copyText, openSession } from '../lib/builtin-actions'
 import { updateNow } from '../components/agent-update'
 import { ClaudeLoginBox, hostLoginLine } from '../components/claude-login'
@@ -599,6 +599,70 @@ function DelegateBox({ hostId, on }: { hostId: string; on: boolean }) {
   )
 }
 
+/** 로컬 전체 화면 (REQ-F-925): the commands to run at that Mac's terminal, copied; never run from here. */
+const LF_ON = 'node ~/.claude-bridge/agent.mjs local --full on'
+const LF_BOTH = 'node ~/.claude-bridge/agent.mjs local --full both'
+
+/**
+ * On the site: the local --full commands, copied for the Mac's terminal (the site never switches how a Mac links).
+ * On the Mac's own local server: 사이트로 돌아가기, which the Mac takes only from its local server.
+ */
+function LocalFullBox({ online }: { online: boolean }) {
+  const [busy, setBusy] = useState(false)
+  const copy = (cmd: string) => copyText(cmd, 'code').then((ok) => ok && toast('명령을 복사했어요. 그 맥의 터미널에 붙여 넣어 실행하세요'))
+  if (localServer()) {
+    const goBack = async () => {
+      const ok = await confirmDialog('로컬 서버를 내리고 사이트로 돌아갈까요?', { text: '이 맥의 로컬 서버를 내려요. 이 맥은 사이트에 연동된 채로 남거나(사이트와 함께 쓰던 때) 다시 사이트에 붙어요. 이 화면은 곧 끊기니, 사이트 탭에서 이어서 쓰세요.', ok: '로컬 서버 내리기' })
+      if (!ok) return
+      setBusy(true)
+      try {
+        await post('/api/local/back', {})
+        toast('로컬 서버를 내리는 중이에요. 사이트 탭에서 이어서 쓰세요')
+      } catch (e) {
+        toast(errorText(e), { tone: 'bad' })
+      }
+      setBusy(false)
+    }
+    return (
+      <section className="card-box">
+        <CardHead title="로컬 전체 화면" help="지금 이 맥의 로컬 서버 화면이에요. 사이트로 돌아가면 로컬 서버를 내리고 사이트 연동만 남아요(맥 터미널의 local --full off 와 같아요)." />
+        <div className="setting-line">
+          <span className="grow">
+            <b style={{ fontSize: 'var(--fs-medium)' }}>사이트로 돌아가기</b>
+            <Help>세션은 그대로 이어져요. 다시 로컬로 오려면 맥 터미널에서 {LF_ON}</Help>
+          </span>
+          <Button size="sm" disabled={!online || busy} onClick={() => void goBack()}>
+            사이트로 돌아가기
+          </Button>
+        </div>
+      </section>
+    )
+  }
+  return (
+    <section className="card-box">
+      <CardHead title="로컬 전체 화면" help="이 맥에서 같은 웹 화면을 맥 자신의 서버로 띄워요. 사이트에서는 켤 수 없어서, 명령을 복사해 그 맥의 터미널에 붙여 넣어 실행해요." />
+      <div className="setting-line">
+        <span className="grow">
+          <b style={{ fontSize: 'var(--fs-medium)' }}>로컬로 바꾸기</b>
+          <Help>사이트 연동을 끊고 맥의 로컬 서버로 바꿔요</Help>
+        </span>
+        <Button size="sm" icon="copy" aria-label="로컬로 바꾸기 명령 복사" onClick={() => void copy(LF_ON)}>
+          명령 복사
+        </Button>
+      </div>
+      <div className="setting-line">
+        <span className="grow">
+          <b style={{ fontSize: 'var(--fs-medium)' }}>사이트와 함께 쓰기</b>
+          <Help>사이트 연동은 그대로 두고 로컬 서버에도 함께 연동해요</Help>
+        </span>
+        <Button size="sm" icon="copy" aria-label="사이트와 함께 쓰기 명령 복사" onClick={() => void copy(LF_BOTH)}>
+          명령 복사
+        </Button>
+      </div>
+    </section>
+  )
+}
+
 /** On a header-only server (REQ-F-833) the headless browser signs in at the proxy through a visible window on the Mac. */
 const VISIBLE_LOGIN = 'node ~/.claude-bridge/agent.mjs link --visible'
 const PROXY_OFFLINE = `연결이 끊겼어요. 헤드리스 연동의 프록시 로그인이 풀렸다면 그 맥에서 ${VISIBLE_LOGIN} 을 실행해 보이는 창에서 다시 로그인하세요.`
@@ -829,6 +893,7 @@ export function HostPage({ id, sid }: { id: string; sid?: string }) {
                   {featureOn('sessionMove') ? <DelegateBox key={`dg-${h.id}`} hostId={h.id} on={h.takesWork !== false} /> : null}
                 </>
               ) : null}
+              {h && !linux && !others ? <LocalFullBox key={`lf-${h.id}`} online={h.online} /> : null}
               {h && !others ? <Row left={<Icon name="folder" />} title="디스크 관리" sub="캐시·머지된 worktree·큰 폴더 정리는 디스크 관리 메뉴에서 기기별로 한 번에 봐요" onClick={() => go({ name: 'disk', host: h.id })} chevron /> : null}
               {linux ? (
                 <div className="banner">

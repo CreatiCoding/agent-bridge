@@ -355,6 +355,10 @@ func featuresOf() M {
 	out["codexSandboxes"] = anyList(cfgGet("features.codexSandboxes").([]string))
 	out["codexApprovals"] = anyList(cfgGet("features.codexApprovals").([]string))
 	out["codexNetwork"] = cfgOn("features.codexNetwork")
+	// This Mac's own local server (local --full): the page offers to go back to the site (REQ-F-925).
+	if LOCAL {
+		out["localFull"] = true
+	}
 	return out
 }
 

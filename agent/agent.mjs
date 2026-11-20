@@ -203,7 +203,8 @@ const writeJson = (p, v) => {
     // So is `localUi` (the local screen, LOCAL-UI-DESIGN §3): `local on|off|ota` writes it, no server command does.
     if (disk.localUi === undefined) delete v.localUi
     else v.localUi = disk.localUi
-    // And `localFull` (local --full, REQ-F-902): only `local --full on|off` at this terminal writes it.
+    // And `localFull` (local --full, REQ-F-902): `local --full on|both|off` at this terminal writes it; the one other
+    // writer is commands.localoff, which only turns it off and only for the local server's own screen (REQ-F-925).
     if (disk.localFull === undefined) delete v.localFull
     else v.localFull = disk.localFull
   }
@@ -1185,7 +1186,10 @@ const localFull = new LocalFull({ dir: path.join(STATE_DIR, 'localfull') })
  */
 const lf = { active: false, both: false, starting: false, proc: null, relay: null, sink: null, port: 0, error: '', failedAt: 0 }
 let lfSeen = { at: 0, v: localFullOf(config, config.port) }
-/** agent.json's `localFull`, read again every 2 s: changed at the terminal (`local --full on|off`), never by a server. */
+/**
+ * agent.json's `localFull`, read again every 2 s: changed at the terminal (`local --full on|both|off`), never by the
+ * site; the local server's own screen may only turn it off (commands.localoff, REQ-F-925).
+ */
 function localFullNow() {
   const t = Date.now()
   if (t - lfSeen.at < 2000) return lfSeen.v
@@ -4471,6 +4475,23 @@ const commands = {
       log('info', 'groups', `연동한 서버보다 나중에 바뀐 즐겨찾기·제목을 올림(세션 ${step.send.length}개)`)
       emit({ t: 'marks', list: step.send })
     }
+  },
+  /**
+   * 사이트로 돌아가기 (REQ-F-925): the person at this Mac, on its local server's screen, turns local --full off, as
+   * `local --full off` at its terminal does. Only from the local server's link: the site cannot change how this Mac
+   * links (agent.json localFull is otherwise the terminal's alone, REQ-F-902).
+   */
+  localoff() {
+    if (origin() !== localLink) return log('warn', 'localfull', '사이트로 돌아가기는 로컬 서버 화면에서만 받아요(다른 곳에서 온 것은 버림)')
+    const disk = readJson(configPath, {})
+    const v = disk.localFull && typeof disk.localFull === 'object' ? disk.localFull : {}
+    if (v.on !== true) return
+    disk.localFull = { ...v, on: false }
+    fs.writeFileSync(`${configPath}.tmp`, JSON.stringify(disk, null, 2), { mode: 0o600 })
+    fs.renameSync(`${configPath}.tmp`, configPath)
+    localFull.dropTickets()
+    lfSeen.at = 0
+    log('info', 'localfull', '로컬 서버 화면에서 사이트로 돌아가기를 눌러 로컬 서버를 내림')
   },
   async new({ routing, autoAllow, allowAll, signed, ...cmd }) {
     const had = sessions.has(cmd.sid)

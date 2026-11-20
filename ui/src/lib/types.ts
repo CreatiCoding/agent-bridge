@@ -441,6 +441,8 @@ export interface Features {
   codexNetwork?: boolean
   background: boolean
   proxyLogin?: boolean
+  /** 1.560 (REQ-F-925): this page is served by a Mac's own local server (local --full). */
+  localFull?: boolean
 }
 
 /** 음성 입력 (REQ-F-754), kept with the account. terms: one word per line (or comma), the spelling to keep. */
