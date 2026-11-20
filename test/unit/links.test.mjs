@@ -291,7 +291,7 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   const sessions = new Map([['sess-0003', {}]])
   local.hidden.add('sess-0003')
   local.known.add('sess-0003')
-  const knownBy = new Function('lf', 'sessions', 'othersOf', `${fnSrc('function knownBy(link, sid, started) {')}\nreturn knownBy`)({ active: true, both: true }, sessions, (l) => [site, local].filter((x) => x !== l && x.welcomed))
+  const knownBy = new Function('lf', 'sessions', 'siteLink', 'localLink', `${fnSrc('function knownBy(link, sid, started) {')}\nreturn knownBy`)({ active: true, both: true }, sessions, site, local)
   knownBy(site, 'sess-0003', false)
   assert.ok(site.known.has('sess-0003') && local.hidden.has('sess-0003'), '명령만으로는 다른 쪽을 바꾸지 않음')
   knownBy(site, 'sess-0003', true)
@@ -302,6 +302,13 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   local.known.add('sess-0004')
   knownBy(site, 'sess-0004', true)
   assert.ok(!local.known.has('sess-0004') && sessions.get('sess-0004').reopenFor.has('local'), '숨기지 않았어도 다시 알림')
+  // Resumed through the site while the local server was not linked (not welcomed): marked for it all the same.
+  sessions.set('sess-0006', {})
+  local.welcomed = false
+  knownBy(site, 'sess-0006', true)
+  assert.ok(sessions.get('sess-0006').reopenFor.has('local'), '연동 안 된 쪽도 다시 열 표시')
+  local.welcomed = true
+  assert.match(SRC, /if \(s\.reopenFor\?\.has\(link\.kind\)\) link\.known\.delete\(sid\)\n\s*else letGo\(link, sid\)/)
   // A session that ends is known by no server any more.
   const forget = new Function('siteLink', 'localLink', `${fnSrc('function forgetLinked(sid) {')}\nreturn forgetLinked`)(site, local)
   site.known.add('sess-0005')
@@ -310,7 +317,7 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   assert.ok(!site.known.has('sess-0005') && !local.asked.has('sess-0005'))
   assert.match(SRC.slice(SRC.indexOf('  async release({ sid }) {'), SRC.indexOf('  async setting({')), /sessions\.delete\(sid\)\n\s*forgetLinked\(sid\)/)
   // In enforce the site's word that a session is not its own hides nothing (its lines go on, as with the site alone).
-  assert.match(SRC, /if \(lf\.active && lf\.both && !\(enforcing\(\) && link\.kind === 'site'\)\) \{\n\s*letGo\(link, sid\)/)
+  assert.match(SRC, /if \(lf\.active && lf\.both && !\(enforcing\(\) && link\.kind === 'site'\)\) \{\n(\s*\/\/.*\n)*\s*if \(s\.reopenFor/)
   assert.match(SRC.slice(SRC.indexOf('  async close({ sid, dropDir }) {'), SRC.indexOf('  async release({ sid }) {')), /sessions\.delete\(sid\)\n\s*forgetLinked\(sid\)/)
 })
 

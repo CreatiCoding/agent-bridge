@@ -4383,7 +4383,9 @@ const commands = {
         // While both are linked, one server saying so ends nothing the other may hold: it is only not told about it.
         // Not the site's word in enforce: as with the site alone, its lines go on (rewind below).
         if (lf.active && lf.both && !(enforcing() && link.kind === 'site')) {
-          letGo(link, sid)
+          // Opened again through the other server while this one was away: told to it to open it (sessadd reopen).
+          if (s.reopenFor?.has(link.kind)) link.known.delete(sid)
+          else letGo(link, sid)
           continue
         }
         // While this Mac does not trust the server, the server cannot end a session here by saying it is not mine.
@@ -9058,7 +9060,9 @@ function knownBy(link, sid, started) {
   link.known.add(sid)
   if (!started || !(lf.active && lf.both)) return
   const s = sessions.get(sid)
-  for (const l of othersOf(link)) {
+  // The other server even when it is not linked now: told at its next welcome (commands.welcome).
+  for (const l of [siteLink, localLink]) {
+    if (l === link) continue
     l.hidden.delete(sid)
     l.known.delete(sid)
     l.asked.delete(sid)
