@@ -297,4 +297,36 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   knownBy(site, 'sess-0003', true)
   assert.ok(!local.hidden.has('sess-0003') && !local.known.has('sess-0003'), '다시 열면 다른 쪽에 다시 알림')
   assert.ok(sessions.get('sess-0003').reopenFor.has('local'), 'reopen 표시')
+  // Ended through the local screen (still known there, not hidden: no hello between), then resumed through the site.
+  sessions.set('sess-0004', {})
+  local.known.add('sess-0004')
+  knownBy(site, 'sess-0004', true)
+  assert.ok(!local.known.has('sess-0004') && sessions.get('sess-0004').reopenFor.has('local'), '숨기지 않았어도 다시 알림')
+  // A session that ends is known by no server any more.
+  const forget = new Function('siteLink', 'localLink', `${fnSrc('function forgetLinked(sid) {')}\nreturn forgetLinked`)(site, local)
+  site.known.add('sess-0005')
+  local.asked.add('sess-0005')
+  forget('sess-0005')
+  assert.ok(!site.known.has('sess-0005') && !local.asked.has('sess-0005'))
+  assert.match(SRC.slice(SRC.indexOf('  async release({ sid }) {'), SRC.indexOf('  async setting({')), /sessions\.delete\(sid\)\n\s*forgetLinked\(sid\)/)
+  // In enforce the site's word that a session is not its own hides nothing (its lines go on, as with the site alone).
+  assert.match(SRC, /if \(lf\.active && lf\.both && !\(enforcing\(\) && link\.kind === 'site'\)\) \{\n\s*letGo\(link, sid\)/)
+  assert.match(SRC.slice(SRC.indexOf('  async close({ sid, dropDir }) {'), SRC.indexOf('  async release({ sid }) {')), /sessions\.delete\(sid\)\n\s*forgetLinked\(sid\)/)
+})
+
+test('AC-1841: an exposure result goes once to each linked server, also one that links later', () => {
+  const site = newLink('site')
+  const local = newLink('local')
+  const sent = []
+  const links = [local]
+  const exposure = { last: { os: 1 } }
+  const send = new Function('exposure', 'linked', 'emitTo', `${fnSrc('function sendExposure() {')}\nreturn sendExposure`)(exposure, () => links, (l, m) => sent.push(l.kind))
+  send()
+  links.push(site)
+  send()
+  send()
+  assert.deepEqual(sent, ['local', 'site'])
+  exposure.last = { os: 2 }
+  send()
+  assert.deepEqual(sent, ['local', 'site', 'local', 'site'])
 })

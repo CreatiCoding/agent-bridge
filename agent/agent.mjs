@@ -1454,10 +1454,14 @@ const adapters = new Adapters({ stateDir: STATE_DIR, log: (level, text) => log(l
 // then every 6 hours, one run at a time. A result that could not go out (no page then) goes with the next hello.
 const exposure = new ExposureRunner()
 let exposureTimer = null
+/** Each linked server gets each result once (REQ-F-924: one that links later still gets it). */
 function sendExposure() {
-  if (!linked().length || !exposure.last || exposure.sent) return
-  emit({ t: 'exposure', exposure: exposure.last })
-  exposure.sent = true
+  if (!exposure.last) return
+  for (const l of linked()) {
+    if (l.exposureOf === exposure.last) continue
+    emitTo(l, { t: 'exposure', exposure: exposure.last })
+    l.exposureOf = exposure.last
+  }
 }
 function exposureTick() {
   exposureTimer = setTimeout(exposureTick, EXPOSURE_EVERY_MS)
@@ -4377,7 +4381,8 @@ const commands = {
       if (k) link.known.add(sid)
       if (k && !k.mine) {
         // While both are linked, one server saying so ends nothing the other may hold: it is only not told about it.
-        if (lf.active && lf.both) {
+        // Not the site's word in enforce: as with the site alone, its lines go on (rewind below).
+        if (lf.active && lf.both && !(enforcing() && link.kind === 'site')) {
           letGo(link, sid)
           continue
         }
@@ -4742,6 +4747,7 @@ const commands = {
     dropSwitchFile(sid, s)
     resetRuntime(s)
     sessions.delete(sid)
+    forgetLinked(sid)
     saveSessions()
     fs.rmSync(path.join(STATE_DIR, 'prompts', `${sid}.txt`), { force: true })
     // Another runner's mirror is made from its own record, which stays: the copy goes with the session.
@@ -4760,6 +4766,7 @@ const commands = {
     await tmux('kill-session', '-t', `=${s.tmux}`)
     resetRuntime(s)
     sessions.delete(sid)
+    forgetLinked(sid)
     saveSessions()
     fs.rmSync(path.join(STATE_DIR, 'prompts', `${sid}.txt`), { force: true })
     log('info', 'release', '다른 호스트로 옮겨져 이 기기에서 내려놓음', sid)
@@ -9043,19 +9050,24 @@ async function runLinked(cmd, fn, local) {
 const REOPENS = new Set(['new', 'open'])
 /**
  * A server sent a command about this session, so it has it: no sessadd to it (REQ-F-924). One that started it here
- * (new, or resume of one ended) while the other server hides it as ended there: the other is told again, to open it.
+ * (new, or resume of one ended) is told again to the other, to open it there if it ended there (a server opens only
+ * one of this Mac's that is closed, so telling one that is open changes nothing).
  */
 function knownBy(link, sid, started) {
   if (!link) return
   link.known.add(sid)
   if (!started || !(lf.active && lf.both)) return
   const s = sessions.get(sid)
-  for (const l of othersOf(link))
-    if (l.hidden.delete(sid)) {
-      ;(s.reopenFor ??= new Set()).add(l.kind)
-      l.known.delete(sid)
-      l.asked.delete(sid)
-    }
+  for (const l of othersOf(link)) {
+    l.hidden.delete(sid)
+    l.known.delete(sid)
+    l.asked.delete(sid)
+    ;(s.reopenFor ??= new Set()).add(l.kind)
+  }
+}
+/** A session gone from this Mac: no server is taken to know it any more, so one opened again is told anew. */
+function forgetLinked(sid) {
+  for (const l of [siteLink, localLink]) (l.known.delete(sid), l.asked.delete(sid))
 }
 
 if (doctorOnly) {
