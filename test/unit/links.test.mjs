@@ -291,7 +291,9 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   const sessions = new Map([['sess-0003', {}]])
   local.hidden.add('sess-0003')
   local.known.add('sess-0003')
-  const knownBy = new Function('lf', 'sessions', 'siteLink', 'localLink', `${fnSrc('function knownBy(link, sid, started) {')}\nreturn knownBy`)({ active: true, both: true }, sessions, site, local)
+  const reopenOf = new Function(`${fnSrc('function reopenOf(s) {')}\nreturn reopenOf`)()
+  const lfConf = { both: true }
+  const knownBy = new Function('sessions', 'siteLink', 'localLink', 'reopenOf', 'saveSessions', 'localFullNow', `${fnSrc('function knownBy(link, sid, started) {')}\nreturn knownBy`)(sessions, site, local, reopenOf, () => {}, () => lfConf)
   knownBy(site, 'sess-0003', false)
   assert.ok(site.known.has('sess-0003') && local.hidden.has('sess-0003'), '명령만으로는 다른 쪽을 바꾸지 않음')
   knownBy(site, 'sess-0003', true)
@@ -307,8 +309,17 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   local.welcomed = false
   knownBy(site, 'sess-0006', true)
   assert.ok(sessions.get('sess-0006').reopenFor.has('local'), '연동 안 된 쪽도 다시 열 표시')
+  // A Mac not set to link both marks nothing.
+  lfConf.both = false
+  sessions.set('sess-0008', {})
+  knownBy(site, 'sess-0008', true)
+  assert.equal(sessions.get('sess-0008').reopenFor, undefined, 'both 를 쓰지 않는 맥은 표시 없음')
+  lfConf.both = true
+  // Kept across a restart: sessions.json has a list, read back as the set; anything else there is dropped.
+  assert.deepEqual([...reopenOf({ reopenFor: ['local', 'evil', 3] })], ['local'])
+  assert.match(SRC, /\.\.\.\(reopenOf\(s\)\.size \? \{ reopenFor: \[\.\.\.reopenOf\(s\)\] \} : \{\}\)/)
   local.welcomed = true
-  assert.match(SRC, /if \(s\.reopenFor\?\.has\(link\.kind\)\) link\.known\.delete\(sid\)\n\s*else letGo\(link, sid\)/)
+  assert.match(SRC, /if \(reopenOf\(s\)\.has\(link\.kind\)\) link\.known\.delete\(sid\)\n\s*else letGo\(link, sid\)/)
   // A session that ends is known by no server any more.
   const forget = new Function('siteLink', 'localLink', `${fnSrc('function forgetLinked(sid) {')}\nreturn forgetLinked`)(site, local)
   site.known.add('sess-0005')
@@ -317,7 +328,7 @@ test('AC-1841: a session both servers say is not theirs is let go, never in enfo
   assert.ok(!site.known.has('sess-0005') && !local.asked.has('sess-0005'))
   assert.match(SRC.slice(SRC.indexOf('  async release({ sid }) {'), SRC.indexOf('  async setting({')), /sessions\.delete\(sid\)\n\s*forgetLinked\(sid\)/)
   // In enforce the site's word that a session is not its own hides nothing (its lines go on, as with the site alone).
-  assert.match(SRC, /if \(lf\.active && lf\.both && !\(enforcing\(\) && link\.kind === 'site'\)\) \{\n(\s*\/\/.*\n)*\s*if \(s\.reopenFor/)
+  assert.match(SRC, /if \(lf\.active && lf\.both && !\(enforcing\(\) && link\.kind === 'site'\)\) \{\n(\s*\/\/.*\n)*\s*if \(reopenOf\(s\)/)
   assert.match(SRC.slice(SRC.indexOf('  async close({ sid, dropDir }) {'), SRC.indexOf('  async release({ sid }) {')), /sessions\.delete\(sid\)\n\s*forgetLinked\(sid\)/)
 })
 

@@ -504,7 +504,7 @@ const SITE_ORIGIN = doctorOnly ? '' : new URL(config.site).origin
  */
 const sessions = new Map(Object.entries(readJson(sessionsPath, {})))
 const saveSessions = () =>
-  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(s.past ? { past: s.past } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }) }])))
+  writeJson(sessionsPath, Object.fromEntries([...sessions].map(([id, s]) => [id, { cwd: s.cwd, tmux: s.tmux, ...(s.mux === 'zeropty' ? { mux: 'zeropty' } : {}), ...(s.mux === 'zeropty' && s.zsock ? { zsock: s.zsock } : {}), autoPush: s.autoPush, autoAllow: !!s.autoAllow, ...(s.autoAllow && s.allowAll ? { allowAll: true } : {}), ...(s.autoAllow && s.autoAllowSigned ? { autoAllowSigned: true } : {}), conv: s.conv, model: s.model, effort: s.effort, mode: s.mode, ...(s.chrome === false ? { chrome: false } : {}), sysPrompt: s.sysPrompt, launchedAt: s.launchedAt, ...(s.aliveAt ? { aliveAt: s.aliveAt } : {}), ...(s.alive === false ? { alive: false } : {}), ...(s.held?.length ? { held: s.held } : {}), ...(s.refreshAfter ? { refreshAfter: true } : {}), ...(s.lineBase ? { lineBase: s.lineBase } : {}), ...(s.mdFile ? { mdFile: s.mdFile } : {}), ...(s.account ? { account: s.account } : {}), ...(s.forkOf ? { forkOf: s.forkOf } : {}), ...(s.worktreeGone ? { worktreeGone: s.worktreeGone } : {}), ...(s.here ? { here: s.here } : {}), ...(s.bridgeTools ? { bridgeTools: s.bridgeTools } : {}), ...(s.routing ? { routing: s.routing } : {}), ...(s.turnEndAt ? { turnEndAt: s.turnEndAt } : {}), ...(s.tidyNoticeAt ? { tidyNoticeAt: s.tidyNoticeAt } : {}), ...(s.past ? { past: s.past } : {}), ...(reopenOf(s).size ? { reopenFor: [...reopenOf(s)] } : {}), ...(isClaude(s) ? {} : { runner: s.runner, ...(s.rollout ? { rollout: s.rollout } : {}), ...(s.codexMode ? { codexMode: s.codexMode } : {}), ...(s.codexEffort ? { codexEffort: s.codexEffort } : {}) }) }])))
 
 /** Counters and last-seen facts reported in every health message. */
 const stats = { sent: 0, commands: 0, lastCommand: null, lastError: null, lastTail: null, pageConnectedAt: null, pageConnects: 0, tools: {} }
@@ -1431,8 +1431,8 @@ async function announceSessions() {
       const list = []
       for (const [id, s] of sessions) {
         if (s.starting || s.closed || l.known.has(id) || l.asked.has(id) || l.hidden.has(id)) continue
-        const reopen = s.reopenFor?.has(l.kind) === true
-        s.reopenFor?.delete(l.kind)
+        const reopen = reopenOf(s).delete(l.kind)
+        if (reopen) saveSessions()
         list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: storeFor(l).tailSeq(id), ...(reopen ? { reopen: true } : {}) })
         if (list.length >= 50) break
       }
@@ -4384,7 +4384,7 @@ const commands = {
         // Not the site's word in enforce: as with the site alone, its lines go on (rewind below).
         if (lf.active && lf.both && !(enforcing() && link.kind === 'site')) {
           // Opened again through the other server while this one was away: told to it to open it (sessadd reopen).
-          if (s.reopenFor?.has(link.kind)) link.known.delete(sid)
+          if (reopenOf(s).has(link.kind)) link.known.delete(sid)
           else letGo(link, sid)
           continue
         }
@@ -9058,16 +9058,24 @@ const REOPENS = new Set(['new', 'open'])
 function knownBy(link, sid, started) {
   if (!link) return
   link.known.add(sid)
-  if (!started || !(lf.active && lf.both)) return
+  // Only on a Mac set to link both (agent.json localFull.both stays after local --full off): no mark on others.
+  if (!started || !localFullNow().both) return
   const s = sessions.get(sid)
-  // The other server even when it is not linked now: told at its next welcome (commands.welcome).
+  // The other server even when it is not linked now, or local --full is off: told when both are linked again
+  // (commands.welcome, announceSessions; only they read it). Kept with the session across a restart.
   for (const l of [siteLink, localLink]) {
     if (l === link) continue
     l.hidden.delete(sid)
     l.known.delete(sid)
     l.asked.delete(sid)
-    ;(s.reopenFor ??= new Set()).add(l.kind)
+    reopenOf(s).add(l.kind)
   }
+  saveSessions()
+}
+/** The servers a session is to be told to open again (REQ-F-924): a Set, from sessions.json's list too. */
+function reopenOf(s) {
+  if (!(s.reopenFor instanceof Set)) s.reopenFor = new Set((Array.isArray(s.reopenFor) ? s.reopenFor : []).filter((k) => k === 'site' || k === 'local'))
+  return s.reopenFor
 }
 /** A session gone from this Mac: no server is taken to know it any more, so one opened again is told anew. */
 function forgetLinked(sid) {
