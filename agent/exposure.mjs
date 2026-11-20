@@ -420,7 +420,6 @@ export class ExposureRunner {
     this.collect = collect
     this.running = null
     this.last = null
-    this.sent = false
   }
   run() {
     if (!this.running) {
@@ -428,7 +427,6 @@ export class ExposureRunner {
         .then(() => this.collect())
         .then((r) => {
           this.last = r
-          this.sent = false
           return r
         })
         .finally(() => (this.running = null))

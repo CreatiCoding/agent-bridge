@@ -26,8 +26,27 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.559',
+    date: '2026-11-20',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['server', 'agent'],
+        text: '맥 터미널에서 local --full both 로 켜면 사이트 연동을 끊지 않고 로컬 서버에도 함께 연동해요. 한쪽에서 시작하거나 끝낸 세션, 즐겨찾기와 제목이 다른 쪽에도 바로 보여요',
+        refs: ['REQ-F-924', 'REQ-F-902'],
+      },
+      {
+        kind: 'security',
+        scope: ['agent'],
+        text: '함께 연동할 때도 사이트로는 봉인한 대화만 가요. 로컬 서버로는 평문, 사이트로는 봉인을 따로 만들고, 봉인하지 않은 줄은 사이트로 보내지 않아요',
+        refs: ['REQ-S-113'],
+      },
+    ],
+  },
+  {
     version: '1.558',
     date: '2026-11-20',
+    commit: 'a8c3d76',
     changes: [
       {
         kind: 'added',

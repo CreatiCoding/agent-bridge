@@ -184,7 +184,7 @@ test('AC-1645 one run at a time', async () => {
   await new Promise((r) => setImmediate(r))
   release()
   assert.deepEqual(await a, { n: 1 })
-  assert.equal(runner.sent, false)
+  assert.deepEqual(runner.last, { n: 1 })
   const c = runner.run()
   assert.notEqual(c, a, 'after it ends, a new run')
   await new Promise((r) => setImmediate(r))
