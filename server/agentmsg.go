@@ -128,9 +128,11 @@ func init() {
 			broadcastState(uid)
 			warnLoginExpiry(uid, hostID)
 		},
-		"hello":  helloFromAgent,
-		"lines":  linesFromAgent,
-		"status": statusFromAgent,
+		"hello": helloFromAgent,
+		// 함께 연동 (REQ-F-924): sessions started through the other server, told at once.
+		"sessadd": sessaddFromAgent,
+		"lines":   linesFromAgent,
+		"status":  statusFromAgent,
 		// 세션 그룹 넘겨주기 (REQ-F-905): the groups this Mac carries, newer than the ones here.
 		"groups": groupsFromAgent,
 		"marks":  marksFromAgent,
@@ -273,6 +275,13 @@ func init() {
 				return
 			}
 			resetVolatile(meta)
+			// 함께 연동 (REQ-F-924): closed on the Mac for good through the other server, so it is closed here too.
+			if truthy(msg["ended"]) && !truthy(meta.get("closed")) {
+				meta.set("closed", true)
+				meta.set("closedAt", float64(nowMs()))
+				logEvents(meta, []any{M{"k": "end", "text": "다른 화면에서 종료"}})
+				touch(meta)
+			}
 			broadcastState(uid)
 		},
 		"health": func(uid, hostID string, msg M) {
@@ -416,54 +425,7 @@ func helloFromAgent(uid, hostID string, msg M) {
 	}
 	record(uid, hostID, M{"area": "link", "text": "에이전트 연결됨: " + name + " (" + jsString(h["kind"]) + "), agent " + jsStringU(msg["version"]) + ", node " + jsStringU(info["node"]) + ", " + jsStringU(info["os"]) + ", 세션 " + itoa(nsess) + "개"})
 	touchGlobals()
-	known := M{}
-	listed := map[string]bool{}
-	for _, sv := range asArr(msg["sessions"]) {
-		sm := asM(sv)
-		if !safeId(sm["id"]) {
-			continue
-		}
-		id := sm["id"].(string)
-		listed[id] = true
-		meta, _ := sessions.Get(id)
-		if meta != nil && meta.uid() != uid {
-			continue
-		}
-		// A session the agent has but the server has never seen: take it as this host's.
-		if meta == nil {
-			conv := sm["id"]
-			if safeId(sm["conv"]) {
-				conv = sm["conv"]
-			}
-			cwd := ""
-			if truthy(sm["cwd"]) {
-				cwd = jsString(sm["cwd"])
-			}
-			meta = newMeta(uid, id, hostID, M{"cwd": cwd, "autoPush": sm["autoPush"] != false, "conv": conv})
-		}
-		mine := meta.host() == hostID && !truthy(meta.get("closed"))
-		// The agent moved on to another conversation (`/clear`) while it was away from the server.
-		cur := meta.get("conv")
-		if cur == nil {
-			cur = meta.id()
-		}
-		if mine && safeId(sm["conv"]) && sm["conv"] != cur {
-			meta.set("conv", sm["conv"])
-			meta.set("lines", 0.0)
-		}
-		if mine && isStr(sm["account"]) && safeAccount(sm["account"]) {
-			meta.set("account", sm["account"])
-		}
-		known[id] = M{"lines": meta.get("lines"), "mine": mine}
-		if mine {
-			meta.state()["alive"] = truthy(sm["alive"])
-		}
-		// A server that started from an older meta.json counts on from the Mac's last number (REQ-S-069).
-		if mine && isInteger(sm["seq"]) && jsNumber(sm["seq"]) > numOr0(meta.get("seq")) {
-			meta.set("seq", sm["seq"])
-			dirty.Set(meta.id(), true)
-		}
-	}
+	known, listed := adoptListed(uid, hostID, asArr(msg["sessions"]))
 	for _, meta := range sessions.Values() {
 		if meta.uid() == uid && meta.host() == hostID && !listed[meta.id()] {
 			resetVolatile(meta)
@@ -525,6 +487,94 @@ func helloFromAgent(uid, hostID string, msg M) {
 	offerLocalUi(uid, hostID, msg)
 	broadcastState(uid)
 }
+
+// adoptListed: the sessions a Mac says it has (hello, or sessadd for one or a few), each taken as this host's when the
+// server has never seen it, and what the Mac is told back about each: how many lines are here, and whether it is its.
+func adoptListed(uid, hostID string, list []any) (M, map[string]bool) {
+	known := M{}
+	listed := map[string]bool{}
+	for _, sv := range list {
+		sm := asM(sv)
+		if !safeId(sm["id"]) {
+			continue
+		}
+		id := sm["id"].(string)
+		listed[id] = true
+		meta, _ := sessions.Get(id)
+		if meta != nil && meta.uid() != uid {
+			continue
+		}
+		// A session the agent has but the server has never seen: take it as this host's.
+		if meta == nil {
+			conv := sm["id"]
+			if safeId(sm["conv"]) {
+				conv = sm["conv"]
+			}
+			cwd := ""
+			if truthy(sm["cwd"]) {
+				cwd = jsString(sm["cwd"])
+			}
+			meta = newMeta(uid, id, hostID, M{"cwd": cwd, "autoPush": sm["autoPush"] != false, "conv": conv})
+		}
+		mine := meta.host() == hostID && !truthy(meta.get("closed"))
+		// The agent moved on to another conversation (`/clear`) while it was away from the server.
+		cur := meta.get("conv")
+		if cur == nil {
+			cur = meta.id()
+		}
+		if mine && safeId(sm["conv"]) && sm["conv"] != cur {
+			meta.set("conv", sm["conv"])
+			meta.set("lines", 0.0)
+		}
+		if mine && isStr(sm["account"]) && safeAccount(sm["account"]) {
+			meta.set("account", sm["account"])
+		}
+		known[id] = M{"lines": meta.get("lines"), "mine": mine}
+		if mine {
+			meta.state()["alive"] = truthy(sm["alive"])
+		}
+		// A server that started from an older meta.json counts on from the Mac's last number (REQ-S-069).
+		if mine && isInteger(sm["seq"]) && jsNumber(sm["seq"]) > numOr0(meta.get("seq")) {
+			meta.set("seq", sm["seq"])
+			dirty.Set(meta.id(), true)
+		}
+	}
+	return known, listed
+}
+
+// sessaddFromAgent — 함께 연동 (REQ-F-924): while a Mac is linked to the site and its local server at once, a session
+// started through one is told to the other at once, as hello would at its next link. Only welcome for these comes
+// back (partial), and their favourites and given names when the Mac carries them.
+func sessaddFromAgent(uid, hostID string, msg M) {
+	list := asArr(msg["sessions"])
+	if len(list) > SESSADD_MAX {
+		list = list[:SESSADD_MAX]
+	}
+	known, _ := adoptListed(uid, hostID, list)
+	if len(known) == 0 {
+		return
+	}
+	toHost(hostID, M{"t": "welcome", "sessions": known, "partial": true})
+	if carriesMarks(hostID) {
+		marks := []any{}
+		for id, k := range known {
+			if !truthy(mget(k, "mine")) {
+				continue
+			}
+			if meta, ok := sessions.Get(id); ok {
+				marks = append(marks, marksOf(meta))
+			}
+		}
+		if len(marks) > 0 {
+			toHost(hostID, M{"t": "marks", "list": marks})
+		}
+	}
+	touchGlobals()
+	broadcastState(uid)
+}
+
+// SESSADD_MAX: the most sessions one sessadd tells (the Mac sends at most 50).
+const SESSADD_MAX = 50
 
 func linesFromAgent(uid, hostID string, msg M) {
 	meta := sessOf(msg)

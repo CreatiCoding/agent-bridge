@@ -83,7 +83,8 @@ export function localFullOf(cfg, agentPort = 4317) {
   const h = Number(v.sessionHours)
   const rel = typeof v.releases === 'string' && /^https:\/\/[^\s?#]+\/$/.test(v.releases) ? v.releases : LF_RELEASES
   // groups: whether this Mac carries the session list's groups between the site and its local server (REQ-F-905).
-  return { on: v.on === true, port: Number.isInteger(p) && p >= 1024 && p <= 65535 ? p : agentPort + 10, sessionHours: Number.isFinite(h) ? Math.min(168, Math.max(1, Math.round(h))) : 12, releases: rel, groups: v.groups !== false }
+  // both: linked to the site and the local server at once, not one in place of the other (REQ-F-924).
+  return { on: v.on === true, both: v.both === true, port: Number.isInteger(p) && p >= 1024 && p <= 65535 ? p : agentPort + 10, sessionHours: Number.isFinite(h) ? Math.min(168, Math.max(1, Math.round(h))) : 12, releases: rel, groups: v.groups !== false }
 }
 
 /** The most this Mac keeps of a server's groups (JSON). */
@@ -122,6 +123,7 @@ export function marksStep(mine, list, now = Date.now()) {
   const held = mine && typeof mine === 'object' && !Array.isArray(mine) ? mine : {}
   const next = { ...held }
   const send = []
+  const took = []
   let changed = false
   for (const e of Array.isArray(list) ? list.slice(0, MARKS_MAX) : []) {
     const sid = typeof e?.sid === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(e.sid) ? e.sid : null
@@ -131,6 +133,7 @@ export function marksStep(mine, list, now = Date.now()) {
     const hAt = h && Number.isFinite(h.at) && h.at <= late ? h.at : -1
     if (at > hAt) {
       next[sid] = { at, favorite: e.favorite === true, title: typeof e.title === 'string' ? e.title.slice(0, MARKS_TITLE_MAX) : '' }
+      took.push({ sid, ...next[sid] })
       changed = true
     } else if (hAt > at) send.push({ sid, at: hAt, favorite: h.favorite === true, title: typeof h.title === 'string' ? h.title : '' })
   }
@@ -140,7 +143,8 @@ export function marksStep(mine, list, now = Date.now()) {
     for (const id of ids.sort((a, b) => next[a].at - next[b].at).slice(0, ids.length - MARKS_MAX)) delete next[id]
     changed = true
   }
-  return { keep: changed ? next : null, send }
+  // took: the ones newer than here, for the other server while both are linked (REQ-F-924).
+  return { keep: changed ? next : null, send, took: took.filter((e) => next[e.sid]) }
 }
 
 const readJson = (p, fallback) => {
@@ -591,11 +595,12 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
   }
   const now = () => localFullOf(readJson(configPath, {}), agentPort)
   const link = () => `http://127.0.0.1:${now().port}/#t=${lf.newTicket()}`
-  const waitState = async (want) => {
+  // both: when given, the way it is on must be that one too (local --full both after on, or on after both).
+  const waitState = async (want, both) => {
     const end = Date.now() + waitMs
     while (Date.now() < end) {
       const st = lf.state()
-      if (st.active === want) return st
+      if (st.active === want && (both === undefined || !want || !!st.both === both)) return st
       if (want && st.error && st.at > started) return st
       await sleep(500)
     }
@@ -603,7 +608,8 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
   }
   const started = Date.now()
   const [cmd = 'status'] = words
-  if (cmd === 'on') {
+  // both: the same, but the site stays linked beside the local server (REQ-F-924); on: in place of the site.
+  if (cmd === 'on' || cmd === 'both') {
     if (!lf.arch) {
       console.error('로컬 전체 화면은 macOS(arm64·x64)에서만 써요.')
       return 1
@@ -648,19 +654,21 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
       console.error(`쓸 수 있는 맥용 서버가 없어요(${have.why}). 미리 받아 둔 파일을 넣어 주세요: node agent.mjs local --full install <빌드 파일> <문서 .json>\n  두 파일: 공개 릴리스의 localfull-${lf.arch} 와 localfull-${lf.arch}.json, 또는 로그인한 브라우저로 사이트의 /localfull/${lf.arch} 와 /localfull/${lf.arch}.json`)
       return 1
     }
-    set({ on: true })
+    const both = cmd === 'both'
+    set({ on: true, both })
     if (!(await running())) {
-      console.log('켜 두었어요. 에이전트가 켜지면 로컬 서버로 바꿔 붙어요.')
+      console.log(both ? '켜 두었어요. 에이전트가 켜지면 사이트와 로컬 서버에 함께 붙어요.' : '켜 두었어요. 에이전트가 켜지면 로컬 서버로 바꿔 붙어요.')
       return 0
     }
-    console.log('에이전트가 사이트 연결을 끊고 로컬 서버로 바꿔 붙는 중…')
-    const st = await waitState(true)
-    if (!st.active) {
+    console.log(both ? '에이전트가 사이트 연결은 그대로 두고 로컬 서버에도 붙는 중…' : '에이전트가 사이트 연결을 끊고 로컬 서버로 바꿔 붙는 중…')
+    // Already on in the other way: the agent takes the local server down and up again in this one.
+    const st = await waitState(true, both)
+    if (!st.active || !!st.both !== both) {
       console.error(`바꾸지 못했어요: ${st.error || '시간이 지남'}. 상태: node agent.mjs local --full status`)
       return 1
     }
     const l = link()
-    console.log(`\n로컬 전체 화면: http://127.0.0.1:${st.port}/ (이 맥에서만)\n일회용 링크(5분 안에 한 번만):\n\n  ${l}\n\n사이트로 돌아가려면: node agent.mjs local --full off`)
+    console.log(`\n로컬 전체 화면: http://127.0.0.1:${st.port}/ (이 맥에서만${both ? ', 사이트도 그대로 연동' : ''})\n일회용 링크(5분 안에 한 번만):\n\n  ${l}\n\n${both ? '로컬 서버를 내리려면' : '사이트로 돌아가려면'}: node agent.mjs local --full off`)
     open?.(l)
     return 0
   }
@@ -713,10 +721,76 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
     const v = now()
     const st = lf.state()
     const have = lf.installed()
-    console.log(`로컬 전체 화면: ${v.on ? '켜짐' : '꺼짐'} · 지금 ${st.active ? `로컬 서버(127.0.0.1:${st.port})에 연동 중` : '사이트 연동'}${st.error ? ` · 문제: ${st.error}` : ''}`)
+    console.log(`로컬 전체 화면: ${v.on ? (v.both ? '켜짐(사이트와 함께)' : '켜짐') : '꺼짐'} · 지금 ${st.active ? (st.both ? `사이트와 로컬 서버(127.0.0.1:${st.port})에 함께 연동 중` : `로컬 서버(127.0.0.1:${st.port})에 연동 중`) : '사이트 연동'}${st.error ? ` · 문제: ${st.error}` : ''}`)
     console.log(`맥용 서버: ${have.ok ? `${have.d.version} (순번 ${have.d.seq})` : `없음(${have.why})`} · 데이터: ${lf.dataDir}`)
     return 0
   }
-  console.error('사용법: node agent.mjs local --full on | off | open | status | install <빌드 파일> <문서 .json>')
+  console.error('사용법: node agent.mjs local --full on | both | off | open | status | install <빌드 파일> <문서 .json>')
   return 1
+}
+
+// ---------- 사이트와 로컬 서버에 함께 연동 (REQ-F-924) ----------
+
+/**
+ * Set by tail on a `lines` message whose lines were made for a link that seals (sealLine). A `lines` message without
+ * it never goes to such a link (REQ-S-111): the one place transcript words could reach the site in plain.
+ */
+export const SEALED_LINES = Symbol('sealedLines')
+
+/** Answers to what one server asked, though they carry no reqId: they go back to the one that asked. */
+const TO_ASKER = new Set(['pong', 'marks', 'groups', 'tidyReport', 'dirdrop'])
+
+/** Asks that one server answers, with work done there (a delegated session, a tidy batch): never both. */
+const TO_ONE = new Set(['delegate', 'tidyAsk'])
+
+/** A new link record: what the agent keeps for one server it is linked to. */
+export function newLink(kind) {
+  return {
+    kind,
+    welcomed: false,
+    /** Log hand-overs kept on disk, to tell this server (`logged`). */
+    kept: [],
+    /** Sessions this server said are not its own while both are linked: nothing about them goes to it. */
+    hidden: new Set(),
+    /** Sessions this server knows (its welcome said so). */
+    known: new Set(),
+    /** Sessions announced to it (`sessadd`) and not answered yet. */
+    asked: new Set(),
+  }
+}
+
+/** Forget what a server said about the sessions: it says it again at the next welcome. */
+export function resetLink(link) {
+  link.welcomed = false
+  link.hidden.clear()
+  link.known.clear()
+  link.asked.clear()
+}
+
+/** The link that answers asks meant for one server: the site when it has welcomed this Mac, else any that has. */
+export function primaryOf(linked) {
+  return linked.find((l) => l.kind === 'site' && l.welcomed) ?? linked.find((l) => l.welcomed) ?? linked[0] ?? null
+}
+
+/**
+ * The links a message goes to. `from`: the link whose command is being run (null outside a command), `linked`: the
+ * links there are now. An answer (reqId, or a kind in TO_ASKER) goes to the asker only, and to nobody when the asker
+ * is gone; an ask in TO_ONE to one link; the rest to every link.
+ */
+export function routeOf(msg, from, linked) {
+  if (!msg || typeof msg !== 'object' || !linked.length) return []
+  const answer = (msg.reqId !== undefined && msg.reqId !== null) || TO_ASKER.has(msg.t)
+  if (answer && from) return linked.includes(from) ? [from] : []
+  if (TO_ONE.has(msg.t)) {
+    const one = primaryOf(linked)
+    return one ? [one] : []
+  }
+  return linked
+}
+
+/** Whether a message may go to a link. `seals`: the link wants words sealed. Null when it may; else why not. */
+export function refusedFor(msg, link, seals) {
+  if (typeof msg?.sid === 'string' && link.hidden.has(msg.sid)) return 'hidden'
+  if (seals && msg?.t === 'lines' && msg[SEALED_LINES] !== true) return 'lines-not-sealed'
+  return null
 }

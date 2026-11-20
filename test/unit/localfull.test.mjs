@@ -62,8 +62,11 @@ test('one-time links are kept as their SHA-256 only, five at most (the local ser
 })
 
 test('agent.json localFull: off unless turned on, its port the agent port + 10', () => {
-  assert.deepEqual(localFullOf({}, 4317), { on: false, port: 4327, sessionHours: 12, releases: LF_RELEASES, groups: true })
-  assert.deepEqual(localFullOf({ localFull: { on: true, port: 80, sessionHours: 999 } }, 4400), { on: true, port: 4410, sessionHours: 168, releases: LF_RELEASES, groups: true })
+  assert.deepEqual(localFullOf({}, 4317), { on: false, both: false, port: 4327, sessionHours: 12, releases: LF_RELEASES, groups: true })
+  assert.deepEqual(localFullOf({ localFull: { on: true, port: 80, sessionHours: 999 } }, 4400), { on: true, both: false, port: 4410, sessionHours: 168, releases: LF_RELEASES, groups: true })
+  // AC-1837: both only when it is true itself (local --full both).
+  assert.equal(localFullOf({ localFull: { on: true, both: true } }).both, true)
+  assert.equal(localFullOf({ localFull: { on: true, both: 'yes' } }).both, false)
   assert.equal(localFullOf({ localFull: { releases: 'https://mirror.example/lf/' } }).releases, 'https://mirror.example/lf/', '미러')
   assert.equal(localFullOf({ localFull: { releases: 'http://mirror.example/lf/' } }).releases, LF_RELEASES, 'https 만')
   assert.equal(localFullOf({ localFull: { on: 'yes' } }).on, false)
@@ -218,8 +221,10 @@ test('only the local server marks a command local: the site\'s signed:\'local\' 
   }
   // The mark is put in one place, runCommand's local branch; the site's commands go through trustGate.
   assert.equal(src.split("cmd.signed = 'local'").length - 1, 1, 'local 표시는 한 곳에서만 붙음')
-  const run = src.slice(src.indexOf('async function runCommand('), src.indexOf('\n}\n', src.indexOf('async function runCommand(')))
+  const run = src.slice(src.indexOf('async function runLinked('), src.indexOf('\n}\n', src.indexOf('async function runLinked(')))
   assert.match(run, /if \(local\) \{\s*delete cmd\.signed\s*cmd\.signed = 'local'\s*\} else \{[^}]*cmd = trustGate\(cmd\)/)
+  // Run as the local server's link only when it came from it (REQ-F-924).
+  assert.match(src, /return via\.run\(local \? localLink : siteLink, \(\) => runLinked\(cmd, fn, local\)\)/)
   assert.ok(src.includes('return runCommand(cmd)\n'), '사이트 명령은 local 없이 들어옴')
   assert.ok(src.includes('toAgent: (cmd) => runCommand(cmd, { local: true })'), '로컬 서버 명령만 local')
 })

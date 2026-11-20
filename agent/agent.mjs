@@ -11,6 +11,7 @@ import crypto from 'node:crypto'
 import readline from 'node:readline/promises'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { DialogDriver, parseDialog, parseKeyedDialog, classifyOption, isProceedDialog, promptHoldsFocus, cursorKeys, ANYTIME_KNOWN, autoAllowStep, escExits, trustAsksFor } from './dialog.mjs'
 import { writingPreview } from './preview.mjs'
 import { mainColumn } from './split.mjs'
@@ -29,7 +30,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
-import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk } from './localfull.mjs'
+import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk, SEALED_LINES, newLink, resetLink, routeOf, refusedFor } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -526,7 +527,7 @@ function log(level, area, text, sid) {
   if (!doctorOnly) fs.appendFile(path.join(STATE_DIR, 'agent.log'), `${JSON.stringify(entry)}\n`, { mode: 0o600 }, () => {})
 }
 function flushLogs() {
-  if (client && welcomed && pendingLogs.length) emit({ t: 'logs', entries: pendingLogs.splice(0, 200) })
+  if (anyWelcomed() && pendingLogs.length) emit({ t: 'logs', entries: pendingLogs.splice(0, 200) })
 }
 setInterval(flushLogs, 2000)
 process.on('uncaughtException', (e) => {
@@ -712,8 +713,8 @@ const store = new EventStore(path.join(STATE_DIR, 'events'))
  * Mac did not seal, so the site, linked again, never pages it out through `events` in plain.
  */
 const lfStore = new EventStore(path.join(STATE_DIR, 'localfull', 'events'))
-/** The log of whoever is linked now: the local server's while local --full is on, else the site's. */
-const evStore = () => (lf.active ? lfStore : store)
+/** The log a link's server numbers: the local server's apart from the site's (REQ-S-106, REQ-F-924). */
+const storeFor = (link) => (link?.kind === 'local' ? lfStore : store)
 /** The log a command is about: the local server's commands are marked `signed: 'local'` (runCommand). */
 const storeOf = (cmd) => (cmd?.signed === 'local' ? lfStore : store)
 /** Pictures by id: the ones sent from the page, and the ones in the transcripts (tail). */
@@ -722,11 +723,9 @@ const IMAGES_DIR = path.join(STATE_DIR, 'images')
 const TRIMMED_DIR = path.join(STATE_DIR, 'trimmed')
 /** How much of a transcript one `export` answer carries (base64 makes it a third bigger on the way). */
 const EXPORT_PART = 4 * 1024 * 1024
-/** Log hand-overs kept, told to the server in a batch so it stops holding them. */
-let keptLids = []
+/** Log hand-overs kept, told in a batch to the server that handed them, so it stops holding them. */
 function ackKept() {
-  if (!keptLids.length || !client || !welcomed) return
-  emit({ t: 'logged', lids: keptLids.splice(0, 500) })
+  for (const l of linked()) if (l.welcomed && l.kept.length) emitTo(l, { t: 'logged', lids: l.kept.splice(0, 500) })
 }
 setInterval(ackKept, 500).unref()
 /** sid -> when its numbers were last sent, and whether they changed since. */
@@ -737,13 +736,14 @@ const STATS_TURN_MS = 5_000
 function sendStats(sid, force = false, gap = STATS_MS) {
   const was = statsSent.get(sid)
   if (!force && was && Date.now() - was.at < gap) return void ((was.dirty = true), (was.gap = Math.min(was.gap ?? STATS_MS, gap)))
-  const events = evStore().all(sid)
-  if (!events.length) return
+  // Each server its own numbers, from the log it numbered (REQ-F-924).
+  const each = linked().map((l) => [l, storeFor(l).all(sid)]).filter(([, events]) => events.length)
+  if (!each.length) return
   statsSent.set(sid, { at: Date.now(), dirty: false })
-  emit({ t: 'stats', sid, stats: sessionStats(events), prs: prLinks(events) })
+  for (const [l, events] of each) emitTo(l, { t: 'stats', sid, stats: sessionStats(events), prs: prLinks(events) })
 }
 setInterval(() => {
-  if (!client || !welcomed) return
+  if (!anyWelcomed()) return
   for (const [sid, v] of statsSent) if (v.dirty && Date.now() - v.at >= (v.gap ?? STATS_MS)) sendStats(sid, true)
 }, 2_000).unref()
 /**
@@ -753,21 +753,22 @@ setInterval(() => {
 let statsQueue = []
 function sendAllStats() {
   const from = Date.now() - 90 * 86_400_000
-  const st = evStore()
-  const fresh = st.list().filter((sid) => {
-    try {
-      return fs.statSync(st.file(sid)).mtimeMs >= from
-    } catch {
-      return false
-    }
-  })
+  const fresh = [...new Set(linked().map(storeFor))].flatMap((st) =>
+    st.list().filter((sid) => {
+      try {
+        return fs.statSync(st.file(sid)).mtimeMs >= from
+      } catch {
+        return false
+      }
+    }),
+  )
   const idle = !statsQueue.length
   statsQueue = [...new Set([...statsQueue, ...fresh])]
   if (!idle) return
   const next = () => {
     const sid = statsQueue.shift()
     if (!sid) return
-    if (client && welcomed) sendStats(sid, true)
+    if (anyWelcomed()) sendStats(sid, true)
     setTimeout(next, 300).unref()
   }
   next()
@@ -790,7 +791,7 @@ function agentHook(event, sid, cwd) {
 
 // ---------- link to the bridge page ----------
 
-/** The one connected bridge page (SSE response), which tab it is, and when that tab last did anything. */
+/** The one connected bridge page of the site (SSE response), which tab it is, and when that tab last did anything. */
 let client = null
 let clientTab = ''
 /** Whether the linked tab is the headless browser's (헤드리스 연동 모드). */
@@ -800,7 +801,23 @@ let clientRekey = false
 /** Whether the linked tab came with the previous key (still good for OLD_KEY_MS) instead of the current one. */
 let clientOldKey = false
 let clientSeen = 0
-let welcomed = false
+/**
+ * The servers this Mac is linked to (REQ-F-924): the site through the bridge tab above, and its own local server while
+ * local --full is on. With `local --full on` the local server takes the site's place; with `both` they are linked at
+ * once, each with its own welcome, log, line count and sealing (the site's sealed, the local server's plain).
+ */
+const siteLink = newLink('site')
+const localLink = newLink('local')
+/** local --full on (not both): the local server in place of the site, whose tabs are turned away. */
+const siteBlocked = () => lf.active && !lf.both
+const linked = () => [...(client ? [siteLink] : []), ...(lf.active && lf.sink ? [localLink] : [])]
+const anyWelcomed = () => linked().some((l) => l.welcomed)
+const outOf = (link) => (link.kind === 'site' ? client : lf.active ? lf.sink : null)
+/** The link whose command runs now (runCommand): its answers go back to it alone. */
+const via = new AsyncLocalStorage()
+const origin = () => via.getStore() ?? null
+/** The link meant when nothing names one: the asker's, else the site's unless the local server took its place. */
+const hereLink = () => origin() ?? (siteBlocked() ? localLink : siteLink)
 
 
 // ---------- a Mac that does not trust the server (REQ-S-090~, docs/TRUST-DESIGN.md) ----------
@@ -826,7 +843,7 @@ let trustShown = ''
 setInterval(() => {
   const i = trustInfo()
   const now = `${i.mode}|${i.seal}|${i.window}|${i.devices.map((d) => d.id).join(',')}`
-  if (trustShown && now !== trustShown) hello().catch(() => {})
+  if (trustShown && now !== trustShown) helloAll()
   trustShown = now
 }, 2000).unref()
 const trustOn = () => trustMode() !== 'off'
@@ -838,8 +855,15 @@ function keepSignedAllow(s, from) {
   if (!trustOn() || !from.autoAllow || !from.autoAllowSigned) return
   Object.assign(s, { autoAllow: true, autoAllowSigned: true, ...(from.allowAll ? { allowAll: true } : {}) })
 }
-/** Whether what leaves this Mac is sealed now (§6, 1.394): chosen at the terminal, a mode, and a device to read it. */
-const trustSealing = () => !lf.active && trust.sealing(trustMode()) && trustSeen.seal
+/**
+ * Whether what goes to a link is sealed (§6, 1.394): only the site's (the local server is this Mac's own, REQ-S-105),
+ * chosen at the terminal, a mode, and a device to read it.
+ */
+const sealsFor = (link) => link?.kind === 'site' && !siteBlocked() && trust.sealing(trustMode()) && trustSeen.seal
+/** Whether what is made now is sealed: for the link whose command runs, else for the site (the stricter of the two). */
+const trustSealing = () => sealsFor(origin() ?? siteLink)
+/** For what goes to every linked server (not an answer): the site's, whoever asked. */
+const siteSeals = () => sealsFor(siteLink)
 const trustInfo = () => trust.info(trustMode(), trustSeen.seal)
 const enforcing = () => trustMode() === 'enforce'
 /**
@@ -972,7 +996,7 @@ setInterval(() => {
   if (![...trust.pairs.values()].some((x) => x.sas && !x.done)) return
   const before = trust.devices().length
   trust.checkConfirm()
-  if (trust.devices().length !== before) (log('info', 'trust', '기기를 짝지음'), (trustSeen.at = 0), hello().catch(() => {}))
+  if (trust.devices().length !== before) (log('info', 'trust', '기기를 짝지음'), (trustSeen.at = 0), helloAll())
 }, 500).unref()
 // ---------- the local screen (REQ-F-843~845, REQ-S-096~098, docs/LOCAL-UI-DESIGN.md) ----------
 
@@ -983,7 +1007,7 @@ function localUiNow() {
   const t = Date.now()
   if (t - localSeen.at < 2000) return localSeen.v
   const v = localUiOf(readJson(configPath, {}))
-  if (localSeen.at && (v.on !== localSeen.v.on || v.ota !== localSeen.v.ota)) (log('info', 'localui', `로컬 화면 ${v.on ? '켬' : '끔'} · 원격 묶음 ${v.ota ? '받음' : '안 받음'}`), hello().catch(() => {}))
+  if (localSeen.at && (v.on !== localSeen.v.on || v.ota !== localSeen.v.ota)) (log('info', 'localui', `로컬 화면 ${v.on ? '켬' : '끔'} · 원격 묶음 ${v.ota ? '받음' : '안 받음'}`), helloAll())
   localSeen = { at: t, v }
   return v
 }
@@ -1070,7 +1094,7 @@ async function localHttp(req, res, url) {
       list.push({ id, name: path.basename(s.cwd || '') || id.slice(0, 8), cwd: s.cwd ?? '', alive: s.alive !== false, busy: !!s.turn, phase: phaseOf(s), held: s.held.length, card })
     }
     const a = localUi.active()
-    return json(200, { name: config.name, hostId: config.hostId, linked: !!client, trust: trustMode(), bundle: a ? { source: a.source, version: a.version } : null, sessions: list })
+    return json(200, { name: config.name, hostId: config.hostId, linked: linked().length > 0, trust: trustMode(), bundle: a ? { source: a.source, version: a.version } : null, sessions: list })
   }
   // A new session from the person at this Mac (REQ-F-898): the same start as the server's new, in a folder that is here.
   if (op === 'new') {
@@ -1085,7 +1109,7 @@ async function localHttp(req, res, url) {
     const r = await newSession({ sid, cwd, prompt: prompt || undefined, create: false })
     if (!r?.ok) return json(400, { error: r?.error || '세션을 시작하지 못했어요' })
     // A linked server takes a session it has never seen from hello; the lines it gets before that are dropped there.
-    if (client) hello().catch(() => {})
+    helloAll()
     return json(200, { ok: true, sid, cwd: r.cwd })
   }
   const s = sessions.get(String(body.sid ?? url.searchParams.get('sid') ?? ''))
@@ -1159,7 +1183,7 @@ const localFull = new LocalFull({ dir: path.join(STATE_DIR, 'localfull') })
  * The switch. active: this Mac is linked to its own local server (127.0.0.1:port) and to no tab of the site. proc:
  * the server program. relay: the agent's link to it. sink: what stands for the bridge tab's stream (`client`).
  */
-const lf = { active: false, starting: false, proc: null, relay: null, sink: null, port: 0, error: '', failedAt: 0 }
+const lf = { active: false, both: false, starting: false, proc: null, relay: null, sink: null, port: 0, error: '', failedAt: 0 }
 let lfSeen = { at: 0, v: localFullOf(config, config.port) }
 /** agent.json's `localFull`, read again every 2 s: changed at the terminal (`local --full on|off`), never by a server. */
 function localFullNow() {
@@ -1168,7 +1192,7 @@ function localFullNow() {
   lfSeen = { at: t, v: localFullOf(readJson(configPath, {}), config.port) }
   return lfSeen.v
 }
-const lfSave = () => localFull.saveState({ active: lf.active, port: lf.port, error: lf.error })
+const lfSave = () => localFull.saveState({ active: lf.active, both: lf.both, port: lf.port, error: lf.error })
 
 /** A file the server holds for a message, kept with the pictures where a session may read it (REQ-F-761, REQ-F-830). */
 async function saveIncomingFile({ id, name, sid, body }) {
@@ -1247,13 +1271,19 @@ async function localFullOn() {
     // … and the child must hold the port alone (REQ-S-104).
     const pids = listenersOf(v.port, (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }))
     if (child.exitCode !== null || !heldOnlyBy(pids, child.pid)) throw new Error(`127.0.0.1:${v.port} 에서 답한 것이 이 에이전트가 띄운 로컬 서버가 아님(다른 프로그램이 그 포트를 씀: ${pids ? pids.join(',') : '알 수 없음'}) — agent.json 의 localFull.port 를 바꿔 주세요`)
-    // The switch: the site's tab goes, the headless browser rests, and the local server takes the link.
+    // The switch: the site's tab goes, the headless browser rests, and the local server takes the link. With both, the
+    // site's link stays as it is and the local server is linked beside it (REQ-F-924).
     lf.proc = child
     lf.port = v.port
     lf.active = true
+    lf.both = v.both
     lf.error = ''
-    if (client) client.end('data: {"t":"replaced"}\n\n')
-    if (bg.child) stopBackground()
+    if (!v.both) {
+      if (client) client.end('data: {"t":"replaced"}\n\n')
+      client = null
+      resetLink(siteLink)
+      if (bg.child) stopBackground()
+    }
     const relay = new LocalRelay({ base, secret, toAgent: (cmd) => runCommand(cmd, { local: true }), saveFile: saveIncomingFile, log: (level, text) => log(level, 'localfull', text) })
     lf.relay = relay
     let buf = ''
@@ -1265,16 +1295,11 @@ async function localFullOn() {
       },
       end() {},
     }
-    client = lf.sink
-    clientTab = 'localfull'
-    clientBg = false
-    clientRekey = false
-    clientOldKey = false
-    clientSeen = Date.now()
+    resetLink(localLink)
     for (const s of sessions.values()) s.statusKey = null
     relay.start()
-    log('info', 'localfull', `로컬 전체 화면으로 바꿈: ${base} (빌드 ${have.d.version}, 순번 ${have.d.seq})`)
-    await hello()
+    log('info', 'localfull', v.both ? `로컬 서버에도 함께 연동함: ${base} (빌드 ${have.d.version}, 순번 ${have.d.seq})` : `로컬 전체 화면으로 바꿈: ${base} (빌드 ${have.d.version}, 순번 ${have.d.seq})`)
+    await hello(localLink)
   } catch (e) {
     lf.error = e.message
     lf.failedAt = Date.now()
@@ -1292,9 +1317,10 @@ async function localFullDown(why) {
   const proc = lf.proc
   lf.relay = null
   lf.proc = null
-  if (client === lf.sink) ((client = null), (welcomed = false), (clientTab = ''))
+  resetLink(localLink)
   lf.sink = null
   lf.active = false
+  lf.both = false
   lf.error = why && !/^꺼짐/.test(why) ? why : ''
   if (lf.error) lf.failedAt = Date.now()
   lfSave()
@@ -1311,6 +1337,9 @@ setInterval(() => {
   const v = localFullNow()
   if (v.on && !lf.active && !lf.starting && Date.now() - lf.failedAt > 30_000) localFullOn().catch((e) => log('error', 'localfull', e.message))
   else if (!v.on && (lf.active || lf.proc)) localFullDown('꺼짐(맥 터미널)').catch((e) => log('error', 'localfull', e.message))
+  // on ↔ both at the terminal: down now, up the other way at the next look.
+  else if (v.on && lf.active && v.both !== lf.both) localFullDown('꺼짐(연동 방식을 바꿈)').catch((e) => log('error', 'localfull', e.message))
+  else if (lf.active && lf.both) announceSessions()
 }, 2000).unref()
 process.on('exit', () => lf.proc?.kill('SIGTERM'))
 if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd) lfSave()
@@ -1328,25 +1357,89 @@ if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd && !localCmd)
 /** The background work this Mac counted for a session (BgTracker, §5.3 refresh). */
 const ownBg = (s) => (s.bgTrack ? s.bgTrack.running() : [])
 
+/** A message to the servers it is for (routeOf): an answer to the one that asked, the rest to every linked one. */
 function emit(msg) {
-  if (!client) return
-  // Words leave sealed while sealing is on (§6.2). Transcript lines were sealed where they were read (tail).
-  if (msg.t !== 'lines' && msg.t !== 'hello' && trustSealing()) {
+  for (const l of routeOf(msg, origin(), linked())) emitTo(l, msg)
+}
+
+/**
+ * One message to one linked server. Words leave sealed for a link that seals (§6.2); transcript lines were sealed
+ * where they were read (tail), and lines that were not never go to such a link (REQ-S-111). Nothing about a session
+ * that server said is not its own goes to it.
+ */
+function emitTo(link, msg) {
+  const out = outOf(link)
+  if (!out) return
+  const seals = sealsFor(link)
+  const no = refusedFor(msg, link, seals)
+  if (no) {
+    if (no !== 'hidden') log('error', 'trust', '봉인하지 않은 대화 줄이 사이트로 갈 뻔해 보내지 않음', msg.sid)
+    return
+  }
+  let m = msg
+  if (m.t !== 'lines' && m.t !== 'hello' && seals) {
     const seal = trust.sealer()
-    if (seal) msg = sealOut(msg, seal)
+    if (seal) m = sealOut(m, seal)
   }
   stats.sent++
   // The new key itself goes by client.write in rotateKey, not here.
-  client.write(`data: ${hideKeys(JSON.stringify(msg), ownKeys())}\n\n`)
+  out.write(`data: ${hideKeys(JSON.stringify(m), ownKeys())}\n\n`)
 }
 
-async function hello() {
-  welcomed = false
+/**
+ * One linked server said a session is not its own while both are linked (REQ-F-924): nothing about it goes there any
+ * more (until its next hello). When neither has it, it is let go here as before (release).
+ */
+function letGo(link, sid) {
+  if (link.hidden.has(sid)) return
+  link.hidden.add(sid)
+  log('info', 'link', `${link.kind === 'site' ? '사이트' : '로컬 서버'}가 이 세션을 자기 것이 아니라고 해 그쪽에는 보내지 않음`, sid)
+  if (siteLink.hidden.has(sid) && localLink.hidden.has(sid)) via.run(null, () => commands.release({ sid }))
+}
+
+/** The other linked servers than this one, each that has welcomed this Mac. */
+const othersOf = (link) => linked().filter((l) => l !== link && l.welcomed)
+
+/** Hello to one linked server: the sessions with its own log's numbers. What it said about them before is forgotten. */
+async function hello(link = hereLink()) {
+  if (!outOf(link)) return
+  resetLink(link)
+  const st = storeFor(link)
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
-  for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: evStore().tailSeq(id) })
-  emit({ t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups', 'marks'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: [...wsConns.keys()], trust: lf.active ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
+  for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: st.tailSeq(id) })
+  const local = link.kind === 'local'
+  emitTo(link, { t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups', 'marks'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: wsIdsOf(link), trust: local ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
+}
+/** Hello again to every linked server. */
+const helloAll = () => Promise.all(linked().map((l) => hello(l))).catch((e) => log('warn', 'link', `hello 실패: ${e.message}`))
+
+/**
+ * While both are linked (REQ-F-924), a session one server started, or this Mac's own screen did, is told to the other
+ * at once (`sessadd`), not only at its next hello: it takes it as this Mac's and answers with a welcome for it alone.
+ * A session still starting waits: one that does not come up is never told.
+ */
+let announcing = false
+async function announceSessions() {
+  if (announcing) return
+  announcing = true
+  try {
+    for (const l of linked()) {
+      if (!l.welcomed) continue
+      const list = []
+      for (const [id, s] of sessions) {
+        if (s.starting || s.closed || l.known.has(id) || l.asked.has(id) || l.hidden.has(id)) continue
+        list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: storeFor(l).tailSeq(id) })
+        if (list.length >= 50) break
+      }
+      if (!list.length) continue
+      for (const x of list) l.asked.add(x.id)
+      emitTo(l, { t: 'sessadd', sessions: list })
+    }
+  } finally {
+    announcing = false
+  }
 }
 
 // 로컬 어댑터 (REQ-F-893): the owner's programs in ~/.claude-bridge/adapters, called by an extension's page.
@@ -1541,7 +1634,7 @@ function probeCodex() {
     if (now === codexVersion) return
     codexVersion = now
     log('info', 'runner', now ? `codex ${now} 를 세션 실행기로 쓸 수 있음` : 'codex 를 쓸 수 없음 (없거나 응답하지 않음, 또는 tmux 없음)')
-    if (client && welcomed) hello().catch(() => {})
+    if (anyWelcomed()) helloAll()
   })
 }
 setTimeout(probeCodex, 1500).unref()
@@ -1763,7 +1856,7 @@ class SessionClosed extends Error {
  */
 function quitText(sid, name, screen) {
   const tail = screen.split('\n').filter((l) => l.trim()).slice(-6).join(' / ') || '출력 없음'
-  if (!trustSealing()) return `${name} 가 바로 끝났습니다: ${tail}`
+  if (!siteSeals()) return `${name} 가 바로 끝났습니다: ${tail}`
   note(sid, `${name} 가 바로 끝났어요. 터미널 마지막 줄: ${tail}`, 'warn')
   return `${name} 가 바로 끝났습니다 (터미널 마지막 줄은 대화에 남겼어요)`
 }
@@ -2590,7 +2683,7 @@ async function onHook(sid, ev) {
  */
 function switchConversation(sid, s, ev) {
   const fresh = ev.source === 'clear' || ev.source === 'compact'
-  Object.assign(s, { conv: ev.session_id, transcript: ev.transcript_path || null, offset: 0, lineNo: 0, skip: 0, lineBase: 0 })
+  Object.assign(s, { conv: ev.session_id, transcript: ev.transcript_path || null, offset: 0, lineNo: 0, skips: {}, lineBase: 0 })
   saveSessions()
   log('info', 'session', `대화가 바뀜 (${ev.source ?? '?'}) → ${ev.session_id.slice(0, 8)}`, sid)
   // A resumed conversation that got a new id starts with a copy of the old lines: synced, but not shown twice.
@@ -3092,7 +3185,9 @@ function tail(sid, s) {
   if (stat.size < (s.offset ?? 0)) Object.assign(s, { offset: 0, lineNo: s.lineBase ?? 0 })
   s.offset ??= 0
   s.lineNo ??= 0
-  s.skip ??= 0
+  // skips: per linked server (site, local), the lines it has: line n goes to a server whose skip is at most n, and
+  // moves its skip on. Each server counts its own: a rewind for one never sends the other a line twice (REQ-F-924).
+  s.skips ??= {}
   if (stat.size === s.offset) return
   // Read from the start (a new agent, a rewind, a transcript that shrank): the cache counts start over with it.
   if (s.offset === 0 || !s.cache) s.cache = emptyCache()
@@ -3105,45 +3200,56 @@ function tail(sid, s) {
     if (end < 0) return
     const lines = buf.subarray(0, end).toString('utf8').split('\n')
     s.offset += end + 1
-    let batch = []
-    let size = 0
-    let from = s.lineNo
-    // Sealed here, before the chunks are measured: a sealed line is longer than the plain one (§6.2).
-    const seal = trustSealing() ? trust.sealer() : null
-    const echo = seal ? trustEchoOf(s) : null
-    const flush = () => {
-      if (batch.length) emit({ t: 'lines', sid, from, lines: batch })
-      from += batch.length
-      batch = []
-      size = 0
+    // One stream of chunks per linked server. Sealed here, before the chunks are measured: a sealed line is longer
+    // than the plain one (§6.2). A server that seals with no key here to seal gets none (they are read again later).
+    const outs = linked()
+      .filter((l) => !l.hidden.has(sid))
+      .map((link) => {
+        const want = sealsFor(link)
+        const seal = want ? trust.sealer() : null
+        if (want && !seal) log('error', 'trust', '봉인 열쇠가 없어 대화 줄을 사이트로 보내지 않음', sid)
+        return { link, want, seal, echo: seal ? trustEchoOf(s) : null, batch: [], size: 0, from: -1 }
+      })
+    const flush = (o) => {
+      if (o.batch.length) {
+        const msg = { t: 'lines', sid, from: o.from, lines: o.batch }
+        if (o.seal) msg[SEALED_LINES] = true
+        emitTo(o.link, msg)
+      }
+      o.from += o.batch.length
+      o.batch = []
+      o.size = 0
     }
     for (const line of lines) {
-      // Every line, the ones the server already has too: the counts cover the whole conversation.
+      // Every line, the ones the servers already have too: the counts cover the whole conversation.
       countLine(s.cache, line)
       ;(s.bgTrack ??= new BgTracker()).line(line)
-      if (s.lineNo < s.skip) {
-        s.lineNo++
-        from = s.lineNo
-        continue
+      const to = outs.filter((o) => (s.skips[o.link.kind] ?? 0) <= s.lineNo && !(o.want && !o.seal))
+      if (to.length) {
+        // Its pictures stay here: the servers keep none (REQ-S-069).
+        try {
+          saveLineImages(line, IMAGES_DIR)
+        } catch {}
       }
-      // Its pictures stay here: the server keeps none (REQ-S-069).
-      try {
-        saveLineImages(line, IMAGES_DIR)
-      } catch {}
-      const out = seal ? sealLine(line, seal, echo, trustSeen.quiet) : line
-      if (size + out.length > MAX_CHUNK) flush()
-      batch.push(out)
-      size += out.length
+      for (const o of to) {
+        const out = o.seal ? sealLine(line, o.seal, o.echo, trustSeen.quiet) : line
+        if (o.batch.length && o.size + out.length > MAX_CHUNK) flush(o)
+        if (!o.batch.length) o.from = s.lineNo
+        o.batch.push(out)
+        o.size += out.length
+        s.skips[o.link.kind] = s.lineNo + 1
+      }
       s.lineNo++
     }
-    flush()
-    // Read to the end and still short of what the server has: lines were taken out of the file with nothing kept to
+    for (const o of outs) flush(o)
+    // Read to the end and still short of what a server has: lines were taken out of the file with nothing kept to
     // say how many (대화 기록 정리 by an agent before 1.304, a trimmed copy from another Mac). The server has every
     // line here, so numbering goes on from its count; otherwise every new line, the answers too, is skipped as sent.
-    if (s.lineNo < s.skip && n === stat.size - start) {
-      log('warn', 'tail', `대화 파일이 서버보다 ${s.skip - s.lineNo}줄 짧아 줄 번호를 서버에 맞춤`, sid)
-      s.lineBase = (s.lineBase ?? 0) + s.skip - s.lineNo
-      s.lineNo = s.skip
+    const most = Math.max(0, ...outs.map((o) => s.skips[o.link.kind] ?? 0))
+    if (s.lineNo < most && n === stat.size - start) {
+      log('warn', 'tail', `대화 파일이 서버보다 ${most - s.lineNo}줄 짧아 줄 번호를 서버에 맞춤`, sid)
+      s.lineBase = (s.lineBase ?? 0) + most - s.lineNo
+      s.lineNo = most
       saveSessions()
     }
     s.activityAt = Date.now()
@@ -3177,8 +3283,9 @@ function findTranscript(conv, before, { own = false } = {}) {
  * Re-read the transcript from the start, sending only the lines the server does not have yet. The file's first line
  * is line lineBase: what 대화 기록 정리 took out of it still counts.
  */
-function rewind(s, serverLines) {
-  Object.assign(s, { offset: 0, lineNo: s.lineBase ?? 0, skip: serverLines })
+function rewind(s, link, serverLines) {
+  Object.assign(s, { offset: 0, lineNo: s.lineBase ?? 0 })
+  ;(s.skips ??= {})[link.kind] = Number(serverLines) || 0
 }
 
 // ---------- working folder ----------
@@ -3793,7 +3900,7 @@ async function openCodex(reqId, sid, { conv, cwd, home, autoPush, model, sysProm
     s.mirror = {}
     syncMirror({ rollout: file, mirror: mirrorPath(sid), sid, state: s.mirror })
     const text = fs.readFileSync(mirrorPath(sid), 'utf8')
-    Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skip: 0, lineBase: 0 })
+    Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skips: {}, lineBase: 0 })
     resetRuntime(s)
     sessions.set(sid, s)
     try {
@@ -3841,7 +3948,7 @@ async function adoptCodex(reqId, sid, { conv, cwd, autoPush, sysPrompt, codexMod
     // The whole conversation so far, made from the rollout: the server reads it from the first line.
     s.mirror = {}
     syncMirror({ rollout: file, mirror: mirrorPath(sid), sid, state: s.mirror })
-    Object.assign(s, { offset: 0, lineNo: 0, skip: 0, lineBase: 0 })
+    Object.assign(s, { offset: 0, lineNo: 0, skips: {}, lineBase: 0 })
     resetRuntime(s)
     sessions.set(sid, s)
     try {
@@ -3928,7 +4035,7 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     }
     const lines = (f) => (fs.existsSync(f) ? (fs.readFileSync(f, 'utf8').match(/\n/g)?.length ?? 0) : 0)
     const silent = resumed ? lines(transcriptPath(t, sid)) : 0
-    Object.assign(t, { offset: 0, lineNo: 0, skip: 0, lineBase: 0 })
+    Object.assign(t, { offset: 0, lineNo: 0, skips: {}, lineBase: 0 })
     // What it wrote last reaches the server before its conversation is left (the copy starts over below).
     try {
       tail(sid, s)
@@ -3959,7 +4066,7 @@ async function switchRunner({ reqId, sid, runner, codexMode, autoAllow, allowAll
     } catch (e) {
       if (e instanceof SessionClosed) throw e
       // The old runner's conversation back, the session down: opening it again resumes where it was.
-      Object.assign(s, { offset: 0, lineNo: 0, skip: 0, lineBase: 0, alive: false })
+      Object.assign(s, { offset: 0, lineNo: 0, skips: {}, lineBase: 0, alive: false })
       resetRuntime(s)
       sessions.set(sid, s)
       emit({ t: 'conv', sid, conv: s.conv || sid, replay: false, silent: lines(transcriptPath(s, sid)), keepTitle: true, runner: from })
@@ -4105,7 +4212,7 @@ const commands = {
     const st = storeOf(cmd)
     try {
       st.append(sid, events)
-      if (typeof lid === 'string') keptLids.push(lid)
+      if (typeof lid === 'string') hereLink().kept.push(lid)
       if (sessions.has(sid) || st.has(sid)) sendStats(sid, false, Array.isArray(events) && events.some((e) => e?.k === 'status' && e.phase !== 'busy') ? STATS_TURN_MS : STATS_MS)
     } catch (e) {
       log('error', 'store', `세션 기록을 저장하지 못함: ${e.message}`, sid)
@@ -4118,7 +4225,7 @@ const commands = {
       // In enforce the server writes only a picture whose name is its own SHA-1 (REQ-S-092).
       const ok = bytes && (!enforcing() || id.startsWith(`${crypto.createHash('sha1').update(bytes).digest('hex')}.`))
       if (imageIdOk(id) && ok) saveImage(IMAGES_DIR, id, bytes)
-      if (typeof lid === 'string') keptLids.push(lid)
+      if (typeof lid === 'string') hereLink().kept.push(lid)
     } catch (e) {
       log('error', 'store', `그림을 저장하지 못함: ${e.message}`)
     }
@@ -4251,24 +4358,44 @@ const commands = {
       emit({ t: 'img', reqId, ok: false, error: '이 맥에 그 그림이 없어요' })
     }
   },
-  welcome({ sessions: known }) {
+  welcome({ sessions: known, partial }) {
+    const link = hereLink()
+    const got = known && typeof known === 'object' ? known : {}
     for (const [sid, s] of sessions) {
-      const k = known[sid]
-      // While this Mac does not trust the server, the server cannot end a session here by saying it is not mine.
-      if (k && !k.mine && !enforcing()) commands.release({ sid })
-      else rewind(s, k?.lines ?? 0)
+      // A welcome for the sessions told to it (sessadd, REQ-F-924) says nothing about the others.
+      if (partial === true && !Object.hasOwn(got, sid)) continue
+      const k = Object.hasOwn(got, sid) ? got[sid] : null
+      link.asked.delete(sid)
+      if (k) link.known.add(sid)
+      if (k && !k.mine) {
+        // While both are linked, one server saying so ends nothing the other may hold: it is only not told about it.
+        if (lf.active && lf.both) {
+          letGo(link, sid)
+          continue
+        }
+        // While this Mac does not trust the server, the server cannot end a session here by saying it is not mine.
+        if (!enforcing()) {
+          commands.release({ sid })
+          continue
+        }
+      }
+      rewind(s, link, k?.lines ?? 0)
       s.statusKey = null
     }
-    welcomed = true
-    // The profile's page reached the server, so it got past the proxy: the sign-in is no longer needed (REQ-F-833).
-    // A visible tab of another browser that took over does not say so: it is what carries the report to the server.
-    if (bg.loginNeed && clientBg) {
-      log('info', 'background', '연동 페이지가 다시 서버에 붙어 로그인 필요 표시를 지움')
-      bg.loginNeed = null
+    if (partial === true) return
+    link.welcomed = true
+    // The site's bridge tab, not the local server, is what these are about.
+    if (link.kind === 'site') {
+      // The profile's page reached the server, so it got past the proxy: the sign-in is no longer needed (REQ-F-833).
+      // A visible tab of another browser that took over does not say so: it is what carries the report to the server.
+      if (bg.loginNeed && clientBg) {
+        log('info', 'background', '연동 페이지가 다시 서버에 붙어 로그인 필요 표시를 지움')
+        bg.loginNeed = null
+      }
+      // The visible sign-in window linked. Chrome writes its cookies to the profile's database only every so often (a
+      // window closed a few seconds after signing in left none for the headless one), so it stays VISIBLE_KEEP_MS first.
+      if (clientBg && bg.visible) setTimeout(() => endVisibleLogin('보이는 창이 연동되어 창을 닫고 헤드리스로 다시 띄움'), VISIBLE_KEEP_MS).unref?.()
     }
-    // The visible sign-in window linked. Chrome writes its cookies to the profile's database only every so often (a
-    // window closed a few seconds after signing in left none for the headless one), so it stays VISIBLE_KEEP_MS first.
-    if (clientBg && bg.visible) setTimeout(() => endVisibleLogin('보이는 창이 연동되어 창을 닫고 헤드리스로 다시 띄움'), VISIBLE_KEEP_MS).unref?.()
     // `start` says how to link only until a bridge tab has linked once.
     if (!config.linkedAt) {
       config.linkedAt = Date.now()
@@ -4294,7 +4421,7 @@ const commands = {
   ping({ ts }) {
     emit({ t: 'pong', ts })
   },
-  rehello: hello,
+  rehello: () => hello(),
   // 세션 그룹 넘겨주기 (REQ-F-905): the linked server's groups (the site's, or this Mac's local server's) and when they
   // last changed. Newer than the ones kept here: kept. Older: the kept ones go up, so the one changed last wins.
   groups(cmd) {
@@ -4302,6 +4429,8 @@ const commands = {
     const step = groupsStep(localFull.groups(), cmd)
     if (step.do === 'keep') {
       if (!localFull.saveGroups(step.rec)) log('warn', 'groups', '세션 그룹이 너무 커서 맥에 두지 않음')
+      // While both are linked the other server gets them now, not at its next hello (REQ-F-924).
+      else for (const l of othersOf(hereLink())) emitTo(l, { t: 'groups', ...step.rec })
     } else if (step.do === 'send') {
       log('info', 'groups', `연동한 서버보다 나중에 바뀐 세션 그룹을 올림(그룹 ${step.msg.groups.length}개)`)
       emit(step.msg)
@@ -4317,6 +4446,12 @@ const commands = {
     if (late) log('warn', 'groups', `연동한 서버의 즐겨찾기·제목 시각이 맥 시계보다 5분 넘게 앞서 받지 않음(${late}개, 시계를 맞춰 주세요)`)
     const step = marksStep(localFull.marks(), list)
     if (step.keep) localFull.saveMarks(step.keep)
+    // While both are linked the other server gets the newer ones now (REQ-F-924), each only of the sessions it has.
+    if (step.took.length)
+      for (const l of othersOf(hereLink())) {
+        const mine = step.took.filter((e) => !l.hidden.has(e.sid))
+        if (mine.length) emitTo(l, { t: 'marks', list: mine })
+      }
     if (step.send.length) {
       log('info', 'groups', `연동한 서버보다 나중에 바뀐 즐겨찾기·제목을 올림(세션 ${step.send.length}개)`)
       emit({ t: 'marks', list: step.send })
@@ -4423,7 +4558,7 @@ const commands = {
       }
       const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
       // Where the copy ends is where reading resumes, set before claude can append to the file.
-      Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skip: 0, lineBase: 0 })
+      Object.assign(s, { offset: Buffer.byteLength(text), lineNo: text.split('\n').length - 1, skips: {}, lineBase: 0 })
       // In the map before claude starts, so its first hooks are not dropped.
       resetRuntime(s)
       sessions.set(sid, s)
@@ -4603,13 +4738,16 @@ const commands = {
     fs.rmSync(path.join(STATE_DIR, 'prompts', `${sid}.txt`), { force: true })
     // Another runner's mirror is made from its own record, which stays: the copy goes with the session.
     if (!isClaude(s)) fs.rmSync(mirrorPath(sid), { force: true })
-    emit({ t: 'closed', sid })
+    // ended: closed for good, so a server that did not ask (both linked, REQ-F-924) closes its copy too.
+    emit({ t: 'closed', sid, ended: true })
     agentHook('session.close', sid, s.cwd)
   },
   /** The session now runs on another host: stop it here and forget it. The transcript file stays. */
   async release({ sid }) {
     const s = sessions.get(sid)
     if (!s) return
+    // While both are linked the server that says so is only not told about it any more (REQ-F-924).
+    if (lf.active && lf.both && origin()) return letGo(origin(), sid)
     s.closed = true
     await tmux('kill-session', '-t', `=${s.tmux}`)
     resetRuntime(s)
@@ -4709,7 +4847,7 @@ const commands = {
       saveSessions()
       // The log so far comes along, its cards not (their buttons belong to the original); and the ids of the copied
       // lines, which the server does not draw a second time (REQ-S-069).
-      if (Number.isInteger(copyLog)) evStore().copy(sid, newSid, copyLog)
+      if (Number.isInteger(copyLog)) storeFor(hereLink()).copy(sid, newSid, copyLog)
       let uuids = []
       try {
         uuids = [...fs.readFileSync(transcriptPath(from, sid), 'utf8').matchAll(/"uuid":"([0-9a-f-]{36})"/g)].map((m) => m[1])
@@ -5079,7 +5217,7 @@ const commands = {
     // and never sends one plain when it cannot; in pieces of about SNAP_PIECE (`parts`, a server that relays them),
     // the drawing kept on this disk first when there is one, then the one drawn now. The address may come sealed by
     // the device (then the server never saw it either).
-    const devices = !lf.active && trust.devices().length > 0
+    const devices = hereLink().kind === 'site' && trust.devices().length > 0
     const seal = devices ? trust.sealer() : null
     const fail = (error) => emit({ t: 'snapshot', reqId, sid, ok: false, error: seal ? seal(String(error), sid) : error })
     if (devices && !seal) return fail('이 맥에 봉인 열쇠가 없어 스냅샷을 봉인하지 못했어요. 평문으로 대신 보내지 않아요 — 맥 터미널에서 trust 상태를 확인해 주세요')
@@ -5213,9 +5351,11 @@ const commands = {
    * out of order and are put back in order here.
    */
   ws(cmd) {
-    const id = String(cmd.id)
+    // Kept by the server that opened it: two linked servers may pick the same id (REQ-F-924).
+    const link = hereLink()
+    const id = `${link.kind}:${String(cmd.id)}`
     let c = wsConns.get(id)
-    if (!c) wsConns.set(id, (c = { ws: null, next: 0, waiting: new Map() }))
+    if (!c) wsConns.set(id, (c = { ws: null, next: 0, waiting: new Map(), link, id: String(cmd.id) }))
     c.waiting.set(Number(cmd.seq) || 0, cmd)
     while (c.waiting.has(c.next)) {
       const m = c.waiting.get(c.next)
@@ -5442,7 +5582,7 @@ const commands = {
       setRouting(s, routing)
       // The whole conversation so far is read and synced from its first line: the server's copy is what a move
       // to another Mac resumes from.
-      Object.assign(s, { offset: 0, lineNo: 0, skip: 0 })
+      Object.assign(s, { offset: 0, lineNo: 0, skips: {} })
       resetRuntime(s)
       sessions.set(sid, s)
       try {
@@ -5765,7 +5905,7 @@ const commands = {
     // Like agent updates: a checkout being worked on, or --no-auto-update, keeps the screen it has.
     if (noAutoUpdate || path.resolve(AGENT_DIR) !== path.resolve(STATE_DIR)) return log('info', 'localui', `새 화면 묶음이 왔지만 ${noAutoUpdate ? '--no-auto-update 라' : '설치본이 아닌 곳에서 실행 중이라'} 그대로 둠`)
     const r = localUi.offer({ doc, sig, bundle })
-    if (r.result === 'installed') hello().catch(() => {})
+    if (r.result === 'installed') helloAll()
     else if (r.result !== 'same') log(r.result === 'verify_failed' ? 'error' : 'info', 'localui', `받은 화면 묶음을 쓰지 않음: ${r.result}${r.why ? ` (${r.why})` : ''}${r.seq ? ` (순번 ${r.seq} ≤ ${r.floor})` : ''}`)
   },
   /** When this Mac takes a new agent (REQ-F-832): only at night (from~to o'clock) or as soon as it arrives. */
@@ -5825,7 +5965,7 @@ const commands = {
       if (op === 'remove') {
         if (!trust.remove(String(id ?? ''))) throw new Error('그런 기기가 없어요')
         log('info', 'trust', `기기 해제: ${id}`)
-        hello().catch(() => {})
+        helloAll()
         return reply({ info: trustInfo() })
       }
       throw new Error('모르는 요청이에요')
@@ -5835,7 +5975,7 @@ const commands = {
   },
   resync({ sid, lines }) {
     const s = sessions.get(sid)
-    if (s) rewind(s, lines)
+    if (s) rewind(s, hereLink(), lines)
   },
 }
 
@@ -5917,7 +6057,7 @@ function reopenLink(ua, key) {
   stats.staleKey = { at: Date.now(), app }
   if (!app || process.platform !== 'darwin' || !config.site) return
   const once = `${app} ${keyPrint(key)}`
-  if (client || reopened.has(once) || Date.now() - (reopened.get(app) ?? 0) < REOPEN_MS) return
+  if (client || siteBlocked() || reopened.has(once) || Date.now() - (reopened.get(app) ?? 0) < REOPEN_MS) return
   reopened.set(app, Date.now())
   reopened.set(once, Date.now())
   execFile('open', ['-b', app, bridgeLink()], (err) => {
@@ -6988,12 +7128,12 @@ async function health() {
     sessions: list,
   })
 }
-setInterval(() => client && welcomed && health().catch((e) => log('error', 'health', e.message)), HEALTH_MS)
+setInterval(() => anyWelcomed() && health().catch((e) => log('error', 'health', e.message)), HEALTH_MS)
 // 세션 정리 (REQ-F-838): ten minutes after the agent starts, then every hour, it asks the server for a batch (tidyAsk →
 // tidyRun). A server that does not know it just never answers.
 const tidyStartAt = Date.now()
 setInterval(() => {
-  if (!client || !welcomed || tidyBusy) return
+  if (!anyWelcomed() || tidyBusy) return
   if (tidyLastAt ? Date.now() - tidyLastAt < TIDY_MS : Date.now() - tidyStartAt < TIDY_FIRST_MS) return
   tidyLastAt = Date.now()
   emit({ t: 'tidyAsk' })
@@ -7059,7 +7199,7 @@ function reportTestflight() {
   testflightSent = key
   emit({ t: 'testflight', ...v })
 }
-setInterval(() => client && welcomed && reportTestflight(), 60_000)
+setInterval(() => anyWelcomed() && reportTestflight(), 60_000)
 
 // ---------- checks ----------
 
@@ -7131,7 +7271,7 @@ const accountEnvOf = (id) => (id ? { CLAUDE_CONFIG_DIR: accountDir(id) } : proce
 function accountList() {
   const used = (id) => [...sessions.values()].filter((s) => (s.account ?? '') === id).length
   // A linked folder says where it is, except while this Mac seals what it sends (REQ-S-095): no new plain field then.
-  const linked = (a) => (a.external ? { external: true, missing: !fs.existsSync(a.dir), ...(trustSealing() ? {} : { dir: tilde(a.dir) }) } : {})
+  const linked = (a) => (a.external ? { external: true, missing: !fs.existsSync(a.dir), ...(siteSeals() ? {} : { dir: tilde(a.dir) }) } : {})
   return [{ id: '', name: config.mainAccountName || '기본 계정', main: true }, ...accounts.map((a) => ({ id: a.id, name: a.name, main: false, ...linked(a) }))].map((a) => ({ ...a, ...(accountAuth.get(a.id) ?? { loggedIn: null }), sessions: used(a.id), signingIn: logins.has(a.id), ...(lastLogins.has(a.id) ? { renewedAt: lastLogins.get(a.id).at, sameAccount: lastLogins.get(a.id).same } : {}) }))
 }
 /** Whether the login keychain has an item of that name. The secret itself is not read, so nothing is asked. */
@@ -7995,7 +8135,7 @@ async function heal() {
       repaired('lid', `덮개 잠자기 설정이 바뀌어 있어(SleepDisabled ${now ? 1 : 0}) 다시 적용함`, lidActive === !!config.keepLidAwake)
     }
   }
-  if (config.background && CHROME_BIN && !bg.visible && !(client && clientBg) && !lf.active) {
+  if (config.background && CHROME_BIN && !bg.visible && !(client && clientBg) && !siteBlocked()) {
     const since = bg.startedAt ?? 0
     if (!bg.child && Date.now() - since > 90_000) {
       startBackground()
@@ -8019,7 +8159,9 @@ if (!doctorOnly && !serviceCmd && !linkOnly && !awakeCmd) setInterval(autoRotate
 async function features() {
   const out = []
   const add = (id, title, state, detail, extra = {}) => out.push({ id, title, state, detail, ...extra })
-  add('link', '연동', client ? 'ok' : 'fail', client ? (lf.active ? `로컬 전체 화면(127.0.0.1:${lf.port})에 연동 중` : clientBg ? '헤드리스 브라우저가 연동 중' : '브라우저 탭이 연동 중') : '연동 페이지가 붙어 있지 않음', client ? {} : { fix: '이 맥의 Chrome 에서 사이트를 열거나 헤드리스 연동 모드를 켜세요' })
+  const linkOk = client || siteBlocked()
+  const siteText = clientBg ? '헤드리스 브라우저가 연동 중' : '브라우저 탭이 연동 중'
+  add('link', '연동', linkOk ? 'ok' : 'fail', siteBlocked() ? `로컬 전체 화면(127.0.0.1:${lf.port})에 연동 중` : client ? `${siteText}${lf.active ? ` · 로컬 서버(127.0.0.1:${lf.port})에도 함께 연동 중` : ''}` : '연동 페이지가 붙어 있지 않음', linkOk ? {} : { fix: '이 맥의 Chrome 에서 사이트를 열거나 헤드리스 연동 모드를 켜세요' })
   const b = backgroundState()
   const visibleFix = `node ${SELF} link --visible`
   if (b.on && b.chrome && b.visible) add('background', '헤드리스 연동 모드', 'warn', '보이는 Chrome 창에서 프록시 로그인을 기다리는 중', { action: 'visible-login' })
@@ -8414,7 +8556,7 @@ async function reviveAfterRestart() {
     try {
       await refresh(sid, s)
       // Said in the conversation now if the page is linked, else as soon as it is (welcome).
-      if (await alive(s)) client && welcomed ? note(sid, '🔁 맥이 다시 켜져서 세션을 같은 대화로 다시 열었어요.') : (s.revived = true)
+      if (await alive(s)) anyWelcomed() ? note(sid, '🔁 맥이 다시 켜져서 세션을 같은 대화로 다시 열었어요.') : (s.revived = true)
     } finally {
       s.reviving = false
     }
@@ -8437,11 +8579,14 @@ let scanning = false
 /** `${pid}:${port}` -> { http, title, at }: whether a listener answers HTTP, asked once a minute. */
 const probed = new Map()
 
-/** A local preview's WebSockets to localhost: id -> { ws, next, waiting }. */
+/** A local preview's WebSockets to localhost: '<link kind>:<id>' -> { ws, next, waiting, link, id }. */
 const wsConns = new Map()
+/** The ids of the WebSockets one linked server opened, as it named them. */
+const wsIdsOf = (link) => [...wsConns.values()].filter((c) => c.link === link).map((c) => c.id)
 
 function wsStep(id, c, m) {
-  const say = (msg) => emit({ t: 'ws', id, ...msg })
+  // To the server that opened it, whichever command or socket event says it.
+  const say = (msg) => emitTo(c.link, { t: 'ws', id: c.id, ...msg })
   if (m.op === 'open') {
     const server = [...sessions.values()].flatMap((s) => s.servers ?? []).find((x) => x.port === Number(m.port))
     if (!server) return wsConns.delete(id), say({ op: 'error', error: `이 맥에 세션이 띄운 ${m.port} 포트 서버가 없어요` })
@@ -8558,7 +8703,7 @@ async function scanServers() {
 
 let ticking = false
 setInterval(async () => {
-  if (ticking || !client || !welcomed) return
+  if (ticking || !anyWelcomed()) return
   ticking = true
   try {
     // Only when it is due (REQ-F-832): the night window, `always`, or 지금 업데이트. The 60 s wait for the agent's own
@@ -8778,7 +8923,8 @@ const server = http.createServer(async (req, res) => {
     // One tab at a time. A tab the agent just opened (takeover) wins; any other tab is turned away while the
     // current one is alive, so a forgotten tab's automatic reconnect cannot pull the agent away from it.
     // While this Mac is on its local server (local --full), no tab of the site links it: one link at a time (REQ-F-900).
-    if (lf.active) return res.end('data: {"t":"busy","local":true}\n\n')
+    // With local --full both the site stays linked beside it (REQ-F-924).
+    if (siteBlocked()) return res.end('data: {"t":"busy","local":true}\n\n')
     const tab = url.searchParams.get('tab') || ''
     const isBg = url.searchParams.get('bg') === '1'
     const alive = client && Date.now() - clientSeen < 45_000
@@ -8822,11 +8968,11 @@ const server = http.createServer(async (req, res) => {
       clearInterval(ping)
       if (client === res) {
         client = null
-        welcomed = false
+        resetLink(siteLink)
         log('warn', 'link', '연동 페이지 끊김')
       }
     })
-    return hello()
+    return hello(siteLink)
   }
   if (req.method === 'POST' && url.pathname === '/cmd') {
     const chunks = []
@@ -8843,7 +8989,7 @@ const server = http.createServer(async (req, res) => {
       return res.writeHead(400, cors).end()
     }
     // A tab of the site has no say while this Mac is on its local server (local --full).
-    if (lf.active) return res.writeHead(409, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":false,"error":"로컬 전체 화면으로 연동 중"}')
+    if (siteBlocked()) return res.writeHead(409, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":false,"error":"로컬 전체 화면으로 연동 중"}')
     res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end('{"ok":true}')
     if ((url.searchParams.get('tab') || clientTab) === clientTab) clientSeen = Date.now()
     return runCommand(cmd)
@@ -8861,6 +9007,10 @@ async function runCommand(cmd, { local = false } = {}) {
   if (!cmd || typeof cmd !== 'object') return
   const fn = commands[cmd.t]
   if (!fn) return
+  // Run as that link's (REQ-F-924): its answers go back to it alone, its logs and line counts are its own.
+  return via.run(local ? localLink : siteLink, () => runLinked(cmd, fn, local))
+}
+async function runLinked(cmd, fn, local) {
   if (local) {
     delete cmd.signed
     cmd.signed = 'local'
