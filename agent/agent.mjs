@@ -1364,7 +1364,7 @@ function emit(msg) {
 
 /**
  * One message to one linked server. Words leave sealed for a link that seals (§6.2); transcript lines were sealed
- * where they were read (tail), and lines that were not never go to such a link (REQ-S-111). Nothing about a session
+ * where they were read (tail), and lines that were not never go to such a link (REQ-S-113). Nothing about a session
  * that server said is not its own goes to it.
  */
 function emitTo(link, msg) {
@@ -1373,7 +1373,7 @@ function emitTo(link, msg) {
   const seals = sealsFor(link)
   const no = refusedFor(msg, link, seals)
   if (no) {
-    if (no !== 'hidden') log('error', 'trust', '봉인하지 않은 대화 줄이 사이트로 갈 뻔해 보내지 않음', msg.sid)
+    if (no !== 'hidden') log('error', 'trust', `봉인하지 않은 ${no === 'snapshot-not-sealed' ? '스냅샷' : '대화 줄'}이 사이트로 갈 뻔해 보내지 않음`, msg.sid)
     return
   }
   let m = msg
@@ -1394,7 +1394,8 @@ function letGo(link, sid) {
   if (link.hidden.has(sid)) return
   link.hidden.add(sid)
   log('info', 'link', `${link.kind === 'site' ? '사이트' : '로컬 서버'}가 이 세션을 자기 것이 아니라고 해 그쪽에는 보내지 않음`, sid)
-  if (siteLink.hidden.has(sid) && localLink.hidden.has(sid)) via.run(null, () => commands.release({ sid }))
+  // Never on the word of a server this Mac does not trust (enforce), as without both (welcome).
+  if (siteLink.hidden.has(sid) && localLink.hidden.has(sid) && !enforcing()) via.run(null, () => commands.release({ sid }))
 }
 
 /** The other linked servers than this one, each that has welcomed this Mac. */
@@ -1430,7 +1431,9 @@ async function announceSessions() {
       const list = []
       for (const [id, s] of sessions) {
         if (s.starting || s.closed || l.known.has(id) || l.asked.has(id) || l.hidden.has(id)) continue
-        list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: storeFor(l).tailSeq(id) })
+        const reopen = s.reopenFor?.has(l.kind) === true
+        s.reopenFor?.delete(l.kind)
+        list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: storeFor(l).tailSeq(id), ...(reopen ? { reopen: true } : {}) })
         if (list.length >= 50) break
       }
       if (!list.length) continue
@@ -1452,7 +1455,7 @@ const adapters = new Adapters({ stateDir: STATE_DIR, log: (level, text) => log(l
 const exposure = new ExposureRunner()
 let exposureTimer = null
 function sendExposure() {
-  if (!client || !exposure.last || exposure.sent) return
+  if (!linked().length || !exposure.last || exposure.sent) return
   emit({ t: 'exposure', exposure: exposure.last })
   exposure.sent = true
 }
@@ -3212,7 +3215,7 @@ function tail(sid, s) {
       })
     const flush = (o) => {
       if (o.batch.length) {
-        const msg = { t: 'lines', sid, from: o.from, lines: o.batch }
+        const msg = { t: 'lines', sid, from: o.from, lines: o.batch, ...(o.gap ? { gap: true } : {}) }
         if (o.seal) msg[SEALED_LINES] = true
         emitTo(o.link, msg)
       }
@@ -3234,7 +3237,10 @@ function tail(sid, s) {
       for (const o of to) {
         const out = o.seal ? sealLine(line, o.seal, o.echo, trustSeen.quiet) : line
         if (o.batch.length && o.size + out.length > MAX_CHUNK) flush(o)
-        if (!o.batch.length) o.from = s.lineNo
+        // A server with fewer lines than the file's first (대화 기록 정리 took them out, REQ-F-793) gets the rest from
+        // there: `gap` says the ones before are not coming, so it counts on from them instead of asking again.
+        // Only from the file's first line: lines held back for another reason (no key to seal) are asked for again.
+        if (!o.batch.length) ((o.from = s.lineNo), (o.gap = s.lineNo === (s.lineBase ?? 0) && s.lineNo > (s.skips[o.link.kind] ?? 0)))
         o.batch.push(out)
         o.size += out.length
         s.skips[o.link.kind] = s.lineNo + 1
@@ -3427,6 +3433,8 @@ const delegating = new Map()
 function delegate(sid, op, args) {
   if (enforcing()) return Promise.resolve({ ok: false, error: '이 맥은 서버를 믿지 않는 모드라 다른 맥에 일을 맡길 수 없어요' })
   const areq = crypto.randomUUID()
+  // No linked server that has this session to ask: said now, not after the wait (REQ-F-924).
+  if (!routeOf({ t: 'delegate', sid }, null, linked()).length) return Promise.resolve({ ok: false, error: '이 세션을 아는 브릿지 서버에 연결돼 있지 않아요' })
   return new Promise((resolve) => {
     const timer = setTimeout(() => delegating.delete(areq) && resolve({ ok: false, error: '브릿지 서버가 답하지 않았어요' }), 1_920_000)
     delegating.set(areq, (r) => (clearTimeout(timer), delegating.delete(areq), resolve(r)))
@@ -9029,6 +9037,25 @@ async function runLinked(cmd, fn, local) {
     log('error', cmd.t, `실패: ${e.stack || e.message}`, cmd.sid)
     emit({ t: 'error', sid: cmd.sid, reqId: cmd.reqId, message: e.message })
   }
+  if (typeof cmd.sid === 'string' && sessions.has(cmd.sid)) knownBy(origin(), cmd.sid, REOPENS.has(cmd.t))
+}
+/** Commands that start a session here, or open an ended one again (resume). */
+const REOPENS = new Set(['new', 'open'])
+/**
+ * A server sent a command about this session, so it has it: no sessadd to it (REQ-F-924). One that started it here
+ * (new, or resume of one ended) while the other server hides it as ended there: the other is told again, to open it.
+ */
+function knownBy(link, sid, started) {
+  if (!link) return
+  link.known.add(sid)
+  if (!started || !(lf.active && lf.both)) return
+  const s = sessions.get(sid)
+  for (const l of othersOf(link))
+    if (l.hidden.delete(sid)) {
+      ;(s.reopenFor ??= new Set()).add(l.kind)
+      l.known.delete(sid)
+      l.asked.delete(sid)
+    }
 }
 
 if (doctorOnly) {

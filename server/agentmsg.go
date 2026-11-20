@@ -550,6 +550,20 @@ func sessaddFromAgent(uid, hostID string, msg M) {
 	if len(list) > SESSADD_MAX {
 		list = list[:SESSADD_MAX]
 	}
+	// Opened again through the other server (resume of one ended there), and ended here only because it ended there:
+	// open here too.
+	for _, x := range list {
+		e := asM(x)
+		if e["reopen"] != true || !safeId(e["id"]) {
+			continue
+		}
+		if meta, ok := sessions.Get(e["id"].(string)); ok && meta.uid() == uid && meta.host() == hostID && truthy(meta.get("closed")) {
+			meta.set("closed", false)
+			meta.del("closedAt")
+			logEvents(meta, []any{M{"k": "notice", "text": "다른 화면에서 다시 열었어요", "tone": "info"}})
+			touch(meta)
+		}
+	}
 	known, _ := adoptListed(uid, hostID, list)
 	if len(known) == 0 {
 		return
@@ -587,8 +601,14 @@ func linesFromAgent(uid, hostID string, msg M) {
 		return
 	}
 	if from, ok := msg["from"].(float64); !ok || from != numOr0(meta.get("lines")) {
-		toHost(hostID, M{"t": "resync", "sid": meta.id(), "lines": meta.get("lines")})
-		return
+		// The Mac's file starts later than the lines here (대화 기록 정리 took the first ones out, REQ-F-793): it says
+		// so with gap, and the count goes on from there, as no line before it is coming (REQ-F-924).
+		if ok && truthy(msg["gap"]) && from > numOr0(meta.get("lines")) && from <= 10_000_000 {
+			meta.set("lines", from)
+		} else {
+			toHost(hostID, M{"t": "resync", "sid": meta.id(), "lines": meta.get("lines")})
+			return
+		}
 	}
 	// Read into events and let go: the transcript stays on the Mac (REQ-S-069).
 	lines := []string{}

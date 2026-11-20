@@ -1,4 +1,4 @@
-// 사이트와 로컬 서버에 함께 연동 (REQ-F-924, REQ-S-111): which server a message goes to, that transcript lines reach
+// 사이트와 로컬 서버에 함께 연동 (REQ-F-924, REQ-S-113): which server a message goes to, that transcript lines reach
 // the site only sealed and the local server only plain, each server every line once and in order whatever rewinds the
 // other asks for, and what one server takes of the marks the other gets.
 import { test } from 'node:test'
@@ -33,6 +33,14 @@ test('AC-1838: an answer goes back to the server that asked, an ask for one serv
   assert.deepEqual(routeOf({ t: 'tidyAsk' }, null, both), [site], '정리 요청도 하나만')
   site.welcomed = false
   assert.deepEqual(routeOf({ t: 'delegate', areq: 'a' }, null, both), [local], '사이트가 아직이면 로컬')
+  site.welcomed = true
+  assert.deepEqual(routeOf({ t: 'snappart', snap: 'r9', sid: 's', plain: {} }, local, both), [local], '스냅샷 조각은 요청한 쪽만(snap)')
+  assert.deepEqual(routeOf({ t: 'error', sid: 's', message: 'x' }, local, both), [local], '명령의 오류는 보낸 쪽만')
+  assert.deepEqual(routeOf({ t: 'error', sid: 's', message: 'x' }, null, both), both, '명령 밖의 오류는 둘 다')
+  site.hidden.add('sess-0007')
+  assert.deepEqual(routeOf({ t: 'delegate', areq: 'a', sid: 'sess-0007' }, null, both), [local], '사이트가 숨긴 세션의 맡기기는 로컬로')
+  local.hidden.add('sess-0007')
+  assert.deepEqual(routeOf({ t: 'delegate', areq: 'a', sid: 'sess-0007' }, null, both), [], '둘 다 숨겼으면 아무에게도')
   assert.equal(primaryOf([]), null)
   assert.deepEqual(routeOf({ t: 'status' }, null, []), [])
   resetLink(local)
@@ -48,6 +56,9 @@ test('AC-1838: nothing about a hidden session, and no unsealed lines to a link t
   assert.equal(refusedFor({ t: 'lines', sid: 'sess-0002', lines: ['x'], [SEALED_LINES]: true }, site, true), null)
   assert.equal(refusedFor({ t: 'lines', sid: 'sess-0002', lines: ['x'] }, site, false), null, '봉인하지 않는 쪽은 평문')
   assert.equal(JSON.stringify({ t: 'lines', [SEALED_LINES]: true }), '{"t":"lines"}', '표시는 밖으로 나가지 않음')
+  assert.equal(refusedFor({ t: 'snappart', sid: 'sess-0002', snap: 'r', plain: { html: '<p>' } }, site, true), 'snapshot-not-sealed', '평문 스냅샷 조각은 봉인하는 쪽에 안 감')
+  assert.equal(refusedFor({ t: 'snappart', sid: 'sess-0002', snap: 'r', sealed: 'x' }, site, true), null)
+  assert.equal(refusedFor({ t: 'snappart', sid: 'sess-0002', snap: 'r', plain: {} }, site, false), null)
 })
 
 test('AC-1839: marks taken from one server are what the other gets', () => {
@@ -64,7 +75,7 @@ test('AC-1839: marks taken from one server are what the other gets', () => {
  * local server does not. Each fake server keeps lines only when `from` is its count, and asks for a resync otherwise
  * (as linesFromAgent does).
  */
-function rig({ sealer = (t) => `⟦S:${Buffer.from(t).toString('base64')}⟧`, siteSeals = true, chunk = 300 } = {}) {
+function rig({ sealer = (t) => `⟦S:${Buffer.from(t).toString('base64')}⟧`, siteSeals = true, chunk = 300, lineBase } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-links-'))
   const file = path.join(dir, 't.jsonl')
   fs.writeFileSync(file, '')
@@ -76,7 +87,8 @@ function rig({ sealer = (t) => `⟦S:${Buffer.from(t).toString('base64')}⟧`, s
   const links = [site, local]
   const sealsFor = (l) => l.kind === 'site' && siteSeals
   const outOf = (l) => ({ write: (x) => outs[l.kind].push(x) })
-  const trust = { sealer: () => sealer }
+  const keys = { sealer }
+  const trust = { sealer: () => keys.sealer }
   const log = (level, area, text) => level === 'error' && errors.push(text)
   const stats = { sent: 0 }
   const emitTo = new Function('outOf', 'sealsFor', 'refusedFor', 'log', 'trust', 'sealOut', 'stats', 'hideKeys', 'ownKeys', 'deliver', `${fnSrc('function emitTo(link, msg) {').replace('out.write(', 'deliver(link, m), out.write(')}\nreturn emitTo`)(outOf, sealsFor, refusedFor, log, trust, (m) => m, stats, (x) => x, () => [], (link, m) => servers[link.kind].msgs.push(m))
@@ -105,13 +117,15 @@ function rig({ sealer = (t) => `⟦S:${Buffer.from(t).toString('base64')}⟧`, s
     chunk,
     () => {},
   )
-  const s = {}
+  const s = lineBase ? { lineBase } : {}
   /** What each fake server does with what came: keep in order, or ask again from its count. */
   const serve = () => {
     for (const k of ['site', 'local']) {
       const srv = servers[k]
       for (const m of srv.msgs.splice(0)) {
         if (m.t !== 'lines') continue
+        // As linesFromAgent: a gap (the file starts later) is counted on from; anything else is asked again.
+        if (m.from !== srv.have.length && m.gap === true && m.from > srv.have.length) while (srv.have.length < m.from) srv.have.push(null)
         if (m.from !== srv.have.length) {
           srv.resyncs++
           rewind(s, k === 'site' ? site : local, srv.have.length)
@@ -121,7 +135,7 @@ function rig({ sealer = (t) => `⟦S:${Buffer.from(t).toString('base64')}⟧`, s
       }
     }
   }
-  return { file, site, local, servers, outs, errors, s, tail: () => (tail('sess-0001', s), serve()), rewind: (l, n) => rewind(s, l, n), done: () => fs.rmSync(dir, { recursive: true, force: true }) }
+  return { file, site, local, servers, outs, errors, s, keys, tail: () => (tail('sess-0001', s), serve()), rewind: (l, n) => rewind(s, l, n), done: () => fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
 const lineOf = (i) => JSON.stringify({ type: i % 3 ? 'assistant' : 'user', message: { role: i % 3 ? 'assistant' : 'user', content: [{ type: 'text', text: `줄 ${i} ${'가'.repeat(i % 40)}` }] }, uuid: `u-${i}` })
@@ -221,4 +235,66 @@ test('AC-1841: the agent runs each command as its link, and every other place ta
   // Sealing: only the site's link seals; what goes to both (accounts' folders, a quit runner's screen) by the site's.
   assert.match(SRC, /const sealsFor = \(link\) => link\?\.kind === 'site' && !siteBlocked\(\) && trust\.sealing\(trustMode\(\)\) && trustSeen\.seal/)
   assert.match(SRC, /\.\.\.\(siteSeals\(\) \? \{\} : \{ dir: tilde\(a\.dir\) \}\)/)
+})
+
+test('AC-1840: a file that starts later than a new server\'s lines (trimmed) is sent from there with gap, not asked again forever', () => {
+  const r = rig({ lineBase: 3 })
+  try {
+    fs.appendFileSync(r.file, `${lineOf(3)}\n${lineOf(4)}\n`)
+    // Both welcome: the site has the lines up to the file's first, the new local server none.
+    r.servers.site.have.push(null, null, null)
+    r.rewind(r.site, 3)
+    r.rewind(r.local, 0)
+    r.tail()
+    r.tail()
+    assert.deepEqual(r.servers.local.have, [null, null, null, lineOf(3), lineOf(4)], '로컬은 3번부터 받고 앞은 비워 둠')
+    assert.equal(r.servers.local.resyncs, 0, '끝없이 다시 묻지 않음')
+    assert.equal(r.servers.site.have.length, 5)
+  } finally {
+    r.done()
+  }
+})
+
+test('AC-1840: lines held back while the site had no key to seal are asked for again when it has one, never skipped as a gap', () => {
+  const r = rig({ sealer: null })
+  try {
+    fs.appendFileSync(r.file, `${lineOf(0)}\n${lineOf(1)}\n`)
+    r.tail()
+    assert.deepEqual(r.servers.site.have, [])
+    r.keys.sealer = (t) => `⟦S:${Buffer.from(t).toString('base64')}⟧`
+    fs.appendFileSync(r.file, `${lineOf(2)}\n`)
+    for (let i = 0; i < 4; i++) r.tail()
+    assert.equal(r.servers.site.have.length, 3, '빠진 줄 없이 3줄')
+    assert.ok(r.servers.site.have.every((l) => l && !/줄 \d/.test(l)), '모두 봉인')
+    assert.deepEqual(r.servers.local.have, [lineOf(0), lineOf(1), lineOf(2)])
+  } finally {
+    r.done()
+  }
+})
+
+test('AC-1841: a session both servers say is not theirs is let go, never in enforce; one opened again through one is told to the other', () => {
+  const site = newLink('site')
+  const local = newLink('local')
+  site.welcomed = local.welcomed = true
+  const released = []
+  let enforce = false
+  const letGo = new Function('siteLink', 'localLink', 'enforcing', 'via', 'commands', 'log', `${fnSrc('function letGo(link, sid) {')}\nreturn letGo`)(site, local, () => enforce, { run: (_, f) => f() }, { release: ({ sid }) => released.push(sid) }, () => {})
+  letGo(local, 'sess-0001')
+  assert.deepEqual(released, [], '한쪽만 숨기면 그대로')
+  letGo(site, 'sess-0001')
+  assert.deepEqual(released, ['sess-0001'], '둘 다면 내려놓음')
+  enforce = true
+  letGo(local, 'sess-0002')
+  letGo(site, 'sess-0002')
+  assert.deepEqual(released, ['sess-0001'], 'enforce 에서는 서버 말로 내려놓지 않음')
+  // knownBy: a resume through the site of one the local server hides as ended.
+  const sessions = new Map([['sess-0003', {}]])
+  local.hidden.add('sess-0003')
+  local.known.add('sess-0003')
+  const knownBy = new Function('lf', 'sessions', 'othersOf', `${fnSrc('function knownBy(link, sid, started) {')}\nreturn knownBy`)({ active: true, both: true }, sessions, (l) => [site, local].filter((x) => x !== l && x.welcomed))
+  knownBy(site, 'sess-0003', false)
+  assert.ok(site.known.has('sess-0003') && local.hidden.has('sess-0003'), '명령만으로는 다른 쪽을 바꾸지 않음')
+  knownBy(site, 'sess-0003', true)
+  assert.ok(!local.hidden.has('sess-0003') && !local.known.has('sess-0003'), '다시 열면 다른 쪽에 다시 알림')
+  assert.ok(sessions.get('sess-0003').reopenFor.has('local'), 'reopen 표시')
 })

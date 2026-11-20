@@ -733,12 +733,12 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
 
 /**
  * Set by tail on a `lines` message whose lines were made for a link that seals (sealLine). A `lines` message without
- * it never goes to such a link (REQ-S-111): the one place transcript words could reach the site in plain.
+ * it never goes to such a link (REQ-S-113): the one place transcript words could reach the site in plain.
  */
 export const SEALED_LINES = Symbol('sealedLines')
 
 /** Answers to what one server asked, though they carry no reqId: they go back to the one that asked. */
-const TO_ASKER = new Set(['pong', 'marks', 'groups', 'tidyReport', 'dirdrop'])
+const TO_ASKER = new Set(['pong', 'marks', 'groups', 'tidyReport', 'dirdrop', 'error'])
 
 /** Asks that one server answers, with work done there (a delegated session, a tidy batch): never both. */
 const TO_ONE = new Set(['delegate', 'tidyAsk'])
@@ -767,9 +767,13 @@ export function resetLink(link) {
   link.asked.clear()
 }
 
-/** The link that answers asks meant for one server: the site when it has welcomed this Mac, else any that has. */
-export function primaryOf(linked) {
-  return linked.find((l) => l.kind === 'site' && l.welcomed) ?? linked.find((l) => l.welcomed) ?? linked[0] ?? null
+/**
+ * The link that answers asks meant for one server: the site when it has welcomed this Mac, else any that has; never
+ * one that hides the session the ask is about.
+ */
+export function primaryOf(linked, sid) {
+  const ok = linked.filter((l) => !(typeof sid === 'string' && l.hidden.has(sid)))
+  return ok.find((l) => l.kind === 'site' && l.welcomed) ?? ok.find((l) => l.welcomed) ?? ok[0] ?? null
 }
 
 /**
@@ -779,10 +783,12 @@ export function primaryOf(linked) {
  */
 export function routeOf(msg, from, linked) {
   if (!msg || typeof msg !== 'object' || !linked.length) return []
-  const answer = (msg.reqId !== undefined && msg.reqId !== null) || TO_ASKER.has(msg.t)
+  // A snapshot's pieces carry their request's id as `snap`.
+  const asked = (v) => v !== undefined && v !== null
+  const answer = asked(msg.reqId) || asked(msg.snap) || TO_ASKER.has(msg.t)
   if (answer && from) return linked.includes(from) ? [from] : []
   if (TO_ONE.has(msg.t)) {
-    const one = primaryOf(linked)
+    const one = primaryOf(linked, msg.sid)
     return one ? [one] : []
   }
   return linked
@@ -792,5 +798,7 @@ export function routeOf(msg, from, linked) {
 export function refusedFor(msg, link, seals) {
   if (typeof msg?.sid === 'string' && link.hidden.has(msg.sid)) return 'hidden'
   if (seals && msg?.t === 'lines' && msg[SEALED_LINES] !== true) return 'lines-not-sealed'
+  // A snapshot's piece is sealed whole where it is made or sent plain; sealOut does not know it (REQ-S-110).
+  if (seals && msg?.t === 'snappart' && msg.plain !== undefined) return 'snapshot-not-sealed'
   return null
 }

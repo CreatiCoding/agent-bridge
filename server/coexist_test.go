@@ -74,4 +74,44 @@ func TestSessAddAndEnded(t *testing.T) {
 	withLock(func() { fromAgent["closed"]("u1", "h1", M{"t": "closed", "sid": "sess-0009", "ended": true}) })
 	ok(t, !truthy(other.get("closed")), "다른 맥의 세션은 닫지 않음")
 	withLock(func() { fromAgent["closed"]("u2", "hx", M{"t": "closed", "sid": "sess-0001", "ended": true}) })
+
+	// Opened again through the other server: reopen opens one ended here, only this Mac's own and only when told.
+	h1.sent = nil
+	withLock(func() {
+		fromAgent["sessadd"]("u1", "h1", M{"t": "sessadd", "sessions": []any{M{"id": "sess-0001", "cwd": "/w/a", "alive": true}}})
+	})
+	ok(t, truthy(s1.get("closed")), "reopen 없이는 닫힌 그대로")
+	eq(t, mget(asM(sentOf(h1, "welcome")[0]["sessions"])["sess-0001"], "mine"), false)
+	withLock(func() { other.set("closed", true) })
+	h1.sent = nil
+	withLock(func() {
+		fromAgent["sessadd"]("u1", "h1", M{"t": "sessadd", "sessions": []any{M{"id": "sess-0001", "cwd": "/w/a", "alive": true, "reopen": true}, M{"id": "sess-0009", "reopen": true}}})
+	})
+	ok(t, !truthy(s1.get("closed")), "다른 화면에서 다시 연 세션은 여기서도 열림")
+	eq(t, mget(asM(sentOf(h1, "welcome")[0]["sessions"])["sess-0001"], "mine"), true)
+	ok(t, truthy(other.get("closed")), "다른 맥의 세션은 열지 않음")
+}
+
+// AC-1842: lines from a file that starts later (gap) are counted on from; any other wrong start is asked again.
+func TestLinesGap(t *testing.T) {
+	h1, _, _, _ := groupsSetup(t)
+	var s *Sess
+	withLock(func() {
+		s = newMeta("u1", "sess-0001", "h1", M{})
+		sessions.Set(s.id(), s)
+	})
+	line := `{"type":"user","message":{"role":"user","content":"hi"}}`
+	withLock(func() {
+		linesFromAgent("u1", "h1", M{"t": "lines", "sid": "sess-0001", "from": 3.0, "lines": []any{line}})
+	})
+	eq(t, numOr0(s.get("lines")), 0.0, "gap 없이 앞서면 받지 않음")
+	eq(t, len(sentOf(h1, "resync")), 1)
+	withLock(func() {
+		linesFromAgent("u1", "h1", M{"t": "lines", "sid": "sess-0001", "from": 3.0, "gap": true, "lines": []any{line}})
+	})
+	eq(t, numOr0(s.get("lines")), 4.0, "gap 이면 3 부터 이어 셈")
+	withLock(func() {
+		linesFromAgent("u1", "h1", M{"t": "lines", "sid": "sess-0001", "from": 1.0, "gap": true, "lines": []any{line}})
+	})
+	eq(t, numOr0(s.get("lines")), 4.0, "뒤로 가는 gap 은 받지 않음")
 }
