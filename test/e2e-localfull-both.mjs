@@ -159,7 +159,9 @@ try {
   const r1 = await raw(L, '/api/local/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Local-UI': '1' }, body: JSON.stringify({ ticket: t1 }) })
   ok(r1.status === 200, `로컬 서버에 링크로 로그인 (${r1.status})`)
   const cookie = String(r1.headers['set-cookie']?.[0] ?? '').split(';')[0]
-  const localH = { Cookie: cookie, Host: `127.0.0.1:${L}`, Origin: LO }
+  // The login's key goes with the cookie in a header (REQ-S-107).
+  const lkey = (() => { try { return JSON.parse(r1.body).key ?? '' } catch { return '' } })()
+  const localH = { Cookie: cookie, 'X-Local-Key': lkey, Host: `127.0.0.1:${L}`, Origin: LO }
   await until(async () => (await state(LO, localH)).online, 20000, '로컬 서버에 연결')
   ok(true, '로컬 서버에서 이 맥이 연결됨')
   ok((await state(SITE, siteH)).online, '사이트에서도 이 맥이 그대로 연결됨(함께 연동)')

@@ -167,13 +167,17 @@ try {
   const cookie = String(r1.headers['set-cookie']?.[0] ?? '').split(';')[0]
   ok(cookie.startsWith(`__Host-cb-l${L}=`) && /SameSite=Strict/.test(r1.headers['set-cookie']?.[0]) && /HttpOnly/.test(r1.headers['set-cookie']?.[0]), `이 포트만의 HttpOnly·Strict 쿠키`)
   ok((await login(t1)).status === 403, '같은 링크는 두 번 쓰지 못함')
-  const me = await raw(L, '/api/me', { headers: { Cookie: cookie } })
+  // The login's key goes with the cookie in a header (REQ-S-107): the cookie alone is not enough.
+  const lkey = (() => { try { return JSON.parse(r1.body).key ?? '' } catch { return '' } })()
+  ok(/^[A-Za-z0-9_-]{20,}$/.test(lkey), '로그인이 키를 줌')
+  ok((await raw(L, '/api/me', { headers: { Cookie: cookie } })).status === 401, '쿠키만으로는 401(키 필요)')
+  const me = await raw(L, '/api/me', { headers: { Cookie: cookie, 'X-Local-Key': lkey } })
   ok(me.status === 200 && me.body.includes('"local"'), '쿠키로 주인')
   ok((await raw(L, '/api/bridge/hello', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ hostId, name: 'x' }) })).status === 401, '주인 쿠키로는 연동 경로 401')
-  const page = await raw(L, '/', { headers: { Cookie: cookie } })
+  const page = await raw(L, '/', { headers: { Cookie: cookie, 'X-Local-Key': lkey } })
   ok(page.status === 200 && page.body.includes('<div id="root">'), '웹 화면(ui) 을 내줌')
   ok(/script-src 'self'/.test(page.headers['content-security-policy'] ?? '') && /connect-src 'self';/.test(page.headers['content-security-policy'] ?? ''), `로컬 화면의 CSP: ${page.headers['content-security-policy']}`)
-  ok(await online(`http://127.0.0.1:${L}`, { Cookie: cookie, Host: `127.0.0.1:${L}` }), '로컬 서버에서 이 맥이 연결됨')
+  ok(await online(`http://127.0.0.1:${L}`, { Cookie: cookie, 'X-Local-Key': lkey, Host: `127.0.0.1:${L}` }), '로컬 서버에서 이 맥이 연결됨')
   ok(!(await online(SITE, { Cookie: siteCookie })), '사이트에서는 이 맥이 끊김(동시 연결 없음)')
   const t2 = /#t=([A-Za-z0-9_-]{43})/.exec(spawnSync(process.execPath, [AGENT, 'local', '--full', 'open', '--no-open', '--port', String(AGENT_PORT)], { env, encoding: 'utf8' }).stdout)?.[1]
   ok(!!t2, 'local --full open 이 새 링크를 줌')
