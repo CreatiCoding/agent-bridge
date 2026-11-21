@@ -28,7 +28,8 @@ function askLocalHost() {
     })
     .catch(() => {})
 }
-const useLocalHost = () => {
+/** The host this browser's Mac is, as its agent says (null: not on one of them, or not known yet). */
+export const useLocalHost = () => {
   useEffect(askLocalHost, [])
   return useSyncExternalStore(
     (f) => (subs.add(f), () => subs.delete(f)),

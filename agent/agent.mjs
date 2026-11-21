@@ -30,7 +30,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
-import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk, SEALED_LINES, newLink, resetLink, routeOf, refusedFor } from './localfull.mjs'
+import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk, readyBuild as localReadyBuild, setLocalFull, SEALED_LINES, newLink, resetLink, routeOf, refusedFor } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -1188,7 +1188,8 @@ const lf = { active: false, both: false, starting: false, proc: null, relay: nul
 let lfSeen = { at: 0, v: localFullOf(config, config.port) }
 /**
  * agent.json's `localFull`, read again every 2 s: changed at the terminal (`local --full on|both|off`), never by the
- * site; the local server's own screen may only turn it off (commands.localoff, REQ-F-925).
+ * site's server; the local server's own screen may only turn it off (commands.localoff, REQ-F-925), the site's page in
+ * this Mac's own browser only on (localFullFromPage, REQ-F-926).
  */
 function localFullNow() {
   const t = Date.now()
@@ -1335,9 +1336,79 @@ async function localFullDown(why) {
   bg.startedAt = 0
 }
 
+/**
+ * 로컬로 바꾸기 버튼 (REQ-F-926): `local --full on` asked by the site's page in this Mac's own browser, which holds
+ * this agent's key (a page anywhere else has none). Only on, never both or off: it can only take the site's server
+ * out of the link, never put it back in or keep it beside. The build is checked as the terminal checks it, the switch
+ * made here and now, and the answer is the local server's one-time link (5 minutes, once), which the page opens: the
+ * page goes from the site to the local screen. What could not be switched leaves agent.json as it was, so nothing
+ * switches later behind a page that said it failed. All within LF_PAGE_MS, under the page's own wait.
+ */
+let lfAsked = false
+const LF_PAGE_MS = 180_000
+async function localFullFromPage(res, cors) {
+  const answer = (code, body) => res.writeHead(code, { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(body))
+  if (!localFull.arch) return answer(400, { error: '로컬 전체 화면은 macOS(arm64·x64)에서만 써요' })
+  if (lfAsked || lf.starting) return answer(409, { error: '이미 바꾸는 중이에요' })
+  lfAsked = true
+  // How this Mac links as agent.json says now (on, both): read again before writing and before undoing, so a change
+  // made at the Mac meanwhile (local --full off, 사이트로 돌아가기) is never written over.
+  const disk = () => {
+    const v = readJson(configPath, {}).localFull
+    return { on: v?.on === true, both: v?.both === true }
+  }
+  const before = disk()
+  let wrote = false
+  try {
+    lfSeen.at = 0
+    const v = localFullNow()
+    // Turned off a moment ago (사이트로 돌아가기, or the terminal) and not yet down: that is not undone from here.
+    if (lf.active && !v.on) return answer(409, { error: '사이트로 돌아가는 중이에요. 잠시 뒤 다시 눌러 주세요' })
+    // Already linked to the local server alone: only a new link.
+    if (!(lf.active && !lf.both && !v.both)) {
+      if (!(lf.active && lf.port === v.port)) {
+        const free = await localPortFree(v.port)
+        if (!free.ok) return answer(409, { error: free.why })
+      }
+      const deadline = AbortSignal.timeout(LF_PAGE_MS)
+      const fetchImpl = (u, o = {}) => fetch(u, { ...o, signal: o.signal ? AbortSignal.any([o.signal, deadline]) : deadline })
+      const have = await localReadyBuild(localFull, { site: config.site, releases: v.releases, fetchImpl, say: (t) => log('info', 'localfull', t) })
+      if (!have.ok) return answer(409, { error: `쓸 수 있는 맥용 서버가 없어요(${have.why})` })
+      const now = disk()
+      if (now.on !== before.on || now.both !== before.both) return answer(409, { error: '그사이 맥에서 연동 방식이 바뀌어 멈췄어요' })
+      log('info', 'localfull', '사이트 화면의 로컬로 바꾸기 버튼: 사이트 연결을 끊고 로컬 서버로 바꿈')
+      setLocalFull(configPath, { on: true, both: false })
+      wrote = true
+      lfSeen.at = 0
+      if (lf.active) await localFullDown('꺼짐(연동 방식을 바꿈)')
+      lf.failedAt = 0
+      await localFullOn()
+      if (!lf.active) return answer(409, { error: lf.error || '바꾸지 못했어요' })
+    }
+    const link = `http://127.0.0.1:${lf.port}/#t=${localFull.newTicket({ page: true })}`
+    wrote = false
+    return answer(200, { link })
+  } catch (e) {
+    log('error', 'localfull', e.message)
+    return answer(500, { error: e.message })
+  } finally {
+    // Not switched: back to what agent.json said before (a local server that was beside the site comes up again).
+    // Only what the button wrote is undone: a change made at the Mac since stays.
+    const now = wrote ? disk() : null
+    if (now && now.on && !now.both && !(lf.active && !lf.both)) {
+      setLocalFull(configPath, before)
+      lfSeen.at = 0
+      log('warn', 'localfull', '로컬로 바꾸지 못해 전의 연동 방식으로 되돌림')
+    }
+    lfAsked = false
+  }
+}
+
 // Every 2 s: follow what the terminal set. A local server that failed to start is tried again after 30 s.
 setInterval(() => {
   if (doctorOnly || serviceCmd || linkOnly || awakeCmd) return
+  // The button's switch is under way (REQ-F-926): it makes the change itself.
+  if (lfAsked) return
   const v = localFullNow()
   if (v.on && !lf.active && !lf.starting && Date.now() - lf.failedAt > 30_000) localFullOn().catch((e) => log('error', 'localfull', e.message))
   else if (!v.on && (lf.active || lf.proc)) localFullDown('꺼짐(맥 터미널)').catch((e) => log('error', 'localfull', e.message))
@@ -8843,6 +8914,9 @@ const server = http.createServer(async (req, res) => {
     }
     return res.writeHead(401, cors).end()
   }
+  // 로컬로 바꾸기 버튼 (REQ-F-926): the site's page in this Mac's own browser (it holds this agent's key) asks it to
+  // switch to its local server, as `local --full on` at its terminal does, and gets the one-time link to open.
+  if (req.method === 'POST' && url.pathname === '/localfull/on') return localFullFromPage(res, cors)
   // Which host this is, for a page of the site on this Mac: it opens a session's localhost server directly.
   if (req.method === 'GET' && url.pathname === '/host') return res.writeHead(200, { ...cors, 'Content-Type': 'application/json' }).end(JSON.stringify({ hostId: config.hostId }))
 

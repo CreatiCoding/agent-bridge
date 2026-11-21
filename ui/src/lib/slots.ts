@@ -76,7 +76,7 @@ export const BUILTIN_IDS: Record<SlotName, readonly string[]> = {
   'session-list.row.badges': ['state', 'slack', 'delegated', 'runner'],
   'settings.section': [],
   // The rail (PC): the brand and the list above, the tools at the foot; new and search only while the list is folded.
-  'app.rail.items': ['logo', 'sidebar', 'new', 'search', 'usage', 'report', 'bell', 'settings', 'account'],
+  'app.rail.items': ['logo', 'sidebar', 'new', 'search', 'usage', 'localfull', 'report', 'bell', 'settings', 'account'],
   // The app menu (the phone's ⋯, the PC's account button); the views only on a phone.
   'app.menu.items': ['new', 'new-group', 'view-group', 'view-recent', 'settings', 'report', 'account', 'logout'],
   // The slots of REQ-F-865 start empty: what is added is all there is (order names other added items).

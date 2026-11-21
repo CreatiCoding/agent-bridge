@@ -222,12 +222,16 @@ export class LocalFull {
     return { result: 'installed', version: r.d.version, seq: r.d.seq }
   }
   /** Made at this Mac's terminal only (`local --full open`): stored as its SHA-256, five minutes, once. */
-  newTicket() {
+  newTicket({ page = false } = {}) {
     this.ensure()
     const t = crypto.randomBytes(32).toString('base64url')
+    const h = sha256(t).toString('hex')
     const now = Date.now()
-    const list = (Array.isArray(readJson(this.ticketsPath, [])) ? readJson(this.ticketsPath, []) : []).filter((x) => x && x.exp > now).slice(-(MAX_TICKETS - 1))
-    writeJson(this.ticketsPath, [...list, { h: sha256(t).toString('hex'), exp: now + TICKET_MS }])
+    // The button's (REQ-F-926): only its newest stands, so a page pressing it again and again never pushes out a link
+    // made at the terminal.
+    const list = (Array.isArray(readJson(this.ticketsPath, [])) ? readJson(this.ticketsPath, []) : []).filter((x) => x && x.exp > now && !(page && x.h === this.pageTicket)).slice(-(MAX_TICKETS - 1))
+    writeJson(this.ticketsPath, [...list, { h, exp: now + TICKET_MS }])
+    if (page) this.pageTicket = h
     return t
   }
   dropTickets() {
@@ -463,19 +467,49 @@ export class Relay {
  * A build from the site: its signed document, then its bytes. Redirects are not followed: a site behind a sign-in
  * gate answers this cookie-less request with its login page, which is told apart from a missing build (REQ-F-903).
  */
+/** A document's most: a signed JSON of a few hundred bytes. */
+const LF_DOC_MAX = 64 * 1024
+/**
+ * An answer's body, at most `max` bytes, read as it comes: the whole of a bigger one is never held (a site may send
+ * without end before any signature is checked, REQ-F-926).
+ */
+export async function readCapped(r, max) {
+  if (Number(r.headers?.get?.('content-length')) > max) throw new Error('받을 것이 너무 큼')
+  if (!r.body?.getReader) {
+    const b = Buffer.from(await r.arrayBuffer())
+    if (b.length > max) throw new Error('받을 것이 너무 큼')
+    return b
+  }
+  const rd = r.body.getReader()
+  const parts = []
+  let n = 0
+  for (;;) {
+    const { done, value } = await rd.read()
+    if (done) break
+    n += value.length
+    if (n > max) {
+      await rd.cancel().catch(() => {})
+      throw new Error('받을 것이 너무 큼')
+    }
+    parts.push(value)
+  }
+  return Buffer.concat(parts)
+}
+const jsonCapped = (r) => readCapped(r, LF_DOC_MAX).then((b) => JSON.parse(b.toString('utf8')))
+
 export async function fetchBuild(site, arch, fetchImpl = fetch) {
   const gate = (r) => {
     if (r.status >= 300 && r.status < 400) throw new Error(`사이트가 로그인 화면으로 넘김 (HTTP ${r.status}) — 브라우저로 받아 local --full install 로 넣어 주세요`)
   }
   const j = await fetchImpl(`${site}/localfull/${arch}.json`, { redirect: 'manual', signal: AbortSignal.timeout(20_000) })
   gate(j)
-  const meta = await j.json().catch(() => null)
+  const meta = await jsonCapped(j).catch(() => null)
   if (j.ok && !meta) throw new Error('문서가 JSON 이 아님(로그인 화면일 수 있음) — 브라우저로 받아 local --full install 로 넣어 주세요')
   if (!j.ok || typeof meta?.doc !== 'string') throw new Error(meta?.error || `문서를 받지 못함 (HTTP ${j.status})`)
   const b = await fetchImpl(`${site}/localfull/${arch}`, { redirect: 'manual', signal: AbortSignal.timeout(600_000) })
   gate(b)
   if (!b.ok) throw new Error(`빌드를 받지 못함 (HTTP ${b.status})`)
-  const bytes = Buffer.from(await b.arrayBuffer())
+  const bytes = await readCapped(b, LF_MAX)
   return { doc: meta.doc, sig: meta.sig, bytes }
 }
 
@@ -571,28 +605,65 @@ export async function helloOk(base, secret, fetchImpl = fetch) {
 export async function releaseBuild(base, arch, fetchImpl = fetch) {
   const j = await fetchImpl(`${base}localfull-${arch}.json`, { signal: AbortSignal.timeout(20_000) })
   if (!j.ok) throw new Error(`릴리스에 문서가 없음 (HTTP ${j.status})`)
-  const meta = await j.json().catch(() => null)
+  const meta = await jsonCapped(j).catch(() => null)
   if (typeof meta?.doc !== 'string' || typeof meta?.sig !== 'string') throw new Error('릴리스의 문서가 맞지 않음')
   const b = await fetchImpl(`${base}localfull-${arch}`, { signal: AbortSignal.timeout(600_000) })
   if (!b.ok) throw new Error(`릴리스에서 빌드를 받지 못함 (HTTP ${b.status})`)
-  if (Number(b.headers?.get?.('content-length')) > LF_MAX) throw new Error('빌드가 너무 큼')
-  return { doc: meta.doc, sig: meta.sig, bytes: Buffer.from(await b.arrayBuffer()) }
+  return { doc: meta.doc, sig: meta.sig, bytes: await readCapped(b, LF_MAX) }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
+ * The build to run: the site's, when it has one signed after (or as) the one here; a site with none, or behind a
+ * sign-in, gives way to the published release (REQ-F-904); else the one already here. `say` hears each step. Returns
+ * what is on disk after, checked whole ({ok, d} | {ok:false, why}). For `local --full on|both` and the button on the
+ * site's page (REQ-F-926).
+ */
+export async function readyBuild(lf, { site, releases, fetchImpl = fetch, say = () => {} }) {
+  const told = (from, got) => {
+    if (got.result === 'installed') say(`맥용 서버 ${got.version}(순번 ${got.seq})을 ${from}에서 확인하고 받았어요.`)
+    else if (got.result === 'same') say(`맥용 서버 ${got.version}(순번 ${got.seq}): 이미 받은 것과 같아요.`)
+    else if (got.result === 'old') say(`${from}의 빌드(순번 ${got.seq})가 이 맥의 것(순번 ${got.floor})보다 먼저 서명돼 받지 않았어요.`)
+    else say(`${from}에서 받지 못했어요: ${got.why}`)
+  }
+  const take = async (from, get) => {
+    let got
+    try {
+      got = lf.install(await get())
+    } catch (e) {
+      got = { result: 'fetch_failed', why: e.message }
+    }
+    told(from, got)
+    return got
+  }
+  const fromSite = /^https?:\/\//.test(site || '')
+    ? (say(`${site} 에서 맥용 서버(${lf.arch})를 받는 중…`), await take('사이트', () => fetchBuild(site, lf.arch, fetchImpl)))
+    : { result: 'fetch_failed' }
+  if (fromSite.result === 'fetch_failed' || fromSite.result === 'verify_failed') {
+    say(`공개 릴리스(${releases})에서 받는 중…`)
+    await take('공개 릴리스', () => releaseBuild(releases, lf.arch, fetchImpl))
+  }
+  return lf.installed()
+}
+
+/** agent.json's `localFull`, changed in part (0600, written whole by rename). */
+export function setLocalFull(configPath, patch) {
+  const disk = readJson(configPath, {})
+  disk.localFull = { ...(disk.localFull && typeof disk.localFull === 'object' ? disk.localFull : {}), ...patch }
+  fs.writeFileSync(`${configPath}.tmp`, JSON.stringify(disk, null, 2), { mode: 0o600 })
+  fs.renameSync(`${configPath}.tmp`, configPath)
+}
+
+/**
  * `local --full on | both | off | open | status` at this Mac's terminal (REQ-F-902). agent.json's `localFull` is
- * written here (never by the site; the local server's own screen may only turn it off, REQ-F-925) and read again by the running agent every 2 s, which makes the switch.
+ * written here, by the button on the site's page in this Mac's own browser (on only, REQ-F-926) and by the local
+ * server's screen (off only, REQ-F-925); never by the site's server. The running agent reads it again every 2 s and
+ * makes the switch.
  * Returns the exit code.
  */
 export async function localFullCli(words, { configPath, lf, site, agentPort, open, running, fetchImpl = fetch, waitMs = 30_000, checkPort = portFree }) {
-  const set = (patch) => {
-    const disk = readJson(configPath, {})
-    disk.localFull = { ...(disk.localFull && typeof disk.localFull === 'object' ? disk.localFull : {}), ...patch }
-    fs.writeFileSync(`${configPath}.tmp`, JSON.stringify(disk, null, 2), { mode: 0o600 })
-    fs.renameSync(`${configPath}.tmp`, configPath)
-  }
+  const set = (patch) => setLocalFull(configPath, patch)
   const now = () => localFullOf(readJson(configPath, {}), agentPort)
   const link = () => `http://127.0.0.1:${now().port}/#t=${lf.newTicket()}`
   // both: when given, the way it is on must be that one too (local --full both after on, or on after both).
@@ -623,33 +694,7 @@ export async function localFullCli(words, { configPath, lf, site, agentPort, ope
         return 1
       }
     }
-    // The build: the site's, when it has one signed after (or as) the one here; a site with none, or behind a
-    // sign-in, gives way to the published release (REQ-F-904); else the one already here.
-    const say = (from, got) => {
-      if (got.result === 'installed') console.log(`맥용 서버 ${got.version}(순번 ${got.seq})을 ${from}에서 확인하고 받았어요.`)
-      else if (got.result === 'same') console.log(`맥용 서버 ${got.version}(순번 ${got.seq}): 이미 받은 것과 같아요.`)
-      else if (got.result === 'old') console.log(`${from}의 빌드(순번 ${got.seq})가 이 맥의 것(순번 ${got.floor})보다 먼저 서명돼 받지 않았어요.`)
-      else console.log(`${from}에서 받지 못했어요: ${got.why}`)
-    }
-    const take = async (from, get) => {
-      let got
-      try {
-        got = lf.install(await get())
-      } catch (e) {
-        got = { result: 'fetch_failed', why: e.message }
-      }
-      say(from, got)
-      return got
-    }
-    const fromSite = /^https?:\/\//.test(site || '')
-      ? (console.log(`${site} 에서 맥용 서버(${lf.arch})를 받는 중…`), await take('사이트', () => fetchBuild(site, lf.arch, fetchImpl)))
-      : { result: 'fetch_failed' }
-    if (fromSite.result === 'fetch_failed' || fromSite.result === 'verify_failed') {
-      const rel = now().releases
-      console.log(`공개 릴리스(${rel})에서 받는 중…`)
-      await take('공개 릴리스', () => releaseBuild(rel, lf.arch, fetchImpl))
-    }
-    const have = lf.installed()
+    const have = await readyBuild(lf, { site, releases: now().releases, fetchImpl, say: (t) => console.log(t) })
     if (!have.ok) {
       console.error(`쓸 수 있는 맥용 서버가 없어요(${have.why}). 미리 받아 둔 파일을 넣어 주세요: node agent.mjs local --full install <빌드 파일> <문서 .json>\n  두 파일: 공개 릴리스의 localfull-${lf.arch} 와 localfull-${lf.arch}.json, 또는 로그인한 브라우저로 사이트의 /localfull/${lf.arch} 와 /localfull/${lf.arch}.json`)
       return 1

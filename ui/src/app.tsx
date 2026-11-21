@@ -25,6 +25,7 @@ import { HandoffSheet } from './components/codex-handoff'
 import { listView, newGroup, SessionList, setListView } from './components/session-list'
 import { useRelay } from './components/relay-status'
 import { RailUsage } from './components/rail-usage'
+import { RailLocalFull } from './components/rail-localfull'
 import { SessionPage } from './pages/session-page'
 import { StateWait, useStateLoaded } from './components/state-wait'
 import { SessionPicker, SplitView } from './components/split-view'
@@ -589,6 +590,7 @@ function AppRail({ me, route, collapsed, need, onToggle, onSearch, onNotices }: 
             : []),
           'grow',
           { id: 'usage', node: <RailUsage /> },
+          { id: 'localfull', node: <RailLocalFull /> },
           ...(featureOn('reports') ? [{ id: 'report', node: <IconButton icon="support" label="문제 제보" onClick={openReport} /> }] : []),
           { id: 'bell', node: <Bell onClick={onNotices} /> },
           { id: 'settings', node: <IconButton icon="settings" label="설정" onClick={() => go({ name: 'settings' })} active={route.name === 'settings'} /> },

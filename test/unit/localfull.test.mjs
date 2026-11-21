@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy, portFree, helloOk, lfHelloMac, releaseBuild, LF_RELEASES, groupsStep, GROUPS_MAX } from '../../agent/localfull.mjs'
+import { lfDocOf, lfSign, lfSigned, lfVerify, LocalFull, localFullOf, archOf, sseMessages, Relay, localFullCli, LF_ARCHES, fetchBuild, readBuildFiles, listenersOf, heldOnlyBy, portFree, helloOk, lfHelloMac, releaseBuild, LF_RELEASES, groupsStep, GROUPS_MAX, readyBuild, setLocalFull, readCapped } from '../../agent/localfull.mjs'
 import { classOf } from '../../agent/trust.mjs'
 import { docOf, signDoc } from '../../agent/localui.mjs'
 import { localFullSrc, savedLocalFull } from '../../scripts/sign-agent.mjs'
@@ -356,4 +356,74 @@ test('groups go with the Mac between the site and its local server: the one chan
   assert.equal(localFullOf({}).groups, true, '기본은 켬')
   assert.equal(localFullOf({ localFull: { groups: false } }).groups, false)
   assert.equal(classOf({ t: 'groups' }), 'free')
+})
+
+test('로컬로 바꾸기 버튼 (REQ-F-926): the build is made ready as the terminal makes it, and agent.json is changed in part', async () => {
+  const dir = tmp()
+  const lf = new LocalFull({ dir: path.join(dir, 'localfull'), arch: 'darwin-arm64', keys: KEYS })
+  const site = signed(Buffer.from('s4'), 4)
+  const said = []
+  const fromSite = async (url) => (url.endsWith('.json') ? new Response(JSON.stringify({ doc: site.doc, sig: site.sig })) : new Response(site.bytes))
+  const have = await readyBuild(lf, { site: 'https://bridge.example', releases: 'https://r.example/', fetchImpl: fromSite, say: (t) => said.push(t) })
+  assert.ok(have.ok && have.d.seq === 4, '사이트에서 받음')
+  assert.ok(said.some((t) => /사이트에서 확인하고 받았어요/.test(t)))
+  // A site that fails gives way to the release; when neither answers, what is here stays.
+  const rel = signed(Buffer.from('r5'), 5)
+  const asked = []
+  const relOnly = async (url) => {
+    asked.push(url)
+    if (url.startsWith('https://bridge.example/')) return new Response('', { status: 500 })
+    return url.endsWith('.json') ? new Response(JSON.stringify({ doc: rel.doc, sig: rel.sig })) : new Response(rel.bytes)
+  }
+  const fromRel = await readyBuild(lf, { site: 'https://bridge.example', releases: 'https://r.example/', fetchImpl: relOnly })
+  assert.ok(fromRel.ok && fromRel.d.seq === 5, '사이트가 실패하면 공개 릴리스에서 받음')
+  assert.ok(asked.includes('https://r.example/localfull-darwin-arm64'))
+  const none = await readyBuild(lf, { site: 'https://bridge.example', releases: 'https://r.example/', fetchImpl: async () => new Response('', { status: 500 }) })
+  assert.ok(none.ok && none.d.seq === 5, '둘 다 받지 못해도 이미 있는 것을 씀')
+  const empty = new LocalFull({ dir: path.join(dir, 'other'), arch: 'darwin-arm64', keys: KEYS })
+  assert.equal((await readyBuild(empty, { site: '', releases: 'https://r.example/', fetchImpl: async () => new Response('', { status: 404 }) })).ok, false)
+
+  const configPath = path.join(dir, 'agent.json')
+  fs.writeFileSync(configPath, JSON.stringify({ key: 'k', localFull: { port: 5000, groups: false } }))
+  setLocalFull(configPath, { on: true, both: false })
+  const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'))
+  assert.deepEqual(cfg, { key: 'k', localFull: { port: 5000, groups: false, on: true, both: false } })
+  assert.equal(fs.statSync(configPath).mode & 0o777, 0o600)
+})
+
+test("the button's entrance on the agent: behind its key and the site's origin, only ever on (REQ-F-926)", () => {
+  const src = fs.readFileSync(new URL('../../agent/agent.mjs', import.meta.url), 'utf8')
+  const route = src.indexOf("url.pathname === '/localfull/on'")
+  assert.ok(route > 0, '입구가 있음')
+  assert.ok(route > src.indexOf('if (!keyOk) {') && src.indexOf('if (!keyOk) {') > src.indexOf('if (origin && origin !== SITE_ORIGIN) return res.writeHead(403)'), '다른 사이트 403, 키 확인 뒤에만')
+  const fn = src.slice(src.indexOf('async function localFullFromPage'), src.indexOf('// Every 2 s: follow what the terminal set.'))
+  assert.deepEqual([...fn.matchAll(/setLocalFull\(configPath, (\{[^}]*\})\)/g)].map((m) => m[1]), ['{ on: true, both: false }'], '켜기(사이트를 끊는 쪽)만 씀')
+  assert.match(fn, /lfAsked \|\| lf\.starting/, '바꾸는 중에는 두 번 돌지 않음')
+  assert.match(fn, /setLocalFull\(configPath, before\)/, '못 바꾸면 전의 값으로 되돌림')
+  assert.match(fn, /lf\.active && !v\.on\) return answer\(409/, '사이트로 돌아가는 중에는 되돌리지 않음')
+  assert.match(fn, /now\.on !== before\.on \|\| now\.both !== before\.both\) return answer\(409/, '받는 사이 맥에서 바꾼 것은 덮어쓰지 않음')
+  assert.match(fn, /now && now\.on && !now\.both && !\(lf\.active/, '되돌리기는 버튼이 쓴 그대로일 때만')
+  assert.ok(fn.indexOf('newTicket({ page: true })') < fn.indexOf('wrote = false\n    return answer(200'), '링크를 만든 뒤에야 바꾼 것으로 침')
+  assert.match(src, /setInterval\(\(\) => \{\n[^\n]*\n[^\n]*\n  if \(lfAsked\) return/, '2초 점검은 버튼이 바꾸는 동안 쉼')
+})
+
+test('what a site sends before any signature is checked is read only up to its most (REQ-F-926)', async () => {
+  const body = (n, chunk = 1024) =>
+    new Response(new ReadableStream({ pull(c) { if (n <= 0) return c.close(); const k = Math.min(n, chunk); n -= k; c.enqueue(new Uint8Array(k)) } }))
+  assert.equal((await readCapped(body(3000), 4096)).length, 3000)
+  await assert.rejects(readCapped(body(10_000), 4096), /너무 큼/)
+  await assert.rejects(readCapped(new Response('x', { headers: { 'content-length': '999999' } }), 10), /너무 큼/)
+  // A document without end is not taken whole either.
+  const huge = async (url) => (url.endsWith('.json') ? body(1 << 20) : body(10))
+  await assert.rejects(fetchBuild('https://bridge.example', 'darwin-arm64', huge), /JSON 이 아님/)
+})
+
+test("the button's one-time links never push out the terminal's: only its newest stands (REQ-F-926)", () => {
+  const lf = new LocalFull({ dir: path.join(tmp(), 'localfull'), arch: 'darwin-arm64', keys: KEYS })
+  const term = [lf.newTicket(), lf.newTicket()]
+  for (let i = 0; i < 20; i++) lf.newTicket({ page: true })
+  const kept = JSON.parse(fs.readFileSync(lf.ticketsPath, 'utf8')).map((x) => x.h)
+  const h = (t) => crypto.createHash('sha256').update(t).digest('hex')
+  assert.equal(kept.length, 3, '터미널 둘과 버튼의 마지막 하나')
+  assert.ok(term.every((t) => kept.includes(h(t))), '터미널의 링크는 그대로')
 })

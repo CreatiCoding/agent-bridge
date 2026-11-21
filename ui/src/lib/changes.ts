@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.561',
+    date: '2026-11-21',
+    changes: [
+      {
+        kind: 'added',
+        scope: ['ui', 'agent'],
+        text: 'PC 왼쪽 줄에 "로컬로 바꾸기" 버튼이 생겼어요. 지금 브라우저가 있는 맥을 터미널 없이 로컬 서버로 바꾸고, 그 화면으로 바로 넘어가요. 즐겨찾기와 붙인 이름도 그대로 넘어가요',
+        refs: ['REQ-F-926'],
+      },
+    ],
+  },
+  {
     version: '1.560',
     date: '2026-11-20',
+    commit: '5d75bd3',
     changes: [
       {
         kind: 'added',

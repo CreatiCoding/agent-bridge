@@ -11,7 +11,7 @@ const plain = (slot, list) => resolve(slot, list, (b) => (typeof b === 'string' 
 
 test('slot 의 앞 6개와 내장 항목 id 가 설계(§7.1)와 같다', () => {
   assert.deepEqual([...SLOTS].slice(0, 6), ['composer.actions', 'session.menu', 'session-list.row.badges', 'settings.section', 'app.rail.items', 'app.menu.items'])
-  assert.deepEqual([...BUILTIN_IDS['app.rail.items']], ['logo', 'sidebar', 'new', 'search', 'usage', 'report', 'bell', 'settings', 'account'])
+  assert.deepEqual([...BUILTIN_IDS['app.rail.items']], ['logo', 'sidebar', 'new', 'search', 'usage', 'localfull', 'report', 'bell', 'settings', 'account'])
   assert.deepEqual([...BUILTIN_IDS['app.menu.items']], ['new', 'new-group', 'view-group', 'view-recent', 'settings', 'report', 'account', 'logout'])
   assert.deepEqual([...BUILTIN_IDS['composer.actions']], ['attach', 'chips', 'mic', 'send'])
   assert.deepEqual([...BUILTIN_IDS['session-list.row.badges']], ['state', 'slack', 'delegated', 'runner'])
