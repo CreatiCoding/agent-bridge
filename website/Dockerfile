@@ -11,7 +11,7 @@ COPY web/icon.svg /repo/web/icon.svg
 COPY website/ ./
 RUN yarn build
 
-FROM nginx:1.30.7-alpine
+FROM nginx:1.30.8-alpine
 COPY website/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/website/src/.vitepress/dist /usr/share/nginx/html
 EXPOSE 80
