@@ -30,7 +30,7 @@ import { sessionStats, prLinks } from './stats.mjs'
 import { Trust, BgTracker, trustCli, modeOf, classOf, rebuild, hashesHold, textMac, updateKeepsTrust, hasSeal, convfindRefusal, SEAL_RE, openWith, TRUST_VERSION, sealChosen, quietChosen, sealOut, sealLine } from './trust.mjs'
 import { LocalUi, localUiOf, localCli, hostOk as localHostOk, originOk as localOriginOk, FILE_HEADERS as LOCAL_FILE_HEADERS, localFiles, LOCAL_SEND_MAX, LOCAL_BODY_MAX } from './localui.mjs'
 import { DOC as LOCAL_DOC, SIG as LOCAL_SIG, BUNDLE as LOCAL_BUNDLE } from './localbundle.mjs'
-import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk, readyBuild as localReadyBuild, setLocalFull, SEALED_LINES, newLink, resetLink, routeOf, refusedFor } from './localfull.mjs'
+import { LocalFull, localFullOf, localFullCli, groupsStep, marksStep, Relay as LocalRelay, sseMessages, archOf as localFullArch, listenersOf, heldOnlyBy, portFree as localPortFree, helloOk as localHelloOk, readyBuild as localReadyBuild, setLocalFull, SEALED_LINES, newLink, resetLink, routeOf, refusedFor, lastLineAt } from './localfull.mjs'
 import { ZEROPTY, zeroptyPaths, zeroptyInstalled, installZeropty, muxOf, pickMux, needsZeropty, muxEnv, targetName, zeroptySock, legacyZeroptySock, sockOf, zeroptyEnv, ttyAdapterPath, writeTtyAdapter, adapterPrefix, NO_TERMINAL } from './mux.mjs'
 import { CLAUDE, isClaude, can, pickRunner, runnerBrief } from './runners.mjs'
 import { ExposureRunner, EXPOSURE_FIRST_MS, EXPOSURE_EVERY_MS } from './exposure.mjs'
@@ -820,6 +820,8 @@ const anyWelcomed = () => linked().some((l) => l.welcomed)
 const outOf = (link) => (link.kind === 'site' ? client : lf.active ? lf.sink : null)
 /** The link whose command runs now (runCommand): its answers go back to it alone. */
 const via = new AsyncLocalStorage()
+/** The last 세션 정리 report this agent made (REQ-F-927), sent again to each server when it links. */
+let lastTidyReport = null
 const origin = () => via.getStore() ?? null
 /** The link meant when nothing names one: the asker's, else the site's unless the local server took its place. */
 const hereLink = () => origin() ?? (siteBlocked() ? localLink : siteLink)
@@ -1487,9 +1489,10 @@ async function hello(link = hereLink()) {
   const st = storeFor(link)
   const list = []
   // seq: the last number this Mac keeps, so a server that started from an older meta.json counts on from it.
-  for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: st.tailSeq(id) })
+  // at: when its conversation last moved, so a server that was away shows it (REQ-F-927).
+  for (const [id, s] of sessions) list.push({ id, cwd: s.cwd, autoPush: s.autoPush !== false, conv: s.conv || id, alive: await alive(s), account: s.account ?? '', seq: st.tailSeq(id), at: lastLineAt(transcriptPath(s, id)) })
   const local = link.kind === 'local'
-  emitTo(link, { t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups', 'marks'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: wsIdsOf(link), trust: local ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
+  emitTo(link, { t: 'hello', caps: ['store', 'newAllow', 'adapters', 'adapterSign', 'snapParts', 'listed', ...(canTranslate() ? ['translate'] : []), ...(hasQwen(STATE_DIR) ? ['talkVoice'] : []), ...(localFullNow().groups ? ['groups', 'marks'] : [])], version: VERSION, build: BUILD, hostId: config.hostId, name: config.name, kind: config.kind, home: HOME, info: { node: process.version, os: `${os.type()} ${os.release()}` }, sessions: list, ws: wsIdsOf(link), trust: local ? { ...trustInfo(), mode: 'off', seal: false, localFull: true } : trustInfo(), localUi: localInfo(), runners: runnerList() })
   exposureOnHello()
 }
 /** Hello again to every linked server. */
@@ -4480,6 +4483,8 @@ const commands = {
     }
     if (partial === true) return
     link.welcomed = true
+    // What this Mac last found tidying, to the server that just linked: one that was away (or never asks) shows it too.
+    if (lastTidyReport) emitTo(link, { t: 'tidyReport', report: lastTidyReport, again: true })
     // The site's bridge tab, not the local server, is what these are about.
     if (link.kind === 'site') {
       // The profile's page reached the server, so it got past the proxy: the sign-in is no longer needed (REQ-F-833).
@@ -5178,6 +5183,8 @@ const commands = {
     // The server's policy may stop sessions by itself: while trust is on it only suggests (REQ-S-093).
     if (trustOn() && run && tidyPolicyOf(run.policy).mode === 'auto') run = { ...run, policy: { ...(run.policy ?? {}), mode: 'suggest' } }
     await tidyOnce(run, (report, error) => {
+      // Kept for a server that links later (REQ-F-927): only the one that asked is answered.
+      if (report) lastTidyReport = report
       if (run.reqId) emit({ t: 'tidyRun', reqId: run.reqId, ok: !!report, ...(report ? { report } : { error }) })
       else if (report) emit({ t: 'tidyReport', report })
     })

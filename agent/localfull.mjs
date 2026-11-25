@@ -847,3 +847,41 @@ export function refusedFor(msg, link, seals) {
   if (seals && msg?.t === 'snappart' && msg.plain !== undefined) return 'snapshot-not-sealed'
   return null
 }
+
+/** How much of a conversation file's end lastLineAt reads. */
+export const LAST_LINE_BYTES = 65_536
+
+/**
+ * When a conversation last moved (REQ-F-927): the time of the last person's or assistant's line in the file's last
+ * LAST_LINE_BYTES (Claude Code's `timestamp`, a mirror's too), or null. The servers' list time follows it, so a server
+ * that was not linked while the conversation went on shows when it did.
+ */
+export function lastLineAt(file) {
+  let fd
+  try {
+    fd = fs.openSync(file, 'r')
+    const size = fs.fstatSync(fd).size
+    const n = Math.min(size, LAST_LINE_BYTES)
+    const buf = Buffer.alloc(n)
+    fs.readSync(fd, buf, 0, n, size - n)
+    const lines = buf.toString('utf8').split('\n')
+    // The first piece may be cut in the middle of a line: never read.
+    for (let i = lines.length - 1; i >= (n < size ? 1 : 0); i--) {
+      const l = lines[i]
+      if (!l.includes('"timestamp"')) continue
+      let o
+      try {
+        o = JSON.parse(l)
+      } catch {
+        continue
+      }
+      if (o?.type !== 'user' && o?.type !== 'assistant') continue
+      const at = Date.parse(o.timestamp)
+      if (Number.isFinite(at) && at > 0) return at
+    }
+  } catch {
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+  return null
+}

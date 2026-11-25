@@ -10,6 +10,7 @@ import { Badge, Button, Empty, Icon, IconButton, LoadError, Row, Spinner, Switch
 import { confirmDialog, promptDialog, toast } from '../kit/overlay'
 import { ConfigBox } from './admin-config'
 import { openSession } from '../lib/builtin-actions'
+import { localServer } from '../lib/features'
 
 interface Access {
   open: boolean
@@ -475,6 +476,8 @@ export function AdminPanel() {
     )
   return (
     <>
+      {/* REQ-F-927: sessions follow the Mac, this server's own settings do not. */}
+      {localServer() ? <p className="muted">이 서버의 설정(운영·관리자·사용량 표시)은 사이트와 따로예요. 세션 목록·즐겨찾기·이름·그룹만 맥을 따라 맞춰져요.</p> : null}
       {error ? <LoadError what="운영 정보를" error={error} onRetry={() => void loadAccess()} /> : null}
       {overErr ? <LoadError what="서버 개요를" error={overErr} onRetry={() => void loadOver()} /> : null}
       {over ? (

@@ -276,6 +276,25 @@ func applyTidyReport(uid, hostID string, report M) {
 	broadcastState(uid)
 }
 
+// tidyReportShown: a report kept for the page and its sessions' stop times, without notices, records or summary.
+func tidyReportShown(uid, hostID string, report M) {
+	tidyReports[hostID] = report
+	writeJson(tidyFile(uid, hostID), report)
+	for _, row := range asArr(report["sessions"]) {
+		r := asM(row)
+		meta, ok := sessions.Get(jsString(r["sid"]))
+		if !ok || meta.host() != hostID || meta.uid() != uid || truthy(meta.get("closed")) || truthy(meta.get("favorite")) {
+			continue
+		}
+		if a := r["act"]; (a == "notice" || a == "wait") && numOr0(r["stopAt"]) > 0 && numOr0(meta.get("tidyStopAt")) != numOr0(r["stopAt"]) {
+			meta.set("tidyStopAt", numOr0(r["stopAt"]))
+			touch(meta)
+		}
+	}
+	touchGlobals()
+	broadcastState(uid)
+}
+
 // tidyGroups (REQ-F-839 rule 3): which list of the page a session row is in. 내릴 세션: its claude runs and the batch
 // counts it (suggest), told it (notice), waits on it or stops it. 휴면·끝내기 제안: any other row offered a rest or an
 // end. Rows in neither (a running session held back, with only its reason) are not counted. The page groups the
@@ -579,6 +598,13 @@ func init() {
 		toHost(hostID, tidyRunFor(hostID))
 	}
 	fromAgent["tidyReport"] = func(uid, hostID string, msg M) {
-		applyTidyReport(uid, hostID, asM(msg["report"]))
+		report := asM(msg["report"])
+		// The Mac's last report again, to a server that just linked (REQ-F-927): its state is taken, nothing in it
+		// is told or counted again (another server may have told it already).
+		if truthy(msg["again"]) && report != nil {
+			tidyReportShown(uid, hostID, report)
+			return
+		}
+		applyTidyReport(uid, hostID, report)
 	}
 }

@@ -26,8 +26,39 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.563',
+    date: '2026-11-25',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['server', 'agent'],
+        text: '서버가 붙을 때 세션 목록을 맥에 맞춤: 에이전트가 hello 에 든 세션을 모두 적었다고 알리면(caps listed) 서버는 거기 없는 그 맥의 열린 세션을 닫는다(만들었거나 옮겨 온 지 10분 안이면 둠). 로컬 서버가 꺼져 있던 동안 사이트에서 끝낸 세션이 로컬에서 열린 채 남던 것',
+        refs: ['REQ-F-927'],
+      },
+      {
+        kind: 'fixed',
+        scope: ['server', 'agent'],
+        text: '목록의 최근 시각을 맥의 대화 파일 마지막 사람·assistant 줄 시각으로 앞당김(hello 의 세션별 at, 더 늦을 때만)',
+        refs: ['REQ-F-927'],
+      },
+      {
+        kind: 'changed',
+        scope: ['server', 'agent'],
+        text: '에이전트가 마지막 세션 정리 보고를 들고 있다가 서버가 붙을 때 그 서버에 다시 보냄(tidyReport again). 서버는 보이기만 하고 알림·요약은 다시 만들지 않음',
+        refs: ['REQ-F-927', 'IF-263'],
+      },
+      {
+        kind: 'added',
+        scope: ['ui'],
+        text: '로컬 서버의 운영 탭에 "이 서버의 설정은 사이트와 따로" 안내',
+        refs: ['REQ-F-927'],
+      },
+    ],
+  },
+  {
     version: '1.562',
     date: '2026-11-25',
+    commit: 'a42a13b',
     changes: [
       {
         kind: 'fixed',

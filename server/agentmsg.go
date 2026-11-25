@@ -426,6 +426,12 @@ func helloFromAgent(uid, hostID string, msg M) {
 	record(uid, hostID, M{"area": "link", "text": "에이전트 연결됨: " + name + " (" + jsString(h["kind"]) + "), agent " + jsStringU(msg["version"]) + ", node " + jsStringU(info["node"]) + ", " + jsStringU(info["os"]) + ", 세션 " + itoa(nsess) + "개"})
 	touchGlobals()
 	known, listed := adoptListed(uid, hostID, asArr(msg["sessions"]))
+	// The Mac's list is the open sessions (REQ-F-927): what it no longer holds is closed here too.
+	if listsAll(msg) {
+		if n := closeUnlisted(uid, hostID, listed); n > 0 {
+			record(uid, hostID, M{"area": "link", "text": "맥에 없는 세션 " + itoa(n) + "개를 닫음(연결이 끊긴 동안 다른 화면에서 끝냄)"})
+		}
+	}
 	for _, meta := range sessions.Values() {
 		if meta.uid() == uid && meta.host() == hostID && !listed[meta.id()] {
 			resetVolatile(meta)
@@ -532,6 +538,7 @@ func adoptListed(uid, hostID string, list []any) (M, map[string]bool) {
 		known[id] = M{"lines": meta.get("lines"), "mine": mine}
 		if mine {
 			meta.state()["alive"] = truthy(sm["alive"])
+			listedAt(meta, sm["at"])
 		}
 		// A server that started from an older meta.json counts on from the Mac's last number (REQ-S-069).
 		if mine && isInteger(sm["seq"]) && jsNumber(sm["seq"]) > numOr0(meta.get("seq")) {
