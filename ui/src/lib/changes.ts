@@ -26,8 +26,21 @@ export interface Release {
 
 export const CHANGES: Release[] = [
   {
+    version: '1.562',
+    date: '2026-11-25',
+    changes: [
+      {
+        kind: 'fixed',
+        scope: ['agent'],
+        text: '세션이 많은 맥에서 턴이 끝난 뒤 마지막 답이 수십 초 늦게 뜨던 것을 고쳤어요. 대화 읽기가 폴더 확인(git·gh pr view)을 기다리지 않고 따로 0.7초마다 돌고, 턴이 끝나면 몇 초 동안 몇 번 더 읽어요',
+        refs: ['REQ-F-386', 'REQ-F-047'],
+      },
+    ],
+  },
+  {
     version: '1.561',
     date: '2026-11-21',
+    commit: '3c5b77f',
     changes: [
       {
         kind: 'added',

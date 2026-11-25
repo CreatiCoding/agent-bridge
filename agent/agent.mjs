@@ -73,6 +73,10 @@ const FOCUS_WAIT_MS = 60_000
 /** A dialog that comes back this often within the window is explained once instead of asked again. */
 const REPEAT_WINDOW_MS = 900_000
 const FOLDER_MS = 30_000
+/** Folder syncs (git, `gh pr view`) running at once across sessions; the rest wait for a later tick. */
+const FOLDER_PAR = 3
+/** Extra transcript reads after a turn ends, in case its last line is written after the Stop hook. */
+const END_TAIL_MS = [300, 1000, 2500, 5000]
 const MAX_CHUNK = 256 * 1024
 const MAX_FILE = 256 * 1024
 const HEALTH_MS = 15_000
@@ -2441,6 +2445,8 @@ function endTurn(sid, s, why) {
   setPreview(sid, s, '')
   s.folderAt = 0 // a turn just ended: sync the folder now
   tail(sid, s)
+  // The last line can reach the transcript a moment after the Stop hook: read again soon rather than wait for the timer.
+  for (const ms of END_TAIL_MS) setTimeout(() => sessions.get(sid) === s && tail(sid, s), ms)
   if (why) log('info', 'turn', why, sid)
   if (s.refreshAfter) return void maybeRefresh(sid, s)
   releaseHeld(sid, s, 'turn ended')
@@ -8811,6 +8817,7 @@ async function scanServers() {
 // ---------- loops ----------
 
 let ticking = false
+let foldersBusy = 0
 setInterval(async () => {
   if (ticking || !anyWelcomed()) return
   ticking = true
@@ -8835,22 +8842,46 @@ setInterval(async () => {
     } catch (e) {
       log('error', 'reboot', e.message)
     }
-    stats.lastTail = Date.now()
     // Not waited for: lsof can take a second, and the conversations must not.
     if (Date.now() - serversAt >= SERVERS_MS) (serversAt = Date.now()), scanServers().catch((e) => log('warn', 'servers', e.message))
     for (const [sid, s] of sessions) {
-      tail(sid, s)
       if (Date.now() - (s.statusAt ?? 0) >= STATUS_MS) {
         s.statusAt = Date.now()
         await watch(sid, s)
       }
       await readPreview(sid, s)
-      if (s.alive && Date.now() - (s.folderAt ?? 0) >= FOLDER_MS) await syncFolder(sid, s)
+      // Not waited for either: one folder of 36 repositories took 25 s (git and `gh pr view` per repository), and a
+      // Mac with 90 sessions took 139 s a round. One sync per session at a time, a few sessions at once.
+      if (s.alive && !s.folderBusy && foldersBusy < FOLDER_PAR && Date.now() - (s.folderAt ?? 0) >= FOLDER_MS) {
+        s.folderBusy = true
+        foldersBusy++
+        syncFolder(sid, s)
+          .catch((e) => log('warn', 'folder', e.message, sid))
+          .finally(() => {
+            s.folderBusy = false
+            foldersBusy--
+          })
+      }
     }
   } catch (e) {
     log('error', 'tick', e.stack || e.message)
   } finally {
     ticking = false
+  }
+}, TAIL_MS)
+
+// The conversations have their own timer (REQ-F-386): a reply that reached the transcript goes out within 700 ms,
+// whatever the screen reads and folder syncs of the other sessions are doing. tail() is synchronous (file reads only).
+setInterval(() => {
+  // Leaving (update, restart): the handoff already holds the offsets the next agent starts from.
+  if (keepBrowser || !anyWelcomed()) return
+  stats.lastTail = Date.now()
+  for (const [sid, s] of sessions) {
+    try {
+      tail(sid, s)
+    } catch (e) {
+      log('error', 'tail', e.stack || e.message, sid)
+    }
   }
 }, TAIL_MS)
 
